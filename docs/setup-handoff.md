@@ -39,6 +39,23 @@ Local evidence is ignored by Git:
 - `.local/setup/summon-dry-run.txt`: the workspace launch preview.
 - `.local/setup/graphify-out-prelink/`: a 32 KB cache directory that the first Graphify refresh wrote into the repository before the link existed. It was moved here so the link could be created. It is safe to remove after review.
 
+## Carried over from the Archy session
+
+The idea was shaped in an Archy session on 2026-11-13 and 2026-11-14. Its research files were copied to `.local/research/2026-11-13-archy-session/`, which Git ignores because the files hold third-party page text and a private transcript. They exist on this Mac only.
+
+- `competitors/`: text of the competitor pages that the design brief cites (`agentready.it.com` home, product and pricing, `isitagentready.com`, the Cloudflare agent-readiness post, `agentready.dev`, and notes on `erold90/AgentReady`).
+- `spec/agentic-web-spec-and-providers-dump.txt`: the parts of the specification and the providers guide that were read. Read the current repository again before relying on it.
+- `spec/generated_byok_chat_panel_expanded.png` and `..._collapsed.png`: the organizers' own key panel, with the fields "Saved setup", "Setup name", "API key", "Model", "Router base URL" and "Drive the LLM via LangChain.js".
+- `archy-session-transcript.jsonl`: the full conversation, for exact wording of any decision.
+
+Threads that were open when the session ended:
+
+- **Key panel mockup.** A visual mockup of the key-entry panel was planned and not started. The proposal was a new neutral style. The owner's existing design systems (Chapa, Coach Anvil "Bedrock", Portfolio) were offered as alternatives and no choice was made.
+- **Question to the organizers.** Which license they expect and whether server-side code must be open. Not sent. Posting needs the owner's approval and agreed wording.
+- **Name.** Settled as Retrofit. Names the owner rejected, so that they are not proposed again: Asturian words (Pasera, Injerto, Ponte, Umbral, Faro), Welcomat, Second Door, Wakesite, Open Counter, AgentScore, In-House. AgentReady is taken by at least three products.
+- **Existing projects.** Chapa, Portfolio and Coach were considered as entries and set aside for this new project. Sutura and Cirujano are under a publication lockdown until 2026-12-23 and are not part of this work.
+- **Lesson from the session.** A claim that the hackathon does not require something needs every official page read in full (overview, rules, resources, updates and the Discord announcements). An early answer that open source was not required was wrong for this reason.
+
 ## Open items for the owner
 
 - The name stays Retrofit (owner decision, 2026-11-14): publishing under a `thecreativetoken.com` subdomain removes the domain constraint. No trademark search was done. Retrofit is also a well-known open-source HTTP client from Square (recalled from memory, not checked).
