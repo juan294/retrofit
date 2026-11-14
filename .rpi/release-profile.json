@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "project": "retrofit",
+  "release_ready": false,
+  "stage": "workspace-bootstrap",
+  "integration_branch": "develop",
+  "production_branch": "main",
+  "release_procedure": "docs/release/release-playbook.md",
+  "setup_suite_is_release_evidence": false,
+  "waves": {
+    "A": "required",
+    "B": "not-selected",
+    "C": "reassess-after-product-plan",
+    "D": "reassess-after-product-plan",
+    "E": "reassess-after-product-plan",
+    "F": "reassess-after-product-plan",
+    "G": "reassess-after-product-plan",
+    "H": "reassess-after-product-plan"
+  },
+  "required_before_first_release": [
+    "accepted-product-plan-and-stack-decision",
+    "executable-application-tests",
+    "candidate-bound-evidence-analyzer",
+    "open-agentic-web-spec-conformance-evidence",
+    "third-party-fetch-safety-evidence",
+    "visitor-key-handling-evidence",
+    "hosting-and-domain-decision"
+  ],
+  "current_gaps": [
+    "no-application-code",
+    "no-stack-decision",
+    "no-test-suite",
+    "no-release-evidence-analyzer",
+    "no-hosting-or-deployment-target"
+  ],
+  "invariants": [
+    "passing-check-count-greater-than-zero",
+    "required-failure-or-skip-blocks",
+    "candidate-and-artifact-identities-match",
+    "cleanup-or-retained-resource-handoff-present",
+    "tag-last-after-evidence-and-authorization"
+  ]
+}

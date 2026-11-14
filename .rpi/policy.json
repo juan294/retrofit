@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "integration_branch": "develop",
+  "remote": "origin",
+  "verification_command": [
+    "python3",
+    ".rpi/scripts/rpi-verify.py"
+  ],
+  "verification_checks": [
+    {
+      "name": "whitespace",
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "a26865a08b8f3a9811ff4dd99ce3726b67591924"
+      ]
+    },
+    {
+      "name": "rpi-installation",
+      "argv": [
+        "python3",
+        ".rpi/scripts/rpi-distribution.py",
+        "check",
+        "--source",
+        "/Users/juan/code/cc-rpi",
+        "--target",
+        ".",
+        "--harness",
+        "both",
+        "--route",
+        "direct"
+      ]
+    }
+  ],
+  "production_branches": [
+    "main"
+  ],
+  "require_verification_receipt": false
+}

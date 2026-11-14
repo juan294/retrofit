@@ -1,0 +1,22 @@
+.DS_Store
+node_modules/
+dist/
+build/
+.next/
+.vercel/
+.turbo/
+coverage/
+*.log
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Retrofit local workspace, evidence and generated index
+.local/
+.rpi/local/
+.claude/metrics/
+logs/
+docs/agents/
+graphify-out
