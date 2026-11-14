@@ -80,7 +80,7 @@ Options that were examined and rejected: Sign in with ChatGPT (limited partner t
 
 ### Hosting
 
-The owner decided to host under `thecreativetoken.com`. The subdomain is not chosen and nothing is configured.
+The owner decided to host under `thecreativetoken.com`, so the product needs no domain of its own. The expected address is `retrofit.thecreativetoken.com`. Nothing is configured.
 
 ## Positioning
 
@@ -109,7 +109,7 @@ Originality is the weakest judging criterion for this idea, because scoring and 
 
 The owner chose **Retrofit** on 2026-11-14: the trade word for upgrading an existing building without rebuilding it. Slug `retrofit`.
 
-The name was not collision-checked. Retrofit is also the name of a well-known open-source HTTP client for Android and Java from Square (INFERRED from memory, not checked in this session). No domain search, trademark search or product search was done. The hackathon video must not show third-party trademarks.
+Owner decision, 2026-11-14: because the product is published under a `thecreativetoken.com` subdomain, domain availability does not limit the name, and Retrofit stays. No trademark search or product search was done. Retrofit is also the name of a well-known open-source HTTP client for Android and Java from Square (INFERRED from memory, not checked in this session); that is a developer library, a different kind of product. The hackathon video must not show third-party trademarks.
 
 ## Open questions for the plan
 

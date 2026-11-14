@@ -29,7 +29,7 @@ This repository holds the workspace setup only: shared instructions, native RPI 
 - A preview for a site that the visitor does not own is private and labelled unofficial. Official publishing needs an ownership claim.
 - Judges must have free access without restriction until 2027-01-18. Payment starts after that date.
 - The video must not show third-party trademarks.
-- The name was not collision-checked.
+- The product is published at a `thecreativetoken.com` subdomain (expected `retrofit.thecreativetoken.com`), so the name needs no domain of its own. No trademark search was done.
 
 ## Workspace conventions
 

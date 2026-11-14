@@ -41,10 +41,10 @@ Local evidence is ignored by Git:
 
 ## Open items for the owner
 
-- The name was not collision-checked. Retrofit is also a well-known open-source HTTP client from Square (recalled from memory, not checked).
+- The name stays Retrofit (owner decision, 2026-11-14): publishing under a `thecreativetoken.com` subdomain removes the domain constraint. No trademark search was done. Retrofit is also a well-known open-source HTTP client from Square (recalled from memory, not checked).
 - The repository is private. The hackathon requires open source, so it must become public before submission.
 - The license is Apache-2.0, chosen to match the specification repository. The organizers have not stated which license they expect.
-- The subdomain under `thecreativetoken.com` is not chosen.
+- The expected address is `retrofit.thecreativetoken.com`. No DNS record or deployment exists.
 - No local development port is reserved, because the stack is not decided.
 
 ## Next session
