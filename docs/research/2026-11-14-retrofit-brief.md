@@ -80,7 +80,7 @@ Options that were examined and rejected: Sign in with ChatGPT (limited partner t
 
 ### Hosting
 
-The owner decided to host under `thecreativetoken.com`, so the product needs no domain of its own. The expected address is `retrofit.thecreativetoken.com`. Nothing is configured.
+The owner decided to host under `thecreativetoken.com`, so the product needs no domain of its own. The address is `retrofit.thecreativetoken.com` (owner decision, 2026-11-14). Nothing is configured.
 
 ## Positioning
 
