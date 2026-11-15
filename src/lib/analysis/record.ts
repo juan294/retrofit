@@ -99,8 +99,8 @@ function failureView(f: CrawlFailure | undefined): VisitorFailure {
  * to the job it joined, so the next read is again one analysis and one job read.
  * When the job is ready, the analysis copies its snapshot and score, so later
  * reads need no job read at all. A reader that loses the compare-and-set of
- * that copy rereads the analysis once and answers with the committed copy, so
- * a ready view always carries the score.
+ * that copy answers with the same copy, so a ready view always carries the
+ * score.
  */
 export async function readAnalysisView<R>(deps: JobDeps, analysis: Analysis<R>): Promise<AnalysisView<R>> {
   const now = deps.clock();
@@ -124,14 +124,11 @@ export async function readAnalysisView<R>(deps: JobDeps, analysis: Analysis<R>):
       jobId: joinedTo ?? job.id,
       ...(job.status === "ready" ? { snapshot: job.snapshot, score: job.score, readyAt: job.updatedAt } : {}),
     };
-    if (await deps.store.compareAndSet(analysisKey(analysis.id), analysis, next, storeTtl(next, now))) {
-      current = next;
-    } else {
-      // Another reader (a second tab) copied the same terminal job first. Use what it committed; if
-      // that read finds no usable copy, answer from `next`, which holds the same job's result.
-      const committed = await getAnalysis<R>(deps.store, analysis.id);
-      current = committed && committed.version > analysis.version && (job.status !== "ready" || committed.snapshot !== undefined) ? committed : next;
-    }
+    // A lost compare-and-set means another reader (a second tab) copied first. Only these reads
+    // write an analysis after it is created, and ready and joined jobs no longer change, so that
+    // reader committed this same `next`: answer with it, with no extra read.
+    await deps.store.compareAndSet(analysisKey(analysis.id), analysis, next, storeTtl(next, now));
+    current = next;
   }
   if (joinedTo) return { status: "crawling", step: "joined", analysis: current };
   return { ...viewOfJob(job, deps.config, now), analysis: current };
