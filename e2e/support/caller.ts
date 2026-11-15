@@ -44,6 +44,35 @@ export const callerScript: Script = (body) => {
   return { text: "Hello from Retrofit's agent." };
 };
 
+/** readiness_specialist's own instructions (agent/retrofit_guide.hocon). */
+export const SPECIALIST_SYSTEM = /You get Retrofit's agent-readiness score/;
+/** What the scripted specialist answers; only its execution can put this text in the front agent's tool result. */
+export const SPECIALIST_ANSWER = "Specialist result: the readiness check for this request ran in the second agent.";
+
+/**
+ * Scripted model for the main network's delegation: the front agent calls readiness_specialist
+ * with `request`, the specialist (recognized by its own instructions) answers SPECIALIST_ANSWER and
+ * the front agent answers with the tool result it got back.
+ */
+export const delegationScript =
+  (request: string): Script =>
+  (body) => {
+    const result = lastToolResult(body);
+    if (SPECIALIST_SYSTEM.test(systemText(body))) return { text: `${SPECIALIST_ANSWER} Request: ${userText(body)}` };
+    if (result !== null) {
+      // An agent tool result is the runtime's JSON envelope ({cruse, text, presentation, source}).
+      let text = result;
+      try {
+        text = String((JSON.parse(result) as { text?: unknown }).text ?? result);
+      } catch {
+        // Not an envelope: answer with the raw result.
+      }
+      return { text: `Front answer: ${text.slice(0, 300)}` };
+    }
+    if (toolNames(body).includes("readiness_specialist")) return { call: [{ name: "readiness_specialist", args: { request } }] };
+    return { text: "readiness_specialist was not offered." };
+  };
+
 export interface CallerSession {
   readonly page: Page;
   readonly requests: Request[];

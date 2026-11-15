@@ -212,7 +212,7 @@ function steps(o, cases, pwCases) {
       show: [
         `$ ${env.join(" ")} pnpm ${PLAYWRIGHT_ARGV.join(" ")}`,
         `  browser contacts ${o.prod} and https://demo-harbor.thecreativetoken.com; the BYOK router https://api.otari.ai is answered inside the browser`,
-        "  @real-model cases (spec6-two-agent-free-path, analyze-own-site) make real model calls on Retrofit's free path",
+        "  @real-model cases (free-path-real-model-smoke, analyze-own-site) make real model calls on Retrofit's free path; every other case scripts the model",
         ...(o.skipPlaywright ? ["  skipped (--skip-playwright): its cases will be missing"] : []),
       ],
       run: (ctx) => runPlaywright(ctx, pwCases),
