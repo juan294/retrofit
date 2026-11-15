@@ -1,0 +1,76 @@
+{
+  "brand": "Harbor tours demo",
+  "networks": [
+    {
+      "name": "harbor_tours",
+      "front_man": "harbor_guide",
+      "hocon": "./harbor_tours.network.json",
+      "description": "Ask about the fictional tours of the Harbor tours demo site.",
+      "sample_queries": [
+        "What tours do you offer?",
+        "When does the sunset sail leave?",
+        "Can I book a tour here?"
+      ]
+    },
+    {
+      "name": "harbor_invalid",
+      "front_man": "harbor_guide",
+      "hocon": "./harbor_invalid.network.json",
+      "description": "Conformance fixture: a network that fails the runtime's validation on purpose."
+    },
+    {
+      "name": "harbor_loop",
+      "front_man": "loop_guide",
+      "hocon": "./harbor_loop.network.json",
+      "description": "Conformance fixture: calls Retrofit's conformance network back to form a loop.",
+      "sample_queries": [
+        "Ask Retrofit's conformance network what it checks."
+      ]
+    }
+  ],
+  "llm_router": {
+    "base_url": "https://api.otari.ai/api/v1",
+    "mock": false,
+    "byok_router": "https://api.otari.ai/api/v1"
+  },
+  "allowed_peers": [
+    "https://retrofit.thecreativetoken.com"
+  ],
+  "peer_policy": {
+    "mode": "closed",
+    "deny_origins": [],
+    "note": "Only harbor_loop calls another site: Retrofit's conformance network, to test loop prevention."
+  },
+  "agent_mcp": {
+    "protocol": "nsdeploy-agent-mcp/v1",
+    "network": "harbor_tours",
+    "front_man": "harbor_guide",
+    "available": false,
+    "reason": "This is a static demo site; a public MCP facade requires an application host."
+  },
+  "linking": {
+    "protocol": "nsdeploy-link/v1",
+    "exports": [
+      {
+        "network": "harbor_tours",
+        "front_man": "harbor_guide",
+        "aliases": [
+          "harbor_tours"
+        ],
+        "url": "harbor_tours"
+      }
+    ],
+    "imports": [],
+    "link_updates": {
+      "mode": "browser-local"
+    }
+  },
+  "deployment": {
+    "mode": "static",
+    "self_contained_runtime": false,
+    "browser_mock": false,
+    "direct_byok": true,
+    "direct_mcp_requires_cors": true,
+    "public_mcp_facade": false
+  }
+}

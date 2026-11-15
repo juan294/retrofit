@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harbor tours demo</title>
+<meta name="description" content="A synthetic demo site with fictional harbor tours. It publishes an agent network that other agent sites can ask.">
+<style>
+  :root { color-scheme: light dark; --bg: #f7f5f0; --fg: #1d2a33; --muted: #52616b; --line: #d6d0c4; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #11181d; --fg: #e8ecee; --muted: #a3b1ba; --line: #2c3a43; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, sans-serif; }
+  main { max-width: 40rem; margin: 0 auto; padding: 3rem 1rem; }
+  h1 { font-size: 2rem; margin: 0 0 .5rem; }
+  p, li { color: var(--fg); }
+  .note { color: var(--muted); border: 1px solid var(--line); padding: .75rem 1rem; border-radius: .5rem; }
+  ul.tours { list-style: none; padding: 0; }
+  ul.tours li { border-top: 1px solid var(--line); padding: 1rem 0; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Harbor tours demo</h1>
+  <p class="note">This is a synthetic demo site. The tours, times and prices are fictional, and nothing can be booked. It exists so that agent sites can show how they ask another site's agent network, with the visitor's consent.</p>
+
+  <h2>Tours</h2>
+  <ul class="tours">
+    <li><strong>Lighthouse walk</strong>: 90 minutes on foot to the old lighthouse. Daily at 10:00 and 15:00. Price 18 demo credits. The path has 120 steps.</li>
+    <li><strong>Sunset sail</strong>: 2 hours on a small sailing boat. Thursday to Sunday at 18:30. At most 12 guests. Price 45 demo credits.</li>
+    <li><strong>Seal watch</strong>: 75 minutes on a covered motor boat. Daily at 11:30. Price 30 demo credits. It does not run in storms. The boat has a ramp.</li>
+  </ul>
+  <p>Meeting point: the kiosk on Pier 2, open 09:00 to 18:00.</p>
+  <p>Bookings: the demo has no booking form and takes no bookings, payments or personal details.</p>
+
+  <h2>For agent sites</h2>
+  <p>This site publishes <a href="/agent-manifest.json">agent-manifest.json</a> with the network <code>harbor_tours</code>, which answers from the facts on this page. Call it as <code>https://demo-harbor.thecreativetoken.com/harbor_tours</code> and add this origin to your <code>allowed_peers</code>.</p>
+  <p>The manifest also lists two conformance fixtures: <code>harbor_invalid</code>, which fails validation on purpose, and <code>harbor_loop</code>, which calls Retrofit back to test loop prevention. <a href="https://retrofit.thecreativetoken.com/conformance">Retrofit's conformance page</a> explains each one.</p>
+</main>
+</body>
+</html>

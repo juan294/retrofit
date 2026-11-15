@@ -1,0 +1,30 @@
+Retrofit
+Copyright 2026 Juan Gonzalez
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+-------------------------------------------------------------------------------
+
+This product includes software from agentic-web
+(https://github.com/cognizant-ai-labs/agentic-web), licensed under the
+Apache License, Version 2.0.
+
+  Commit: 63a956cf4653f610b1c238c70946f4d7647d17a8 (2026-11-13)
+  Upstream paths: skills/agentify-website/runtime/,
+                  skills/agentify-website/scripts/,
+                  skills/agentify-website/templates/
+  Vendored to:    public/runtime/
+                  public/preview-assets/
+                  tools/agentic-web/
+
+The vendored files are unmodified copies. vendor/agentic-web.json records the
+SHA-256 of each file. The upstream repository has no NOTICE file at that commit.
+
+The upstream runtime states that it is a copy of the nsdeploy browser runtime
+(https://github.com/cognizant-ai-lab/nsdeploy, Apache License, Version 2.0) at
+nsdeploy commit 53a787c, with edits; see public/runtime/README.md and
+public/runtime/LICENSE.txt.
+
+public/runtime/generated/agent-runner.bundle.js (and its copy under
+tools/agentic-web/runtime/generated/) is a bundled build that contains
+third-party code; the licence comments embedded in that file apply to that code.

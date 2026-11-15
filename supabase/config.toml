@@ -1,0 +1,72 @@
+# Retrofit local Supabase configuration (Supabase CLI 3.1.0).
+#
+# This file defines the reusable dev stack `retrofit` on ports 54720 to 54729
+# (docs/development/resource-lifecycle.md). The disposable gate stack
+# `retrofit-gate` (54730 to 54739) is generated from this file into
+# `.local/supabase-gate/` with its own project_id and ports; it never uses this
+# identity. Retrofit needs Postgres and the REST API (the Store adapter in
+# src/lib/store/supabase.ts calls PostgREST rpc with the service role key), and
+# auth only so the CLI reports the API keys; every other service is disabled.
+
+project_id = "retrofit"
+
+[api]
+enabled = true
+port = 54721
+# The store lives in `public`, but no table or function is granted to anon or
+# authenticated (supabase/migrations/*_store.sql).
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[api.tls]
+enabled = false
+
+[db]
+port = 54722
+shadow_port = 54720
+major_version = 17
+
+[db.pooler]
+enabled = false
+port = 54729
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[db.migrations]
+enabled = true
+
+[db.seed]
+enabled = false
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = false
+port = 54723
+api_url = "http://127.0.0.1"
+
+[local_smtp]
+enabled = false
+port = 54724
+
+[storage]
+enabled = false
+
+[auth]
+# Retrofit has no Supabase users, but `supabase status` reports the API keys
+# (the service role key the adapter and the gate tool use) only while auth is
+# enabled. Sign-up is off.
+enabled = true
+enable_signup = false
+site_url = "http://127.0.0.1:3009"
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false
+port = 54727
+backend = "postgres"
