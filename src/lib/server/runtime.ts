@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { after } from "next/server";
 import { getConfig, type Config } from "@/lib/config";
 import { createFetchContext } from "@/lib/fetch/context";
@@ -22,6 +23,31 @@ export interface ServerDeps {
   readonly score: (snapshot: Snapshot) => unknown;
   /** Waits between job reads in GET /api/score. Defaults to a timer; tests may advance a fake clock instead. */
   readonly sleep?: (ms: number) => Promise<void>;
+  /**
+   * Starts a fresh invocation that dispatches queued jobs (POST /api/internal/dispatch).
+   * A finishing worker calls it when its own invocation has no time left for a crawl.
+   */
+  readonly kick?: () => Promise<void>;
+}
+
+/** Bearer token for POST /api/internal/dispatch, derived from SESSION_SECRET. */
+export function dispatchToken(config: Pick<Config, "sessionSecret">): string {
+  return createHmac("sha256", config.sessionSecret).update("retrofit-dispatch-v1").digest("hex");
+}
+
+/** Fire-and-forget call that starts a new invocation to dispatch queued jobs. */
+export function selfKick(config: Config): () => Promise<void> {
+  return async () => {
+    try {
+      await fetch(`${config.publicOrigin}/api/internal/dispatch`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${dispatchToken(config)}` },
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch (e) {
+      console.error("Dispatch kick failed:", e instanceof Error ? e.message : String(e));
+    }
+  };
 }
 
 interface Singletons {
@@ -69,6 +95,7 @@ export function getServerDeps(): ServerDeps {
       fetch: getFetchContext(config),
       waitUntil: runtimeWaitUntil,
       score: scoreSnapshot,
+      kick: selfKick(config),
     };
   }
   return singletons.deps;

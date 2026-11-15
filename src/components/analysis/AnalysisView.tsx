@@ -168,7 +168,7 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
   );
 }
 
-/** Failures that a new analysis of the same address can fix. */
+/** Failures that a new analysis of the same address can fix. Retry is hidden until any retryAt has passed. */
 const RETRYABLE = new Set(["stale", "queue_expired", "crawl_error", "robots_unavailable", "unavailable", "expired"]);
 
 function Notice({ failure, inputOrigin }: { failure: Failure; inputOrigin: string }) {
@@ -200,7 +200,7 @@ function Notice({ failure, inputOrigin }: { failure: Failure; inputOrigin: strin
     <div className="mt-8" role="alert">
       <p>{localizeRetry(shown.message, shown.retryAt)}</p>
       <p className="mt-4 flex gap-3">
-        {RETRYABLE.has(failure.code) ? (
+        {RETRYABLE.has(failure.code) && !(failure.retryAt && Date.parse(failure.retryAt) > Date.now()) ? (
           <button type="button" onClick={retry} disabled={busy} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
             {busy ? "Starting…" : failure.code === "expired" ? "Analyze again" : "Retry"}
           </button>

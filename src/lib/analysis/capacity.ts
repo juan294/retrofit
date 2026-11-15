@@ -128,7 +128,10 @@ async function runInSlot(deps: ServerDeps, jobId: string, slot: Slot, invocation
     finished = true;
     clearInterval(heartbeat);
     await deps.store.releaseLease(slot.key, slot.token).catch(() => false);
-    await dispatchQueued(deps, invocation).catch(() => 0);
+    if (hasTimeForCrawl(deps, invocation) || !deps.kick) await dispatchQueued(deps, invocation).catch(() => 0);
+    // Too little time left here: a fresh invocation dispatches the next job, so a queued
+    // job does not wait for the next visitor or agent request.
+    else await deps.kick().catch(() => undefined);
   };
   try {
     const job = await getJob(deps.store, jobId);

@@ -261,6 +261,34 @@ describe("capacity review fixes", () => {
     expect(d.errors).toEqual([]);
   });
 
+  // P3-N1. Fails if a worker that is short of time neither dispatches nor kicks a fresh invocation:
+  // a visitor with a hidden tab would wait for the 120 s queue expiry.
+  it("kicks a fresh invocation when the finishing worker is short of time", async () => {
+    const server = await serveGatedSites({ "first.fixture.test": bakery, "second.fixture.test": bakery }, ["first.fixture.test"]);
+    close = () => server.close();
+    let offset = 0;
+    let kicks = 0;
+    const base = testDeps({ clock: () => Date.now() + offset, env: { CRAWL_MAX_CONCURRENT: "1" } });
+    const d = { ...base, kick: async () => void kicks++ };
+    expect((await handleAnalyze(analyzeRequest({ url: server.origin("first.fixture.test") }), d)).status).toBe(200);
+    await waitFor(() => server.gate("first.fixture.test").waiting === 1, "first home page held");
+    await handleAnalyze(analyzeRequest({ url: server.origin("second.fixture.test") }), d);
+    offset += 46_000;
+    server.gate("first.fixture.test").open();
+    await base.settle();
+    expect(kicks).toBe(1);
+    // The kicked invocation is a new invocation with its full time.
+    const { handleDispatch } = await import("@/lib/api/dispatch");
+    const { dispatchToken } = await import("@/lib/server/runtime");
+    const bad = await handleDispatch(new Request("https://retrofit.test/api/internal/dispatch", { method: "POST", headers: { authorization: "Bearer nope" } }), d);
+    expect(bad.status).toBe(401);
+    const ok = await handleDispatch(new Request("https://retrofit.test/api/internal/dispatch", { method: "POST", headers: { authorization: `Bearer ${dispatchToken(d.config)}` } }), d);
+    expect(ok.status).toBe(202);
+    expect(await ok.json()).toEqual({ started: 1 });
+    await base.settle();
+    expect((await jobFor(d, server.origin("second.fixture.test")))?.status).toBe("ready");
+  });
+
   // P3-R5. Fails if the slot lease is not renewed while the worker runs: with a 1 s lease, a crawl held
   // for 1.6 s would lose its slot and a second crawl could start beyond CRAWL_MAX_CONCURRENT.
   it("renews the slot lease while the worker runs and frees it in the end", async () => {

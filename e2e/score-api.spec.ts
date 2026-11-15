@@ -14,3 +14,9 @@ test("GET /api/score sends the contract headers through the real server", async 
   expect(body.error).toBe("robots_blocked");
   expect(JSON.stringify(body)).not.toMatch(/\/r\/|\/p\/|[0-9a-f]{32}/);
 });
+
+test("an unknown /api/ path answers with the page CSP", async ({ request }) => {
+  const res = await request.get("/api/no-such-route");
+  expect(res.status()).toBe(404);
+  expect(res.headers()["content-security-policy"]).toMatch(/script-src 'self' 'nonce-/);
+});
