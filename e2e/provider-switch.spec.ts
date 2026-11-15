@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures/csp";
 import { OTARI, analyzeFixture, connectKey, mockOtari, previewScript } from "./support/agent";
-import { installMockRouter, type MockRouter } from "./support/mock-router";
+import { installMockRouter, sse, type MockRouter } from "./support/mock-router";
+import { UPSTREAM_MODEL } from "./support/mock-upstream";
 import { RETROFIT_ORIGIN, recordRequests, type Page, type RecordedRequest } from "./support/extra-requests";
 
 const GROQ = { routerBase: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-120b", key: "gsk_test_e2e_0123456789abcdef" };
@@ -24,6 +25,16 @@ async function ask(page: Page, router: MockRouter) {
   await expect(input).toBeEnabled({ timeout: 20_000 });
 }
 
+/**
+ * "Connected to ..." can show before the preview reboots: wait until the booted runtime holds
+ * `key`, so a request typed next goes to the new runtime and not to the one being replaced.
+ */
+async function runtimeHolds(page: Page, key: string) {
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __nsweb?: { engine?: { byokKey?: string } } }).__nsweb?.engine?.byokKey ?? null), { timeout: 20_000 })
+    .toBe(key);
+}
+
 const onOrigin = (rs: RecordedRequest[], base: string) => rs.filter((r) => r.origin === new URL(base).origin && r.method !== "OPTIONS");
 
 /** Tries a request from the page, through whatever fetch the page has installed. */
@@ -45,6 +56,7 @@ test("switching from provider A to provider B validates at B, then chats only wi
   const { a, b } = await routers(page);
   await analyzeFixture(page, "bakery.fixture.test");
   await connectKey(page);
+  await runtimeHolds(page, OTARI.key);
   await ask(page, a);
   expect(b.authorizations).toEqual([]);
 
@@ -53,6 +65,7 @@ test("switching from provider A to provider B validates at B, then chats only wi
   await page.getByLabel("Paste a different key").fill(GROQ.key);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByText(/Connected to Groq/)).toBeVisible();
+  await runtimeHolds(page, GROQ.key);
   await ask(page, b);
 
   const after = (await log.all()).slice(beforeSwitch);
@@ -87,6 +100,7 @@ test("a failed validation of provider B leaves provider A active and B without a
   });
   await analyzeFixture(page, "bakery.fixture.test");
   await connectKey(page);
+  await runtimeHolds(page, OTARI.key);
   await ask(page, a);
 
   const beforeSwitch = (await log.all()).length;
@@ -117,6 +131,7 @@ test("Forget my key returns to the free path and no provider gets another reques
   await analyzeFixture(page, "bakery.fixture.test");
   await expect(page.getByText(/Using Retrofit's free AI/)).toBeVisible();
   await connectKey(page);
+  await runtimeHolds(page, OTARI.key);
   await ask(page, a);
 
   const beforeForget = (await log.all()).length;
@@ -148,4 +163,76 @@ test("Forget my key returns to the free path and no provider gets another reques
   expect(blocked).toBe("Retrofit blocked a request to https://api.otari.ai that was not approved.");
   // The free runtime that replaced it holds the placeholder key, never the forgotten one.
   expect(await page.evaluate(() => JSON.stringify((window as unknown as { __nsweb?: { engine?: { byokKey?: string } } }).__nsweb?.engine?.byokKey ?? null))).not.toContain(OTARI.key);
+});
+
+test("connecting a key while a delayed free answer with a tool call is in flight stops the free runtime", async ({ page, context }) => {
+  const log = recordRequests(context);
+  const a = await mockOtari(page);
+  const FREE_CHAT = `${RETROFIT_ORIGIN}/api/inference/v1/chat/completions`;
+  let freeChats = 0;
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const failed: string[] = [];
+  page.on("requestfailed", (r) => {
+    if (r.url() === FREE_CHAT) failed.push(r.failure()?.errorText ?? "");
+  });
+  // The free model answers its first call late, with a delegation the runtime would execute
+  // (a tool round-trip that asks the free model again). Later calls answer at once.
+  await page.route(FREE_CHAT, async (route) => {
+    freeChats += 1;
+    if (freeChats === 1) await released;
+    const turn = freeChats === 1 ? { call: [{ name: "content_specialist", args: { request: "opening hours" } }] } : { text: "Free answer after the switch." };
+    await route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: sse(turn, UPSTREAM_MODEL) }).catch(() => undefined);
+  });
+  await analyzeFixture(page, "bakery.fixture.test");
+  await expect(page.getByText(/Using Retrofit's free AI/)).toBeVisible();
+  const input = page.getByTestId("preview-mount").getByRole("textbox").last();
+  await expect(input).toBeEnabled();
+  await input.fill("What are your opening hours?");
+  await input.press("Enter");
+  await expect.poll(() => freeChats, { timeout: 20_000 }).toBe(1);
+
+  const beforeSwitch = (await log.all()).length;
+  await connectKey(page);
+  await runtimeHolds(page, OTARI.key);
+  // The held free answer arrives only after the switch.
+  release();
+  await page.waitForTimeout(1_500);
+  // The retired runtime's pending call was aborted, and it asked the free path nothing more.
+  expect(freeChats).toBe(1);
+  expect(failed).toHaveLength(1);
+  await ask(page, a);
+  await page.waitForTimeout(500);
+  const after = (await log.all()).slice(beforeSwitch);
+  expect(after.filter((r) => r.url === FREE_CHAT).map((r) => r.method)).toEqual([]);
+  expect(freeChats).toBe(1);
+  await expect(page.getByTestId("preview-mount").getByText("Free answer after the switch.")).toHaveCount(0);
+});
+
+test("connecting a key while the free runtime is still booting leaves only the new runtime on the page", async ({ page }) => {
+  const a = await mockOtari(page);
+  // Hold the free runtime's network load, so its boot finishes only after the switch.
+  let networkLoads = 0;
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route(
+    (url) => url.pathname.startsWith("/p/") && url.pathname.endsWith(".network.json"),
+    async (route) => {
+      networkLoads += 1;
+      if (networkLoads === 1) await released;
+      await route.continue().catch(() => undefined);
+    },
+  );
+  await analyzeFixture(page, "bakery.fixture.test");
+  await expect(page.getByText(/Using Retrofit's free AI/)).toBeVisible();
+  await expect.poll(() => networkLoads, { timeout: 20_000 }).toBe(1);
+  await connectKey(page);
+  await expect.poll(() => networkLoads, { timeout: 20_000 }).toBe(2);
+  await runtimeHolds(page, OTARI.key);
+  // The retired boot completes now; it must not take over the page or its runtime handle.
+  release();
+  await page.waitForTimeout(1_500);
+  expect(await page.evaluate(() => (window as unknown as { __nsweb?: { engine?: { byokKey?: string } } }).__nsweb?.engine?.byokKey ?? null)).toBe(OTARI.key);
+  await expect(page.getByTestId("preview-mount").locator('[data-ns-slot="chat"]')).toHaveCount(1);
+  await ask(page, a);
 });

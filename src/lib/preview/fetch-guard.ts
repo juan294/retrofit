@@ -9,6 +9,20 @@ export const BLOCKED_TEXT = (origin: string): string =>
 export const REDIRECT_BLOCKED_TEXT = (origin: string): string =>
   `Retrofit blocked a redirect from ${origin} to an address that was not approved.`;
 
+/**
+ * A request from a runtime that a newer preview replaced (a provider switch, "Forget my key"
+ * or a reboot). The unchanged runtime cannot be stopped, so the guard refuses its model calls
+ * and aborts the ones still waiting for an answer.
+ */
+export const RETIRED_TEXT = "Retrofit stopped a request from an agent that was replaced.";
+
+/**
+ * Marker segment the guard adds to the router base it gives one runtime
+ * (`<router>/~retrofit-run-<n>`). The guard maps it back to the router path and
+ * refuses it once that runtime is retired.
+ */
+const RUN_MARKER = /\/~retrofit-run-(\d+)(?=\/|$)/;
+
 type FetchInput = RequestInfo | URL;
 type FetchFn = (input: FetchInput, init?: RequestInit) => Promise<Response>;
 
@@ -26,7 +40,11 @@ export type FetchGuardState = {
 
 export type FetchGuard = {
   readonly fetch: (input: FetchInput, init?: RequestInit) => Promise<Response>;
-  setRouter(routerBaseUrl: string | null): void;
+  /**
+   * Replaces the active router and retires the previous runtime: its model calls are refused
+   * and its pending ones are aborted. Returns the router base to give the new runtime, or null.
+   */
+  setRouter(routerBaseUrl: string | null): string | null;
   setPolicyPeers(origins: readonly string[]): void;
   clearApprovals(): void;
   approveFromConsent(peerOriginHostPort: string): string | null;
@@ -92,6 +110,9 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
   const log = options.log ?? ((message: string) => console.warn(message));
 
   let router: Router | null = null;
+  // One runtime at a time may use the router through its own marked base.
+  let generation = 0;
+  let run: { id: number; controller: AbortController } | null = null;
   let provisional: Router | null = null;
   let policyPeers = new Set<string>();
   let approvedPeers = new Set<string>();
@@ -117,6 +138,19 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
     return res;
   };
 
+  // A runtime's model call: only the active runtime's marker under the active router is mapped
+  // to the router path, with that runtime's abort signal added to the caller's own.
+  const fromRuntime = (input: FetchInput, init: RequestInit | undefined, url: URL, marker: RegExpExecArray): [FetchInput, RequestInit] => {
+    const prefix = url.pathname.slice(0, marker.index);
+    const current = router !== null && run !== null && marker[1] === String(run.id) && `${url.origin}${prefix}` === router.base;
+    if (!current) throw new TypeError(RETIRED_TEXT);
+    const target = `${url.origin}${prefix}${url.pathname.slice(marker.index + marker[0].length)}${url.search}`;
+    const callerSignal = init?.signal ?? (typeof input === "object" && !(input instanceof URL) ? input.signal : undefined);
+    const signal = callerSignal ? AbortSignal.any([callerSignal, run!.controller.signal]) : run!.controller.signal;
+    const mapped = typeof input === "object" && !(input instanceof URL) ? new Request(target, input) : target;
+    return [mapped, { ...init, signal }];
+  };
+
   // async: a refusal rejects (as the platform fetch does) and never reaches originalFetch.
   async function guardedFetch(input: FetchInput, init?: RequestInit): Promise<Response> {
     let url: URL;
@@ -124,6 +158,12 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
       url = new URL(rawUrl(input), pageOrigin);
     } catch {
       throw new TypeError(BLOCKED_TEXT(rawUrl(input)));
+    }
+
+    const marker = RUN_MARKER.exec(url.pathname);
+    if (marker) {
+      [input, init] = fromRuntime(input, init, url, marker);
+      url = new URL(rawUrl(input), pageOrigin);
     }
 
     // 1 and 2: same origin; agent artifacts must not follow redirects.
@@ -165,7 +205,14 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
   return {
     fetch: guardedFetch,
     setRouter(routerBaseUrl) {
-      router = routerBaseUrl === null ? null : parseRouter(routerBaseUrl);
+      const next = routerBaseUrl === null ? null : parseRouter(routerBaseUrl);
+      run?.controller.abort(new TypeError(RETIRED_TEXT));
+      run = null;
+      router = next;
+      if (next === null) return null;
+      generation += 1;
+      run = { id: generation, controller: new AbortController() };
+      return `${next.base}/~retrofit-run-${run.id}`;
     },
     setPolicyPeers(origins) {
       const next = new Set<string>();
