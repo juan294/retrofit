@@ -165,6 +165,9 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
     if (marker) {
       [input, init] = fromRuntime(input, init, url, marker);
       url = new URL(rawUrl(input), pageOrigin);
+    } else if (run !== null && router?.origin === pageOrigin && url.origin === pageOrigin && url.pathname.replace(/\/$/, "") === `${router.path}/chat/completions`) {
+      // While a runtime is active, only its marked base reaches a same-origin router's model calls.
+      throw new TypeError(BLOCKED_TEXT(url.origin));
     }
 
     // 1 and 2: same origin; agent artifacts must not follow redirects.
