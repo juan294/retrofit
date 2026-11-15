@@ -13,6 +13,7 @@ const ENV = {
   JUDGE_RESERVE_USD: "3",
   FREE_PRICE_IN_PER_M: "0.1",
   FREE_PRICE_OUT_PER_M: "0.4",
+  FREE_SERVICE_END: "2027-01-18T23:59:59Z",
 };
 
 describe("resumeTargetFromEnv", () => {
@@ -21,6 +22,30 @@ describe("resumeTargetFromEnv", () => {
     const env: Record<string, string | undefined> = { ...ENV, [name]: " " };
     expect(() => resumeTargetFromEnv(env)).toThrow(ResumeTargetError);
     expect(() => resumeTargetFromEnv(env)).toThrow(name);
+  });
+
+  // Fails if a day rollover during resumption can fix the public daily budget with a default service end.
+  it("requires FREE_SERVICE_END", () => {
+    expect(RESUME_REQUIRED_ENV).toContain("FREE_SERVICE_END");
+    const { FREE_SERVICE_END: _omitted, ...env } = ENV;
+    expect(() => resumeTargetFromEnv(env)).toThrow(/FREE_SERVICE_END/);
+  });
+
+  // Fails if a setting the command uses is hidden from the owner, or a default is shown as if it were set.
+  it("lists every effective setting and marks the defaults", () => {
+    const target = resumeTargetFromEnv({ ...ENV, FREE_MAX_TOKENS: "2048", OTARI_API_KEY: "sk-secret-value", JUDGE_CODE: "judge-code-secret-1234" });
+    const byName = new Map(target.settings.map((s) => [s.name, s]));
+    expect(byName.get("FREE_CREDIT_USD")).toEqual({ name: "FREE_CREDIT_USD", value: "10", source: "set" });
+    expect(byName.get("FREE_SERVICE_END")).toEqual({ name: "FREE_SERVICE_END", value: "2027-01-18T23:59:59.000Z", source: "set" });
+    expect(byName.get("FREE_MAX_TOKENS")).toEqual({ name: "FREE_MAX_TOKENS", value: "2048", source: "set" });
+    expect(byName.get("FREE_PER_REQUEST_FEE_USD")).toEqual({ name: "FREE_PER_REQUEST_FEE_USD", value: "0", source: "default" });
+    expect(byName.get("FREE_FRAMING_TOKENS_BASE")).toEqual({ name: "FREE_FRAMING_TOKENS_BASE", value: "512", source: "default" });
+    for (const name of ["FREE_MODEL", "FREE_MAX_BODY_BYTES", "FREE_FRAMING_TOKENS_PER_MESSAGE", "FREE_MAX_MESSAGES", "FREE_MAX_TOOLS", "FREE_MAX_TOOL_BYTES", "CREDIT_ALERT_THRESHOLDS"]) {
+      expect(byName.get(name)?.source, name).toBe("default");
+    }
+    const printed = JSON.stringify(target.settings);
+    expect(printed).not.toContain("sk-secret-value");
+    expect(printed).not.toContain("judge-code-secret-1234");
   });
 
   // Fails if a malformed store URL reaches the Supabase client.

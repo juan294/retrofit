@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import net from "node:net";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { loadFreeConfig } from "@/lib/config";
 import { createHold, describeFreeState, recordOverrun, resumeFree } from "@/lib/inference/hold";
@@ -83,6 +83,28 @@ describe("resume-free CLI", () => {
     expect(await h.hold.isHeld()).toBe(true);
   });
 
+  // Fails if `pnpm ops:resume-free -- --reconciled-balance ...` (pnpm passes the "--" through) is refused.
+  it("ignores a leading -- separator", async () => {
+    const h = await heldHooks();
+    expect(await run(["--", "--reconciled-balance", "9.2", "--note", "Reconciled"], h.hooks)).toBe(0);
+    expect(await h.hold.isHeld()).toBe(false);
+    expect(await run(["--reconciled-balance", "9.2", "--", "--note", "x"], h.hooks)).toBe(1);
+  });
+
+  // Fails if the owner cannot see which settings are defaults before any change.
+  it("prints the effective settings, marking defaults, before the state", async () => {
+    const h = await heldHooks();
+    const settings: Array<{ name: string; value: string; source: "set" | "default" }> = [
+      { name: "FREE_CREDIT_USD", value: "10", source: "set" },
+      { name: "FREE_MAX_TOKENS", value: "1024", source: "default" },
+    ];
+    expect(await run(["--reconciled-balance", "9.1", "--note", "x"], { ...h.hooks, settings })).toBe(1);
+    const printed = h.out.join("\n");
+    expect(printed).toMatch(/FREE_CREDIT_USD=10 \(set\)/);
+    expect(printed).toMatch(/FREE_MAX_TOKENS=1024 \(default\)/);
+    expect(printed.indexOf("FREE_MAX_TOKENS")).toBeLessThan(printed.indexOf("Ledger spent"));
+  });
+
   // Fails if the CLI reports success for a hold_changed refusal.
   it("exits 1 with the refusal text when a hold event races the resumption", async () => {
     const h = await heldHooks();
@@ -97,7 +119,7 @@ describe("resume-free executable", () => {
   const exec = (args: string[], env: Record<string, string>) =>
     spawnSync(process.execPath, [script, ...args], { encoding: "utf8", env: { NODE_ENV: "test", PATH: process.env.PATH ?? "", ...env } });
 
-  const FREE_ENV = { FREE_CREDIT_USD: "10", JUDGE_RESERVE_USD: "3", FREE_PRICE_IN_PER_M: "0.1", FREE_PRICE_OUT_PER_M: "0.4" };
+  const FREE_ENV = { FREE_CREDIT_USD: "10", JUDGE_RESERVE_USD: "3", FREE_PRICE_IN_PER_M: "0.1", FREE_PRICE_OUT_PER_M: "0.4", FREE_SERVICE_END: "2027-01-18T23:59:59Z" };
 
   /** A loopback port with nothing listening on it. */
   async function closedPort(): Promise<number> {
@@ -131,8 +153,26 @@ describe("resume-free executable", () => {
     const key = "service-role-key-that-must-not-print";
     const r = exec(["--reconciled-balance", "9.2", "--note", "x"], { ...FREE_ENV, SUPABASE_URL: `http://127.0.0.1:${port}`, SUPABASE_SERVICE_ROLE_KEY: key });
     expect(r.stdout).toContain(`Store: http://127.0.0.1:${port}`);
+    expect(r.stdout).toMatch(/FREE_SERVICE_END=2027-01-18T23:59:59\.000Z \(set\)/);
+    expect(r.stdout).toMatch(/FREE_MAX_TOKENS=1024 \(default\)/);
     expect(r.status).toBe(3);
     expect(r.stderr).toMatch(/Store error: inference counters unavailable/);
     expect(r.stdout + r.stderr).not.toContain(key);
+  });
+});
+
+describe("source hooks", () => {
+  const hooks = fileURLToPath(new URL("../../tools/ops/source-hooks.mjs", import.meta.url));
+
+  // Fails if loading TypeScript through the hooks prints Node's ExperimentalWarning, or if other warnings are hidden.
+  it("loads a TypeScript module without the stripTypeScriptTypes warning and keeps other warnings", () => {
+    const code = `const m = await import(${JSON.stringify(pathToFileURL(hooks).href)}); m.registerSourceHooks();
+const e = await import(m.sourceUrl("lib/inference/errors.ts")); console.log(typeof e.CountersUnavailable);
+process.emitWarning("other warning stays visible");`;
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8" });
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe("function");
+    expect(r.stderr).not.toMatch(/stripTypeScriptTypes is an experimental feature/);
+    expect(r.stderr).toMatch(/other warning stays visible/);
   });
 });

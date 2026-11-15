@@ -23,9 +23,24 @@ function typescriptFor(url) {
 
 let registered = false;
 
+/**
+ * Drops only Node's ExperimentalWarning for stripTypeScriptTypes, which the load hook calls for
+ * every file; every other warning is emitted as before.
+ */
+function silenceStripWarning() {
+  const emit = process.emitWarning;
+  process.emitWarning = function emitWarning(warning, ...rest) {
+    const type = typeof rest[0] === "string" ? rest[0] : (rest[0]?.type ?? warning?.name);
+    const message = typeof warning === "string" ? warning : warning?.message;
+    if (type === "ExperimentalWarning" && /stripTypeScriptTypes/.test(String(message))) return;
+    return emit.call(this, warning, ...rest);
+  };
+}
+
 export function registerSourceHooks() {
   if (registered) return;
   registered = true;
+  silenceStripWarning();
   registerHooks({
     resolve(specifier, context, nextResolve) {
       // Only application modules (the alias, or a relative import from a file under src/) are

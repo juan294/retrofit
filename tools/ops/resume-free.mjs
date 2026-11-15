@@ -2,17 +2,21 @@
 // Removes the free-path overrun hold after the owner reconciles (phase 6, "Ledger and quotas").
 //
 //   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... FREE_CREDIT_USD=... JUDGE_RESERVE_USD=... \
-//   FREE_PRICE_IN_PER_M=... FREE_PRICE_OUT_PER_M=... \
+//   FREE_PRICE_IN_PER_M=... FREE_PRICE_OUT_PER_M=... FREE_SERVICE_END=... \
 //   pnpm ops:resume-free --reconciled-balance <usd> --note <text>
 //
-// Checks the owner's authorization inputs first (the reconciled provider balance and a note),
-// then builds the Supabase store named by the environment (src/lib/inference/resume-target.ts;
-// every variable above is required, with the deployment's values). Prints the target store's
-// origin, the ledger total, outstanding reservations, the hold record and the bound parameters;
-// refuses when the entered provider balance is below the ledger's remaining credit; writes an
-// audit record `inference:audit:<time>`; then removes the hold through resumeFree
-// (src/lib/inference/hold.ts), which refuses and keeps the hold when a new overrun is recorded
-// while it runs. Running it against production is an authorized owner action.
+// Accepts a leading "--" (pnpm passes it through). Checks the owner's authorization inputs first
+// (the reconciled provider balance and a note), then builds the Supabase store named by the
+// environment (src/lib/inference/resume-target.ts; every variable above is required, with the
+// deployment's values). The fee, bound and limit settings keep their config.ts defaults when
+// unset, so the command prints every effective setting and marks each default: set any that the
+// deployment overrides. It then prints the target store's origin, the ledger total, outstanding
+// reservations, the hold record and the bound parameters; refuses when the entered provider
+// balance is below the ledger's remaining credit; writes an audit record
+// `inference:audit:<time>`; then clears the hold through resumeFree (src/lib/inference/hold.ts),
+// which refuses and keeps the hold when a new overrun is recorded while it runs, and records a
+// refusal or a store failure in the audit trail. Running it against production is an authorized
+// owner action.
 //
 // Exit status: 0 resumed; 1 refused (arguments, balance, no hold, or a concurrent hold event);
 // 2 no target (store or ledger configuration missing); 3 store error (nothing is reported as
@@ -22,6 +26,7 @@ import { pathToFileURL } from "node:url";
 /**
  * @typedef {object} ResumeHooks
  * @property {string} [origin] the target store's origin, printed before any change
+ * @property {{ name: string, value: string, source: "set" | "default" }[]} [settings] effective free-path settings, printed before any change
  * @property {() => Promise<any>} inspect describeFreeState over the target store
  * @property {(input: { reconciledBalanceUsd: number, note: string }) => Promise<any>} resume resumeFree over the target store
  * @property {(line: string) => void} [out]
@@ -34,7 +39,8 @@ const usd = (micro) => `${(micro / 1_000_000).toFixed(6)} USD`;
 
 function parseArgs(argv) {
   const args = {};
-  for (let i = 0; i < argv.length; i += 1) {
+  // `pnpm ops:resume-free -- --reconciled-balance ...` passes the separator through.
+  for (let i = argv[0] === "--" ? 1 : 0; i < argv.length; i += 1) {
     const flag = argv[i];
     const value = argv[i + 1];
     if ((flag === "--reconciled-balance" || flag === "--note") && value !== undefined && !value.startsWith("--")) {
@@ -91,6 +97,10 @@ export async function main(argv, target) {
     return 2;
   }
   if (hooks.origin) out(`Store: ${hooks.origin}`);
+  if (hooks.settings?.length) {
+    out("Settings (default = not set in the environment; check it matches the deployment):");
+    for (const s of hooks.settings) out(`  ${s.name}=${s.value} (${s.source})`);
+  }
   let result;
   try {
     printState(await hooks.inspect(), out);

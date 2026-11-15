@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadFreeConfig } from "@/lib/config";
-import { AUDIT_PREFIX, HOLD_KEY, createHold, recordOverrun, resumeFree } from "@/lib/inference/hold";
+import { AUDIT_PREFIX, LEGACY_HOLD_KEY, createHold, recordOverrun, resumeFree } from "@/lib/inference/hold";
 import { LEDGER_KEY, createLedger } from "@/lib/inference/ledger";
 import { createSupabaseStore } from "@/lib/store/supabase";
 import { type Store, systemClock } from "@/lib/store/types";
@@ -66,13 +66,13 @@ async function judgeOverrun(on: { store: Store } = deps, alert = async () => {})
 beforeEach(async () => {
   // These keys are fixed by the application, so this file owns them on the gate stack.
   await store.delete(LEDGER_KEY);
-  await store.delete(HOLD_KEY);
+  await store.delete(LEGACY_HOLD_KEY);
 });
 
 afterAll(async () => {
   for (const key of auditKeys) await store.delete(key);
   await store.delete(LEDGER_KEY);
-  await store.delete(HOLD_KEY);
+  await store.delete(LEGACY_HOLD_KEY);
 });
 
 describe("ops:resume-free against the gate store", () => {
@@ -83,11 +83,13 @@ describe("ops:resume-free against the gate store", () => {
     expect(await hold.isHeld()).toBe(true);
     const remaining = (await createLedger(deps).budgets()).remainingCreditMicro;
 
-    const r = await exec(["--reconciled-balance", (remaining / 1_000_000).toFixed(6), "--note", "gate-stack reconciliation"], TARGET_ENV);
+    const r = await exec(["--", "--reconciled-balance", (remaining / 1_000_000).toFixed(6), "--note", "gate-stack reconciliation"], TARGET_ENV);
     expect(r.stderr).not.toContain(serviceRoleKey);
     expect(r.stdout).not.toContain(serviceRoleKey);
     expect(r.stdout).toContain(`Store: ${new URL(url).origin}`);
     expect(r.stdout).toMatch(/Hold: \{.*"reason":"reservation_overrun"/);
+    expect(r.stdout).toMatch(/FREE_SERVICE_END=2027-01-18T23:59:59\.000Z \(set\)/);
+    expect(r.stdout).toMatch(/FREE_MAX_TOKENS=1024 \(default\)/);
     expect(r.status).toBe(0);
     const auditKey = /Audit record: (\S+)/.exec(r.stdout)?.[1];
     expect(auditKey?.startsWith(AUDIT_PREFIX)).toBe(true);
@@ -156,5 +158,44 @@ describe("ops:resume-free against the gate store", () => {
     expect(await createHold(deps).isHeld()).toBe(true);
     expect((await createLedger(deps).budgets()).held).toBe(true);
     expect(await createHold(deps).read()).toMatchObject({ reason: "reservation_overrun" });
+  });
+
+  // Fails if a second resumption that inspected the same hold erases the newer hold written after the first one succeeded.
+  it("a second concurrent resumption refuses and keeps the newer hold record", async () => {
+    await judgeOverrun();
+    const first = await createHold(deps).read();
+    const a = { ...deps, store: createSupabaseStore({ url, serviceRoleKey }) };
+    const tracked = (s: Store): Store => ({
+      ...s,
+      async putIfAbsent(key, value, ttl) {
+        const r = await s.putIfAbsent(key, value, ttl);
+        if (r.created && key.startsWith(AUDIT_PREFIX)) auditKeys.push(key);
+        return r;
+      },
+    });
+    let firstResult: unknown;
+    let alerts = 0;
+    let fired = false;
+    const storeB: Store = {
+      ...tracked(store),
+      async compareAndSet(key, expected, next, ttl) {
+        if (!fired && key === LEDGER_KEY) {
+          fired = true;
+          firstResult = await resumeFree({ ...a, store: tracked(a.store) }, { reconciledBalanceUsd: 10, note: "A" });
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          await judgeOverrun(a, async () => void alerts++);
+        }
+        return store.compareAndSet(key, expected, next, ttl);
+      },
+    };
+    const b = await resumeFree({ ...deps, store: storeB }, { reconciledBalanceUsd: 10, note: "B" });
+    expect(fired).toBe(true);
+    expect(firstResult).toMatchObject({ ok: true });
+    expect(alerts).toBe(1);
+    expect(b).toMatchObject({ ok: false, reason: "hold_changed" });
+    const newer = await createHold(deps).read();
+    expect(newer).not.toBeNull();
+    expect(newer?.at).not.toBe(first?.at);
+    expect(await createHold(deps).isHeld()).toBe(true);
   });
 });

@@ -51,15 +51,15 @@ The Devpost submission is an outward-facing action that needs Juan's authorizati
 
 ## Free-path overrun recovery
 
-An overrun hold closes the public free pool until Juan reconciles the bound, prices, provider balance and outstanding reservations. Resuming production is an authorized owner action. Run it from a clean checkout with the production store and the deployment's ledger amounts in the environment (all six are required; nothing falls back to local defaults):
+An overrun hold closes the public free pool until Juan reconciles the bound, prices, provider balance and outstanding reservations. Resuming production is an authorized owner action. Run it from a clean checkout with the production store, the credit, the judge reserve, the prices and the service end in the environment (all seven are required):
 
 ```sh
 SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... FREE_CREDIT_USD=... JUDGE_RESERVE_USD=... \
-FREE_PRICE_IN_PER_M=... FREE_PRICE_OUT_PER_M=... \
+FREE_PRICE_IN_PER_M=... FREE_PRICE_OUT_PER_M=... FREE_SERVICE_END=... \
 pnpm ops:resume-free --reconciled-balance <usd> --note <text>
 ```
 
-The command prints the target store's origin and the ledger, hold and bound before any change, writes an `inference:audit:<time>` record, then clears the hold. Exit status: 0 resumed; 1 refused (missing balance or note, balance below the ledger's remaining credit, no hold, or a new overrun recorded while it ran, which keeps the hold); 2 store or ledger configuration missing; 3 store error. After a refusal for a new overrun, inspect the new state and reconcile again. `tests/db/resume-free.test.ts` runs the executable against the disposable gate stack only.
+The other free-path settings (per-request fee, bound and limits) keep their `src/lib/config.ts` defaults when unset. The command prints every effective setting and marks each default; set any value that production overrides, then rerun. It prints the target store's origin and the ledger, hold and bound before any change, writes an `inference:audit:<time>` record, then clears the hold. A refusal or a store failure adds a `resume-free-refused` or `resume-free-failed` audit record. Exit status: 0 resumed; 1 refused (missing balance or note, balance below the ledger's remaining credit, no hold, or a new overrun recorded while it ran, which keeps the hold); 2 store or ledger configuration missing; 3 store error. After a refusal for a new overrun, inspect the new state and reconcile again. `tests/db/resume-free.test.ts` runs the executable against the disposable gate stack only.
 
 ## Evidence and rollback
 
