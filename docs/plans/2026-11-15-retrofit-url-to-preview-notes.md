@@ -198,4 +198,3 @@ Implementation notes for the plan `2026-11-15-retrofit-url-to-preview.md` and it
   - Test-quality items: the disconnect test requires 502; the capacity test expects one exact status per case. The overrun alert text names the required environment without amounts.
 - Open S4 items (not fixed; owner review): a Crawl-delay longer than one crawl fails as generic `crawl_error`, because a specific text needs a new failure code in the visitor and agent contracts; `Store.claimNext` is no longer used by production code; each redirect hop reads the robots record twice; the private-path keyword list also skips `/bag`, `/profile` and `/register` pages (pre-existing).
 - Required tests: `tools/release/required-tests.json` now lists 874 tests (the stub test removed, the repair tests added, five titles renamed in review updated). `tools/release/required-production-cases.json` has the identity and delegation cases.
-
