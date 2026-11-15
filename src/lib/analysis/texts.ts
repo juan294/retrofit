@@ -5,8 +5,8 @@
  * Agent texts are the score tool contract's Surface 1 table, verbatim
  * (docs/research/score-tool-contract.md "Failures").
  *
- * Times in visitor texts are written HH:MM in UTC; the response also carries
- * `retryAt` (ISO 8601) so a page can show local time.
+ * Times in visitor texts are written "HH:MM UTC"; every response with such a
+ * text also carries `retryAt` (ISO 8601) so a page can show local time.
  */
 
 /** HH:MM in UTC. */
@@ -19,8 +19,8 @@ const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", y
 export const visitorTexts = {
   stale: "This analysis took too long. Try again.",
   robotsBlocked: "This site asks automated tools not to read it. Retrofit stopped and read nothing else.",
-  robotsUnavailable: (retryAt: Date) => `Retrofit could not read this site's robots rules, so it stopped. Try again after ${hhmmUtc(retryAt)}.`,
-  clientLimit: (limit: number, retryAt: Date) => `You reached the limit of ${limit} analyses per hour. Try again at ${hhmmUtc(retryAt)}.`,
+  robotsUnavailable: (retryAt: Date) => `Retrofit could not read this site's robots rules, so it stopped. Try again after ${hhmmUtc(retryAt)} UTC.`,
+  clientLimit: (limit: number, retryAt: Date) => `You reached the limit of ${limit} analyses per hour. Try again at ${hhmmUtc(retryAt)} UTC.`,
   queued: "Retrofit is busy. Your analysis starts in a moment.",
   dailyLimit: "Retrofit reached today's analysis limit. Try again tomorrow.",
   queueExpired: "Retrofit is too busy right now. Try again in a few minutes.",
@@ -31,6 +31,8 @@ export const visitorTexts = {
   unavailable: "Retrofit is having trouble. Try again in a few minutes.",
   // Not in the plan table: the same-origin precondition of POST /api/analyze.
   crossOrigin: "Open Retrofit at its own address and paste the website address there.",
+  // Not in the plan table: a POST /api/analyze body over 8 KB.
+  tooLarge: "Send only the website address.",
 } as const;
 
 /** Visitor text for a failure code from a crawl job or the analysis routes. Unknown codes get the generic text. */

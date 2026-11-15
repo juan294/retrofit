@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { CRAWL_QUEUE, dispatchQueued, slotKey } from "@/lib/analysis/capacity";
+import { CRAWL_QUEUE, dispatchQueued, MAX_DURATION_S, slotKey, startCrawlJob } from "@/lib/analysis/capacity";
 import { getAnalysis } from "@/lib/analysis/record";
 import { startAnalysis } from "@/lib/analysis/run";
 import { handleAnalysisStatus } from "@/lib/api/status";
@@ -210,7 +210,7 @@ describe("capacity", () => {
     const { jobId } = await startOrJoinCrawl(d, "https://held.example.com");
     await d.store.acquireLease(leaseKey(jobId), 60);
     await d.store.enqueue(CRAWL_QUEUE, jobId, 120);
-    expect(await dispatchQueued(d)).toBe(1);
+    expect(await dispatchQueued(d, { startedAt: d.clock() })).toBe(1);
     await d.settle();
     expect(await d.store.acquireLease(slotKey(0), 1)).not.toBeNull();
     expect(d.errors).toEqual([]);
@@ -219,12 +219,87 @@ describe("capacity", () => {
   // Fails if dispatch takes a slot when the queue is empty, or does nothing when all slots are taken.
   it("returns 0 and keeps every slot free when the queue is empty", async () => {
     const d = testDeps({ env: { CRAWL_MAX_CONCURRENT: "2" } });
-    expect(await dispatchQueued(d)).toBe(0);
+    expect(await dispatchQueued(d, { startedAt: d.clock() })).toBe(0);
     expect(await d.store.acquireLease(slotKey(0), 1)).not.toBeNull();
     expect(await d.store.acquireLease(slotKey(1), 1)).not.toBeNull();
     await d.store.enqueue(CRAWL_QUEUE, "some-job", 120);
-    expect(await dispatchQueued(d)).toBe(0);
+    expect(await dispatchQueued(d, { startedAt: d.clock() })).toBe(0);
     expect(await d.store.claimNext(CRAWL_QUEUE)).toBe("some-job");
   });
 });
 
+describe("capacity review fixes", () => {
+  // P3-R1. Fails if a finishing worker starts the next queued job when its own invocation has too
+  // little of MAX_DURATION_S left for a full crawl (the job would be killed mid-crawl), or if the
+  // next request does not start the job left queued.
+  it("leaves the next job queued when the finishing worker's invocation is short of time, and the next request starts it", async () => {
+    expect(MAX_DURATION_S).toBe(60);
+    const server = await serveGatedSites({ "first.fixture.test": bakery, "second.fixture.test": bakery }, ["first.fixture.test"]);
+    close = () => server.close();
+    let offset = 0;
+    const d = testDeps({ clock: () => Date.now() + offset, env: { CRAWL_MAX_CONCURRENT: "1" } });
+    const first = server.origin("first.fixture.test");
+    const second = server.origin("second.fixture.test");
+    expect((await handleAnalyze(analyzeRequest({ url: first }), d)).status).toBe(200);
+    await waitFor(() => server.gate("first.fixture.test").waiting === 1, "first home page held");
+    const res = await handleAnalyze(analyzeRequest({ url: second }), d);
+    const { id } = (await res.json()) as { id: string };
+    expect((await jobFor(d, second))?.status).toBe("queued");
+
+    // The first crawl ends 46 s into its invocation: 46 + 45 (crawl budget) + 10 > 60.
+    offset += 46_000;
+    server.gate("first.fixture.test").open();
+    await d.settle();
+    expect((await jobFor(d, first))?.status).toBe("ready");
+    expect((await jobFor(d, second))?.status).toBe("queued");
+    expect(server.requests.some((r) => r.host === "second.fixture.test")).toBe(false);
+
+    // A new request is a new invocation with its full time, so it dispatches.
+    await handleAnalysisStatus(statusRequest(id, { cookie: cookieFrom(res) }), d, id);
+    await d.settle();
+    expect((await jobFor(d, second))?.status).toBe("ready");
+    expect(d.errors).toEqual([]);
+  });
+
+  // P3-R5. Fails if the slot lease is not renewed while the worker runs: with a 1 s lease, a crawl held
+  // for 1.6 s would lose its slot and a second crawl could start beyond CRAWL_MAX_CONCURRENT.
+  it("renews the slot lease while the worker runs and frees it in the end", async () => {
+    const server = await serveGatedSites({ "slow.fixture.test": bakery }, ["slow.fixture.test"]);
+    close = () => server.close();
+    const d = testDeps({ env: { CRAWL_MAX_CONCURRENT: "1", CRAWL_LEASE_TTL_S: "1", CRAWL_BUDGET_MS: "900" } });
+    expect((await handleAnalyze(analyzeRequest({ url: server.origin("slow.fixture.test") }), d)).status).toBe(200);
+    await waitFor(() => server.gate("slow.fixture.test").waiting === 1, "home page held");
+    await new Promise((r) => setTimeout(r, 1600));
+    expect(await d.store.acquireLease(slotKey(0), 1)).toBeNull();
+    server.gate("slow.fixture.test").open();
+    await d.settle();
+    expect(await d.store.acquireLease(slotKey(0), 1)).not.toBeNull();
+    expect(d.errors).toEqual([]);
+  });
+
+  // P3-R8. Fails if an analyze or score request that returns early (403, 400, 429) does not dispatch queued work.
+  it.each([
+    ["analyze 403", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { fetchSite: null, origin: "https://evil.example" }), d)],
+    ["analyze 400", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "ftp://x.example.com" }), d)],
+    ["analyze 429", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { ip: "203.0.113.200" }), d)],
+    ["score 400", (d: TestDeps) => handleScore(scoreRequest("?url="), d)],
+    ["score 429", (d: TestDeps) => handleScore(scoreRequest("?url=https%3A%2F%2Fx.example.com", { ip: "203.0.113.200" }), d)],
+  ])("dispatches a queued job on an early return (%s)", async (_name, send) => {
+    const d = testDeps({ env: { ANALYSES_PER_CLIENT_HOUR: "1" } });
+    const slots = await holdAllSlots(d);
+    const queued = await startCrawlJob(d, "https://queued.example.com");
+    if (!queued.ok) throw new Error("expected a queued job");
+    // Use up this client's window, so the 429 cases return early.
+    expect((await handleAnalyze(analyzeRequest({ url: "https://y.example.com" }, { ip: "203.0.113.200" }), d)).status).toBe(200);
+    for (const [n, t] of slots.entries()) await d.store.releaseLease(slotKey(n), t);
+    await d.settle();
+    // Releasing slots dispatches nothing by itself.
+    expect((await getJob(d.store, queued.jobId))?.status).toBe("queued");
+
+    const res = await send(d);
+    expect([400, 403, 429]).toContain(res.status);
+    await d.settle();
+    // The crawl ran (it fails at the guard: every test name resolves to a private address).
+    expect((await getJob(d.store, queued.jobId))?.status).toBe("failed");
+  });
+});

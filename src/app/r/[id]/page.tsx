@@ -26,7 +26,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
       <p className="mt-2" style={{ color: "var(--color-muted)" }}>
         {analysis.inputOrigin}
       </p>
-      <AnalysisView id={id} />
+      <AnalysisView id={id} inputOrigin={analysis.inputOrigin} />
     </main>
   );
 }

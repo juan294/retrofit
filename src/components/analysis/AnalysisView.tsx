@@ -1,6 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { localizeRetry } from "./retry-time";
 import { FINAL_STATUSES, pollDelay } from "./poll";
 
 interface Failure {
@@ -45,55 +47,75 @@ function stepText(s: Status): string {
 
 const RESULT_TEXT = { pass: "pass", fail: "fail", "not-checked": "not checked" } as const;
 
-export function AnalysisView({ id }: { id: string }) {
+export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: string }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [report, setReport] = useState<Report | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Failure | null>(null);
   const started = useRef(Date.now());
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let stopped = false;
+    let done = false;
+    let inFlight = false;
+    const schedule = () => {
+      clearTimeout(timer);
+      if (!done) timer = setTimeout(tick, pollDelay(Date.now() - started.current));
+    };
+    const finish = () => {
+      done = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
     async function tick() {
-      if (stopped) return;
+      if (done || inFlight) return;
       if (document.visibilityState === "hidden") return; // resumed by visibilitychange
+      inFlight = true;
       try {
         const res = await fetch(`/api/analyze/${id}`, { credentials: "same-origin", cache: "no-store" });
         const body = await res.json();
         if (!res.ok) {
-          setError(body.message ?? "Retrofit is having trouble. Try again in a few minutes.");
+          setError({ code: body.error ?? "unavailable", message: body.message ?? "Retrofit is having trouble. Try again in a few minutes.", retryAt: body.retryAt });
+          finish();
           return;
         }
         setStatus(body);
         if (body.scoreReady) {
           const full = await fetch(`/api/analyze/${id}?include=result`, { credentials: "same-origin", cache: "no-store" });
-          if (full.ok) setReport((await full.json()).report);
+          const fullBody = full.ok ? await full.json() : null;
+          if (fullBody?.report) {
+            setReport(fullBody.report);
+            finish();
+            return;
+          }
+          // The result read failed: keep polling.
+        } else if (FINAL_STATUSES.has(body.status)) {
+          finish();
+          return;
         }
-        if (FINAL_STATUSES.has(body.status)) return;
       } catch {
         // Network hiccup: keep polling.
+      } finally {
+        inFlight = false;
       }
-      timer = setTimeout(tick, pollDelay(Date.now() - started.current));
+      schedule();
     }
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && !stopped) {
+    function onVisible() {
+      if (document.visibilityState === "visible" && !done) {
         clearTimeout(timer);
         void tick();
       }
-    };
+    }
     document.addEventListener("visibilitychange", onVisible);
     void tick();
     return () => {
-      stopped = true;
-      clearTimeout(timer);
-      document.removeEventListener("visibilitychange", onVisible);
+      finish();
     };
   }, [id]);
 
-  if (error) return <Notice text={error} />;
+  if (error) return <Notice failure={error} inputOrigin={inputOrigin} />;
   if (!status) return <p className="mt-8">Loading…</p>;
   if (status.status === "failed" || status.status === "expired") {
-    return <Notice text={status.failure?.message ?? "Retrofit could not read this site."} />;
+    return <Notice failure={status.failure ?? { code: "crawl_error", message: "Retrofit could not read this site." }} inputOrigin={inputOrigin} />;
   }
   if (status.status !== "ready" || !report) {
     return (
@@ -146,13 +168,45 @@ export function AnalysisView({ id }: { id: string }) {
   );
 }
 
-function Notice({ text }: { text: string }) {
+/** Failures that a new analysis of the same address can fix. */
+const RETRYABLE = new Set(["stale", "queue_expired", "crawl_error", "robots_unavailable", "unavailable", "expired"]);
+
+function Notice({ failure, inputOrigin }: { failure: Failure; inputOrigin: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [retryError, setRetryError] = useState<Failure | null>(null);
+  async function retry() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ url: inputOrigin }),
+      });
+      const body = await res.json().catch(() => null);
+      if (res.ok && body?.id) {
+        router.push(`/r/${body.id}`);
+        return;
+      }
+      setRetryError({ code: body?.error ?? "unavailable", message: body?.message ?? "Retrofit is having trouble. Try again in a few minutes.", retryAt: body?.retryAt });
+    } catch {
+      setRetryError({ code: "unavailable", message: "Retrofit is having trouble. Try again in a few minutes." });
+    }
+    setBusy(false);
+  }
+  const shown = retryError ?? failure;
   return (
     <div className="mt-8" role="alert">
-      <p>{text}</p>
-      <p className="mt-4">
-        <a href="/" className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
-          Analyze a site
+      <p>{localizeRetry(shown.message, shown.retryAt)}</p>
+      <p className="mt-4 flex gap-3">
+        {RETRYABLE.has(failure.code) ? (
+          <button type="button" onClick={retry} disabled={busy} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
+            {busy ? "Starting…" : failure.code === "expired" ? "Analyze again" : "Retry"}
+          </button>
+        ) : null}
+        <a href="/" className="rounded border px-4 py-2" style={{ borderColor: "var(--color-border)" }}>
+          Analyze another site
         </a>
       </p>
     </div>

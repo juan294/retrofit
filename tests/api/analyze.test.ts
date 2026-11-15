@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getAnalysis } from "@/lib/analysis/record";
 import { handleAnalysisStatus } from "@/lib/api/status";
 import { handleAnalyze } from "@/lib/api/analyze";
-import { getJob, updateJob, type CrawlJob } from "@/lib/crawl/jobs";
+import { getJob, leaseKey, startOrJoinCrawl, updateJob, type CrawlJob } from "@/lib/crawl/jobs";
 import { bakery } from "../fixtures/sites";
 import { serveSites } from "../helpers/sites";
 import { analyzeRequest, cookieFrom, fakeClock, holdAllSlots, PUBLIC_ORIGIN, statusRequest, storeDump, testDeps } from "../helpers/server-deps";
@@ -88,7 +88,7 @@ describe("POST /api/analyze", () => {
     expect(res.status).toBe(429);
     expect(await res.json()).toEqual({
       error: "client_limit",
-      message: "You reached the limit of 2 analyses per hour. Try again at 11:00.",
+      message: "You reached the limit of 2 analyses per hour. Try again at 11:00 UTC.",
       retryAt: "2026-11-15T11:00:00.000Z",
     });
     expect((await handleAnalyze(analyzeRequest({ url: "https://b.example.com" }, { ip: "203.0.113.78" }), d)).status).toBe(200);
@@ -176,7 +176,7 @@ describe("GET /api/analyze/[id]", () => {
       step: "failed",
       failure: {
         code: "robots_unavailable",
-        message: "Retrofit could not read this site's robots rules, so it stopped. Try again after 11:20.",
+        message: "Retrofit could not read this site's robots rules, so it stopped. Try again after 11:20 UTC.",
         retryAt: "2026-11-15T11:20:00.000Z",
       },
       scoreReady: false,
@@ -201,5 +201,83 @@ describe("GET /api/analyze/[id]", () => {
     expect(body.report.scoreVersion).toBe("score/v1");
     const job = (await getJob(d.store, (await getAnalysis(d.store, id))!.jobId)) as CrawlJob;
     expect(body.report.cachedUntil).toBe(new Date(job.updatedAt + d.config.crawlCacheTtlS * 1000).toISOString());
+  });
+});
+
+describe("review fixes", () => {
+  // P3-R4a. Fails if the status read follows a join in the same request (3 reads), or does not move
+  // the analysis to the joined job so the next read is 2 reads.
+  it("reports a joined job as running without following it, then reads the joined job next time", async () => {
+    let gets: string[] = [];
+    const d = testDeps({ instrument: (op, key) => void (op === "get" && gets.push(key.split(":")[0] as string)) });
+    await holdAllSlots(d);
+    const res = await handleAnalyze(analyzeRequest({ url: "https://converge-a.example.com" }), d);
+    const cookie = cookieFrom(res);
+    const { id } = (await res.json()) as { id: string };
+    const joinerId = (await getAnalysis(d.store, id))!.jobId;
+    const owner = await startOrJoinCrawl(d, "https://dest.example.com");
+    const ownerJob = (await getJob(d.store, owner.jobId)) as CrawlJob;
+    await updateJob(d, ownerJob, { status: "crawling", step: "page 2", leaseExpiresAt: d.clock() + 60_000 });
+    await updateJob(d, (await getJob(d.store, joinerId)) as CrawlJob, { status: "joined", step: "joined", joinedTo: owner.jobId });
+
+    gets = [];
+    const first = await handleAnalysisStatus(statusRequest(id, { cookie }), d, id);
+    expect(await first.json()).toEqual({ status: "crawling", step: "joined", scoreReady: false });
+    expect(gets).toEqual(["analysis", "crawl-job"]);
+    expect((await getAnalysis(d.store, id))?.jobId).toBe(owner.jobId);
+
+    gets = [];
+    const second = await handleAnalysisStatus(statusRequest(id, { cookie }), d, id);
+    expect(await second.json()).toEqual({ status: "crawling", step: "page 2", scoreReady: false });
+    expect(gets).toEqual(["analysis", "crawl-job"]);
+  });
+
+  // P3-R4b. Fails if a status read that loses the stale-marking race re-reads the job (jobs.ts).
+  it("does not re-read the job after losing the race to mark it stale", async () => {
+    const fc = fakeClock();
+    let gets = 0;
+    const d = testDeps({ clock: fc.clock, instrument: (op, key) => void (op === "get" && key.startsWith("crawl-job:") && gets++) });
+    await holdAllSlots(d);
+    const res = await handleAnalyze(analyzeRequest({ url: "https://slow.example.com" }), d);
+    const cookie = cookieFrom(res);
+    const { id } = (await res.json()) as { id: string };
+    const jobId = (await getAnalysis(d.store, id))!.jobId;
+    await d.store.acquireLease(leaseKey(jobId), 60);
+    await updateJob(d, (await getJob(d.store, jobId)) as CrawlJob, { status: "crawling", step: "home", leaseExpiresAt: fc.now() + 60_000 });
+    fc.advance(91_000);
+    gets = 0;
+    // Two readers at once: both see the stale job, one wins the compare-and-set.
+    const bodies = await Promise.all([0, 1].map(async () => (await handleAnalysisStatus(statusRequest(id, { cookie }), d, id)).json()));
+    for (const b of bodies) expect(b).toEqual({ status: "failed", step: "failed", failure: { code: "stale", message: "This analysis took too long. Try again." }, scoreReady: false });
+    expect(gets).toBe(2);
+    expect((await getJob(d.store, jobId))?.failure?.code).toBe("stale");
+  });
+
+  // Minor. Fails if a body over 8 KB is read whole or accepted, with or without an honest Content-Length.
+  it("refuses a body over 8 KB with 413", async () => {
+    const d = testDeps();
+    const big = JSON.stringify({ url: `https://example.com/${"a".repeat(9000)}` });
+    const undeclared = analyzeRequest(big);
+    const honest = analyzeRequest(big);
+    honest.headers.set("content-length", String(big.length));
+    for (const req of [undeclared, honest]) {
+      const res = await handleAnalyze(req, d);
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual({ error: "too_large", message: "Send only the website address." });
+    }
+    const lying = analyzeRequest(big);
+    lying.headers.set("content-length", "10");
+    expect((await handleAnalyze(lying, d)).status).toBe(413);
+  });
+
+  // R2. Fails if a response with an HH:MM text lacks retryAt, or the text does not say UTC.
+  it("sends retryAt with every HH:MM text", async () => {
+    const fc = fakeClock(Date.parse("2026-11-15T10:20:00.000Z"));
+    const d = testDeps({ clock: fc.clock, env: { ANALYSES_PER_CLIENT_HOUR: "1" } });
+    await holdAllSlots(d);
+    await handleAnalyze(analyzeRequest({ url: "https://a.example.com" }), d);
+    const body = (await (await handleAnalyze(analyzeRequest({ url: "https://b.example.com" }), d)).json()) as { message: string; retryAt?: string };
+    expect(body.message).toMatch(/\d\d:\d\d UTC\.$/);
+    expect(body.retryAt).toBe("2026-11-15T11:00:00.000Z");
   });
 });

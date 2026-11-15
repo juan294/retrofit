@@ -46,7 +46,7 @@ describe("startAnalysis", () => {
       ok: false,
       status: 429,
       code: "client_limit",
-      message: "You reached the limit of 2 analyses per hour. Try again at 11:00.",
+      message: "You reached the limit of 2 analyses per hour. Try again at 11:00 UTC.",
       retryAt: "2026-11-15T11:00:00.000Z",
     });
     expect((await start("three.example.com", "client-b")).ok).toBe(true);
@@ -97,7 +97,7 @@ describe("visitor texts", () => {
     const at = new Date("2026-11-15T14:05:00.000Z");
     expect(visitorFailure("stale")).toBe("This analysis took too long. Try again.");
     expect(visitorFailure("robots_blocked")).toBe("This site asks automated tools not to read it. Retrofit stopped and read nothing else.");
-    expect(visitorFailure("robots_unavailable", { retryAt: at })).toBe("Retrofit could not read this site's robots rules, so it stopped. Try again after 14:05.");
+    expect(visitorFailure("robots_unavailable", { retryAt: at })).toBe("Retrofit could not read this site's robots rules, so it stopped. Try again after 14:05 UTC.");
     expect(visitorFailure("not_public")).toBe("This address is not a public website.");
     expect(visitorFailure("queue_expired")).toBe("Retrofit is too busy right now. Try again in a few minutes.");
     expect(visitorFailure("daily_limit")).toBe("Retrofit reached today's analysis limit. Try again tomorrow.");
@@ -105,7 +105,7 @@ describe("visitor texts", () => {
     expect(visitorFailure("something_new")).toBe("Retrofit is having trouble. Try again in a few minutes.");
     expect(visitorTexts.queued).toBe("Retrofit is busy. Your analysis starts in a moment.");
     expect(visitorTexts.otherBrowser).toBe("This preview belongs to another browser. Analyze the site again to get your own.");
-    expect(visitorTexts.clientLimit(20, at)).toBe("You reached the limit of 20 analyses per hour. Try again at 14:05.");
+    expect(visitorTexts.clientLimit(20, at)).toBe("You reached the limit of 20 analyses per hour. Try again at 14:05 UTC.");
     expect(visitorTexts.expired(new Date("2026-11-22T10:20:00.000Z"))).toBe("This preview expired on 22 November 2026. Analyze the site again.");
   });
 

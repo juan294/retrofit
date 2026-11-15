@@ -40,7 +40,7 @@ function compact(view: AnalysisView): StatusBody {
  * else null.
  */
 export async function handleAnalysisStatus(request: Request, deps: ServerDeps, id: string, dispatchDeps: ServerDeps = deps): Promise<Response> {
-  dispatchDeps.waitUntil(dispatchQueued(dispatchDeps));
+  dispatchDeps.waitUntil(dispatchQueued(dispatchDeps, { startedAt: dispatchDeps.clock() }));
   const token = readVisitorToken(request);
   if (!token || !isAnalysisId(id)) return notFound();
   try {

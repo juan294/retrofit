@@ -89,6 +89,10 @@ export function handleScoreMethodNotAllowed(): Response {
 }
 
 export async function handleScore(request: Request, deps: ServerDeps): Promise<Response> {
+  const invocation = { startedAt: deps.clock() };
+  // Every request dispatches queued work, including the early returns below.
+  deps.waitUntil(dispatchQueued(deps, invocation));
+
   // Rule 1: method.
   if (request.method === "OPTIONS") return handleScoreOptions();
   if (request.method !== "GET") return handleScoreMethodNotAllowed();
@@ -123,7 +127,7 @@ export async function handleScore(request: Request, deps: ServerDeps): Promise<R
     if (!crawl.ok) {
       return error("daily_limit", agentTexts.daily_limit, { retryAfterSeconds: secondsUntil(crawl.retryAt, deps.clock()), retryAt: new Date(crawl.retryAt) });
     }
-    await dispatchQueued(deps);
+    await dispatchQueued(deps, invocation);
 
     // Rules 8 and 9: wait for a final state, then map it.
     const job = await waitForJob(deps, crawl.jobId);

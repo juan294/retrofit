@@ -44,7 +44,13 @@ describe("loadConfig", () => {
   });
 
   it("enforces CRAWL_BUDGET_MS < CRAWL_LEASE_TTL_S * 1000", () => {
-    expect(() => loadConfig({ CRAWL_BUDGET_MS: "60000", SESSION_SECRET: secret })).toThrow(/CRAWL_BUDGET_MS/);
+    expect(() => loadConfig({ CRAWL_BUDGET_MS: "45000", CRAWL_LEASE_TTL_S: "40", SESSION_SECRET: secret })).toThrow(/CRAWL_LEASE_TTL_S \* 1000/);
+  });
+
+  // Fails if a budget that leaves no time to start a crawl inside one 60 s invocation is accepted.
+  it("refuses CRAWL_BUDGET_MS above 50000", () => {
+    expect(() => loadConfig({ CRAWL_BUDGET_MS: "50001", SESSION_SECRET: secret })).toThrow(/CRAWL_BUDGET_MS/);
+    expect(loadConfig({ CRAWL_BUDGET_MS: "50000", SESSION_SECRET: secret }).crawlBudgetMs).toBe(50000);
   });
 
   // Fails if Vercel detection or its required variables are dropped.

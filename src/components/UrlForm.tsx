@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { localizeRetry } from "./analysis/retry-time";
 
 export function UrlForm() {
   const router = useRouter();
@@ -24,12 +25,12 @@ export function UrlForm() {
         credentials: "same-origin",
         body: JSON.stringify({ url }),
       });
-      const body = (await res.json().catch(() => null)) as { id?: string; message?: string } | null;
+      const body = (await res.json().catch(() => null)) as { id?: string; message?: string; retryAt?: string } | null;
       if (res.ok && body?.id) {
         router.push(`/r/${body.id}`);
         return;
       }
-      setError(body?.message ?? "Retrofit is having trouble. Try again in a few minutes.");
+      setError(body?.message ? localizeRetry(body.message, body.retryAt) : "Retrofit is having trouble. Try again in a few minutes.");
     } catch {
       setError("Retrofit is having trouble. Try again in a few minutes.");
     }

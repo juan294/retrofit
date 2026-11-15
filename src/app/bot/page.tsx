@@ -23,7 +23,7 @@ export default function BotPage() {
       <ul className="mt-2 list-disc pl-6">
         <li>robots.txt, before anything else, on every host it contacts.</li>
         <li>The home page and at most 11 more pages linked from it on the same host.</li>
-        <li>/agent-manifest.json, /llms.txt and /sitemap.xml.</li>
+        <li>/agent-manifest.json, /llms.txt and /sitemap.xml, and the agent network file your manifest declares, which can be on another host.</li>
         <li>It never reads sign-in, account, cart, checkout or administration pages, and never submits a form.</li>
       </ul>
       <h2 className="mt-8 text-xl font-semibold">Its limits</h2>

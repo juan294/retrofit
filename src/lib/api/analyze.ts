@@ -1,10 +1,11 @@
+import { dispatchQueued } from "@/lib/analysis/capacity";
 import { isSameOrigin, startAnalysis } from "@/lib/analysis/run";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { resolveVisitor } from "@/lib/analysis/visitor";
 import { clientIdFromRequest } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
 
-const MAX_BODY_BYTES = 4096;
+export const MAX_BODY_BYTES = 8192;
 
 function json(status: number, body: unknown, setCookie: string | null = null): Response {
   const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
@@ -12,9 +13,30 @@ function json(status: number, body: unknown, setCookie: string | null = null): R
   return new Response(JSON.stringify(body), { status, headers });
 }
 
-async function readUrl(request: Request): Promise<string | null> {
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return null;
+const tooLarge = () => json(413, { error: "too_large", message: visitorTexts.tooLarge });
+
+/** Reads at most MAX_BODY_BYTES; "too large" past that, whatever Content-Length said. */
+async function readBody(request: Request): Promise<string | "too large"> {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return "too large";
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_BODY_BYTES) {
+      await reader.cancel().catch(() => {});
+      return "too large";
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function urlFrom(text: string): string | null {
   try {
     const body = JSON.parse(text) as { url?: unknown } | null;
     return typeof body?.url === "string" ? body.url : null;
@@ -25,17 +47,22 @@ async function readUrl(request: Request): Promise<string | null> {
 
 /**
  * POST /api/analyze `{url}` -> 200 `{id}`. Same-origin only (403 otherwise).
- * Sets the visitor cookie when absent. Errors: 400 not_public, 429 client_limit
- * or daily_limit (`{error, message, retryAt?}`), 503 unavailable.
+ * Sets the visitor cookie when absent. Errors: 400 not_public, 413 too_large,
+ * 429 client_limit or daily_limit (`{error, message, retryAt?}`), 503 unavailable.
+ * Every request, including the early returns, dispatches queued work.
  */
 export async function handleAnalyze(request: Request, deps: ServerDeps): Promise<Response> {
+  const invocation = { startedAt: deps.clock() };
+  deps.waitUntil(dispatchQueued(deps, invocation));
   if (!isSameOrigin(request, deps.config)) return json(403, { error: "cross_origin", message: visitorTexts.crossOrigin });
   const visitor = resolveVisitor(request, deps.config);
   try {
-    const rawUrl = await readUrl(request);
+    const text = await readBody(request);
+    if (text === "too large") return tooLarge();
+    const rawUrl = urlFrom(text);
     if (rawUrl === null) return json(400, { error: "not_public", message: visitorTexts.notPublic }, visitor.setCookie);
     const clientId = clientIdFromRequest(request, deps.config, deps.clock());
-    const outcome = await startAnalysis(deps, { rawUrl, ownerHash: visitor.hash, clientId });
+    const outcome = await startAnalysis(deps, { rawUrl, ownerHash: visitor.hash, clientId, invocation });
     if (outcome.ok) return json(200, { id: outcome.id }, visitor.setCookie);
     const { status, code, message, retryAt } = outcome;
     return json(status, { error: code, message, ...(retryAt ? { retryAt } : {}) }, visitor.setCookie);

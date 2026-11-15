@@ -56,19 +56,42 @@ export async function startCrawlJob(deps: JobDeps, inputOrigin: string): Promise
   return { ok: true, jobId, created };
 }
 
+/** The routes' `maxDuration` (seconds). Route files repeat the literal 60, which Next.js needs statically. */
+export const MAX_DURATION_S = 60;
+/** Time kept free after a crawl's budget, for the final writes and the response. */
+export const START_MARGIN_MS = 10_000;
+
+/** The function invocation that runs a dispatch; background work started in it ends with it. */
+export interface Invocation {
+  /** When the request that started this invocation arrived (deps.clock()). */
+  readonly startedAt: number;
+}
+
 /**
- * Starts queued jobs while slots and queued jobs remain (phase-3.md
- * `dispatchQueued`). Called at the end of every worker run and on every
- * analyze, status and score request. Returns the number of workers emitted.
+ * True when this invocation has time left for a whole crawl: elapsed time plus
+ * CRAWL_BUDGET_MS plus START_MARGIN_MS fits in MAX_DURATION_S. A worker that
+ * finishes late in its invocation therefore leaves the next job queued for the
+ * next request's own dispatch.
+ */
+export function hasTimeForCrawl(deps: Pick<ServerDeps, "config" | "clock">, invocation: Invocation): boolean {
+  return deps.clock() - invocation.startedAt + deps.config.crawlBudgetMs + START_MARGIN_MS <= MAX_DURATION_S * 1000;
+}
+
+/**
+ * Starts queued jobs while slots, queued jobs and invocation time remain
+ * (phase-3.md `dispatchQueued`). Called at the end of every worker run (with
+ * that worker's invocation) and on every analyze, status and score request.
+ * Returns the number of workers emitted.
  *
  * Each emitted worker first checks its job: a job that is no longer queued or
  * whose queue time passed is skipped, its slot released and dispatch repeated
  * (the pseudo-code's "fail" line). The check runs inside the worker task, so a
  * request that dispatches makes no extra job read of its own.
  */
-export async function dispatchQueued(deps: ServerDeps): Promise<number> {
+export async function dispatchQueued(deps: ServerDeps, invocation: Invocation): Promise<number> {
   let started = 0;
   for (;;) {
+    if (!hasTimeForCrawl(deps, invocation)) return started;
     const slot = await acquireSlot(deps);
     if (!slot) return started;
     let jobId: string | null;
@@ -82,30 +105,37 @@ export async function dispatchQueued(deps: ServerDeps): Promise<number> {
       await deps.store.releaseLease(slot.key, slot.token);
       return started;
     }
-    deps.waitUntil(runInSlot(deps, jobId, slot));
+    deps.waitUntil(runInSlot(deps, jobId, slot, invocation));
     started++;
   }
 }
 
 /**
- * Runs one claimed job in its slot. The slot is released when the worker
- * finishes, whatever the outcome (including `busy` and `skipped`), and the next
- * queued job is dispatched. An unexpected error rejects after that, so the
- * runtime's waitUntil wrapper reports it.
+ * Runs one claimed job in its slot. The slot lease is renewed every third of
+ * its TTL while the worker runs, and released when the worker finishes,
+ * whatever the outcome (including `busy` and `skipped`); then the next queued
+ * job is dispatched if this invocation has time for it. An unexpected error
+ * rejects after that, so the runtime's waitUntil wrapper reports it.
  */
-async function runInSlot(deps: ServerDeps, jobId: string, slot: Slot): Promise<WorkerOutcome> {
+async function runInSlot(deps: ServerDeps, jobId: string, slot: Slot, invocation: Invocation): Promise<WorkerOutcome> {
+  const ttl = deps.config.crawlLeaseTtlS;
+  const heartbeat = setInterval(() => {
+    deps.store.renewLease(slot.key, slot.token, ttl).catch(() => false);
+  }, Math.max(1, Math.floor((ttl * 1000) / 3)));
   let finished = false;
   const onFinish = async () => {
     if (finished) return;
     finished = true;
+    clearInterval(heartbeat);
     await deps.store.releaseLease(slot.key, slot.token).catch(() => false);
-    await dispatchQueued(deps).catch(() => 0);
+    await dispatchQueued(deps, invocation).catch(() => 0);
   };
   try {
     const job = await getJob(deps.store, jobId);
     if (!job || job.status !== "queued" || isQueueExpired(job, deps.config, deps.clock())) return "skipped";
     return await runCrawl(jobId, { store: deps.store, config: deps.config, clock: deps.clock, fetch: deps.fetch, score: deps.score, onFinish });
   } finally {
+    clearInterval(heartbeat);
     await onFinish();
   }
 }

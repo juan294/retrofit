@@ -93,10 +93,12 @@ function failureView(f: CrawlFailure | undefined): VisitorFailure {
 }
 
 /**
- * The visitor's view of an analysis. Reads the job at most once (through
- * readJobMarkingStale, which marks a stale job failed). When the job is ready,
- * or the job id moved through a join, the analysis is updated so the next read
- * needs no job read at all.
+ * The visitor's view of an analysis. Reads the job exactly once (through
+ * readJobMarkingStale without following joins, which marks a stale job failed).
+ * A `joined` job is reported as running (step "joined") and the analysis moves
+ * to the job it joined, so the next read is again one analysis and one job read.
+ * When the job is ready, the analysis copies its snapshot and score, so later
+ * reads need no job read at all.
  */
 export async function readAnalysisView<R>(deps: JobDeps, analysis: Analysis<R>): Promise<AnalysisView<R>> {
   const now = deps.clock();
@@ -105,22 +107,24 @@ export async function readAnalysisView<R>(deps: JobDeps, analysis: Analysis<R>):
   }
   if (analysis.snapshot !== undefined) return { status: "ready", step: "ready", analysis };
 
-  const job = await readJobMarkingStale<Snapshot, R>(deps, analysis.jobId);
+  const job = await readJobMarkingStale<Snapshot, R>(deps, analysis.jobId, { followJoins: false });
   if (!job) {
     // The job left the store before this analysis copied it (no read for over a day).
     return { status: "failed", step: "failed", failure: failureView({ code: "stale", message: "" }), analysis };
   }
 
+  const joinedTo = job.status === "joined" ? job.joinedTo : undefined;
   let current = analysis;
-  if (job.status === "ready" || job.id !== analysis.jobId) {
+  if (job.status === "ready" || joinedTo) {
     const next: Analysis<R> = {
       ...analysis,
       version: analysis.version + 1,
-      jobId: job.id,
+      jobId: joinedTo ?? job.id,
       ...(job.status === "ready" ? { snapshot: job.snapshot, score: job.score, readyAt: job.updatedAt } : {}),
     };
     if (await deps.store.compareAndSet(analysisKey(analysis.id), analysis, next, storeTtl(next, now))) current = next;
   }
+  if (joinedTo) return { status: "crawling", step: "joined", analysis: current };
   return { ...viewOfJob(job, deps.config, now), analysis: current };
 }
 

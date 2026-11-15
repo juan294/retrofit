@@ -85,6 +85,10 @@ export function loadConfig(env: Env): Config {
   if (numbers.crawlLeaseTtlS >= numbers.staleAfterS) {
     throw new ConfigError("CRAWL_LEASE_TTL_S", "must be less than STALE_AFTER_S");
   }
+  // A crawl must fit in one 60 s function invocation with a 10 s margin (analysis/capacity.ts).
+  if (numbers.crawlBudgetMs > 50_000) {
+    throw new ConfigError("CRAWL_BUDGET_MS", "must be at most 50000 so a crawl fits in one function invocation");
+  }
   if (numbers.crawlBudgetMs >= numbers.crawlLeaseTtlS * 1000) {
     throw new ConfigError("CRAWL_BUDGET_MS", "must be less than CRAWL_LEASE_TTL_S * 1000");
   }

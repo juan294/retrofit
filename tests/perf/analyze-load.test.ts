@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { bakery } from "../fixtures/sites";
+import { bakery, convergeTo } from "../fixtures/sites";
 import { serveSites } from "../helpers/sites";
 import { PERF_ORIGIN } from "./global-setup";
 
@@ -9,7 +9,8 @@ let server: Server;
 beforeAll(async () => {
   const sites: Record<string, typeof bakery> = {};
   for (let i = 1; i <= 10; i++) sites[`site${i}.fixture.test`] = bakery;
-  server = await serveSites(() => sites);
+  // A second input host that redirects to site1, so its job joins site1's crawl.
+  server = await serveSites((o) => ({ ...sites, "alias1.fixture.test": convergeTo(o("site1.fixture.test")) }));
 });
 afterAll(async () => {
   await server?.close();
@@ -32,15 +33,19 @@ describe("analyze load (perf project, against next start on 3014)", () => {
   it("10 concurrent analyses and 20 viewers stay within the status budgets", async () => {
     const started = await Promise.all(Array.from({ length: 10 }, (_, i) => analyze(server.origin(`site${i + 1}.fixture.test`))));
     const watched = started[0]!;
+    // A second visitor whose analysis converges on site1 through a redirect (join path).
+    const joiner = await analyze(server.origin("alias1.fixture.test"));
     const latencies: number[] = [];
     const reads: number[] = [];
     let ready = false;
     const deadline = Date.now() + 90_000;
     while (!ready && Date.now() < deadline) {
       const round = await Promise.all(
-        Array.from({ length: 20 }, async () => {
+        Array.from({ length: 20 }, async (_, i) => {
+          // 15 viewers watch the first visitor's analysis, 5 watch the joiner's.
+          const who = i < 15 ? watched : joiner;
           const t = performance.now();
-          const res = await fetch(`${PERF_ORIGIN}/api/analyze/${watched.id}`, { headers: { cookie: watched.cookie } });
+          const res = await fetch(`${PERF_ORIGIN}/api/analyze/${who.id}`, { headers: { cookie: who.cookie } });
           latencies.push(performance.now() - t);
           reads.push(Number(res.headers.get("x-retrofit-store-reads")));
           const body = (await res.json()) as { status: string };
@@ -52,10 +57,11 @@ describe("analyze load (perf project, against next start on 3014)", () => {
       if (!ready) await new Promise((r) => setTimeout(r, 1000));
     }
     expect(ready).toBe(true);
-    // Fails if the shared host is crawled more than once.
-    const homeFetches = server.requests.filter((r) => r.host === "site1.fixture.test" && r.path === "/");
-    expect(homeFetches).toHaveLength(1);
-    // Fails if a status request reads more than the analysis and its job.
+    // Fails if the shared host is crawled more than once. The joiner's worker fetches site1's
+    // home page once through the redirect to learn the destination, then joins; linked pages are read once.
+    const menuFetches = server.requests.filter((r) => r.host === "site1.fixture.test" && r.path === "/menu");
+    expect(menuFetches).toHaveLength(1);
+    // Fails if a status request (including the first read after a join) reads more than two records.
     expect(Math.max(...reads)).toBeLessThanOrEqual(2);
     const budget = p95(latencies);
     console.log(`perf: ${latencies.length} status requests, p95 ${budget.toFixed(1)} ms, max store reads ${Math.max(...reads)}`);

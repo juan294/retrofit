@@ -93,19 +93,26 @@ export function isQueueExpired(job: CrawlJob, config: Config, now: number): bool
   return job.status === "queued" && now - (job.queuedAt ?? job.createdAt) > config.queueMaxWaitS * 1000;
 }
 
-/** Reads a job and marks it failed when it is stale. Returns the current state. */
-export async function readJobMarkingStale<S, R>(deps: JobDeps, id: string): Promise<CrawlJob<S, R> | null> {
-  const job = await resolveJob<S, R>(deps.store, id);
+/**
+ * Reads a job and marks it failed when it is stale. Returns the current state.
+ * With `followJoins: false` it makes exactly one read and returns a `joined`
+ * job as it is, so the caller decides whether to follow it later.
+ * When another reader wins the race to mark the job failed, the locally
+ * computed failed state is returned without a second read.
+ */
+export async function readJobMarkingStale<S, R>(deps: JobDeps, id: string, o: { followJoins?: boolean } = {}): Promise<CrawlJob<S, R> | null> {
+  const job = o.followJoins === false ? await getJob<S, R>(deps.store, id) : await resolveJob<S, R>(deps.store, id);
   if (!job) return null;
   const now = deps.clock();
   if (isStale(job, deps.config, now)) {
-    const failed = await updateJob(deps, job, {
+    const patch = {
       status: "failed",
       step: "failed",
       failure: { code: "stale", message: "This analysis took too long. Try again." },
       leaseExpiresAt: undefined,
-    });
-    return failed ?? (await resolveJob<S, R>(deps.store, id));
+    } as const;
+    const failed = await updateJob(deps, job, patch);
+    return failed ?? { ...job, ...patch };
   }
   return job;
 }

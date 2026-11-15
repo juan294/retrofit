@@ -21,11 +21,11 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      // Every response except static build assets, vendored files and the bridge,
-      // which carry their own policies (next.config.ts). Unknown paths and
-      // not-found pages get the page CSP too. Prefetch requests return RSC
-      // payloads, never documents.
-      source: "/((?!_next/static/|_next/image|runtime/|preview-assets/|bridge/|p/[^/]+/bridge/|favicon.ico).*)",
+      // Every response except API routes (JSON with their own Cache-Control),
+      // static build assets, vendored files and the bridge, which carry their
+      // own policies (next.config.ts). Unknown paths and not-found pages get
+      // the page CSP too. Prefetch requests return RSC payloads, never documents.
+      source: "/((?!api/|_next/static/|_next/image|runtime/|preview-assets/|bridge/|p/[^/]+/bridge/|favicon.ico).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },

@@ -3,7 +3,7 @@ import { NotPublicError } from "@/lib/fetch/errors";
 import { countClientAnalysis } from "@/lib/fetch/limits";
 import { validateUrl } from "@/lib/fetch/url";
 import type { ServerDeps } from "@/lib/server/runtime";
-import { dispatchQueued, startCrawlJob } from "./capacity";
+import { dispatchQueued, startCrawlJob, type Invocation } from "./capacity";
 import { createAnalysis } from "./record";
 import { visitorTexts } from "./texts";
 
@@ -33,7 +33,11 @@ export type StartOutcome =
  * is new and owned by its visitor; only the crawl work is shared. The caller
  * checks the same-origin precondition.
  */
-export async function startAnalysis(deps: ServerDeps, o: { rawUrl: string; ownerHash: string; clientId: string }): Promise<StartOutcome> {
+export async function startAnalysis(
+  deps: ServerDeps,
+  o: { rawUrl: string; ownerHash: string; clientId: string; invocation?: Invocation },
+): Promise<StartOutcome> {
+  const invocation = o.invocation ?? { startedAt: deps.clock() };
   // 1. Validate the URL.
   let url: URL;
   try {
@@ -58,6 +62,6 @@ export async function startAnalysis(deps: ServerDeps, o: { rawUrl: string; owner
   const analysis = await createAnalysis(deps, { ownerHash: o.ownerHash, jobId: crawl.jobId, inputOrigin: url.origin });
 
   // 5. Start queued work (this job, when a slot is free) through waitUntil.
-  await dispatchQueued(deps);
+  await dispatchQueued(deps, invocation);
   return { ok: true, id: analysis.id };
 }
