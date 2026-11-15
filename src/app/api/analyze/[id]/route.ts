@@ -22,9 +22,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   let work: StoreWork = { foreground: foreground.operations(), dispatch: null };
   if (dispatch) {
     const started = await dispatch.catch(() => null);
-    // A failed dispatch has no started count; the header then fails the oracle instead of reading as zero.
-    work = { ...work, dispatch: started === null ? null : { started, operations: background.operations(), claims: background.byOperation().claimWithLease ?? 0 } };
-    if (started === null) response.headers.set("x-retrofit-dispatch-error", "1");
+    // A failed dispatch reports null, which fails the oracle instead of reading as zero.
+    if (started !== null) work = { ...work, dispatch: { started, operations: background.operations(), claims: background.byOperation().claimWithLease ?? 0 } };
   }
   response.headers.set("x-retrofit-store-reads", String(foreground.reads()));
   response.headers.set("x-retrofit-store-work", JSON.stringify(work));

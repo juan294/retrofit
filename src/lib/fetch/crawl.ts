@@ -54,7 +54,6 @@ function toProbe(r: FetchResult): Probe {
   };
 }
 
-
 const isHtml = (r: FetchResult) => /\btext\/html\b|application\/xhtml\+xml/i.test(r.headers["content-type"] ?? "");
 
 function normalize(href: string): string | null {
