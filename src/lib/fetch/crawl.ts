@@ -84,8 +84,8 @@ function toPage(r: FetchResult): SnapshotPage {
  * - never goes to a SKIP_PATH path (refused before contact);
  * - waits the host's full Crawl-delay, and is not sent when that wait would
  *   start it after the end of CRAWL_BUDGET_MS. The crawl then stops and skips
- *   what is left with reason "crawl-delay". With the defaults (45 s budget,
- *   8 s FETCH_TIMEOUT_MS, 60 s lease) every request also ends inside the lease.
+ *   what is left with reason "crawl-delay". loadConfig keeps the budget plus
+ *   FETCH_TIMEOUT_MS within the lease, so every request ends inside it.
  *
  * Throws RobotsBlocked, RobotsUnavailable, NotPublicError, PrivatePathRefused
  * or CrawlDelayTooLong for the home page, and LeaseLost when a hook reports
@@ -96,9 +96,9 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
   const started = o.clock();
   const budgetEnd = started + o.config.crawlBudgetMs;
   const overBudget = () => o.clock() >= budgetEnd;
-  // One deadline for every request of the crawl. loadConfig requires CRAWL_BUDGET_MS below
-  // CRAWL_LEASE_TTL_S, and the lease was taken or renewed at `started`, so no wait or request
-  // start outlasts the lease.
+  // One deadline for every request of the crawl. The lease was taken or renewed at `started`, and
+  // loadConfig requires CRAWL_BUDGET_MS + FETCH_TIMEOUT_MS <= CRAWL_LEASE_TTL_S * 1000, so a request
+  // that starts by the deadline also ends inside the lease.
   const limits: FetchOptions = { privatePath: SKIP_PATH, notAfter: budgetEnd };
   const step = async (s: string) => {
     if (o.hooks?.progress && !(await o.hooks.progress(s))) throw new LeaseLost();

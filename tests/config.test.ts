@@ -48,6 +48,13 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ CRAWL_BUDGET_MS: "45000", CRAWL_LEASE_TTL_S: "40", SESSION_SECRET: secret })).toThrow(/CRAWL_LEASE_TTL_S \* 1000/);
   });
 
+  // Fails if a config lets the last request of a crawl (started at the end of the budget, lasting up to
+  // FETCH_TIMEOUT_MS) end after the crawl lease runs out.
+  it("enforces CRAWL_BUDGET_MS + FETCH_TIMEOUT_MS <= CRAWL_LEASE_TTL_S * 1000", () => {
+    expect(() => loadConfig({ CRAWL_BUDGET_MS: "45000", FETCH_TIMEOUT_MS: "15001", CRAWL_LEASE_TTL_S: "60", SESSION_SECRET: secret })).toThrow(/CRAWL_BUDGET_MS \+ FETCH_TIMEOUT_MS/);
+    expect(loadConfig({ CRAWL_BUDGET_MS: "45000", FETCH_TIMEOUT_MS: "15000", CRAWL_LEASE_TTL_S: "60", SESSION_SECRET: secret }).fetchTimeoutMs).toBe(15000);
+  });
+
   // Fails if a budget that leaves no time to start a crawl inside one 60 s invocation is accepted.
   it("refuses CRAWL_BUDGET_MS above 50000", () => {
     expect(() => loadConfig({ CRAWL_BUDGET_MS: "50001", SESSION_SECRET: secret })).toThrow(/CRAWL_BUDGET_MS/);
