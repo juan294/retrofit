@@ -65,19 +65,61 @@ export async function countClientAnalysis(store: Store, config: Pick<Config, "an
 }
 
 /**
- * Counts `markerKey` once against `counterKey`: the first call puts the marker
- * and only then increments the counter. A refused call removes its marker, so a
- * repeat is refused again rather than passing on the marker.
+ * A count-once marker. `pending` while its first caller decides; `counted`
+ * once the counter admitted it. A refused marker is deleted, never stored.
  */
-export async function countOnce(store: Store, markerKey: string, counterKey: string, ttlSeconds: number, limit: number): Promise<boolean> {
-  const marker = await store.putIfAbsent(markerKey, 1, ttlSeconds);
-  if (!marker.created) return true;
-  const count = await store.incrementWindow(counterKey, ttlSeconds);
-  if (count > limit) {
-    await store.delete(markerKey);
-    return false;
+interface CountMarker {
+  readonly version: number;
+  readonly state: "pending" | "counted";
+}
+
+/** A pending marker lives this long (at most), so a caller that crashed before deciding blocks nobody for long. */
+export const COUNT_PENDING_TTL_S = 10;
+const DECISION_WAIT_MS = 20;
+/** Waits for another caller's decision: 50 x 20 ms, about one second. */
+const DECISION_ATTEMPTS = 50;
+
+const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Counts `markerKey` once against `counterKey` and says whether the counter
+ * admits it (count <= limit).
+ *
+ * The first caller puts a `pending` marker, increments the counter and then
+ * either marks it `counted` (admitted) or deletes it (refused). Only a
+ * `counted` marker lets a repeat pass without counting. A caller that finds a
+ * `pending` marker waits for that decision: `counted` admits it; a deleted
+ * marker makes it decide for itself, so a refused first caller's duplicate is
+ * refused too. A decision that does not come within about a second refuses
+ * (the safe direction for a limit); the pending marker expires after
+ * COUNT_PENDING_TTL_S.
+ */
+export async function countOnce(
+  store: Store,
+  markerKey: string,
+  counterKey: string,
+  ttlSeconds: number,
+  limit: number,
+  sleep: (ms: number) => Promise<void> = realSleep,
+): Promise<boolean> {
+  const pending: CountMarker = { version: 1, state: "pending" };
+  for (let attempt = 0; attempt < DECISION_ATTEMPTS; attempt++) {
+    const marker = await store.putIfAbsent<CountMarker>(markerKey, pending, Math.min(ttlSeconds, COUNT_PENDING_TTL_S));
+    if (marker.created) {
+      const count = await store.incrementWindow(counterKey, ttlSeconds);
+      if (count > limit) {
+        await store.delete(markerKey);
+        return false;
+      }
+      // The counter admitted it. A lost compareAndSet means the pending marker expired first;
+      // the admission stands.
+      await store.compareAndSet<CountMarker>(markerKey, pending, { version: 2, state: "counted" }, ttlSeconds);
+      return true;
+    }
+    if (marker.value?.state === "counted") return true;
+    await sleep(DECISION_WAIT_MS);
   }
-  return true;
+  return false;
 }
 
 export const shortHash = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 32);

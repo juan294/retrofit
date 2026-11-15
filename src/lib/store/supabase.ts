@@ -1,10 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
-import { type Store, type Versioned, requireNextVersion, requirePositive } from "./types";
+import { type LeasedClaim, type Store, type Versioned, requireNextVersion, requirePositive } from "./types";
 
 /**
  * Supabase Store (production). Server only: it holds the service role key, so
  * never import it from client code. Every operation is one PostgREST rpc call
- * to a `store_*` function in supabase/migrations/*_store.sql, so each one is a
+ * to a `store_*` function in supabase/migrations/ (*_store.sql and later
+ * migrations such as *_claim_with_lease.sql), so each one is a
  * single database transaction and the database clock decides expiry.
  *
  * A failed call logs `[TABLE_FALLBACK]` at ERROR with the operation and the
@@ -129,6 +130,16 @@ export function createSupabaseStore(options: SupabaseStoreOptions): Store & Requ
 
     async claimNext(queue) {
       return call<string | null>("claimNext", queue, "store_claim_next", { p_queue: queue });
+    },
+
+    async claimWithLease(queue, leaseKeys, ttlSeconds) {
+      requirePositive(ttlSeconds, "ttlSeconds");
+      const r = await call<LeasedClaim | null>("claimWithLease", queue, "store_claim_with_lease", {
+        p_queue: queue,
+        p_lease_keys: [...leaseKeys],
+        p_ttl_seconds: ttlSeconds,
+      });
+      return r ? { itemId: r.itemId, leaseKey: r.leaseKey, token: r.token } : null;
     },
 
     async cleanup() {

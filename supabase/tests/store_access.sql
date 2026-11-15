@@ -1,4 +1,4 @@
--- Access test for supabase/migrations/*_store.sql.
+-- Access test for supabase/migrations/*_store.sql and *_claim_with_lease.sql.
 --
 -- Run as `postgres` against a disposable stack after the migration:
 --   psql "$SUPABASE_GATE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/store_access.sql
@@ -64,6 +64,7 @@ insert into store_statements values
   ('function', $q$select public.store_release_lease('access:l', 'not-a-token')$q$),
   ('function', $q$select public.store_enqueue('access:q', 'x', 60)$q$),
   ('function', $q$select public.store_claim_next('access:q')$q$),
+  ('function', $q$select public.store_claim_with_lease('access:q', array['access:l'], 60)$q$),
   ('function', 'select public.store_cleanup()'),
   ('function', 'select public.store_ttl(60)');
 

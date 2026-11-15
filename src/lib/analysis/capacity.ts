@@ -19,14 +19,9 @@ export interface Slot {
   readonly token: string;
 }
 
-/** Takes the first free slot, or null when all are held. */
-export async function acquireSlot(deps: Pick<ServerDeps, "store" | "config">): Promise<Slot | null> {
-  for (let n = 0; n < deps.config.crawlMaxConcurrent; n++) {
-    const key = slotKey(n);
-    const token = await deps.store.acquireLease(key, deps.config.crawlLeaseTtlS);
-    if (token) return { key, token };
-  }
-  return null;
+/** Every slot's lease key, in order. */
+export function slotKeys(config: Pick<ServerDeps["config"], "crawlMaxConcurrent">): string[] {
+  return Array.from({ length: config.crawlMaxConcurrent }, (_, n) => slotKey(n));
 }
 
 export type StartCrawlResult =
@@ -80,8 +75,13 @@ export function hasTimeForCrawl(deps: Pick<ServerDeps, "config" | "clock">, invo
 /**
  * Starts queued jobs while slots, queued jobs and invocation time remain
  * (phase-3.md `dispatchQueued`). Called at the end of every worker run (with
- * that worker's invocation) and on every analyze, status and score request.
- * Returns the number of workers emitted.
+ * that worker's invocation) and on every analyze and score request and every
+ * owner's status request. Returns the number of workers emitted.
+ *
+ * Each round is one Store.claimWithLease call (one RPC on Supabase): it takes
+ * the oldest queued job together with the first free slot, or changes nothing
+ * when the queue is empty or every slot is held. So a dispatch with nothing to
+ * start costs one store operation.
  *
  * Each emitted worker first checks its job: a job that is no longer queued or
  * whose queue time passed is skipped, its slot released and dispatch repeated
@@ -92,20 +92,9 @@ export async function dispatchQueued(deps: ServerDeps, invocation: Invocation): 
   let started = 0;
   for (;;) {
     if (!hasTimeForCrawl(deps, invocation)) return started;
-    const slot = await acquireSlot(deps);
-    if (!slot) return started;
-    let jobId: string | null;
-    try {
-      jobId = await deps.store.claimNext(CRAWL_QUEUE);
-    } catch (e) {
-      await deps.store.releaseLease(slot.key, slot.token).catch(() => false);
-      throw e;
-    }
-    if (!jobId) {
-      await deps.store.releaseLease(slot.key, slot.token);
-      return started;
-    }
-    deps.waitUntil(runInSlot(deps, jobId, slot, invocation));
+    const claim = await deps.store.claimWithLease(CRAWL_QUEUE, slotKeys(deps.config), deps.config.crawlLeaseTtlS);
+    if (!claim) return started;
+    deps.waitUntil(runInSlot(deps, claim.itemId, { key: claim.leaseKey, token: claim.token }, invocation));
     started++;
   }
 }

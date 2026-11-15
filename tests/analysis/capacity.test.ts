@@ -228,6 +228,51 @@ describe("capacity", () => {
   });
 });
 
+describe("dispatch store work (validation V16)", () => {
+  // Fails if dispatch tries one lease per slot (eight sequential RPCs on Supabase at full capacity)
+  // instead of one atomic claim.
+  it("makes one store call when every slot is held and a job is queued", async () => {
+    const ops: string[] = [];
+    const d = testDeps({ instrument: (op) => void ops.push(op) });
+    await holdAllSlots(d);
+    await d.store.enqueue(CRAWL_QUEUE, "waiting-job", 120);
+    ops.length = 0;
+    expect(await dispatchQueued(d, { startedAt: d.clock() })).toBe(0);
+    expect(ops).toEqual(["claimWithLease"]);
+    expect(await d.store.claimNext(CRAWL_QUEUE)).toBe("waiting-job");
+  });
+
+  // Fails if dispatch acquires, claims and releases a slot when nothing is queued.
+  it("makes one store call and takes no slot when the queue is empty", async () => {
+    const ops: string[] = [];
+    const d = testDeps({ instrument: (op) => void ops.push(op), env: { CRAWL_MAX_CONCURRENT: "2" } });
+    expect(await dispatchQueued(d, { startedAt: d.clock() })).toBe(0);
+    expect(ops).toEqual(["claimWithLease"]);
+  });
+
+  // Fails if a status request without the owner's cookie or with an invalid id starts dispatch work.
+  it("does no dispatch work for status requests that are not the owner's", async () => {
+    const ops: string[] = [];
+    const d = testDeps({ instrument: (op) => void ops.push(op) });
+    const slots = await holdAllSlots(d);
+    const owner = await handleAnalyze(analyzeRequest({ url: "https://owned.example.com" }), d);
+    const stranger = await handleAnalyze(analyzeRequest({ url: "https://other.example.com" }), d);
+    const { id } = (await owner.json()) as { id: string };
+    for (const [n, t] of slots.entries()) await d.store.releaseLease(slotKey(n), t);
+    await d.settle();
+    ops.length = 0;
+    await handleAnalysisStatus(statusRequest(id), d, id);
+    await handleAnalysisStatus(statusRequest("not-an-id", { cookie: cookieFrom(owner) }), d, "not-an-id");
+    await handleAnalysisStatus(statusRequest(id, { cookie: cookieFrom(stranger) }), d, id);
+    await d.settle();
+    expect(ops).toEqual(["get"]);
+    // The owner's request dispatches the queued jobs.
+    await handleAnalysisStatus(statusRequest(id, { cookie: cookieFrom(owner) }), d, id);
+    await d.settle();
+    expect(ops).toContain("claimWithLease");
+  });
+});
+
 describe("capacity review fixes", () => {
   // P3-R1. Fails if a finishing worker starts the next queued job when its own invocation has too
   // little of MAX_DURATION_S left for a full crawl (the job would be killed mid-crawl), or if the
@@ -307,12 +352,12 @@ describe("capacity review fixes", () => {
 
   // P3-R8. Fails if an analyze or score request that returns early (403, 400, 429) does not dispatch queued work.
   it.each([
-    ["analyze 403", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { fetchSite: null, origin: "https://evil.example" }), d)],
-    ["analyze 400", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "ftp://x.example.com" }), d)],
-    ["analyze 429", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { ip: "203.0.113.200" }), d)],
-    ["score 400", (d: TestDeps) => handleScore(scoreRequest("?url="), d)],
-    ["score 429", (d: TestDeps) => handleScore(scoreRequest("?url=https%3A%2F%2Fx.example.com", { ip: "203.0.113.200" }), d)],
-  ])("dispatches a queued job on an early return (%s)", async (_name, send) => {
+    ["analyze 403", 403, (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { fetchSite: null, origin: "https://evil.example" }), d)],
+    ["analyze 400", 400, (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "ftp://x.example.com" }), d)],
+    ["analyze 429", 429, (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { ip: "203.0.113.200" }), d)],
+    ["score 400", 400, (d: TestDeps) => handleScore(scoreRequest("?url="), d)],
+    ["score 429", 429, (d: TestDeps) => handleScore(scoreRequest("?url=https%3A%2F%2Fx.example.com", { ip: "203.0.113.200" }), d)],
+  ] as const)("dispatches a queued job on an early return (%s)", async (_name, status, send) => {
     const d = testDeps({ env: { ANALYSES_PER_CLIENT_HOUR: "1" } });
     const slots = await holdAllSlots(d);
     const queued = await startCrawlJob(d, "https://queued.example.com");
@@ -325,7 +370,8 @@ describe("capacity review fixes", () => {
     expect((await getJob(d.store, queued.jobId))?.status).toBe("queued");
 
     const res = await send(d);
-    expect([400, 403, 429]).toContain(res.status);
+    // The documented status of each early return: 403 cross-origin, 400 bad address, 429 client limit.
+    expect(res.status).toBe(status);
     await d.settle();
     // The crawl ran (it fails at the guard: every test name resolves to a private address).
     expect((await getJob(d.store, queued.jobId))?.status).toBe("failed");

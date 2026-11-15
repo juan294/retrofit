@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { slotKey } from "@/lib/analysis/capacity";
 import { codeForNotPublicReason, handleScore } from "@/lib/api/score";
 import { getJob, originAliasKey, resolveJob, updateJob, type CrawlJob } from "@/lib/crawl/jobs";
+import { robotsKey } from "@/lib/fetch/robots";
 import { createMemoryStore } from "@/lib/store/memory";
 import type { Store } from "@/lib/store/types";
 import { bakery, blocked, type FixtureSite } from "../fixtures/sites";
@@ -160,9 +161,8 @@ describe("GET /api/score results (contract rules 7 to 10)", () => {
     const fc = fakeClock(Date.parse("2026-11-15T10:20:00.000Z"));
     const d = testDeps({ clock: fc.clock, sleep: async (ms) => void (await new Promise((r) => setTimeout(r, Math.min(ms, 20)))), env: { SCORE_WAIT_MS: "5000" } });
     const origin = server.origin("robots.fixture.test");
-    const host = new URL(origin).host;
     // Robots rules failed 23 minutes ago and are cached as unavailable until 10:57 UTC.
-    await d.store.set(`robots:${host}`, { kind: "unavailable", retryAt: Date.parse("2026-11-15T10:57:00.000Z") }, 3600);
+    await d.store.set(robotsKey(origin), { kind: "unavailable", retryAt: Date.parse("2026-11-15T10:57:00.000Z") }, 3600);
     const res = await call(d, q(origin));
     expect(res.status).toBe(503);
     expect(res.headers.get("retry-after")).toBe("2220");

@@ -9,6 +9,13 @@ export interface Versioned {
   readonly version: number;
 }
 
+/** A queue item claimed together with the lease it runs under (Store.claimWithLease). */
+export interface LeasedClaim {
+  readonly itemId: string;
+  readonly leaseKey: string;
+  readonly token: string;
+}
+
 export interface Store {
   get<T = unknown>(key: string): Promise<T | null>;
   set<T = unknown>(key: string, value: T, ttlSeconds: number): Promise<void>;
@@ -38,6 +45,16 @@ export interface Store {
   enqueue(queue: string, itemId: string, ttlSeconds: number): Promise<void>;
   /** Atomic: removes and returns the oldest live item. Expired items are skipped and removed. */
   claimNext(queue: string): Promise<string | null>;
+
+  /**
+   * Atomic, one round trip: when `queue` has a live item and one of
+   * `leaseKeys` has no live lease, takes the first free lease (in the given
+   * order) for `ttlSeconds`, removes the oldest live item and returns both.
+   * Otherwise returns null and changes nothing (expired items are still
+   * removed): an empty queue takes no lease, and a full set of leases keeps
+   * the item queued.
+   */
+  claimWithLease(queue: string, leaseKeys: readonly string[], ttlSeconds: number): Promise<LeasedClaim | null>;
 
   /**
    * Deletes every expired entry and returns how many were deleted (the daily cleanup cron).
