@@ -74,7 +74,10 @@ export interface Budgets {
   readonly hold: HoldRecord | null;
 }
 
-export type ClearHoldResult = { ok: true } | { ok: false; reason: "hold_changed" | "balance_below_ledger" };
+/** Why clearHold left the hold in place. */
+export type HoldRefusal = "hold_changed" | "balance_below_ledger";
+
+export type ClearHoldResult = { ok: true } | { ok: false; reason: HoldRefusal };
 
 interface StoredReservation {
   pool: Pool;
@@ -294,7 +297,7 @@ export function createLedger(deps: LedgerDeps) {
      */
     clearHold(expectedHoldEvents: number, reconciledBalanceMicro: number): Promise<ClearHoldResult> {
       return update<ClearHoldResult>("hold", (s) => {
-        const refuse = (reason: "hold_changed" | "balance_below_ledger") => ({ result: { ok: false as const, reason }, write: false });
+        const refuse = (reason: HoldRefusal) => ({ result: { ok: false as const, reason }, write: false });
         if ((s.holdEvents ?? 0) !== expectedHoldEvents) return refuse("hold_changed");
         if (reconciledBalanceMicro < totals(s).remainingCredit) return refuse("balance_below_ledger");
         s.held = false;

@@ -19,11 +19,6 @@ export interface Slot {
   readonly token: string;
 }
 
-/** Every slot's lease key, in order. */
-export function slotKeys(config: Pick<ServerDeps["config"], "crawlMaxConcurrent">): string[] {
-  return Array.from({ length: config.crawlMaxConcurrent }, (_, n) => slotKey(n));
-}
-
 export type StartCrawlResult =
   | { readonly ok: true; readonly jobId: string; readonly created: boolean }
   | { readonly ok: false; readonly code: "daily_limit"; readonly retryAt: number };
@@ -93,10 +88,12 @@ export function hasTimeForCrawl(deps: Pick<ServerDeps, "config" | "clock">, invo
  * request that dispatches makes no extra job read of its own.
  */
 export async function dispatchQueued(deps: ServerDeps, invocation: Invocation): Promise<number> {
+  // Every slot's lease key, in order (built once per dispatch).
+  const slotKeys = Array.from({ length: deps.config.crawlMaxConcurrent }, (_, n) => slotKey(n));
   let started = 0;
   for (;;) {
     if (!hasTimeForCrawl(deps, invocation)) return started;
-    const claim = await deps.store.claimWithLease(CRAWL_QUEUE, slotKeys(deps.config), deps.config.crawlLeaseTtlS);
+    const claim = await deps.store.claimWithLease(CRAWL_QUEUE, slotKeys, deps.config.crawlLeaseTtlS);
     if (!claim) return started;
     deps.waitUntil(runInSlot(deps, claim.itemId, { key: claim.leaseKey, token: claim.token }, invocation));
     started++;

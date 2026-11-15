@@ -106,6 +106,8 @@ function underSameOriginRouter(r: Router, pathname: string): boolean {
   return path === r.path || path.startsWith(`${r.path}/`);
 }
 
+const isRequest = (input: FetchInput): input is Request => typeof input === "object" && !(input instanceof URL);
+
 function rawUrl(input: FetchInput): string {
   if (input instanceof URL) return input.href;
   return typeof input === "string" ? input : input.url;
@@ -113,7 +115,7 @@ function rawUrl(input: FetchInput): string {
 
 function requestMethod(input: FetchInput, init: RequestInit | undefined): string {
   if (init?.method) return init.method.toUpperCase();
-  if (typeof input === "object" && !(input instanceof URL)) return input.method.toUpperCase();
+  if (isRequest(input)) return input.method.toUpperCase();
   return "GET";
 }
 
@@ -155,7 +157,7 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
   // request. Without an active runtime, init is returned unchanged.
   const tiedToRun = (input: FetchInput, init: RequestInit | undefined): RequestInit | undefined => {
     if (run === null) return init;
-    const callerSignal = init?.signal ?? (typeof input === "object" && !(input instanceof URL) ? input.signal : undefined);
+    const callerSignal = init?.signal ?? (isRequest(input) ? input.signal : undefined);
     return { ...init, signal: callerSignal ? AbortSignal.any([callerSignal, run.controller.signal]) : run.controller.signal };
   };
 
@@ -167,7 +169,7 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
       throw new TypeError(RETIRED_TEXT);
     }
     const target = `${url.origin}${prefix}${url.pathname.slice(marker.index + marker[0].length)}${url.search}`;
-    const mapped = typeof input === "object" && !(input instanceof URL) ? new Request(target, input) : target;
+    const mapped = isRequest(input) ? new Request(target, input) : target;
     return [mapped, tiedToRun(input, init)];
   };
 

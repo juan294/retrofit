@@ -251,7 +251,7 @@ export function vercelInspect(target) {
       const parsed = JSON.parse(r.stdout);
       info = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
     } catch {
-      info = null;
+      // Not JSON: no record.
     }
   }
   // The spawn error when the CLI could not run, else the CLI's last error line, else its last line.
@@ -330,8 +330,8 @@ function recordDeployment(ctx) {
     // Fail closed: a successful inspection must give a record whose id and target can be checked.
     if (typeof info?.id !== "string" || !info.id) throw new UsageError(`vercel inspect exited 0 but gave no deployment record for ${o.deploymentUrl}`);
     if (info.id !== o.deploymentId) throw new UsageError(`vercel inspect reports deployment ${info.id}, not ${o.deploymentId}`);
-    if (info?.target && info.target !== "production") throw new UsageError(`vercel inspect reports target ${info.target}, not production`);
-    const raw = info?.createdAt ?? info?.created;
+    if (info.target && info.target !== "production") throw new UsageError(`vercel inspect reports target ${info.target}, not production`);
+    const raw = info.createdAt ?? info.created;
     const t = typeof raw === "number" ? raw : Date.parse(raw);
     if (Number.isFinite(t)) {
       createdAt = new Date(t).toISOString();

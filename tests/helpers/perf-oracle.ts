@@ -5,13 +5,12 @@
  * or expired analysis, and a `ready` status without a usable score.
  */
 
+import type { StoreWork } from "@/lib/store/counting";
+
 const STATUSES = new Set(["queued", "crawling", "ready"]);
 
-export interface DispatchWork {
-  readonly started: number;
-  readonly operations: number;
-  readonly claims: number;
-}
+/** The dispatch part of the status route's `x-retrofit-store-work` header. */
+export type DispatchWork = NonNullable<StoreWork["dispatch"]>;
 
 export interface StatusSample {
   readonly status: string;

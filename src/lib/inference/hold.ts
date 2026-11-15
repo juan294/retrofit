@@ -1,7 +1,7 @@
 import type { FreeConfig } from "@/lib/config";
 import type { Clock, Store } from "@/lib/store/types";
 import { guarded } from "./errors";
-import { type HoldRecord, type ReconcileResult, createLedger, toMicro } from "./ledger";
+import { type HoldRecord, type HoldRefusal, type ReconcileResult, createLedger, toMicro } from "./ledger";
 
 export type { HoldRecord } from "./ledger";
 
@@ -47,12 +47,14 @@ export type OverrunAlert = (details: { key: "reservation-overrun"; overrunMicroU
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-type RemoveResult = { ok: true; auditKey: string; legacyDeleteError?: string } | { ok: false; auditKey: string; reason: "hold_changed" | "balance_below_ledger" };
+type RemoveResult = { ok: true; auditKey: string; legacyDeleteError?: string } | { ok: false; auditKey: string; reason: HoldRefusal };
+
+const readLegacyHold = (store: Store): Promise<HoldRecord | null> => guarded("hold", () => store.get<HoldRecord>(LEGACY_HOLD_KEY));
 
 export function createHold(deps: HoldDeps) {
   const { store, clock } = deps;
   const ledger = createLedger(deps);
-  const legacy = () => guarded("hold", () => store.get<HoldRecord>(LEGACY_HOLD_KEY));
+  const legacy = () => readLegacyHold(store);
 
   /** Writes one audit record under a new `inference:audit:<time>[-n]` key and returns the key. */
   function writeAudit(audit: Record<string, unknown>): Promise<string> {
@@ -174,7 +176,7 @@ export async function describeFreeState(deps: HoldDeps): Promise<FreeState> {
     totalOutstandingMicroUsd: b.totalOutstandingMicro,
     ledgerRemainingMicroUsd: b.remainingCreditMicro,
     creditMicroUsd: toMicro(f.creditUsd),
-    hold: b.hold ?? (await guarded("hold", () => deps.store.get<HoldRecord>(LEGACY_HOLD_KEY))),
+    hold: b.hold ?? (await readLegacyHold(deps.store)),
     held: b.held,
     holdEvents: b.holdEvents,
     bound: {
@@ -194,7 +196,7 @@ export async function describeFreeState(deps: HoldDeps): Promise<FreeState> {
 
 export type ResumeResult =
   | { ok: true; auditKey: string; state: FreeState; legacyDeleteError?: string }
-  | { ok: false; reason: "no_balance" | "no_note" | "not_held" | "balance_below_ledger" | "hold_changed"; message: string; state?: FreeState; auditKey?: string };
+  | { ok: false; reason: "no_balance" | "no_note" | "not_held" | HoldRefusal; message: string; state?: FreeState; auditKey?: string };
 
 const BALANCE_BELOW_LEDGER = "The entered balance is below the ledger's remaining credit. Reconcile the ledger, prices and bound before resuming.";
 const HOLD_CHANGED =
