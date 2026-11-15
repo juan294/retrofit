@@ -230,6 +230,28 @@ describe("crawlSite", () => {
     expect(t.clock() - t.startedAt).toBeLessThan(config.crawlBudgetMs);
   });
 
+  // Fails if the production fetch context (createFetchContext) drops the deadline, so the worker
+  // sleeps a 60 s Crawl-delay with the real clock (review of the V07 repair).
+  it("stops at once through createFetchContext when the Crawl-delay cannot fit the budget", { timeout: 5000 }, async () => {
+    const site: FixtureSite = { ...bakery, "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nCrawl-delay: 60\nAllow: /\n" } };
+    const server = await serveSites(() => ({ "slower.fixture.test": site }));
+    close = () => server.close();
+    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1 });
+    const err = await crawlSite(server.origin("slower.fixture.test"), { config, fetch, clock: Date.now }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CrawlDelayTooLong);
+    expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt"]);
+  });
+
+  // Fails if a robots.txt redirect to a private path is followed (review of the V06 repair).
+  it("never follows a robots.txt redirect to a private path", async () => {
+    const site: FixtureSite = { ...bakery, "/robots.txt": { status: 302, headers: { location: "/login?next=robots" } } };
+    const server = await serveSites(() => ({ "gated.fixture.test": site }));
+    close = () => server.close();
+    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1 });
+    await crawlSite(server.origin("gated.fixture.test"), { config, fetch, clock: Date.now }).catch(() => null);
+    expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt"]);
+  });
+
   // Fails if a redirect chain is not bounded as a whole: a hop to a host with a long delay must be
   // refused before contact when its wait would pass the deadline (plan notes, delayed redirect chains).
   it("refuses a redirect hop whose host delay would pass the deadline", async () => {

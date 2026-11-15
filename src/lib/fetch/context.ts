@@ -2,7 +2,7 @@ import type { Config } from "../config";
 import type { Clock, Store } from "../store/types";
 import { systemClock } from "../store/types";
 import type { Resolver } from "./guard";
-import type { FetchContext } from "./http";
+import type { FetchContext, Pace } from "./http";
 import { createPacer } from "./pacing";
 import { createRobots } from "./robots";
 
@@ -19,7 +19,8 @@ export interface FetchContextOptions {
 export function createFetchContext(o: FetchContextOptions): FetchContext {
   const clock = o.clock ?? systemClock;
   const pacer = createPacer({ store: o.store, clock, minIntervalMs: o.minIntervalMs ?? 1000 });
-  const pace = (host: string, delay?: number) => pacer.pace(host, delay);
+  // Typed as Pace so the deadline cannot be dropped again by a shorter parameter list.
+  const pace: Pace = (host, delay, notAfter) => pacer.pace(host, delay, notAfter);
   const robots = createRobots({ config: o.config, store: o.store, pace, lookup: o.lookup, clock });
   return { config: o.config, store: o.store, robots, pace, lookup: o.lookup };
 }

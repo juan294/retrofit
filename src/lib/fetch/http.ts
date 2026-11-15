@@ -17,8 +17,11 @@ export type Pace = (host: string, crawlDelaySeconds?: number, notAfter?: number)
 
 /** The robots surface `guardedFetch` needs; `createRobots` returns one. */
 export interface RobotsChecker {
-  /** Throws RobotsBlocked or RobotsUnavailable. A robots.txt request it makes starts no later than `opts.notAfter`. */
-  check(url: URL, opts?: Pick<FetchOptions, "notAfter">): Promise<void>;
+  /**
+   * Throws RobotsBlocked or RobotsUnavailable. A robots.txt request it makes
+   * starts no later than `opts.notAfter` and follows no redirect to `opts.privatePath`.
+   */
+  check(url: URL, opts?: FetchOptions): Promise<void>;
   /** The Crawl-delay (seconds) of `origin` (`URL.origin`), from its cached robots record. */
   crawlDelay(origin: string): Promise<number | undefined>;
 }
@@ -196,7 +199,7 @@ async function follow(start: URL, ctx: RawFetchContext, robots: RobotsChecker | 
     await resolvePublic(current.hostname, ctx.config, resolver);
     let crawlDelay: number | undefined;
     if (robots) {
-      await robots.check(current, { notAfter: opts.notAfter });
+      await robots.check(current, { notAfter: opts.notAfter, privatePath: opts.privatePath });
       crawlDelay = await robots.crawlDelay(current.origin);
     }
     await ctx.pace(current.host, crawlDelay, opts.notAfter);

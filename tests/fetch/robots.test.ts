@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig, type Config } from "@/lib/config";
-import { NotPublicError, RobotsBlocked, RobotsUnavailable } from "@/lib/fetch/errors";
+import { CrawlDelayTooLong, NotPublicError, RobotsBlocked, RobotsUnavailable } from "@/lib/fetch/errors";
 import type { Resolver } from "@/lib/fetch/guard";
 import { guardedFetch } from "@/lib/fetch/http";
 import { createRobots, robotsKey } from "@/lib/fetch/robots";
@@ -177,6 +177,19 @@ describe("robots per origin (RFC 9309 section 2.3: scheme and authority)", () =>
     await expect(robots.check(u("allow.fixture.test"))).resolves.toBeUndefined();
     // Fixtures accept only http, so the HTTPS origin's own retrieval is refused instead of reusing the HTTP allow.
     await expect(robots.check(https("allow.fixture.test"))).rejects.toBeInstanceOf(NotPublicError);
+  });
+});
+
+describe("robots deadlines", () => {
+  // Fails if a concurrent check shares the first caller's deadline refusal instead of using its own deadline.
+  it("a concurrent check with a later deadline is not refused by the first caller's deadline", async () => {
+    const strictPace = async (host: string, _delay?: number, notAfter?: number) => {
+      if (notAfter !== undefined && notAfter < now) throw new CrawlDelayTooLong(host, 1);
+    };
+    const robots = createRobots({ config, store: createMemoryStore({ clock }), pace: strictPace, lookup: noRealDns, clock });
+    const [early, late] = await Promise.allSettled([robots.check(u("allow.fixture.test"), { notAfter: now - 1 }), robots.check(u("allow.fixture.test"), { notAfter: now + 60_000 })]);
+    expect(early.status === "rejected" && early.reason instanceof CrawlDelayTooLong).toBe(true);
+    expect(late.status).toBe("fulfilled");
   });
 });
 

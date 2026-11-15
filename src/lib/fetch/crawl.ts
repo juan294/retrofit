@@ -83,10 +83,9 @@ function toPage(r: FetchResult): SnapshotPage {
  * Every request, redirect hop and robots.txt request included:
  * - never goes to a SKIP_PATH path (refused before contact);
  * - waits the host's full Crawl-delay, and is not sent when that wait would
- *   start it after the deadline: the end of CRAWL_BUDGET_MS, or earlier when
- *   the request (FETCH_TIMEOUT_MS) would otherwise outlast the crawl lease
- *   (CRAWL_LEASE_TTL_S from the latest progress step). The crawl then stops
- *   and skips what is left with reason "crawl-delay".
+ *   start it after the end of CRAWL_BUDGET_MS. The crawl then stops and skips
+ *   what is left with reason "crawl-delay". With the defaults (45 s budget,
+ *   8 s FETCH_TIMEOUT_MS, 60 s lease) every request also ends inside the lease.
  *
  * Throws RobotsBlocked, RobotsUnavailable, NotPublicError, PrivatePathRefused
  * or CrawlDelayTooLong for the home page, and LeaseLost when a hook reports
@@ -96,19 +95,17 @@ function toPage(r: FetchResult): SnapshotPage {
 export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<Snapshot | null> {
   const started = o.clock();
   const budgetEnd = started + o.config.crawlBudgetMs;
-  let leaseFrom = started;
   const overBudget = () => o.clock() >= budgetEnd;
-  const limits = (): FetchOptions => ({
-    privatePath: SKIP_PATH,
-    notAfter: Math.min(budgetEnd, leaseFrom + o.config.crawlLeaseTtlS * 1000 - o.config.fetchTimeoutMs),
-  });
+  // One deadline for every request of the crawl. loadConfig requires CRAWL_BUDGET_MS below
+  // CRAWL_LEASE_TTL_S, and the lease was taken or renewed at `started`, so no wait or request
+  // start outlasts the lease.
+  const limits: FetchOptions = { privatePath: SKIP_PATH, notAfter: budgetEnd };
   const step = async (s: string) => {
     if (o.hooks?.progress && !(await o.hooks.progress(s))) throw new LeaseLost();
-    leaseFrom = o.clock();
   };
 
   const inputUrl = new URL("/", inputOrigin).href;
-  const home = await guardedFetch(new URL(inputUrl), o.fetch, limits());
+  const home = await guardedFetch(new URL(inputUrl), o.fetch, limits);
   const final = new URL(home.url);
   const origin = final.origin;
   if (o.hooks?.afterHome && !(await o.hooks.afterHome(final.host, final.href))) return null;
@@ -130,7 +127,7 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
     if (delayStop || overBudget()) return emptyProbe(url.href);
     await step(stepName);
     try {
-      return toProbe(await guardedFetch(url, o.fetch, limits()));
+      return toProbe(await guardedFetch(url, o.fetch, limits));
     } catch (e) {
       if (e instanceof CrawlDelayTooLong) delayStop = true;
       return emptyProbe(url.href);
@@ -177,7 +174,7 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
     }
     await step(`page ${pages.length + 1}`);
     try {
-      const r = await guardedFetch(new URL(next), o.fetch, limits());
+      const r = await guardedFetch(new URL(next), o.fetch, limits);
       const landed = new URL(r.url);
       if (landed.host !== final.host) skipped.push({ url: next, reason: "other-host" });
       else if (r.body === null || !isHtml(r)) skipped.push({ url: next, reason: "not-html" });

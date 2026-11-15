@@ -23,12 +23,25 @@ declare
   v_token uuid;
 begin
   delete from public.queue where queue = p_queue and expires_at <= pg_catalog.now();
-  -- The oldest live item, locked; a concurrent claim skips it and takes the next one.
-  select q.item_id into v_item from public.queue q
-    where q.queue = p_queue and q.expires_at > pg_catalog.now()
-    order by q.seq
-    limit 1
-    for update skip locked;
+  for i in 1..3 loop
+    -- The oldest live item, locked; a concurrent claim skips it and takes the next one.
+    select q.item_id into v_item from public.queue q
+      where q.queue = p_queue and q.expires_at > pg_catalog.now()
+      order by q.seq
+      limit 1
+      for update skip locked;
+    exit when v_item is not null;
+    -- Every live item is locked by a concurrent claim. That claim may find no free lease (it
+    -- looked before a worker released one), so wait for it instead of returning null, or a
+    -- queued job could wait for the next request while a slot is free. A row this transaction
+    -- locks here is not skipped on the next round.
+    exit when not exists (select 1 from public.queue q where q.queue = p_queue and q.expires_at > pg_catalog.now());
+    perform 1 from public.queue q
+      where q.queue = p_queue and q.expires_at > pg_catalog.now()
+      order by q.seq
+      limit 1
+      for update;
+  end loop;
   if v_item is null then
     return null;
   end if;

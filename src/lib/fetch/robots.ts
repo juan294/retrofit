@@ -1,7 +1,7 @@
 import robotsParser from "robots-parser";
 import { type Clock, systemClock } from "@/lib/store/types";
 import { CrawlDelayTooLong, NotPublicError, RobotsBlocked, RobotsUnavailable } from "./errors";
-import { rawGuardedGet, type RawFetchContext, type RobotsChecker } from "./http";
+import { rawGuardedGet, type FetchOptions, type RawFetchContext, type RobotsChecker } from "./http";
 
 export const ROBOTS_AGENT = "RetrofitBot";
 export const ROBOTS_TTL_S = 3600;
@@ -43,9 +43,10 @@ export function createRobots(deps: RobotsDeps): Robots {
     return last.rules;
   }
 
-  async function fetchRecord(url: URL, notAfter: number | undefined): Promise<RobotsRecord> {
+  /** A robots.txt redirect to a private path is refused before contact and read as unavailable (like a 5xx). */
+  async function fetchRecord(url: URL, opts: FetchOptions): Promise<RobotsRecord> {
     try {
-      const res = await rawGuardedGet(new URL("/robots.txt", url.origin), deps, { anyContentType: true, notAfter });
+      const res = await rawGuardedGet(new URL("/robots.txt", url.origin), deps, { anyContentType: true, ...opts });
       if (res.status >= 200 && res.status < 300) return { kind: "rules", text: (res.body ?? "").slice(0, MAX_ROBOTS_CHARS) };
       if (res.status >= 400 && res.status < 500) return { kind: "allow" };
       return { kind: "unavailable", retryAt: clock() + ROBOTS_TTL_S * 1000 };
@@ -56,25 +57,25 @@ export function createRobots(deps: RobotsDeps): Robots {
     }
   }
 
-  async function load(url: URL, notAfter: number | undefined): Promise<RobotsRecord> {
+  async function load(url: URL, opts: FetchOptions): Promise<RobotsRecord> {
     const key = robotsKey(url.origin);
     const cached = await deps.store.get<RobotsRecord>(key);
     if (cached && !(cached.kind === "unavailable" && clock() >= cached.retryAt)) return cached;
-    let pending = inflight.get(key);
-    if (!pending) {
-      pending = fetchRecord(url, notAfter).then(async (record) => {
-        await deps.store.set(key, record, ROBOTS_TTL_S);
-        return record;
-      });
-      pending.finally(() => inflight.delete(key)).catch(() => {});
-      inflight.set(key, pending);
-    }
+    const shared = inflight.get(key);
+    // A shared fetch carries its first caller's deadline; when that deadline refused it, retry with this caller's own.
+    if (shared) return shared.catch((e: unknown) => (e instanceof CrawlDelayTooLong ? load(url, opts) : Promise.reject(e)));
+    const pending = fetchRecord(url, opts).then(async (record) => {
+      await deps.store.set(key, record, ROBOTS_TTL_S);
+      return record;
+    });
+    inflight.set(key, pending);
+    pending.finally(() => inflight.delete(key)).catch(() => {});
     return pending;
   }
 
   return {
     async check(url, opts) {
-      const record = await load(url, opts?.notAfter);
+      const record = await load(url, opts ?? {});
       if (record.kind === "unavailable") throw new RobotsUnavailable(url.host, new Date(record.retryAt));
       if (record.kind === "rules" && rulesFor(record.text, `${url.origin}/robots.txt`).isAllowed(url.href, ROBOTS_AGENT) === false) {
         throw new RobotsBlocked(url.host);

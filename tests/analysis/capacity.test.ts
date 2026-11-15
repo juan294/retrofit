@@ -352,12 +352,12 @@ describe("capacity review fixes", () => {
 
   // P3-R8. Fails if an analyze or score request that returns early (403, 400, 429) does not dispatch queued work.
   it.each([
-    ["analyze 403", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { fetchSite: null, origin: "https://evil.example" }), d)],
-    ["analyze 400", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "ftp://x.example.com" }), d)],
-    ["analyze 429", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { ip: "203.0.113.200" }), d)],
-    ["score 400", (d: TestDeps) => handleScore(scoreRequest("?url="), d)],
-    ["score 429", (d: TestDeps) => handleScore(scoreRequest("?url=https%3A%2F%2Fx.example.com", { ip: "203.0.113.200" }), d)],
-  ])("dispatches a queued job on an early return (%s)", async (_name, send) => {
+    ["analyze 403", 403, (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { fetchSite: null, origin: "https://evil.example" }), d)],
+    ["analyze 400", 400, (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "ftp://x.example.com" }), d)],
+    ["analyze 429", 429, (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { ip: "203.0.113.200" }), d)],
+    ["score 400", 400, (d: TestDeps) => handleScore(scoreRequest("?url="), d)],
+    ["score 429", 429, (d: TestDeps) => handleScore(scoreRequest("?url=https%3A%2F%2Fx.example.com", { ip: "203.0.113.200" }), d)],
+  ] as const)("dispatches a queued job on an early return (%s)", async (_name, status, send) => {
     const d = testDeps({ env: { ANALYSES_PER_CLIENT_HOUR: "1" } });
     const slots = await holdAllSlots(d);
     const queued = await startCrawlJob(d, "https://queued.example.com");
@@ -370,7 +370,8 @@ describe("capacity review fixes", () => {
     expect((await getJob(d.store, queued.jobId))?.status).toBe("queued");
 
     const res = await send(d);
-    expect([400, 403, 429]).toContain(res.status);
+    // The documented status of each early return: 403 cross-origin, 400 bad address, 429 client limit.
+    expect(res.status).toBe(status);
     await d.settle();
     // The crawl ran (it fails at the guard: every test name resolves to a private address).
     expect((await getJob(d.store, queued.jobId))?.status).toBe("failed");

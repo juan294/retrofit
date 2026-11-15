@@ -44,4 +44,16 @@ describe("countOnce in-progress decisions", () => {
     expect(await Promise.all([first, second])).toEqual([true, true]);
     expect(await store.incrementWindow("c", TTL, 0)).toBe(1);
   });
+
+  // Fails if a duplicate waiting on a first caller that is then refused passes (V04 at an exhausted cap).
+  it("a waiting duplicate of a refused first caller is refused too", async () => {
+    const store = createMemoryStore();
+    await store.incrementWindow("c", TTL, 5);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const slow = { ...store, incrementWindow: async (key: string, w: number, by?: number) => (await gate, store.incrementWindow(key, w, by)) };
+    const first = countOnce(slow, "m", "c", TTL, 5);
+    const second = countOnce(store, "m", "c", TTL, 5, async () => release());
+    expect(await Promise.all([first, second])).toEqual([false, false]);
+  });
 });
