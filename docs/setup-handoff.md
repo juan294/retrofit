@@ -6,7 +6,7 @@ Prepared on 2026-11-14 for the next session in `/Users/juan/code/retrofit`.
 
 The owner authorized a dedicated workspace, a GitHub repository, Summon configuration, a briefing document, full native RPI adoption, Archy tracking and local Graphify enrollment. This setup does not include a product plan, application code, a deployment or a release.
 
-The repository is [juan294/retrofit](https://github.com/juan294/retrofit), private at bootstrap. The integration branch is `develop`. No `main` branch exists yet; create it at the first authorized release. Resolve the current setup commit with `git rev-parse develop` and verify the working tree and remote branch when resuming. The first commit, `a26865a08b8f3a9811ff4dd99ce3726b67591924`, holds the license only and is the baseline for the whitespace check.
+The repository is [juan294/retrofit](https://github.com/juan294/retrofit), private at bootstrap. The integration branch is `develop`. `main` was created on 2026-11-15 at `e6cc1f3`, the `develop` tip at that time, and pushed to `origin`. Later promotions from `develop` to `main` use a merge commit. Resolve the current setup commit with `git rev-parse develop` and verify the working tree and remote branch when resuming. The first commit, `a26865a08b8f3a9811ff4dd99ce3726b67591924`, holds the license only and is the baseline for the whitespace check.
 
 ## Workspace and workflow
 
