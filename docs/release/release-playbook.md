@@ -49,6 +49,18 @@ Machine-readable selection and gaps are in `.rpi/release-profile.json`.
 
 The Devpost submission is an outward-facing action that needs Juan's authorization for the exact content. It needs a public URL, a video under 2 minutes on YouTube with Juan explaining and no third-party trademarks, a text description and screenshots. Making the repository public is a separate authorized action.
 
+## Free-path overrun recovery
+
+An overrun hold closes the public free pool until Juan reconciles the bound, prices, provider balance and outstanding reservations. Resuming production is an authorized owner action. Run it from a clean checkout with the production store and the deployment's ledger amounts in the environment (all six are required; nothing falls back to local defaults):
+
+```sh
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... FREE_CREDIT_USD=... JUDGE_RESERVE_USD=... \
+FREE_PRICE_IN_PER_M=... FREE_PRICE_OUT_PER_M=... \
+pnpm ops:resume-free --reconciled-balance <usd> --note <text>
+```
+
+The command prints the target store's origin and the ledger, hold and bound before any change, writes an `inference:audit:<time>` record, then clears the hold. Exit status: 0 resumed; 1 refused (missing balance or note, balance below the ledger's remaining credit, no hold, or a new overrun recorded while it ran, which keeps the hold); 2 store or ledger configuration missing; 3 store error. After a refusal for a new overrun, inspect the new state and reconcile again. `tests/db/resume-free.test.ts` runs the executable against the disposable gate stack only.
+
 ## Evidence and rollback
 
 Keep raw logs, screenshots and fetched site copies under ignored `.local/` or `.rpi/local/`. Curated release summaries may live under `docs/release/`. Each result names the candidate commit, environment, time, command or procedure, outcome and cleanup disposition.

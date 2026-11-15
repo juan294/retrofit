@@ -1,21 +1,27 @@
 #!/usr/bin/env node
 // Removes the free-path overrun hold after the owner reconciles (phase 6, "Ledger and quotas").
 //
+//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... FREE_CREDIT_USD=... JUDGE_RESERVE_USD=... \
+//   FREE_PRICE_IN_PER_M=... FREE_PRICE_OUT_PER_M=... \
 //   pnpm ops:resume-free --reconciled-balance <usd> --note <text>
 //
-// Prints the ledger total, outstanding reservations, the hold record and the bound
-// parameters; refuses without a balance or note, and when the entered provider
-// balance is below the ledger's remaining credit; writes an audit record
-// `inference:audit:<time>`; then removes the hold. Running it against production is
-// an authorized owner action.
+// Checks the owner's authorization inputs first (the reconciled provider balance and a note),
+// then builds the Supabase store named by the environment (src/lib/inference/resume-target.ts;
+// every variable above is required, with the deployment's values). Prints the target store's
+// origin, the ledger total, outstanding reservations, the hold record and the bound parameters;
+// refuses when the entered provider balance is below the ledger's remaining credit; writes an
+// audit record `inference:audit:<time>`; then removes the hold through resumeFree
+// (src/lib/inference/hold.ts), which refuses and keeps the hold when a new overrun is recorded
+// while it runs. Running it against production is an authorized owner action.
 //
-// The work runs through injected hooks built on src/lib/inference/hold.ts
-// (describeFreeState and resumeFree) over a Store. Until Phase 7 adds the production
-// store, only tests supply hooks (with the memory store); the command itself exits 2.
+// Exit status: 0 resumed; 1 refused (arguments, balance, no hold, or a concurrent hold event);
+// 2 no target (store or ledger configuration missing); 3 store error (nothing is reported as
+// resumed; rerun after the store recovers).
 import { pathToFileURL } from "node:url";
 
 /**
  * @typedef {object} ResumeHooks
+ * @property {string} [origin] the target store's origin, printed before any change
  * @property {() => Promise<any>} inspect describeFreeState over the target store
  * @property {(input: { reconciledBalanceUsd: number, note: string }) => Promise<any>} resume resumeFree over the target store
  * @property {(line: string) => void} [out]
@@ -54,14 +60,17 @@ function printState(state, out) {
   out(`Bound parameters: ${JSON.stringify(state.bound)}`);
 }
 
+const messageOf = (error) => (error instanceof Error ? error.message : String(error));
+
 /**
  * @param {string[]} argv
- * @param {ResumeHooks} [hooks]
- * @returns {Promise<number>} exit code: 0 resumed, 1 refused, 2 no store
+ * @param {ResumeHooks | (() => Promise<ResumeHooks>)} target the hooks, or a function that builds them
+ *   (called only after the arguments are valid)
+ * @returns {Promise<number>} exit code: 0 resumed, 1 refused, 2 no target, 3 store error
  */
-export async function main(argv, hooks) {
-  const out = hooks?.out ?? ((line) => console.log(line));
-  const err = hooks?.err ?? ((line) => console.error(line));
+export async function main(argv, target) {
+  const out = (typeof target === "object" && target?.out) || ((line) => console.log(line));
+  const err = (typeof target === "object" && target?.err) || ((line) => console.error(line));
   let input;
   try {
     input = parseArgs(argv);
@@ -70,12 +79,27 @@ export async function main(argv, hooks) {
     err(USAGE);
     return 1;
   }
-  if (!hooks) {
-    out("No production store configured until Phase 7");
+  let hooks;
+  try {
+    hooks = typeof target === "function" ? await target() : target;
+  } catch (error) {
+    err(`No target store: ${messageOf(error)}`);
     return 2;
   }
-  printState(await hooks.inspect(), out);
-  const result = await hooks.resume(input);
+  if (!hooks) {
+    err("No target store configured.");
+    return 2;
+  }
+  if (hooks.origin) out(`Store: ${hooks.origin}`);
+  let result;
+  try {
+    printState(await hooks.inspect(), out);
+    result = await hooks.resume(input);
+  } catch (error) {
+    const cause = error instanceof Error && error.cause ? ` (${messageOf(error.cause)})` : "";
+    err(`Store error: ${messageOf(error)}${cause}. Nothing was reported as resumed; check the hold and rerun when the store is reachable.`);
+    return 3;
+  }
   if (!result.ok) {
     err(`Refused: ${result.message}`);
     return 1;
@@ -84,6 +108,14 @@ export async function main(argv, hooks) {
   return 0;
 }
 
+/** The production target: the Supabase store and ledger amounts named by the environment. */
+async function targetFromEnv() {
+  const { registerSourceHooks, sourceUrl } = await import("./source-hooks.mjs");
+  registerSourceHooks();
+  const { resumeTargetFromEnv } = await import(sourceUrl("lib/inference/resume-target.ts"));
+  return resumeTargetFromEnv(process.env);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main(process.argv.slice(2)).then((code) => process.exit(code));
+  main(process.argv.slice(2), targetFromEnv).then((code) => process.exit(code));
 }
