@@ -165,6 +165,141 @@ describe("createPacer", () => {
     expect(sleeps).toEqual([40_000]);
   });
 
+  describe("deadline after asynchronous work (validation V07)", () => {
+    /** A memory store whose calls advance the shared fake clock by `delays[op]` ms before they run. */
+    function slowStore(clock: { now: number }, delays: Partial<Record<"get" | "putIfAbsent" | "compareAndSet", number>>): Store {
+      const store = createMemoryStore({ clock: () => clock.now });
+      const slow = <A extends unknown[], R>(op: keyof typeof delays, fn: (...a: A) => Promise<R>) => async (...a: A) => {
+        clock.now += delays[op] ?? 0;
+        return fn(...a);
+      };
+      return {
+        ...store,
+        get: slow("get", store.get.bind(store)) as Store["get"],
+        putIfAbsent: slow("putIfAbsent", store.putIfAbsent.bind(store)) as Store["putIfAbsent"],
+        compareAndSet: slow("compareAndSet", store.compareAndSet.bind(store)) as Store["compareAndSet"],
+      };
+    }
+
+    // Fails if the slot is calculated from the time read before the store read, so a slow read lets a
+    // request start after the deadline.
+    it("refuses a slot when its store read ends after notAfter, without reserving it", async () => {
+      const clock = { now: START };
+      const store = slowStore(clock, { get: 2000 });
+      const pacer = createPacer({ store, clock: () => clock.now, sleep: async (ms) => void (clock.now += ms) });
+      await expect(pacer.pace("slow-store.example", undefined, START + 1000)).rejects.toBeInstanceOf(CrawlDelayTooLong);
+      expect(await store.get("nextAllowedAt:slow-store.example")).toBeNull();
+    });
+
+    // Adopted from the validator's reproduction (.local/validation-2141fc4/regressions.test.ts:8).
+    // Fails if the deadline is not checked again after the reservation round trip.
+    it("does not grant a request slot when its store round trip crosses the crawl deadline", async () => {
+      let t = 0;
+      const store = createMemoryStore({ clock: () => t });
+      const slowPut = {
+        ...store,
+        async putIfAbsent<T>(key: string, value: T, ttl: number) {
+          t += 2000;
+          return store.putIfAbsent(key, value, ttl);
+        },
+      };
+      const pacer = createPacer({ store: slowPut, clock: () => t, sleep: async (ms) => void (t += ms) });
+      await expect(pacer.pace("example.com", undefined, 1000)).rejects.toBeInstanceOf(CrawlDelayTooLong);
+    });
+
+    // Fails if a compareAndSet reservation that returns after the deadline still admits the request, or if
+    // the refused caller's reservation is released (the next request would then start inside the interval).
+    it("refuses after a reservation that returns past notAfter, and keeps that reservation's spacing", async () => {
+      const clock = { now: START };
+      const backing = createMemoryBacking();
+      const fast = createMemoryStore({ clock: () => clock.now, backing });
+      const slow = { ...fast, compareAndSet: (async (...a: Parameters<Store["compareAndSet"]>) => {
+        clock.now += 2000;
+        return fast.compareAndSet(...a);
+      }) as Store["compareAndSet"] };
+      const sleeps: number[] = [];
+      const sleep = async (ms: number) => void (sleeps.push(ms), (clock.now += ms));
+      await createPacer({ store: fast, clock: () => clock.now, sleep }).pace("cas.example");
+      // The second slot starts at START + 1000; the reservation returns at START + 2000, after the deadline.
+      const err = await createPacer({ store: slow, clock: () => clock.now, sleep }).pace("cas.example", undefined, START + 1500).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(CrawlDelayTooLong);
+      expect(sleeps).toEqual([]);
+      // The refused reservation (START + 1000) stays: a 5 s crawl delay is measured from it (START + 6000),
+      // not from the first request (START + 5000), so it can only lengthen the next wait.
+      await createPacer({ store: fast, clock: () => clock.now, sleep }).pace("cas.example", 5);
+      expect(clock.now).toBe(START + 6000);
+    });
+
+    // Fails if a timer that wakes after the deadline still admits the request.
+    it("refuses when the wait's timer wakes after notAfter", async () => {
+      let t = START;
+      const store = createMemoryStore({ clock: () => t });
+      const pacer = createPacer({ store, clock: () => t, sleep: async (ms) => void (t += ms + 5000) });
+      await pacer.pace("late-timer.example");
+      // The slot starts at START + 1000, inside the deadline, but the timer wakes at START + 6000.
+      await expect(pacer.pace("late-timer.example", undefined, START + 3000)).rejects.toBeInstanceOf(CrawlDelayTooLong);
+    });
+
+    // Fails if the wait is measured from the time before the store calls (a request then starts late by
+    // their duration), instead of from the time after the reservation.
+    it("computes the remaining wait from the time after the reservation", async () => {
+      const clock = { now: START };
+      const store = slowStore(clock, { compareAndSet: 300 });
+      const sleeps: number[] = [];
+      const pacer = createPacer({ store, clock: () => clock.now, sleep: async (ms) => void (sleeps.push(ms), (clock.now += ms)) });
+      await pacer.pace("fresh.example");
+      clock.now = START;
+      await pacer.pace("fresh.example");
+      expect(sleeps).toEqual([700]);
+      expect(clock.now).toBe(START + 1000);
+    });
+
+    // Fails if a timer that wakes early is trusted, so the request starts before its slot (a shorter Crawl-delay).
+    it("waits again when the timer wakes early, so the full crawl delay passes", async () => {
+      let t = START;
+      const store = createMemoryStore({ clock: () => t });
+      const sleeps: number[] = [];
+      const pacer = createPacer({ store, clock: () => t, sleep: async (ms) => void (sleeps.push(ms), (t += Math.ceil(ms / 2))) });
+      await pacer.pace("early.example");
+      await pacer.pace("early.example", 30);
+      expect(t).toBeGreaterThanOrEqual(START + 30_000);
+      expect(sleeps[0]).toBe(30_000);
+      expect(sleeps.length).toBeGreaterThan(1);
+    });
+
+    // Fails if a caller that woke long after its slot sends at once, which would start its request less than
+    // the interval before the next caller's slot.
+    it("takes a new slot when it wakes too late for its own, so the next request keeps the full interval", async () => {
+      let t = START;
+      const backing = createMemoryBacking();
+      const store = () => createMemoryStore({ clock: () => t, backing });
+      const sent: Record<string, number> = {};
+      const normal = createPacer({ store: store(), clock: () => t, sleep: async (ms) => void (t += ms) });
+      await normal.pace("missed.example");
+      sent.first = t;
+      let lateWake = true;
+      const late = createPacer({
+        store: store(),
+        clock: () => t,
+        sleep: async (ms) => {
+          if (!lateWake) return void (t += ms);
+          lateWake = false;
+          // While this caller sleeps for its slot (START + 1000), the timer is held back and another
+          // caller takes the next slot (START + 2000) and sends.
+          t += ms;
+          await normal.pace("missed.example");
+          sent.other = t;
+          t += 500;
+        },
+      });
+      await late.pace("missed.example");
+      sent.late = t;
+      expect(sent.other).toBe(START + 2000);
+      // Woke at START + 2500, 1500 ms after its slot: it does not send then, 500 ms after the other request.
+      expect(sent.late).toBe(START + 3000);
+    });
+  });
+
   // Fails if an infinite Crawl-delay (robots-parser gives Infinity for a huge number) reads as no delay (F5).
   it("treats an infinite crawl delay as the longest interval, not as none", async () => {
     let t = START;

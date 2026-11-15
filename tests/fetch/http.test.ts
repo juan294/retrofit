@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig, type Config } from "@/lib/config";
-import { FetchTimeoutError, NotPublicError, RobotsBlocked, TooManyRedirects } from "@/lib/fetch/errors";
+import { createFetchContext } from "@/lib/fetch/context";
+import { CrawlDelayTooLong, FetchTimeoutError, NotPublicError, RobotsBlocked, TooManyRedirects } from "@/lib/fetch/errors";
 import type { Resolver } from "@/lib/fetch/guard";
 import { guardedFetch, rawGuardedGet, type FetchContext } from "@/lib/fetch/http";
 import { createRobots } from "@/lib/fetch/robots";
 import { validateUrl } from "@/lib/fetch/url";
 import { createMemoryStore } from "@/lib/store/memory";
+import type { Store } from "@/lib/store/types";
 import { startFixtureServer, type FixtureRoutes, type FixtureServer } from "../helpers/fixture-server";
 import { noRealDns } from "../helpers/server-deps";
 
@@ -211,5 +213,25 @@ describe("guardedFetch refusals", () => {
     expect(err).toBeInstanceOf(RobotsBlocked);
     expect((err as RobotsBlocked).host).toBe(new URL(server.url("www-b.fixture.test")).host);
     expect(server.requests.some((r) => r.host === "www-b.fixture.test" && r.path === "/")).toBe(false);
+  });
+});
+
+describe("deadline through the production fetch context (validation V07)", () => {
+  // Fails if a pacing slot whose reservation returns after notAfter still lets guardedFetch contact the
+  // site (robots.txt or the page): no request may start after the crawl deadline.
+  it("sends no request when the pacing reservation returns after notAfter", async () => {
+    let t = Date.parse("2026-11-15T10:20:00.000Z");
+    const store = createMemoryStore({ clock: () => t });
+    const slow: Store = {
+      ...store,
+      putIfAbsent: (async (key: string, value: unknown, ttl: number) => {
+        if (key.startsWith("nextAllowedAt:")) t += 2000;
+        return store.putIfAbsent(key, value, ttl);
+      }) as Store["putIfAbsent"],
+    };
+    const ctx = createFetchContext({ config, store: slow, clock: () => t, lookup: noRealDns });
+    const err = await guardedFetch(u("site.fixture.test"), ctx, { notAfter: t + 1000 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CrawlDelayTooLong);
+    expect(server.requests.filter((r) => r.host === "site.fixture.test")).toEqual([]);
   });
 });
