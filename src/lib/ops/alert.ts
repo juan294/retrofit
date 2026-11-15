@@ -109,7 +109,7 @@ export function overrunAlert(holdId: string): Alert {
       "2. Compare the configured prices with the provider's current prices.",
       "3. Read the provider balance.",
       "4. Check the outstanding reservations in the ledger.",
-      "5. As an authorized production action, run `pnpm ops:resume-free --reconciled-balance <usd> --note <text>`.",
+      "5. As an authorized production action, run `pnpm ops:resume-free --reconciled-balance <usd> --note <text>` with the production store and free-path settings in its environment. The release playbook lists the seven required variables.",
       "",
       "The hold never reopens by itself.",
     ].join("\n"),

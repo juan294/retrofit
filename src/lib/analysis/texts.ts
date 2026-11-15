@@ -100,5 +100,7 @@ export const agentTexts = {
   },
   daily_limit: "Retrofit reached today's analysis limit. Try again tomorrow.",
   unavailable: "Retrofit is having trouble. Try again in a few minutes.",
+  // Not in the contract table: a 503 `unavailable` while another call's count-once decision is pending.
+  counting: "Retrofit is still counting another call for this site from this client. Call again in 2 seconds with the same URL.",
   method_not_allowed: "Use GET /api/score with the website address in the url query parameter.",
 } as const;

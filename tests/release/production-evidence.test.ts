@@ -22,6 +22,28 @@ const COMMIT = "a".repeat(40);
 const DEPLOYMENT_ID = "dpl_candidate123";
 const DEPLOYMENT_URL = "https://retrofit-abc123-thecreativetoken.vercel.app";
 const PROD = "https://retrofit.thecreativetoken.com";
+const PEER = "https://demo-harbor.thecreativetoken.com";
+const CREATED_AT = () => new Date(Date.now() - 1000).toISOString();
+
+/**
+ * `vercel inspect <target>` answers: Vercel's deployment record for each target, in call order
+ * (the last answer repeats). A target with no answer fails as the CLI does for an unknown target.
+ */
+function inspectAnswers(answers: Record<string, (string | null)[]>, extra: Record<string, unknown> = {}) {
+  const seen = new Map<string, number>();
+  return (target: string) => {
+    const list = answers[target];
+    if (!list) return { status: 1, stdout: "", stderr: `Error: Can't find the deployment "${target}"` };
+    const n = seen.get(target) ?? 0;
+    seen.set(target, n + 1);
+    const id = list[Math.min(n, list.length - 1)];
+    if (id === null) return { status: 1, stdout: "", stderr: `${VERCEL_STDERR(target)}Error: The request timed out\n` };
+    return { status: 0, stdout: JSON.stringify({ id, url: target.slice(8), target: "production", ...extra }, null, 2), stderr: VERCEL_STDERR(target) };
+  };
+}
+/** What Vercel CLI 50.23.2 writes to stderr on every call that is not a TTY: its banner and a spinner line. */
+const VERCEL_STDERR = (target: string) => `Vercel CLI 50.23.2\nFetching deployment "${target.slice(8)}" in thecreativetoken\n`;
+const boundEverywhere = () => inspectAnswers({ [DEPLOYMENT_URL]: [DEPLOYMENT_ID], [PROD]: [DEPLOYMENT_ID], [PEER]: [DEPLOYMENT_ID] }, { createdAt: Date.now() - 60_000 });
 
 let tmp: string;
 let fetchStub: ReturnType<typeof vi.fn>;
@@ -73,7 +95,7 @@ describe("production-evidence.mjs --dry-run", () => {
     expect(fetchStub).not.toHaveBeenCalled();
     expect(fs.readdirSync(tmp)).toEqual([]);
 
-    const produced = [...out.matchAll(/^step \d+ [a-z-]+ -> (.+)$/gm)].flatMap((m) => m[1]!.split(", ")).filter((id) => id !== "deployment.json");
+    const produced = [...out.matchAll(/^step \d+ [a-z-]+ -> (.+)$/gm)].flatMap((m) => m[1]!.split(", ")).filter((id) => id !== "deployment.json" && id !== "nothing yet");
     expect([...new Set(produced)].sort()).toEqual(requiredIds);
     expect(out).toContain(`covers ${requiredIds.length} of ${requiredIds.length} required production cases`);
 
@@ -81,6 +103,10 @@ describe("production-evidence.mjs --dry-run", () => {
     expect(out).toContain(`$ vercel inspect ${DEPLOYMENT_URL} --format json --scope thecreativetoken`);
     expect(out).toContain(`GET ${PROD}/api/version`);
     expect(out).toContain(`GET ${DEPLOYMENT_URL}/api/version`);
+    // The alias identity comes from Vercel, before and after the suites, for the deployment URL, the alias and the peer host.
+    for (const target of [DEPLOYMENT_URL, PROD, PEER]) {
+      expect(out.split(`$ vercel inspect ${target} --format json --scope thecreativetoken`).length - 1, target).toBeGreaterThanOrEqual(2);
+    }
     expect(out).toContain(`GET ${PROD}/api/health`);
     expect(out).toMatch(/run\.json with a new run id/);
     for (const c of required.filter((x) => x.kind === "partner")) expect(out).toContain(`tools/agentic-web/scripts/check_partner.mjs ${(c as { target?: string }).target}`);
@@ -136,7 +162,14 @@ describe("writeCase report shape", () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "deployment.json"), JSON.stringify({ deploymentId: DEPLOYMENT_ID, deploymentUrl: DEPLOYMENT_URL, createdAt: new Date(Date.now() - 60_000).toISOString(), commit: COMMIT }));
     fs.writeFileSync(path.join(dir, "run.json"), JSON.stringify({ runId: "run_test0001", deploymentId: DEPLOYMENT_ID }));
-    const kindExtra = (kind: string) => (kind === "partner" ? { exitCode: 0 } : kind === "binding" ? { deploymentCommit: COMMIT, aliasCommit: COMMIT } : {});
+    // The binding case's identity window covers every report written here.
+    const hosts = { [new URL(DEPLOYMENT_URL).host]: DEPLOYMENT_ID, [new URL(PROD).host]: DEPLOYMENT_ID, [new URL(PEER).host]: DEPLOYMENT_ID };
+    const identity = {
+      source: "vercel inspect",
+      before: { checkedAt: new Date(Date.now() - 1000).toISOString(), deployments: hosts },
+      after: { checkedAt: new Date(Date.now() + 60_000).toISOString(), deployments: hosts },
+    };
+    const kindExtra = (kind: string) => (kind === "partner" ? { exitCode: 0 } : kind === "binding" ? { deploymentCommit: COMMIT, aliasCommit: COMMIT, identity } : {});
     for (const c of required) await writeCase(c.id, "passed", kindExtra(c.kind), { env: { ...env, RETROFIT_EVIDENCE_DIR: tmp } });
     const verdict = productionVerdict(dir);
     expect(verdict.reasons).toEqual([]);
@@ -156,10 +189,11 @@ describe("writeCase report shape", () => {
 describe("production-evidence.mjs run (stubbed boundary)", () => {
   it("writes deployment.json and every script case, runs Playwright with the binding environment, and the analyzer accepts the set", async () => {
     const createdAt = Date.now() - 60_000;
+    const inspect = inspectAnswers({ [DEPLOYMENT_URL]: [DEPLOYMENT_ID], [PROD]: [DEPLOYMENT_ID], [PEER]: [DEPLOYMENT_ID] }, { createdAt });
     const commands: string[] = [];
     spawnSync.mockImplementation((cmd: string, args: string[], options: { env?: Record<string, string> }) => {
       commands.push([path.basename(cmd), ...args].join(" "));
-      if (cmd === "vercel" && args[0] === "inspect") return { status: 0, stdout: JSON.stringify({ id: DEPLOYMENT_ID, url: DEPLOYMENT_URL.slice(8), createdAt, target: "production" }), stderr: "" };
+      if (cmd === "vercel" && args[0] === "inspect") return inspect(args[1]!);
       if (cmd === "vercel" && args[0] === "list") return { status: 0, stdout: "", stderr: "> No deployments found." };
       if (cmd === process.execPath && String(args[0]).endsWith("check_partner.mjs")) return { status: 0, stdout: "partner ok", stderr: "" };
       if (cmd === "pnpm") {
@@ -212,7 +246,17 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
     expect(JSON.parse(fs.readFileSync(path.join(dir, "partner-harbor-tours.json"), "utf8")).exitCode).toBe(0);
 
     expect(versionOrigins).toContain(DEPLOYMENT_URL);
-    expect(JSON.parse(fs.readFileSync(path.join(dir, "alias-binding.json"), "utf8"))).toMatchObject({ status: "passed", deploymentCommit: COMMIT, aliasCommit: COMMIT, alias: PROD });
+    const binding = JSON.parse(fs.readFileSync(path.join(dir, "alias-binding.json"), "utf8"));
+    expect(binding).toMatchObject({ status: "passed", deploymentCommit: COMMIT, aliasCommit: COMMIT, alias: PROD });
+    const hosts = { [new URL(DEPLOYMENT_URL).host]: DEPLOYMENT_ID, [new URL(PROD).host]: DEPLOYMENT_ID, [new URL(PEER).host]: DEPLOYMENT_ID };
+    expect(binding.identity.source).toBe("vercel inspect");
+    expect(binding.identity.before.deployments).toEqual(hosts);
+    expect(binding.identity.after.deployments).toEqual(hosts);
+    // Each identity check ran on both sides of the suites: four inspections of each target (record, before, after).
+    expect(commands.filter((c) => c === `vercel inspect ${PROD} --format json --scope thecreativetoken`)).toHaveLength(2);
+    expect(commands.filter((c) => c === `vercel inspect ${PEER} --format json --scope thecreativetoken`)).toHaveLength(2);
+    expect(commands.indexOf(`vercel inspect ${PEER} --format json --scope thecreativetoken`)).toBeLessThan(commands.indexOf("pnpm exec playwright test --config e2e-prod/playwright.config.ts"));
+    expect(commands.lastIndexOf(`vercel inspect ${PEER} --format json --scope thecreativetoken`)).toBeGreaterThan(commands.indexOf("pnpm exec playwright test --config e2e-prod/playwright.config.ts"));
     const runId = JSON.parse(fs.readFileSync(path.join(dir, "run.json"), "utf8")).runId;
     expect(runId).toMatch(/^run_[0-9a-f]{16}$/);
     for (const name of fs.readdirSync(dir).filter((n) => n.endsWith(".json") && n !== "deployment.json" && n !== "run.json")) {
@@ -235,9 +279,10 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
     expect(fetchStub).not.toHaveBeenCalled();
     expect(fs.readdirSync(dir)).toEqual(["health-ok.json"]);
 
-    spawnSync.mockImplementation(() => ({ status: 0, stdout: "", stderr: "" }));
+    const inspect = boundEverywhere();
+    spawnSync.mockImplementation((cmd: string, args: string[]) => (cmd === "vercel" && args[0] === "inspect" ? inspect(args[1]!) : { status: 0, stdout: "", stderr: "" }));
     fetchStub.mockImplementation(async () => new Response(JSON.stringify({ commit: COMMIT, status: "ok" }), { status: 200 }));
-    await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright", "--fresh", "--created-at", new Date(Date.now() - 1000).toISOString()], io);
+    await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright", "--fresh", "--created-at", CREATED_AT()], io);
     const moved = fs.readdirSync(tmp).filter((n) => n.startsWith(`${DEPLOYMENT_ID}.previous-`));
     expect(moved).toHaveLength(1);
     expect(fs.readdirSync(path.join(tmp, moved[0]!))).toEqual(["health-ok.json"]);
@@ -246,7 +291,8 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
   });
 
   it("fails the binding case when the alias serves another commit than the deployment", async () => {
-    spawnSync.mockImplementation(() => ({ status: 0, stdout: "", stderr: "" }));
+    const inspect = boundEverywhere();
+    spawnSync.mockImplementation((cmd: string, args: string[]) => (cmd === "vercel" && args[0] === "inspect" ? inspect(args[1]!) : { status: 0, stdout: "", stderr: "" }));
     fetchStub.mockImplementation(async (url: string) => {
       const u = new URL(url);
       if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: u.origin === DEPLOYMENT_URL ? COMMIT : "c".repeat(40) }), { status: 200 });
@@ -259,10 +305,9 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
   });
 
   it("records a failed case, not a pass, when /api/version serves another commit", async () => {
-    spawnSync.mockImplementation((cmd: string, args: string[]) => {
-      if (cmd === "vercel" && args[0] === "inspect") return { status: 1, stdout: "", stderr: "Error: not found" };
-      return { status: 0, stdout: "", stderr: "" };
-    });
+    // Vercel knows the deployment and the aliases but reports no creation time.
+    const inspect = inspectAnswers({ [DEPLOYMENT_URL]: [DEPLOYMENT_ID], [PROD]: [DEPLOYMENT_ID], [PEER]: [DEPLOYMENT_ID] });
+    spawnSync.mockImplementation((cmd: string, args: string[]) => (cmd === "vercel" && args[0] === "inspect" ? inspect(args[1]!) : { status: 0, stdout: "", stderr: "" }));
     fetchStub.mockImplementation(async (url: string) => {
       const u = new URL(url);
       if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: "c".repeat(40) }), { status: 200 });
@@ -270,12 +315,212 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
       return new Response("{}", { status: 503 });
     });
     const { io } = capture();
-    // vercel inspect fails, so --created-at is required.
+    // vercel inspect gives no creation time, so --created-at is required.
     expect(await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright"], io)).toBe(2);
     const code = await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--created-at", new Date(Date.now() - 1000).toISOString(), "--skip-playwright"], io);
     expect(code).toBe(1);
     const version = JSON.parse(fs.readFileSync(path.join(tmp, DEPLOYMENT_ID, "version-commit.json"), "utf8"));
     expect(version).toMatchObject({ status: "failed", served: "c".repeat(40), expected: COMMIT });
     expect(JSON.parse(fs.readFileSync(path.join(tmp, DEPLOYMENT_ID, "concurrent-analyses-five.json"), "utf8")).status).toBe("failed");
+  });
+});
+
+describe("production-evidence.mjs alias identity (V10)", () => {
+  /** A run where every /api/version answers the candidate commit and every other probe passes. */
+  function healthyProduction() {
+    fetchStub.mockImplementation(async (url: string) => {
+      const u = new URL(url);
+      if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: COMMIT }), { status: 200 });
+      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+      return new Response("{}", { status: 503 });
+    });
+  }
+  function commands(inspect: (target: string) => unknown) {
+    const seen: string[] = [];
+    spawnSync.mockImplementation((cmd: string, args: string[]) => {
+      seen.push([cmd, ...args].join(" "));
+      if (cmd === "vercel" && args[0] === "inspect") return inspect(args[1]!);
+      return { status: 0, stdout: "partner ok", stderr: "" };
+    });
+    return seen;
+  }
+  const binding = () => JSON.parse(fs.readFileSync(path.join(tmp, DEPLOYMENT_ID, "alias-binding.json"), "utf8"));
+  const runMain = async () => {
+    const { lines, io } = capture();
+    const code = await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--created-at", CREATED_AT()], io);
+    return { code, out: lines.join("\n") };
+  };
+
+  // The V10 defect: two deployments of one commit passed, because only /api/version commits were compared.
+  it("fails when the alias serves the same commit from another deployment, and runs no suite", async () => {
+    healthyProduction();
+    const seen = commands(inspectAnswers({ [DEPLOYMENT_URL]: [DEPLOYMENT_ID], [PROD]: ["dpl_samecommitother"], [PEER]: [DEPLOYMENT_ID] }));
+    const { code, out } = await runMain();
+    expect(code).toBe(1);
+    expect(binding()).toMatchObject({ status: "failed" });
+    expect(binding().identity.before.deployments[new URL(PROD).host]).toBe("dpl_samecommitother");
+    expect(out).toContain(`${new URL(PROD).host} is bound to dpl_samecommitother, not ${DEPLOYMENT_ID}`);
+    // Fail closed: no suite runs against an alias that does not serve the candidate.
+    expect(seen.some((c) => c.startsWith("pnpm "))).toBe(false);
+    expect(fs.existsSync(path.join(tmp, DEPLOYMENT_ID, "health-ok.json"))).toBe(false);
+  });
+
+  // Fails if the peer host is not part of the identity (it is host-routed to the same deployment).
+  it("fails when the peer host is bound to another deployment", async () => {
+    healthyProduction();
+    commands(inspectAnswers({ [DEPLOYMENT_URL]: [DEPLOYMENT_ID], [PROD]: [DEPLOYMENT_ID], [PEER]: ["dpl_peerother"] }));
+    const { code } = await runMain();
+    expect(code).toBe(1);
+    expect(binding().status).toBe("failed");
+    expect(binding().identity.before.deployments[new URL(PEER).host]).toBe("dpl_peerother");
+  });
+
+  // Fails if inspection that cannot answer is treated as a pass (fail closed).
+  it("fails closed when Vercel cannot inspect an alias", async () => {
+    healthyProduction();
+    const seen = commands(inspectAnswers({ [DEPLOYMENT_URL]: [DEPLOYMENT_ID], [PROD]: [null], [PEER]: [DEPLOYMENT_ID] }));
+    const { code, out } = await runMain();
+    expect(code).toBe(1);
+    expect(binding().status).toBe("failed");
+    expect(binding().identity.before.deployments[new URL(PROD).host]).toMatch(/^unavailable \(exit 1/);
+    expect(out).toContain("alias identity could not be inspected");
+    expect(seen.some((c) => c.startsWith("pnpm "))).toBe(false);
+  });
+
+  // Fails if the identity is checked only once: an alias moved during the suites must fail the run.
+  it("fails when the alias moves to another deployment during the suites", async () => {
+    healthyProduction();
+    commands(inspectAnswers({ [DEPLOYMENT_URL]: [DEPLOYMENT_ID], [PROD]: [DEPLOYMENT_ID, "dpl_movedduringrun"], [PEER]: [DEPLOYMENT_ID] }));
+    const { code } = await runMain();
+    expect(code).toBe(1);
+    const b = binding();
+    expect(b.status).toBe("failed");
+    expect(b.identity.before.deployments[new URL(PROD).host]).toBe(DEPLOYMENT_ID);
+    expect(b.identity.after.deployments[new URL(PROD).host]).toBe("dpl_movedduringrun");
+  });
+});
+
+describe("production-evidence.mjs reads vercel inspect from stdout only", () => {
+  // Review finding: the CLI's banner and spinner on stderr made every inspection "unavailable".
+  it("binds every host when the CLI writes its banner and spinner to stderr", async () => {
+    const inspect = boundEverywhere();
+    spawnSync.mockImplementation((cmd: string, args: string[]) => (cmd === "vercel" && args[0] === "inspect" ? inspect(args[1]!) : { status: 0, stdout: "", stderr: "" }));
+    fetchStub.mockImplementation(async () => new Response(JSON.stringify({ commit: COMMIT, status: "ok" }), { status: 200 }));
+    const { io } = capture();
+    await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright"], io);
+    const dir = path.join(tmp, DEPLOYMENT_ID);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, "deployment.json"), "utf8")).createdAtSource).toBe("vercel inspect");
+    const binding = JSON.parse(fs.readFileSync(path.join(dir, "alias-binding.json"), "utf8"));
+    expect(binding.identity.before.deployments).toEqual({ [new URL(DEPLOYMENT_URL).host]: DEPLOYMENT_ID, [new URL(PROD).host]: DEPLOYMENT_ID, [new URL(PEER).host]: DEPLOYMENT_ID });
+    expect(binding.status).toBe("passed");
+  });
+
+  // Fails if a deployment record that cannot be read is accepted without its id and target checks.
+  it("refuses to start when vercel inspect exits 0 but its output is not a deployment record", async () => {
+    spawnSync.mockImplementation((cmd: string, args: string[]) =>
+      cmd === "vercel" && args[0] === "inspect" ? { status: 0, stdout: "Deployment found\n", stderr: VERCEL_STDERR(args[1]!) } : { status: 0, stdout: "", stderr: "" },
+    );
+    const { lines, io } = capture();
+    expect(await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright", "--created-at", CREATED_AT()], io)).toBe(2);
+    expect(lines.join("\n")).toContain("vercel inspect exited 0 but gave no deployment record");
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  // Fails if the deployment record check accepts a record for another deployment.
+  it("refuses a deployment record that names another deployment", async () => {
+    const inspect = inspectAnswers({ [DEPLOYMENT_URL]: ["dpl_other"] }, { createdAt: Date.now() - 60_000 });
+    spawnSync.mockImplementation((cmd: string, args: string[]) => (cmd === "vercel" && args[0] === "inspect" ? inspect(args[1]!) : { status: 0, stdout: "", stderr: "" }));
+    const { lines, io } = capture();
+    expect(await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright"], io)).toBe(2);
+    expect(lines.join("\n")).toContain(`vercel inspect reports deployment dpl_other, not ${DEPLOYMENT_ID}`);
+  });
+});
+
+describe("production-evidence.mjs inspection failure detail", () => {
+  const UPDATE_BOX = "╭──────────────────────────────╮\n│ Update available! 50.23.2 → 51.0.0 │\n╰──────────────────────────────╯\n";
+  const binding = () => JSON.parse(fs.readFileSync(path.join(tmp, DEPLOYMENT_ID, "alias-binding.json"), "utf8"));
+  const runWith = async (prodInspect: () => Record<string, unknown>) => {
+    const envs: Record<string, string | undefined>[] = [];
+    const ok = inspectAnswers({ [DEPLOYMENT_URL]: [DEPLOYMENT_ID], [PEER]: [DEPLOYMENT_ID] });
+    spawnSync.mockImplementation((cmd: string, args: string[], options: { env?: Record<string, string | undefined> }) => {
+      if (cmd === "vercel" && args[0] === "inspect") {
+        envs.push(options.env ?? {});
+        return args[1] === PROD ? prodInspect() : ok(args[1]!);
+      }
+      return { status: 0, stdout: "", stderr: "" };
+    });
+    fetchStub.mockImplementation(async () => new Response(JSON.stringify({ commit: COMMIT, status: "ok" }), { status: 200 }));
+    const { io } = capture();
+    await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright", "--created-at", CREATED_AT()], io);
+    return envs;
+  };
+
+  // Fails if the CLI's update notifier can run, or if the detail is the notifier box or spinner instead of the error.
+  it("turns off the update notifier and records the CLI's error line", async () => {
+    const envs = await runWith(() => ({ status: 1, stdout: "", stderr: `${VERCEL_STDERR(PROD)}Error: Can't find the deployment "retrofit.thecreativetoken.com"\n${UPDATE_BOX}` }));
+    expect(envs.length).toBeGreaterThan(0);
+    expect(envs.every((e) => e.NO_UPDATE_NOTIFIER === "1")).toBe(true);
+    expect(binding().identity.before.deployments[new URL(PROD).host]).toBe(`unavailable (exit 1: Error: Can't find the deployment "retrofit.thecreativetoken.com")`);
+  });
+
+  // Fails if a CLI that could not start is reported by its (empty) stderr instead of the spawn error.
+  it("records the spawn error when the CLI cannot start", async () => {
+    await runWith(() => ({ status: null, stdout: "", stderr: "", error: new Error("spawnSync vercel ENOENT") }));
+    expect(binding().identity.before.deployments[new URL(PROD).host]).toBe("unavailable (exit -1: spawnSync vercel ENOENT)");
+  });
+});
+
+describe("analyzer: alias identity in production evidence (V10)", () => {
+  const hosts = (id: string) => ({ [new URL(DEPLOYMENT_URL).host]: id, [new URL(PROD).host]: id, [new URL(PEER).host]: id });
+  const CREATED = Date.parse("2026-11-16T09:00:00.000Z");
+  const iso = (ms: number) => new Date(CREATED + ms).toISOString();
+  function evidence(identity: Record<string, unknown> | undefined, recordedAt?: string) {
+    const dir = path.join(tmp, DEPLOYMENT_ID);
+    fs.mkdirSync(dir, { recursive: true });
+    const created = CREATED;
+    fs.writeFileSync(path.join(dir, "deployment.json"), JSON.stringify({ deploymentId: DEPLOYMENT_ID, deploymentUrl: DEPLOYMENT_URL, createdAt: new Date(created).toISOString(), commit: COMMIT }));
+    fs.writeFileSync(path.join(dir, "run.json"), JSON.stringify({ runId: "run_test0001", deploymentId: DEPLOYMENT_ID }));
+    const at = (ms: number) => new Date(created + ms).toISOString();
+    for (const c of required) {
+      const extra = c.kind === "partner" ? { exitCode: 0 } : c.kind === "binding" ? { deploymentCommit: COMMIT, aliasCommit: COMMIT, ...(identity ? { identity } : {}) } : {};
+      writeCaseFile(tmp, caseReport({ caseId: c.id, status: "passed", deploymentId: DEPLOYMENT_ID, deploymentUrl: DEPLOYMENT_URL, commit: COMMIT, runId: "run_test0001", recordedAt: c.kind === "binding" ? at(300_000) : (recordedAt ?? at(200_000)), extra }));
+    }
+    return { dir, at };
+  }
+  const window = (before: string, after: string) => ({ source: "vercel inspect", before: { checkedAt: before, deployments: hosts(DEPLOYMENT_ID) }, after: { checkedAt: after, deployments: hosts(DEPLOYMENT_ID) } });
+  const messages = (dir: string) => productionVerdict(dir).reasons.map((r: { message: string }) => r.message);
+
+  // Fails if the analyzer accepts a binding case that names no alias deployment (the old commit-only check).
+  it("rejects a binding case without an alias identity", () => {
+    const { dir } = evidence(undefined);
+    expect(messages(dir)).toContain("binding check alias-binding has no alias identity before and after the suites");
+  });
+
+  // Fails if a same-commit deployment behind the alias is accepted.
+  it("rejects an alias bound to another deployment before or after the suites", () => {
+    const w = window(iso(100_000), iso(290_000));
+    (w.after.deployments as Record<string, string>)[new URL(PROD).host] = "dpl_samecommitother";
+    const { dir } = evidence(w);
+    expect(messages(dir)).toContain(`binding check alias-binding after: ${new URL(PROD).host} is bound to dpl_samecommitother, not ${DEPLOYMENT_ID}`);
+  });
+
+  // Fails if a required host (the peer) may be left out of the identity.
+  it("rejects an identity that leaves out a required host", () => {
+    const w = window(iso(100_000), iso(290_000));
+    delete (w.before.deployments as Record<string, string>)[new URL(PEER).host];
+    const { dir } = evidence(w);
+    expect(messages(dir)).toContain(`binding check alias-binding before: ${new URL(PEER).host} is bound to undefined, not ${DEPLOYMENT_ID}`);
+  });
+
+  // Fails if a case recorded outside the verified window (before the first or after the last identity check) is accepted.
+  it("rejects a case recorded outside the identity window", () => {
+    const { dir } = evidence(window(iso(100_000), iso(290_000)), iso(295_000));
+    expect(messages(dir)).toContain(`health-ok.json was recorded at ${iso(295_000)}, outside the alias identity checks (${iso(100_000)} to ${iso(290_000)})`);
+  });
+
+  // The positive control for the four rejections above.
+  it("accepts an identity that binds every host on both sides of every case", () => {
+    const { dir } = evidence(window(iso(100_000), iso(290_000)));
+    expect(productionVerdict(dir).reasons).toEqual([]);
   });
 });

@@ -26,7 +26,9 @@ export function installPageGuard(target: { fetch: typeof fetch } = window): Fetc
 /**
  * Closes every cross-origin destination when a preview unmounts ("Forget my
  * key", a key change or navigation): no router, no policy peers, no approvals,
- * no provisional provider. A runtime still running gets the blocked error.
+ * no provisional provider. A runtime still running gets the blocked error, and
+ * its model calls (also same-origin ones on the free path) are refused or aborted
+ * because setRouter retires its generation.
  */
 export function closePreviewAccess(g: Pick<FetchGuard, "setRouter" | "setPolicyPeers" | "clearApprovals" | "revokeProvider">, w: object = window): void {
   g.setRouter(null);

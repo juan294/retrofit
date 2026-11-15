@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig, type Config } from "@/lib/config";
-import { NotPublicError, RobotsBlocked, RobotsUnavailable } from "@/lib/fetch/errors";
+import { CrawlDelayTooLong, NotPublicError, RobotsBlocked, RobotsUnavailable } from "@/lib/fetch/errors";
 import type { Resolver } from "@/lib/fetch/guard";
 import { guardedFetch } from "@/lib/fetch/http";
-import { createRobots } from "@/lib/fetch/robots";
+import { createRobots, robotsKey } from "@/lib/fetch/robots";
 import { validateUrl } from "@/lib/fetch/url";
 import { createMemoryBacking, createMemoryStore } from "@/lib/store/memory";
 import type { Store } from "@/lib/store/types";
@@ -155,17 +155,55 @@ describe("robots check", () => {
   });
 });
 
+describe("robots per origin (RFC 9309 section 2.3: scheme and authority)", () => {
+  const https = (host: string, path = "/") => new URL(path, `https://${hostOf(host)}`);
+
+  // Fails if the cache is keyed by host, so an HTTP allow decides the HTTPS origin (validation V05).
+  it("keeps an HTTP allow and an HTTPS disallow on one host independent", async () => {
+    const store = createMemoryStore({ clock });
+    const robots = robotsFor(store);
+    await store.set(robotsKey(https("allow.fixture.test").origin), { kind: "rules", text: "User-agent: *\nDisallow: /\nCrawl-delay: 7\n" }, 3600);
+    await expect(robots.check(u("allow.fixture.test", "/menu"))).resolves.toBeUndefined();
+    await expect(robots.check(https("allow.fixture.test", "/menu"))).rejects.toBeInstanceOf(RobotsBlocked);
+    // The HTTP rules were fetched over HTTP; the HTTPS decision came from its own record.
+    expect(robotsHits("allow.fixture.test")).toBe(1);
+    await expect(robots.crawlDelay(https("allow.fixture.test").origin)).resolves.toBe(7);
+    await expect(robots.crawlDelay(new URL(server.url("allow.fixture.test")).origin)).resolves.toBeUndefined();
+  });
+
+  // Fails if a cached HTTP result suppresses the HTTPS origin's own robots retrieval.
+  it("does not answer an HTTPS URL from the HTTP origin's cached result", async () => {
+    const robots = robotsFor(createMemoryStore({ clock }));
+    await expect(robots.check(u("allow.fixture.test"))).resolves.toBeUndefined();
+    // Fixtures accept only http, so the HTTPS origin's own retrieval is refused instead of reusing the HTTP allow.
+    await expect(robots.check(https("allow.fixture.test"))).rejects.toBeInstanceOf(NotPublicError);
+  });
+});
+
+describe("robots deadlines", () => {
+  // Fails if a concurrent check shares the first caller's deadline refusal instead of using its own deadline.
+  it("a concurrent check with a later deadline is not refused by the first caller's deadline", async () => {
+    const strictPace = async (host: string, _delay?: number, notAfter?: number) => {
+      if (notAfter !== undefined && notAfter < now) throw new CrawlDelayTooLong(host, 1);
+    };
+    const robots = createRobots({ config, store: createMemoryStore({ clock }), pace: strictPace, lookup: noRealDns, clock });
+    const [early, late] = await Promise.allSettled([robots.check(u("allow.fixture.test"), { notAfter: now - 1 }), robots.check(u("allow.fixture.test"), { notAfter: now + 60_000 })]);
+    expect(early.status === "rejected" && early.reason instanceof CrawlDelayTooLong).toBe(true);
+    expect(late.status).toBe("fulfilled");
+  });
+});
+
 describe("crawl delay", () => {
-  // Fails if Crawl-delay for RetrofitBot is not read, or not passed to pacing for page requests.
+  // Fails if Crawl-delay for RetrofitBot is not read, or not passed (uncapped) to pacing for page requests.
   it("exposes the crawl delay and passes it to pacing", async () => {
     const store = createMemoryStore({ clock });
     const robots = robotsFor(store);
     await guardedFetch(u("delay.fixture.test"), { config, store, robots, pace, lookup: noRealDns });
-    await expect(robots.crawlDelay(hostOf("delay.fixture.test"))).resolves.toBe(5);
-    // robots.txt request, then the slot reservation with the delay, then the page request.
+    await expect(robots.crawlDelay(new URL(server.url("delay.fixture.test")).origin)).resolves.toBe(5);
+    // robots.txt request (delay not known yet), then the page request with the full delay. The pacer
+    // measures the delay from the robots.txt request (tests/fetch/pacing.test.ts).
     expect(paced).toEqual([
       [hostOf("delay.fixture.test"), undefined],
-      [hostOf("delay.fixture.test"), 5],
       [hostOf("delay.fixture.test"), 5],
     ]);
   });
@@ -174,7 +212,7 @@ describe("crawl delay", () => {
   it("is undefined when robots.txt sets none", async () => {
     const robots = robotsFor(createMemoryStore({ clock }));
     await robots.check(u("allow.fixture.test"));
-    await expect(robots.crawlDelay(hostOf("allow.fixture.test"))).resolves.toBeUndefined();
+    await expect(robots.crawlDelay(new URL(server.url("allow.fixture.test")).origin)).resolves.toBeUndefined();
   });
 });
 

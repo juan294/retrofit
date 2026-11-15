@@ -43,18 +43,21 @@ const TOOL_RESULT_NAME = /^[A-Za-z0-9_]{1,64}$/;
 const FUNCTION_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 const TOP_LEVEL = new Set(["model", "messages", "tools", "tool_choice", "stream", "temperature", "top_p"]);
-const MESSAGE_KEYS: Record<string, ReadonlySet<string>> = {
-  system: new Set(["role", "content"]),
-  user: new Set(["role", "content"]),
-  assistant: new Set(["role", "content", "tool_calls"]),
-  tool: new Set(["role", "tool_call_id", "name", "content"]),
-};
+/** A Map, so a role is never found through the prototype chain ("__proto__", "toString"). */
+const MESSAGE_KEYS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["system", new Set(["role", "content"])],
+  ["user", new Set(["role", "content"])],
+  ["assistant", new Set(["role", "content", "tool_calls"])],
+  ["tool", new Set(["role", "tool_call_id", "name", "content"])],
+]);
 
 class Refusal extends Error {}
 
 type Obj = Record<string, unknown>;
 
 const isObject = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
+/** Own properties only: an inherited name never counts as a field the caller sent. */
+const has = (o: Obj, key: string): boolean => Object.hasOwn(o, key);
 const utf8Bytes = (v: unknown): number => Buffer.byteLength(JSON.stringify(v), "utf8");
 
 function refuse(message: string): never {
@@ -68,7 +71,7 @@ function onlyKeys(value: Obj, allowed: ReadonlySet<string>, where: string): void
 }
 
 function content(m: Obj, where: string): string | null {
-  if (!("content" in m)) refuse(`${where} needs a content field.`);
+  if (!has(m, "content")) refuse(`${where} needs a content field.`);
   const c = m.content;
   if (c !== null && typeof c !== "string") refuse(`${where} content must be text. Images, audio and files are not accepted.`);
   return c;
@@ -100,12 +103,13 @@ function parseMessages(v: unknown, max: number): ChatMessage[] {
     const where = `message ${i + 1}`;
     if (!isObject(m)) refuse(`${where} must be an object.`);
     const role = m.role;
-    if (typeof role !== "string" || !(role in MESSAGE_KEYS)) refuse(`${where} role must be system, user, assistant or tool.`);
-    onlyKeys(m, MESSAGE_KEYS[role]!, where);
+    const allowed = typeof role === "string" ? MESSAGE_KEYS.get(role) : undefined;
+    if (typeof role !== "string" || !allowed) refuse(`${where} role must be system, user, assistant or tool.`);
+    onlyKeys(m, allowed, where);
     const text = content(m, where);
     if (role === "system" || role === "user") return { role, content: text };
     if (role === "assistant") {
-      if (!("tool_calls" in m)) return { role, content: text };
+      if (!has(m, "tool_calls")) return { role, content: text };
       if (!Array.isArray(m.tool_calls) || m.tool_calls.length === 0) refuse(`${where} tool_calls must be a non-empty list.`);
       const calls = m.tool_calls.map((c, j) => parseToolCall(c, `${where} tool call ${j + 1}`));
       for (const c of calls) calledNames.add(c.function.name);
@@ -131,11 +135,11 @@ function parseTools(v: unknown, free: FreeConfig): ToolDefinition[] {
     onlyKeys(fn, new Set(["name", "description", "parameters"]), `${where} function`);
     if (typeof fn.name !== "string" || !FUNCTION_NAME.test(fn.name)) refuse(`${where} function name is not valid.`);
     const out: ToolDefinition = { type: "function", function: { name: fn.name } };
-    if ("description" in fn) {
+    if (has(fn, "description")) {
       if (typeof fn.description !== "string") refuse(`${where} description must be text.`);
       out.function.description = fn.description;
     }
-    if ("parameters" in fn) {
+    if (has(fn, "parameters")) {
       if (!isObject(fn.parameters)) refuse(`${where} parameters must be a JSON object.`);
       out.function.parameters = fn.parameters;
     }
@@ -156,17 +160,17 @@ export function parseChatRequest(json: unknown, free: FreeConfig): ParseResult {
     if (utf8Bytes(json) > free.maxBodyBytes) refuse(`The request is larger than ${free.maxBodyBytes} bytes.`);
     if (json.model !== free.model) refuse(`Retrofit's free AI serves only the model "${free.model}".`);
     const body: ChatRequest = { model: free.model, messages: parseMessages(json.messages, free.maxMessages) };
-    if ("tools" in json) body.tools = parseTools(json.tools, free);
-    if ("tool_choice" in json) {
+    if (has(json, "tools")) body.tools = parseTools(json.tools, free);
+    if (has(json, "tool_choice")) {
       if (json.tool_choice !== "auto" && json.tool_choice !== "none") refuse('tool_choice must be "auto" or "none".');
       body.tool_choice = json.tool_choice;
     }
-    if ("stream" in json) {
+    if (has(json, "stream")) {
       if (typeof json.stream !== "boolean") refuse("stream must be true or false.");
       body.stream = json.stream;
     }
-    if ("temperature" in json) body.temperature = numberIn(json.temperature, "temperature", 0, 2);
-    if ("top_p" in json) body.top_p = numberIn(json.top_p, "top_p", 0, 1);
+    if (has(json, "temperature")) body.temperature = numberIn(json.temperature, "temperature", 0, 2);
+    if (has(json, "top_p")) body.top_p = numberIn(json.top_p, "top_p", 0, 1);
     return { ok: true, body };
   } catch (error) {
     if (error instanceof Refusal) return { ok: false, status: 400, message: error.message };

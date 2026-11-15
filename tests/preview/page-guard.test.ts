@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BLOCKED_TEXT, createFetchGuard } from "@/lib/preview/fetch-guard";
+import { BLOCKED_TEXT, RETIRED_TEXT, createFetchGuard } from "@/lib/preview/fetch-guard";
 import { closePreviewAccess } from "@/lib/preview/page-guard";
 
 describe("closePreviewAccess", () => {
@@ -25,5 +25,21 @@ describe("closePreviewAccess", () => {
     await expect(guard.fetch("https://api.other.example/v1/models")).rejects.toThrow(BLOCKED_TEXT("https://api.other.example"));
     expect(seen).toEqual([]);
     expect(w.__nsweb).toBeUndefined();
+  });
+
+  // V08: fails if unmounting leaves the retired runtime's same-origin (free path) inference open.
+  it("closes the retired runtime's same-origin inference", async () => {
+    const seen: string[] = [];
+    const guard = createFetchGuard({
+      pageOrigin: "https://retrofit.example",
+      originalFetch: (async (input: RequestInfo | URL) => {
+        seen.push(String(input));
+        return new Response("{}");
+      }) as typeof fetch,
+    });
+    const base = guard.setRouter("https://retrofit.example/api/inference/v1")!;
+    closePreviewAccess(guard, {});
+    await expect(guard.fetch(`${base}/chat/completions`, { method: "POST", body: "{}" })).rejects.toThrow(RETIRED_TEXT);
+    expect(seen).toEqual([]);
   });
 });

@@ -204,8 +204,11 @@ test("error bubble shows a hostile router error body as text", async ({ page, co
 test("developer log escapes tool results, answer previews and request payloads", async ({ page, context }) => {
   const s = await hostileSession(page, context, MARKDOWN, { dev: true });
   await finished(s);
-  // In the composed layout the mount itself is the runtime's app root (runtime/ui.js:413).
-  await expect(s.mount).toHaveAttribute("data-dev", "true");
+  // In the composed layout the runtime's app root (runtime/ui.js:413) is the per-boot root that
+  // Preview.tsx puts inside the mount, so a late boot never takes over the live one.
+  const root = s.mount.locator("[data-nsdeploy-ui]");
+  await expect(root).toHaveCount(1);
+  await expect(root).toHaveAttribute("data-dev", "true");
   const dev = s.mount.locator(".ns-dev");
   await expect(dev).toBeVisible();
   // Rows for the tool results exist; their previews are cut short by the runtime, and the

@@ -61,7 +61,7 @@ describe("overrun alert retry by the daily credit check (P6-R2)", () => {
   // Fails if a pool closed by the ledger flag alone (the hold record write never ran) gets no issue.
   it("alerts for a ledger hold flag with no hold record", async () => {
     const { d, ledger } = setup();
-    await ledger.setHeld(true);
+    await ledger.raiseHold();
     const view = await ledgerViewFor(d);
     expect(view.holdId).toBe("unrecorded-2026-11-15");
     await handleCreditCheck(cronRequest(), d);

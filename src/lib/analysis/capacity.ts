@@ -19,16 +19,6 @@ export interface Slot {
   readonly token: string;
 }
 
-/** Takes the first free slot, or null when all are held. */
-export async function acquireSlot(deps: Pick<ServerDeps, "store" | "config">): Promise<Slot | null> {
-  for (let n = 0; n < deps.config.crawlMaxConcurrent; n++) {
-    const key = slotKey(n);
-    const token = await deps.store.acquireLease(key, deps.config.crawlLeaseTtlS);
-    if (token) return { key, token };
-  }
-  return null;
-}
-
 export type StartCrawlResult =
   | { readonly ok: true; readonly jobId: string; readonly created: boolean }
   | { readonly ok: false; readonly code: "daily_limit"; readonly retryAt: number };
@@ -46,8 +36,12 @@ export async function startCrawlJob(deps: JobDeps, inputOrigin: string): Promise
   const midnight = nextUtcMidnight(now);
   const ttl = ttlUntil(midnight, now);
   const day = utcDay(now);
-  const allowed = await countOnce(deps.store, `crawl-origin-day:${day}:${shortHash(inputOrigin)}`, `crawl-origins:${day}`, ttl, deps.config.crawlMaxHostsPerDay);
-  if (!allowed) {
+  const decision = await countOnce(deps.store, `crawl-origin-day:${day}:${shortHash(inputOrigin)}`, `crawl-origins:${day}`, ttl, deps.config.crawlMaxHostsPerDay);
+  // `undecided` (another job of this origin is still being counted today) starts the crawl. That
+  // other decision usually counts the origin; when its caller was refused or stopped before
+  // counting, this crawl runs uncounted, so at most one extra crawl per pending marker passes a
+  // full cap. Refusing would tell the visitor the daily limit was reached when it may not have been.
+  if (decision === "refused") {
     const job = await getJob(deps.store, jobId);
     if (job) await updateJob(deps, job, { status: "failed", step: "failed", failure: { code: "daily_limit", message: visitorTexts.dailyLimit } });
     return { ok: false, code: "daily_limit", retryAt: midnight };
@@ -80,8 +74,13 @@ export function hasTimeForCrawl(deps: Pick<ServerDeps, "config" | "clock">, invo
 /**
  * Starts queued jobs while slots, queued jobs and invocation time remain
  * (phase-3.md `dispatchQueued`). Called at the end of every worker run (with
- * that worker's invocation) and on every analyze, status and score request.
- * Returns the number of workers emitted.
+ * that worker's invocation) and on every analyze and score request and every
+ * owner's status request. Returns the number of workers emitted.
+ *
+ * Each round is one Store.claimWithLease call (one RPC on Supabase): it takes
+ * the oldest queued job together with the first free slot, or changes nothing
+ * when the queue is empty or every slot is held. So a dispatch with nothing to
+ * start costs one store operation.
  *
  * Each emitted worker first checks its job: a job that is no longer queued or
  * whose queue time passed is skipped, its slot released and dispatch repeated
@@ -89,23 +88,14 @@ export function hasTimeForCrawl(deps: Pick<ServerDeps, "config" | "clock">, invo
  * request that dispatches makes no extra job read of its own.
  */
 export async function dispatchQueued(deps: ServerDeps, invocation: Invocation): Promise<number> {
+  // Every slot's lease key, in order (built once per dispatch).
+  const slotKeys = Array.from({ length: deps.config.crawlMaxConcurrent }, (_, n) => slotKey(n));
   let started = 0;
   for (;;) {
     if (!hasTimeForCrawl(deps, invocation)) return started;
-    const slot = await acquireSlot(deps);
-    if (!slot) return started;
-    let jobId: string | null;
-    try {
-      jobId = await deps.store.claimNext(CRAWL_QUEUE);
-    } catch (e) {
-      await deps.store.releaseLease(slot.key, slot.token).catch(() => false);
-      throw e;
-    }
-    if (!jobId) {
-      await deps.store.releaseLease(slot.key, slot.token);
-      return started;
-    }
-    deps.waitUntil(runInSlot(deps, jobId, slot, invocation));
+    const claim = await deps.store.claimWithLease(CRAWL_QUEUE, slotKeys, deps.config.crawlLeaseTtlS);
+    if (!claim) return started;
+    deps.waitUntil(runInSlot(deps, claim.itemId, { key: claim.leaseKey, token: claim.token }, invocation));
     started++;
   }
 }

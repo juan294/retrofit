@@ -2,26 +2,28 @@ import { Agent, request } from "undici";
 import type { Config } from "@/lib/config";
 import { KEPT_HEADERS, type KeptHeaders } from "@/lib/snapshot/types";
 import type { Store } from "@/lib/store/types";
-import { FetchTimeoutError, NotPublicError, TooManyRedirects } from "./errors";
+import { FetchTimeoutError, NotPublicError, PrivatePathRefused, TooManyRedirects } from "./errors";
 import { guardedLookup, resolvePublic, systemResolver, type Resolver } from "./guard";
 import { validateUrl } from "./url";
 
 export const MAX_REDIRECTS = 5;
 
-/** Per-host pacing slot. `host` is `URL.host`. */
-export type Pace = (host: string, crawlDelaySeconds?: number) => Promise<void>;
-
 /**
- * Longest wait Retrofit makes between two requests to one host. A site that asks
- * for more gets robots.txt and its home page only (see crawl.ts), so the wait
- * never outlasts the worker's lease.
+ * Per-host pacing slot (`createPacer`). `host` is `URL.host`. The crawl delay
+ * is honored in full (up to one day); a slot that would start after `notAfter` (ms) is refused
+ * with CrawlDelayTooLong before any wait.
  */
-export const MAX_CRAWL_DELAY_S = 10;
+export type Pace = (host: string, crawlDelaySeconds?: number, notAfter?: number) => Promise<void>;
 
 /** The robots surface `guardedFetch` needs; `createRobots` returns one. */
 export interface RobotsChecker {
-  check(url: URL): Promise<void>;
-  crawlDelay(host: string): Promise<number | undefined>;
+  /**
+   * Throws RobotsBlocked or RobotsUnavailable. A robots.txt request it makes
+   * starts no later than `opts.notAfter` and follows no redirect to `opts.privatePath`.
+   */
+  check(url: URL, opts?: FetchOptions): Promise<void>;
+  /** The Crawl-delay (seconds) of `origin` (`URL.origin`), from its cached robots record. */
+  crawlDelay(origin: string): Promise<number | undefined>;
 }
 
 export interface FetchContext {
@@ -38,7 +40,19 @@ export interface FetchContext {
 /** Context for requests that skip the robots check (robots.txt itself). */
 export type RawFetchContext = Omit<FetchContext, "robots">;
 
-export interface RawGetOptions {
+/** Per-call limits of `guardedFetch` and `rawGuardedGet`; they apply to every hop of the redirect chain. */
+export interface FetchOptions {
+  /**
+   * Latest time (ms, the pacer's clock) at which any request of this call,
+   * including robots.txt and redirect hops, may start. A later slot throws
+   * CrawlDelayTooLong before contact.
+   */
+  readonly notAfter?: number;
+  /** Paths that are never requested (given URL.pathname): a matching URL or redirect target throws PrivatePathRefused before contact. */
+  readonly privatePath?: (pathname: string) => boolean;
+}
+
+export interface RawGetOptions extends FetchOptions {
   /** Read the body whatever the content type (robots.txt is often served without one). */
   readonly anyContentType?: boolean;
 }
@@ -172,7 +186,8 @@ async function sendOnce(url: URL, ctx: RawFetchContext, resolver: Resolver, opts
 }
 
 /**
- * Each hop: address check, robots (when given), pacing slot, then the request.
+ * Each hop: private-path rule, address check, robots (when given), pacing slot
+ * (the full crawl delay, refused past `opts.notAfter`), then the request.
  * Redirect targets are re-validated with validateUrl; at most MAX_REDIRECTS hops.
  */
 async function follow(start: URL, ctx: RawFetchContext, robots: RobotsChecker | null, opts: RawGetOptions): Promise<FetchResult> {
@@ -180,13 +195,14 @@ async function follow(start: URL, ctx: RawFetchContext, robots: RobotsChecker | 
   const redirects: string[] = [];
   let current = start;
   for (;;) {
+    if (opts.privatePath?.(current.pathname)) throw new PrivatePathRefused(current.href);
     await resolvePublic(current.hostname, ctx.config, resolver);
     let crawlDelay: number | undefined;
     if (robots) {
-      await robots.check(current);
-      crawlDelay = await robots.crawlDelay(current.host);
+      await robots.check(current, { notAfter: opts.notAfter, privatePath: opts.privatePath });
+      crawlDelay = await robots.crawlDelay(current.origin);
     }
-    await ctx.pace(current.host, crawlDelay === undefined ? undefined : Math.min(crawlDelay, MAX_CRAWL_DELAY_S));
+    await ctx.pace(current.host, crawlDelay, opts.notAfter);
     const hop = await sendOnce(current, ctx, resolver, opts);
     if (REDIRECT_STATUS.has(hop.status) && hop.location) {
       if (redirects.length >= MAX_REDIRECTS) throw new TooManyRedirects(start.href);
@@ -214,11 +230,12 @@ export async function rawGuardedGet(url: URL, ctx: RawFetchContext, opts: RawGet
 }
 
 /**
- * Reads one public URL: guarded lookup, robots per host, pacing per host,
+ * Reads one public URL: guarded lookup, robots per origin, pacing per host,
  * RetrofitBot UA, no cookies, manual redirects (each hop re-validated),
  * body cut at FETCH_MAX_BYTES, FETCH_TIMEOUT_MS per request.
- * Throws NotPublicError, RobotsBlocked, RobotsUnavailable, FetchTimeoutError or TooManyRedirects.
+ * Throws NotPublicError, RobotsBlocked, RobotsUnavailable, FetchTimeoutError,
+ * TooManyRedirects, and with `opts`, PrivatePathRefused or CrawlDelayTooLong.
  */
-export async function guardedFetch(url: URL, ctx: FetchContext): Promise<FetchResult> {
-  return follow(validateUrl(url.href, ctx.config), ctx, ctx.robots, {});
+export async function guardedFetch(url: URL, ctx: FetchContext, opts: FetchOptions = {}): Promise<FetchResult> {
+  return follow(validateUrl(url.href, ctx.config), ctx, ctx.robots, opts);
 }

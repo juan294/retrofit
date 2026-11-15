@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { AgentPanel } from "@/components/preview/AgentPanel";
 import { localizeRetry } from "./retry-time";
-import { FINAL_STATUSES, pollDelay } from "./poll";
+import { pollAction, pollDelay } from "./poll";
 
 interface Failure {
   code: string;
@@ -82,7 +82,8 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
           return;
         }
         setStatus(body);
-        if (body.scoreReady) {
+        const action = pollAction(body);
+        if (action === "read-result") {
           const full = await fetch(`/api/analyze/${id}?include=result`, { credentials: "same-origin", cache: "no-store" });
           const fullBody = full.ok ? await full.json() : null;
           if (fullBody?.report) {
@@ -91,7 +92,7 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
             return;
           }
           // The result read failed: keep polling.
-        } else if (FINAL_STATUSES.has(body.status)) {
+        } else if (action === "stop") {
           finish();
           return;
         }

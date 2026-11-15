@@ -32,6 +32,7 @@ Machine-readable selection and gaps are in `.rpi/release-profile.json`.
 2. Local gate on that commit: `python3 .rpi/scripts/rpi-verify.py` (includes `pnpm test:db`, the disposable gate database, and `pnpm test:e2e`).
 3. Local analysis: `node tools/release/analyze-evidence.mjs <merge commit>`. Any accepted exception (`--accept-failed-check <name> --reason <text>`) is shown to Juan with the candidate.
 4. After the authorized candidate deployment (`vercel deploy --prod --build-env BUILD_COMMIT=<merge commit>` from a clean checkout of that commit): production evidence into `.local/evidence/production/<deployment id>/` (phase-7.md "Production evidence"), then `node tools/release/analyze-evidence.mjs <merge commit> --production .local/evidence/production/<deployment id>`.
+   - Deployment identity: `/api/version` names only a commit, and two deployments of one commit can differ. `tools/release/production-evidence.mjs` therefore runs `vercel inspect <target> --format json` for the deployment URL, `retrofit.thecreativetoken.com` and `demo-harbor.thecreativetoken.com` (the `aliases` of the `alias-binding` case in `tools/release/required-production-cases.json`) before the first case and again after the last. Each must name the candidate deployment id both times. A host bound to another deployment, or one that Vercel cannot inspect, fails `alias-binding`; when this happens before the suites, the script stops and runs no suite. The analyzer rejects a binding case without this identity and any case recorded outside the two checks.
 5. Juan's final acceptance, then the release tag last through `rpi-release`.
 
 ## Required ordering
@@ -48,6 +49,18 @@ Machine-readable selection and gaps are in `.rpi/release-profile.json`.
 ## Hackathon submission
 
 The Devpost submission is an outward-facing action that needs Juan's authorization for the exact content. It needs a public URL, a video under 2 minutes on YouTube with Juan explaining and no third-party trademarks, a text description and screenshots. Making the repository public is a separate authorized action.
+
+## Free-path overrun recovery
+
+An overrun hold closes the public free pool until Juan reconciles the bound, prices, provider balance and outstanding reservations. Resuming production is an authorized owner action. Run it from a clean checkout with the production store, the credit, the judge reserve, the prices and the service end in the environment (all seven are required):
+
+```sh
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... FREE_CREDIT_USD=... JUDGE_RESERVE_USD=... \
+FREE_PRICE_IN_PER_M=... FREE_PRICE_OUT_PER_M=... FREE_SERVICE_END=... \
+pnpm ops:resume-free --reconciled-balance <usd> --note <text>
+```
+
+The other free-path settings (per-request fee, bound and limits) keep their `src/lib/config.ts` defaults when unset. The command prints every effective setting and marks each default; set any value that production overrides, then rerun. It prints the target store's origin and the ledger, hold and bound before any change, writes an `inference:audit:<time>` record, then clears the hold. A refusal or a store failure adds a `resume-free-refused` or `resume-free-failed` audit record. Exit status: 0 resumed; 1 refused (missing balance or note, balance below the ledger's remaining credit, no hold, or a new overrun recorded while it ran, which keeps the hold); 2 store or ledger configuration missing; 3 store error (nothing was reported as resumed); 4 the ledger hold was cleared but a legacy `inference:hold` record from the earlier layout could not be deleted (a `resume-free-legacy-delete-failed` audit record notes the error; that record still closes the public pool, so rerun the command). After a refusal for a new overrun, inspect the new state and reconcile again. `tests/db/resume-free.test.ts` runs the executable against the disposable gate stack only.
 
 ## Evidence and rollback
 

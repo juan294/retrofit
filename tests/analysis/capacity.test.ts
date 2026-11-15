@@ -6,6 +6,8 @@ import { handleAnalysisStatus } from "@/lib/api/status";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { handleScore } from "@/lib/api/score";
 import { getJob, leaseKey, originAliasKey, resolveJob, startOrJoinCrawl, type CrawlJob } from "@/lib/crawl/jobs";
+import { createMemoryStore } from "@/lib/store/memory";
+import { shortHash } from "@/lib/fetch/limits";
 import { bakery } from "../fixtures/sites";
 import {
   analyzeRequest,
@@ -204,6 +206,19 @@ describe("capacity", () => {
     expect((await analyze("three.example.com", "203.0.113.99")).status).toBe(200);
   });
 
+  // F1. Fails if an undecided daily count (another job of the same origin still being counted) fails the
+  // job as daily_limit, which would tell the visitor the limit was reached when it may not have been.
+  it("queues the job when the origin's daily count is still undecided", async () => {
+    const fc = fakeClock(Date.parse("2026-11-15T10:20:00.000Z"));
+    const d = testDeps({ clock: fc.clock });
+    await holdAllSlots(d);
+    const origin = "https://pending.example.com";
+    await d.store.putIfAbsent(`crawl-origin-day:2026-11-15:${shortHash(origin)}`, { version: 1, state: "pending" }, 10);
+    const r = await startCrawlJob(d, origin);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect((await getJob(d.store, r.jobId))?.status).toBe("queued");
+  });
+
   // Fails if a worker that finds its job lease held ("busy") keeps the capacity slot.
   it("releases the slot when the worker returns busy", async () => {
     const d = testDeps({ env: { CRAWL_MAX_CONCURRENT: "1" } });
@@ -225,6 +240,51 @@ describe("capacity", () => {
     await d.store.enqueue(CRAWL_QUEUE, "some-job", 120);
     expect(await dispatchQueued(d, { startedAt: d.clock() })).toBe(0);
     expect(await d.store.claimNext(CRAWL_QUEUE)).toBe("some-job");
+  });
+});
+
+describe("dispatch store work (validation V16)", () => {
+  // Fails if dispatch tries one lease per slot (eight sequential RPCs on Supabase at full capacity)
+  // instead of one atomic claim.
+  it("makes one store call when every slot is held and a job is queued", async () => {
+    const ops: string[] = [];
+    const d = testDeps({ instrument: (op) => void ops.push(op) });
+    await holdAllSlots(d);
+    await d.store.enqueue(CRAWL_QUEUE, "waiting-job", 120);
+    ops.length = 0;
+    expect(await dispatchQueued(d, { startedAt: d.clock() })).toBe(0);
+    expect(ops).toEqual(["claimWithLease"]);
+    expect(await d.store.claimNext(CRAWL_QUEUE)).toBe("waiting-job");
+  });
+
+  // Fails if dispatch acquires, claims and releases a slot when nothing is queued.
+  it("makes one store call and takes no slot when the queue is empty", async () => {
+    const ops: string[] = [];
+    const d = testDeps({ instrument: (op) => void ops.push(op), env: { CRAWL_MAX_CONCURRENT: "2" } });
+    expect(await dispatchQueued(d, { startedAt: d.clock() })).toBe(0);
+    expect(ops).toEqual(["claimWithLease"]);
+  });
+
+  // Fails if a status request without the owner's cookie or with an invalid id starts dispatch work.
+  it("does no dispatch work for status requests that are not the owner's", async () => {
+    const ops: string[] = [];
+    const d = testDeps({ instrument: (op) => void ops.push(op) });
+    const slots = await holdAllSlots(d);
+    const owner = await handleAnalyze(analyzeRequest({ url: "https://owned.example.com" }), d);
+    const stranger = await handleAnalyze(analyzeRequest({ url: "https://other.example.com" }), d);
+    const { id } = (await owner.json()) as { id: string };
+    for (const [n, t] of slots.entries()) await d.store.releaseLease(slotKey(n), t);
+    await d.settle();
+    ops.length = 0;
+    await handleAnalysisStatus(statusRequest(id), d, id);
+    await handleAnalysisStatus(statusRequest("not-an-id", { cookie: cookieFrom(owner) }), d, "not-an-id");
+    await handleAnalysisStatus(statusRequest(id, { cookie: cookieFrom(stranger) }), d, id);
+    await d.settle();
+    expect(ops).toEqual(["get"]);
+    // The owner's request dispatches the queued jobs.
+    await handleAnalysisStatus(statusRequest(id, { cookie: cookieFrom(owner) }), d, id);
+    await d.settle();
+    expect(ops).toContain("claimWithLease");
   });
 });
 
@@ -289,17 +349,33 @@ describe("capacity review fixes", () => {
     expect((await jobFor(d, server.origin("second.fixture.test")))?.status).toBe("ready");
   });
 
-  // P3-R5. Fails if the slot lease is not renewed while the worker runs: with a 1 s lease, a crawl held
+  // P3-R5. Fails if the slot lease is not renewed while the worker runs: with a 1 s lease, a worker held
   // for 1.6 s would lose its slot and a second crawl could start beyond CRAWL_MAX_CONCURRENT.
+  // loadConfig keeps every request inside the lease (budget + FETCH_TIMEOUT_MS <= lease), so the worker is
+  // held in a store call instead: its first job-lease renewal waits until the test opens it.
   it("renews the slot lease while the worker runs and frees it in the end", async () => {
-    const server = await serveGatedSites({ "slow.fixture.test": bakery }, ["slow.fixture.test"]);
+    const server = await serveGatedSites({ "slow.fixture.test": bakery }, []);
     close = () => server.close();
-    const d = testDeps({ env: { CRAWL_MAX_CONCURRENT: "1", CRAWL_LEASE_TTL_S: "1", CRAWL_BUDGET_MS: "900" } });
+    const base = createMemoryStore();
+    let held = false;
+    let open: () => void = () => {};
+    const gate = new Promise<void>((r) => (open = r));
+    const store = {
+      ...base,
+      renewLease: async (key: string, token: string, ttl: number) => {
+        if (key.startsWith("crawl-lease:") && !held) {
+          held = true;
+          await gate;
+        }
+        return base.renewLease(key, token, ttl);
+      },
+    };
+    const d = testDeps({ store, env: { CRAWL_MAX_CONCURRENT: "1", CRAWL_LEASE_TTL_S: "1", CRAWL_BUDGET_MS: "600", FETCH_TIMEOUT_MS: "400" } });
     expect((await handleAnalyze(analyzeRequest({ url: server.origin("slow.fixture.test") }), d)).status).toBe(200);
-    await waitFor(() => server.gate("slow.fixture.test").waiting === 1, "home page held");
+    await waitFor(() => held, "worker held in its first lease renewal");
     await new Promise((r) => setTimeout(r, 1600));
     expect(await d.store.acquireLease(slotKey(0), 1)).toBeNull();
-    server.gate("slow.fixture.test").open();
+    open();
     await d.settle();
     expect(await d.store.acquireLease(slotKey(0), 1)).not.toBeNull();
     expect(d.errors).toEqual([]);
@@ -307,12 +383,12 @@ describe("capacity review fixes", () => {
 
   // P3-R8. Fails if an analyze or score request that returns early (403, 400, 429) does not dispatch queued work.
   it.each([
-    ["analyze 403", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { fetchSite: null, origin: "https://evil.example" }), d)],
-    ["analyze 400", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "ftp://x.example.com" }), d)],
-    ["analyze 429", (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { ip: "203.0.113.200" }), d)],
-    ["score 400", (d: TestDeps) => handleScore(scoreRequest("?url="), d)],
-    ["score 429", (d: TestDeps) => handleScore(scoreRequest("?url=https%3A%2F%2Fx.example.com", { ip: "203.0.113.200" }), d)],
-  ])("dispatches a queued job on an early return (%s)", async (_name, send) => {
+    ["analyze 403", 403, (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { fetchSite: null, origin: "https://evil.example" }), d)],
+    ["analyze 400", 400, (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "ftp://x.example.com" }), d)],
+    ["analyze 429", 429, (d: TestDeps) => handleAnalyze(analyzeRequest({ url: "https://x.example.com" }, { ip: "203.0.113.200" }), d)],
+    ["score 400", 400, (d: TestDeps) => handleScore(scoreRequest("?url="), d)],
+    ["score 429", 429, (d: TestDeps) => handleScore(scoreRequest("?url=https%3A%2F%2Fx.example.com", { ip: "203.0.113.200" }), d)],
+  ] as const)("dispatches a queued job on an early return (%s)", async (_name, status, send) => {
     const d = testDeps({ env: { ANALYSES_PER_CLIENT_HOUR: "1" } });
     const slots = await holdAllSlots(d);
     const queued = await startCrawlJob(d, "https://queued.example.com");
@@ -325,7 +401,8 @@ describe("capacity review fixes", () => {
     expect((await getJob(d.store, queued.jobId))?.status).toBe("queued");
 
     const res = await send(d);
-    expect([400, 403, 429]).toContain(res.status);
+    // The documented status of each early return: 403 cross-origin, 400 bad address, 429 client limit.
+    expect(res.status).toBe(status);
     await d.settle();
     // The crawl ran (it fails at the guard: every test name resolves to a private address).
     expect((await getJob(d.store, queued.jobId))?.status).toBe("failed");

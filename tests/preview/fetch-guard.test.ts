@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BLOCKED_TEXT, createFetchGuard, installFetchGuard } from "@/lib/preview/fetch-guard";
+import { BLOCKED_TEXT, RETIRED_TEXT, createFetchGuard, installFetchGuard } from "@/lib/preview/fetch-guard";
 
 // The boundary: the browser's original fetch is replaced by a recorder. The recorder builds the
 // Request the platform would build from (input, init), so assertions read the effective
@@ -70,14 +70,68 @@ describe("rule 1: same origin, not an agent artifact", () => {
   });
 
   // Fails if rule 3 is applied before rule 1 to a same-origin router (deviation row: the free path is first-party).
+  // Model calls come from the runtime's own base (V08); its /models and other requests pass unchanged.
   it("leaves a same-origin router (the free path) unchanged", async () => {
     const { guard, calls } = setup();
-    guard.setRouter(`${PAGE}/api/inference/v1`);
-    const init: RequestInit = { method: "POST", body: "{}" };
-    await guard.fetch(`${PAGE}/api/inference/v1/chat/completions`, init);
+    const base = guard.setRouter(`${PAGE}/api/inference/v1`)!;
     await guard.fetch(`${PAGE}/api/inference/v1/models`);
-    expect(calls[0]!.init).toBe(init);
-    expect(calls[1]!.init).toBeUndefined();
+    await guard.fetch(`${base}/chat/completions`, { method: "POST", body: "{}", redirect: "follow" });
+    expect(calls[0]!.init).toBeUndefined();
+    const chat = effective(calls[1]);
+    expect(chat.url).toBe(`${PAGE}/api/inference/v1/chat/completions`);
+    // Not given rule 3's redirect "manual": the free path is first-party.
+    expect(chat.redirect).toBe("follow");
+  });
+
+  // Review S4: fails if a fetch() call outside the runtime's marked base can reach the active
+  // same-origin router's chat path (it would bypass the run retirement). The guard covers fetch only.
+  it("refuses an unmarked chat call to the active same-origin router", async () => {
+    const { guard, calls } = setup();
+    guard.setRouter(`${PAGE}/api/inference/v1`);
+    await expectBlocked(guard.fetch(`${PAGE}/api/inference/v1/chat/completions`, { method: "POST", body: "{}" }), PAGE);
+    await expectBlocked(guard.fetch("/api/inference/v1/chat/completions/", { method: "POST", body: "{}" }), PAGE);
+    expect(calls).toHaveLength(0);
+    // With no active runtime the path is an ordinary same-origin request again.
+    guard.setRouter(null);
+    await guard.fetch(`${PAGE}/api/inference/v1/chat/completions`, { method: "POST", body: "{}" });
+    expect(calls).toHaveLength(1);
+  });
+
+  // Review S4: fails if a spelling of the router path that the server cleans up (Next answers "//"
+  // with a 308 to the cleaned path) reaches it, or if anything but the free-session /models check passes.
+  it.each([
+    "/api/inference/v1//chat/completions",
+    "/api/inference//v1/chat/completions",
+    "/api/inference/v1/chat//completions",
+    "/api/inference/v1\\chat\\completions",
+    "/api/inference/v1",
+    "/api/inference/v1/",
+    "/api/inference/v1/embeddings",
+    "/api/inference/v1/models/extra",
+  ])("refuses the unmarked path %s while a same-origin runtime is active", async (pathname) => {
+    const { guard, calls } = setup();
+    guard.setRouter(`${PAGE}/api/inference/v1`);
+    await expectBlocked(guard.fetch(`${PAGE}${pathname}`, { method: "POST", body: "{}" }), PAGE);
+    expect(calls).toHaveLength(0);
+  });
+
+  // Fails if a same-origin router at the origin root closes the whole site instead of its chat path.
+  it("closes only the chat path of a same-origin router at the origin root", async () => {
+    const { guard, calls } = setup();
+    guard.setRouter(PAGE);
+    await expectBlocked(guard.fetch(`${PAGE}//chat/completions`, { method: "POST" }), PAGE);
+    await guard.fetch(`${PAGE}/api/score?url=x`);
+    expect(calls).toHaveLength(1);
+  });
+
+  // The free session's model check (useFreeSession) and other API paths stay open.
+  it("keeps /models and paths outside the router open while a same-origin runtime is active", async () => {
+    const { guard, calls } = setup();
+    guard.setRouter(`${PAGE}/api/inference/v1`);
+    await guard.fetch(`${PAGE}/api/inference/v1/models`, { cache: "no-store" });
+    await guard.fetch(`${PAGE}/api/inference/session`, { method: "POST" });
+    await guard.fetch(`${PAGE}/api/inference/v1x/chat/completions`, { method: "POST" });
+    expect(calls).toHaveLength(3);
   });
 });
 
@@ -438,5 +492,155 @@ describe("redirects on guarded requests", () => {
     const guard = createFetchGuard({ pageOrigin: "https://retrofit.example", originalFetch: recorder as typeof fetch });
     await expect(guard.fetch("https://retrofit.example/p/abc/agent-manifest.json")).rejects.toThrow(REDIRECT_BLOCKED_TEXT("https://retrofit.example"));
     expect(seen).toEqual(["https://retrofit.example/p/abc/agent-manifest.json"]);
+  });
+});
+
+describe("runtime generations (V08)", () => {
+  const FREE = `${PAGE}/api/inference/v1`;
+
+  /** A recorder whose answers wait until the test releases them; it keeps each call's signal. */
+  function holding() {
+    const calls: { url: string; signal: AbortSignal | undefined; release: () => void }[] = [];
+    const originalFetch = (input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        const signal = init?.signal ?? undefined;
+        const url = new Request(input, init).url;
+        calls.push({ url, signal, release: () => resolve(new Response("late")) });
+        signal?.addEventListener("abort", () => reject(signal.reason));
+      });
+    const guard = createFetchGuard({ pageOrigin: PAGE, originalFetch, log: () => {} });
+    return { guard, calls };
+  }
+
+  // Fails if setRouter gives the runtime the bare router (requests of two runtimes would look the same).
+  it("gives each runtime its own base under the router", () => {
+    const { guard } = setup();
+    const first = guard.setRouter(FREE);
+    const second = guard.setRouter(FREE);
+    expect(first).toMatch(new RegExp(`^${FREE}/~retrofit-run-\\d+$`));
+    expect(second).toMatch(new RegExp(`^${FREE}/~retrofit-run-\\d+$`));
+    expect(second).not.toBe(first);
+    expect(guard.setRouter(null)).toBeNull();
+  });
+
+  // Fails if the active runtime's free-path request is not sent to the real router path, or loses its body and headers.
+  it("sends the active runtime's same-origin inference to the router path", async () => {
+    const { guard, calls } = setup();
+    const base = guard.setRouter(FREE)!;
+    await guard.fetch(`${base}/chat/completions`, { method: "POST", body: "{\"m\":1}", headers: { "content-type": "application/json" } });
+    await guard.fetch(`${base}/models`);
+    const sent = calls.map(effective);
+    expect(sent.map((r) => r.url)).toEqual([`${FREE}/chat/completions`, `${FREE}/models`]);
+    expect(sent[0]!.method).toBe("POST");
+    expect(sent[0]!.headers.get("content-type")).toBe("application/json");
+    expect(await sent[0]!.text()).toBe('{"m":1}');
+  });
+
+  // Fails if a cross-origin runtime base is not mapped to the router, or skips the router's limits and redirect error.
+  it("maps a cross-origin runtime base to the router and keeps the router's limits", async () => {
+    const { guard, calls } = setup();
+    const base = guard.setRouter(ROUTER_A)!;
+    await guard.fetch(`${base}/chat/completions`, { method: "POST", body: "{}" });
+    expect(effective(calls[0]).url).toBe(`${ROUTER_A}/chat/completions`);
+    expect(effective(calls[0]).redirect).toBe("manual");
+    await expectBlocked(guard.fetch(`${base}/chat/completions`), "https://api.example");
+    expect(calls).toHaveLength(1);
+  });
+
+  // Fails if a Request object of the active runtime is not mapped, or loses its method, headers or body.
+  it("maps an active runtime's Request object and keeps its method, headers and body", async () => {
+    const { guard, calls } = setup();
+    const base = guard.setRouter(FREE)!;
+    await guard.fetch(new Request(`${base}/chat/completions`, { method: "POST", headers: { authorization: "Bearer k" }, body: '{"m":2}' }));
+    const sent = effective(calls[0]);
+    expect(sent.url).toBe(`${FREE}/chat/completions`);
+    expect(sent.method).toBe("POST");
+    expect(sent.headers.get("authorization")).toBe("Bearer k");
+    expect(await sent.text()).toBe('{"m":2}');
+  });
+
+  // The V08 defect: after a switch, a retired free runtime's next model call still reached the free path.
+  it("refuses a retired runtime's same-origin inference after the router changes", async () => {
+    const { guard, calls } = setup();
+    const oldBase = guard.setRouter(FREE)!;
+    guard.setRouter(ROUTER_A);
+    await expect(guard.fetch(`${oldBase}/chat/completions`, { method: "POST", body: "{}" })).rejects.toThrow(RETIRED_TEXT);
+    // The same router again is a new runtime: the old base stays retired.
+    const newBase = guard.setRouter(FREE)!;
+    await expect(guard.fetch(`${oldBase}/chat/completions`, { method: "POST", body: "{}" })).rejects.toThrow(RETIRED_TEXT);
+    await guard.fetch(`${newBase}/chat/completions`, { method: "POST", body: "{}" });
+    expect(calls.map((c) => effective(c).url)).toEqual([`${FREE}/chat/completions`]);
+  });
+
+  // Fails if a runtime base for one router is accepted under another router, or a forged generation passes.
+  it("refuses a run marker under another base or with an unknown generation", async () => {
+    const { guard, calls } = setup();
+    const base = guard.setRouter(FREE)!;
+    const marker = base.slice(FREE.length);
+    await expect(guard.fetch(`${PAGE}/api/other${marker}/chat/completions`, { method: "POST" })).rejects.toThrow(RETIRED_TEXT);
+    await expect(guard.fetch(`${FREE}/~retrofit-run-999999/chat/completions`, { method: "POST" })).rejects.toThrow(RETIRED_TEXT);
+    expect(calls).toHaveLength(0);
+  });
+
+  // Fails if a delayed model response of a retired runtime can still arrive (its tool calls would continue the loop).
+  it("aborts a retired runtime's request that is still waiting for its answer", async () => {
+    const { guard, calls } = holding();
+    const base = guard.setRouter(FREE)!;
+    const pending = guard.fetch(`${base}/chat/completions`, { method: "POST", body: "{}" });
+    await Promise.resolve();
+    expect(calls).toHaveLength(1);
+    guard.setRouter(ROUTER_A);
+    await expect(pending).rejects.toThrow(RETIRED_TEXT);
+    expect(calls[0]!.signal?.aborted).toBe(true);
+  });
+
+  // Fails if the guard drops the runtime's own abort signal (the runtime steers by aborting a model call).
+  it("keeps the caller's abort signal on an active runtime's request", async () => {
+    const { guard, calls } = holding();
+    const base = guard.setRouter(FREE)!;
+    const caller = new AbortController();
+    const pending = guard.fetch(`${base}/chat/completions`, { method: "POST", body: "{}", signal: caller.signal });
+    await Promise.resolve();
+    caller.abort(new Error("steered"));
+    await expect(pending).rejects.toThrow("steered");
+    expect(calls[0]!.signal?.aborted).toBe(true);
+  });
+
+  // Review S4: fails if a replaced runtime's pending site-content or peer request can still complete
+  // (its tool round-trip would continue after the switch).
+  it("aborts a retired runtime's pending agent-artifact and peer requests", async () => {
+    const { guard, calls } = holding();
+    guard.setRouter(FREE);
+    guard.setPolicyPeers([PEER_A]);
+    guard.approveFromConsent("peer-a.fixture.test:3011");
+    const artifact = guard.fetch(`${PAGE}/p/abc123/site-content.json`);
+    const peer = guard.fetch(`${PEER_A}/peer_demo.network.json`);
+    await Promise.resolve();
+    expect(calls).toHaveLength(2);
+    guard.setRouter(ROUTER_A);
+    await expect(artifact).rejects.toThrow(RETIRED_TEXT);
+    await expect(peer).rejects.toThrow(RETIRED_TEXT);
+    expect(calls.every((c) => c.signal?.aborted)).toBe(true);
+  });
+
+  // Fails if artifact requests made while no runtime is active get an abort signal they never had.
+  it("leaves agent-artifact requests without a runtime unchanged", async () => {
+    const { guard, calls } = holding();
+    const pending = guard.fetch(`${PAGE}/p/abc123/agent-manifest.json`);
+    await Promise.resolve();
+    expect(calls[0]!.signal).toBeUndefined();
+    calls[0]!.release();
+    await expect(pending).resolves.toBeInstanceOf(Response);
+  });
+
+  // Fails if retiring a runtime also aborts ordinary same-origin requests (score polling, the session renewal).
+  it("does not abort other same-origin requests when a runtime retires", async () => {
+    const { guard, calls } = holding();
+    guard.setRouter(FREE);
+    const pending = guard.fetch(`${PAGE}/api/inference/session`, { method: "POST" });
+    await Promise.resolve();
+    guard.setRouter(null);
+    calls[0]!.release();
+    await expect(pending).resolves.toBeInstanceOf(Response);
   });
 });

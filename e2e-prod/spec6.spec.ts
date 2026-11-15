@@ -5,7 +5,7 @@
 // Each test names its case; the evidence fixture writes the report after every check ran.
 import { test, expect } from "./fixtures/csp";
 import { OTARI, traceEvents } from "../e2e/support/agent";
-import { hostsOf } from "../e2e/support/caller";
+import { SPECIALIST_ANSWER, SPECIALIST_SYSTEM, delegationScript, hostsOf } from "../e2e/support/caller";
 import { toolNames, type ChatBody } from "../e2e/support/mock-router";
 import { DENIED_ORIGIN } from "@/lib/peer/conformance";
 import { PEER_HOST, RETROFIT_ORIGIN } from "@/lib/peer/host";
@@ -30,8 +30,10 @@ const peerRequests = (requests: Request[]) => requests.filter((r) => new URL(r.u
 const isPeerHopBody = (b: ChatBody) => /Harbor tours demo/.test(b.messages.find((m) => m.role === "system")?.content ?? "");
 
 test.describe("spec §6 in production (/conformance and the landing assistant)", () => {
-  test("the two-agent network runs with the published default router (free path, one real model call)", { tag: "@real-model" }, async ({ page, evidence }) => {
-    evidence.case("spec6-two-agent-free-path");
+  // Real-provider smoke: a real model on the free path. It cannot make the model delegate, so the
+  // second agent's execution is proven by the scripted spec6-two-agent-delegation case below.
+  test("real-model smoke: the landing assistant answers on the published default router (free path, one real model call)", { tag: "@real-model" }, async ({ page, evidence }) => {
+    evidence.case("free-path-real-model-smoke");
     const requests: Request[] = [];
     page.on("request", (r) => requests.push(r));
     await page.goto("/");
@@ -44,7 +46,7 @@ test.describe("spec §6 in production (/conformance and the landing assistant)",
     // The published default router is the one the browser called.
     expect(chats[0]!.url()).toBe(`${manifest.llm_router?.base_url}/chat/completions`);
     const front = JSON.parse(chats[0]!.postData() ?? "{}") as ChatBody;
-    // The front agent can hand off to the second agent of the network.
+    // The second agent is offered; whether a real model delegates is not asserted here.
     expect(toolNames(front)).toContain("readiness_specialist");
     const responses = await Promise.all(chats.map(async (r) => (await r.response())?.status() ?? 0));
     expect(responses.every((s) => s === 200)).toBe(true);
@@ -52,6 +54,37 @@ test.describe("spec §6 in production (/conformance and the landing assistant)",
     expect(ends.length).toBeGreaterThan(0);
     expect(ends.every((e) => e.status !== "error")).toBe(true);
     evidence.record({ realModelCalls: chats.length, router: manifest.llm_router?.base_url, answerChars: answer.length });
+  });
+
+  // Scripted conformance (V13): the front agent of the landing network delegates, readiness_specialist
+  // runs in the browser with its own instructions and its answer returns as the tool result.
+  test("the two-agent network delegates to readiness_specialist and returns its result (scripted model)", async ({ page, evidence }) => {
+    evidence.case("spec6-two-agent-delegation");
+    const request = `How ready is ${PROD.origin}/ for AI agents?`;
+    const s = await openWithTestKey(page, "/", delegationScript(request));
+    await s.send("How ready is Retrofit's own site?");
+    await expect(s.mount.getByText(/Front answer: Specialist result:/).filter({ visible: true }).first()).toBeVisible({ timeout: 30_000 });
+    const [front, ...rest] = s.router.bodies;
+    expect(toolNames(front!)).toContain("readiness_specialist");
+    const specialist = rest.filter((b) => SPECIALIST_SYSTEM.test(b.messages.find((m) => m.role === "system")?.content ?? ""));
+    expect(specialist).toHaveLength(1);
+    expect(specialist[0]!.messages.find((m) => m.role === "user")?.content).toBe(request);
+    const toolMessage = rest.flatMap((b) => b.messages).find((m) => m.role === "tool");
+    expect(toolMessage?.name).toBe("readiness_specialist");
+    expect(toolMessage?.content).toContain(SPECIALIST_ANSWER);
+    const events = await traceEvents(page);
+    const agents = events.filter((e) => e.kind === "agent" && e.agent === "readiness_specialist");
+    expect(agents.map((e) => e.phase)).toEqual(["start", "end"]);
+    expect(agents[1]!.status).not.toBe("error");
+    const results = events.filter((e) => e.kind === "tool_result" && e.tool === "readiness_specialist");
+    expect(results).toHaveLength(1);
+    evidence.record({
+      scriptedModel: true,
+      specialistModelRequests: specialist.length,
+      delegatedRequest: request,
+      toolResultName: toolMessage?.name ?? null,
+      specialistAgentSpans: agents.map((e) => e.phase),
+    });
   });
 
   test("score_site runs as the grounded capability", async ({ page, evidence }) => {

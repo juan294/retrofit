@@ -131,6 +131,7 @@ describe("ledger", () => {
       chargedMicroUsd: 7_500_000,
       reservationMicroUsd: 700_000,
       overrunMicroUsd: 6_800_000,
+      holdCreated: true,
     });
     const b = await ledger.budgets();
     expect(b.totalSpentMicro).toBe(7_500_000);

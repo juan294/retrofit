@@ -58,6 +58,18 @@ describe("runCrawl", () => {
     expect(menuFetches).toHaveLength(1);
   });
 
+  // Fails if a home page that redirects to a sign-in path is requested, or the job does not fail with the
+  // contract's crawl_error (the tool contract has no dedicated code for it).
+  it("fails with crawl_error, without contacting it, when the home page redirects to a private path", async () => {
+    const server = await serveSites(() => ({ "gated.fixture.test": { ...bakery, "/": { status: 302, headers: { location: "/login" } } } }));
+    close = () => server.close();
+    const w = instance(createMemoryBacking(), Date.now);
+    const { jobId } = await startOrJoinCrawl(w, server.origin("gated.fixture.test"));
+    expect(await runCrawl(jobId, w)).toBe("failed");
+    expect((await getJob(w.store, jobId))?.failure?.code).toBe("crawl_error");
+    expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt", "/"]);
+  });
+
   // Fails if a robots refusal on the redirect target is not recorded as robots_blocked.
   it("fails with robots_blocked when the redirect target disallows RetrofitBot", async () => {
     const server = await serveSites((o) => ({ "www.fixture.test": redirectWww(o("apex.fixture.test")), "apex.fixture.test": blocked }));

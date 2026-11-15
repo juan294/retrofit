@@ -40,6 +40,7 @@ describe("Supabase adapter on a closed port", () => {
     ["releaseLease", (s) => s.releaseLease("analysis:secret-tail", "token-xyz")],
     ["enqueue", (s) => s.enqueue("analysis:secret-tail", "item-xyz", 60)],
     ["claimNext", (s) => s.claimNext("analysis:secret-tail")],
+    ["claimWithLease", (s) => s.claimWithLease("analysis:secret-tail", ["lease-xyz"], 60)],
   ];
 
   // Fails if a failed cleanup reports zero deleted rows instead of failing closed.

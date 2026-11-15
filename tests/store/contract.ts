@@ -9,6 +9,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { countOnce } from "@/lib/fetch/limits";
 import type { Store, Versioned } from "@/lib/store/types";
 
 export interface ContractClock {
@@ -317,6 +318,98 @@ export function runStoreContract(name: string, makeClients: () => Promise<Contra
         await a.enqueue(k("q1"), "x", LONG_TTL);
         expect(await b.claimNext(k("q2"))).toBeNull();
         expect(await b.claimNext(k("q1"))).toBe("x");
+      });
+    });
+
+    describe("claimWithLease", () => {
+      const keys = () => [k("l0"), k("l1"), k("l2")];
+
+      // Fails if an empty queue still takes (or briefly takes) a lease: dispatch with nothing queued must cost no lease work.
+      it("returns null and takes no lease when the queue is empty", async () => {
+        expect(await a.claimWithLease(k("q"), keys(), LONG_TTL)).toBeNull();
+        for (const key of keys()) expect(await b.acquireLease(key, LONG_TTL)).toEqual(expect.any(String));
+      });
+
+      // Fails if a claim with every lease held removes the item (it would be lost) or returns it.
+      it("returns null and keeps the item queued when every lease is held", async () => {
+        for (const key of keys()) await a.acquireLease(key, LONG_TTL);
+        await a.enqueue(k("q"), "x", LONG_TTL);
+        expect(await b.claimWithLease(k("q"), keys(), LONG_TTL)).toBeNull();
+        expect(await b.claimNext(k("q"))).toBe("x");
+      });
+
+      // Fails if the lease is not the first free one in order, the item is not the oldest, or the lease is not real.
+      it("takes the first free lease and the oldest item in one call", async () => {
+        await a.acquireLease(k("l0"), LONG_TTL);
+        await a.enqueue(k("q"), "x", LONG_TTL);
+        await a.enqueue(k("q"), "y", LONG_TTL);
+        const claim = await b.claimWithLease(k("q"), keys(), LONG_TTL);
+        expect(claim).toEqual({ itemId: "x", leaseKey: k("l1"), token: expect.any(String) });
+        expect(await a.acquireLease(k("l1"), LONG_TTL)).toBeNull();
+        expect(await a.renewLease(k("l1"), claim!.token, LONG_TTL)).toBe(true);
+        expect(await a.releaseLease(k("l1"), claim!.token)).toBe(true);
+        expect(await a.claimNext(k("q"))).toBe("y");
+      });
+
+      // Fails if an expired lease blocks the claim, or an expired item is returned.
+      it("reuses an expired lease and skips expired items", async () => {
+        await a.acquireLease(k("l0"), 1);
+        await a.enqueue(k("q"), "old", 1);
+        await a.enqueue(k("q"), "live", LONG_TTL);
+        await clock.advance(PAST_ONE_SECOND);
+        expect(await b.claimWithLease(k("q"), [k("l0")], LONG_TTL)).toEqual({ itemId: "live", leaseKey: k("l0"), token: expect.any(String) });
+      });
+
+      // Fails if the claim is not atomic: concurrent claims would share a lease or an item, or lose items.
+      it("concurrent claims never share a lease or an item", async () => {
+        for (let i = 0; i < 5; i++) await a.enqueue(k("q"), `item-${i}`, LONG_TTL);
+        const claims = await Promise.all(Array.from({ length: 10 }, (_, i) => (i % 2 ? a : b).claimWithLease(k("q"), [k("l0"), k("l1")], LONG_TTL)));
+        const won = claims.filter((c) => c !== null);
+        expect(won).toHaveLength(2);
+        expect(new Set(won.map((c) => c.leaseKey))).toEqual(new Set([k("l0"), k("l1")]));
+        expect(new Set(won.map((c) => c.itemId)).size).toBe(2);
+        const rest: string[] = [];
+        for (let next = await a.claimNext(k("q")); next !== null; next = await a.claimNext(k("q"))) rest.push(next);
+        expect(rest).toHaveLength(3);
+        expect(new Set([...rest, ...won.map((c) => c.itemId)]).size).toBe(5);
+      });
+
+      // Fails if a TTL that is not positive is accepted.
+      it("rejects a TTL that is not positive", async () => {
+        await expect(a.claimWithLease(k("q"), keys(), 0)).rejects.toThrow(RangeError);
+      });
+    });
+
+    // countOnce (src/lib/fetch/limits.ts) composes putIfAbsent, incrementWindow,
+    // compareAndSet and delete; these cases prove the composition on each adapter.
+    describe("countOnce composition", () => {
+      // Fails if a concurrent duplicate passes on the first caller's marker before that caller knows
+      // whether the counter admitted it (validation V04: an exhausted cap returned [false, true]).
+      it("a concurrent duplicate cannot pass a full window", async () => {
+        await a.incrementWindow(k("c"), LONG_TTL);
+        const results = await Promise.all([countOnce(a, k("m"), k("c"), LONG_TTL, 1), countOnce(b, k("m"), k("c"), LONG_TTL, 1)]);
+        expect(results).toEqual(["refused", "refused"]);
+        // A later repeat is refused too; it never passes on a marker left behind.
+        expect(await countOnce(b, k("m"), k("c"), LONG_TTL, 1)).toBe("refused");
+      });
+
+      // Fails if parallel duplicates of an admitted marker count more than once or are refused.
+      it("parallel duplicates with room are all admitted and count once", async () => {
+        const results = await Promise.all(Array.from({ length: 6 }, (_, i) => countOnce(i % 2 ? a : b, k("m"), k("c"), LONG_TTL, 5)));
+        expect(results).toEqual(Array(6).fill("admitted"));
+        expect(await a.incrementWindow(k("c"), LONG_TTL, 0)).toBe(1);
+      });
+
+      // Fails if distinct markers racing for the last place are both admitted.
+      it("two distinct markers racing for the last place admit exactly one", async () => {
+        await a.incrementWindow(k("c"), LONG_TTL, 4);
+        const results = await Promise.all([countOnce(a, k("m1"), k("c"), LONG_TTL, 5), countOnce(b, k("m2"), k("c"), LONG_TTL, 5)]);
+        expect([...results].sort()).toEqual(["admitted", "refused"]);
+        // The admitted marker keeps passing; the refused one keeps failing.
+        const winner = results[0] === "admitted" ? k("m1") : k("m2");
+        const loser = results[0] === "admitted" ? k("m2") : k("m1");
+        expect(await countOnce(b, winner, k("c"), LONG_TTL, 5)).toBe("admitted");
+        expect(await countOnce(a, loser, k("c"), LONG_TTL, 5)).toBe("refused");
       });
     });
   });
