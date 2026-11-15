@@ -1,4 +1,4 @@
-import { sameHash } from "../analysis/visitor";
+import { hasBearer } from "../analysis/visitor";
 import { json } from "../api/json";
 import type { ServerDeps } from "../server/runtime";
 import { openAlert, overrunAlert, percent, type Alert, type AlertDeps } from "./alert";
@@ -105,10 +105,7 @@ export async function handleCreditCheck(
   deps: ServerDeps,
   viewFor: (deps: ServerDeps) => Promise<LedgerView> = ledgerViewFor,
 ): Promise<Response> {
-  const secret = deps.config.free.cronSecret;
-  const auth = request.headers.get("authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (request.method !== "GET" || !secret || !sameHash(token, secret)) return json(401, { error: "unauthorized" });
+  if (request.method !== "GET" || !hasBearer(request, deps.config.free.cronSecret)) return json(401, { error: "unauthorized" });
 
   let view: LedgerView;
   try {

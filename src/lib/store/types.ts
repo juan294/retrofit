@@ -38,6 +38,22 @@ export interface Store {
   enqueue(queue: string, itemId: string, ttlSeconds: number): Promise<void>;
   /** Atomic: removes and returns the oldest live item. Expired items are skipped and removed. */
   claimNext(queue: string): Promise<string | null>;
+
+  /**
+   * Deletes every expired entry and returns how many were deleted (the daily cleanup cron).
+   * Only the Supabase adapter has it; the memory store drops expired entries on read.
+   */
+  cleanup?(): Promise<number>;
+}
+
+/** The TTL and window rule of the contract above: a positive, finite number of seconds. */
+export function requirePositive(seconds: number, name: string): void {
+  if (!Number.isFinite(seconds) || seconds <= 0) throw new RangeError(`${name} must be a positive number of seconds`);
+}
+
+/** The compareAndSet rule of the contract above: `next.version` must be `expected.version + 1`. */
+export function requireNextVersion(expected: Versioned, next: Versioned): void {
+  if (next.version !== expected.version + 1) throw new RangeError("next.version must be expected.version + 1");
 }
 
 /** Clock in milliseconds since the epoch. Injectable for tests. */

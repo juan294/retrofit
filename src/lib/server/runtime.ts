@@ -71,8 +71,8 @@ const singletons: Singletons = (g.__retrofitRuntime ??= {});
  */
 export function getStore(config: Config = getConfig()): Store {
   if (singletons.store) return singletons.store;
-  if (config.supabaseUrl && config.supabaseServiceRoleKey) {
-    singletons.store = createSupabaseStore({ url: config.supabaseUrl, serviceRoleKey: config.supabaseServiceRoleKey });
+  if (config.supabase) {
+    singletons.store = createSupabaseStore(config.supabase);
   } else if (config.onVercel) {
     throw new Error("Supabase store not configured");
   } else {

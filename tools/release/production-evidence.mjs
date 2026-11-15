@@ -24,7 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_PROD_URL, DEPLOYMENT_ID, caseReport, writeCaseFile } from "../../e2e-prod/support/case-report.mjs";
+import { DEPLOYMENT_ID, caseReport, prodUrl, writeCaseFile } from "../../e2e-prod/support/case-report.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const VERCEL_SCOPE = "thecreativetoken";
@@ -70,7 +70,7 @@ function parseArgs(argv) {
   if (url.protocol !== "https:") throw new UsageError(`deployment URL ${deploymentUrl} must use https`);
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new UsageError(`commit ${commit} must be the full 40-character merge commit`);
   if (o.createdAt !== null && !Number.isFinite(Date.parse(o.createdAt))) throw new UsageError(`--created-at ${o.createdAt} is not a time`);
-  const prod = (process.env.RETROFIT_PROD_URL?.trim() || DEFAULT_PROD_URL).replace(/\/+$/, "");
+  const prod = prodUrl();
   const evidenceRoot = path.resolve(ROOT, o.evidenceDir ?? path.join(".local", "evidence", "production"));
   return { ...o, deploymentId, deploymentUrl: deploymentUrl.replace(/\/+$/, ""), commit, prod, evidenceRoot, dir: path.join(evidenceRoot, deploymentId) };
 }
@@ -273,16 +273,18 @@ function recordDeployment(ctx) {
   ctx.say(`  deployment.json createdAt ${createdAt} (${source})`);
 }
 
+/** The commit an /api/version response names, or "unavailable (status <n>)". */
+const commitOf = (res) => (typeof res.json?.commit === "string" && res.json.commit ? res.json.commit : `unavailable (status ${res.status})`);
+
 async function checkVersion(ctx) {
   const res = await http("GET", `${ctx.o.prod}/api/version`);
-  const served = typeof res.json?.commit === "string" && res.json.commit ? res.json.commit : `unavailable (status ${res.status})`;
+  const served = commitOf(res);
   ctx.served = served;
   record(ctx, "version-commit", res.status === 200 && served === ctx.o.commit, { httpStatus: res.status, ms: res.ms, served, expected: ctx.o.commit });
 }
 
 async function checkAliasBinding(ctx) {
   const [deployment, alias] = await Promise.all([http("GET", `${ctx.o.deploymentUrl}/api/version`), http("GET", `${ctx.o.prod}/api/version`)]);
-  const commitOf = (res) => (typeof res.json?.commit === "string" && res.json.commit ? res.json.commit : `unavailable (status ${res.status})`);
   const deploymentCommit = commitOf(deployment);
   const aliasCommit = commitOf(alias);
   record(ctx, "alias-binding", deploymentCommit === ctx.o.commit && aliasCommit === ctx.o.commit, {

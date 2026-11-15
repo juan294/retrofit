@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { type Clock, type Store, type Versioned, systemClock } from "./types";
+import { type Clock, type Store, type Versioned, requireNextVersion, requirePositive, systemClock } from "./types";
 
 interface Entry<T> {
   value: T;
@@ -38,10 +38,6 @@ export interface MemoryStoreOptions {
   backing?: MemoryBacking;
   /** Called once per operation, before it runs. Lets performance tests count store calls. */
   instrument?: (op: string, key: string) => void;
-}
-
-function requirePositive(seconds: number, name: string): void {
-  if (!Number.isFinite(seconds) || seconds <= 0) throw new RangeError(`${name} must be a positive number of seconds`);
 }
 
 /**
@@ -111,9 +107,7 @@ export function createMemoryStore(options: MemoryStoreOptions = {}): Store {
     compareAndSet<T extends Versioned>(key: string, expected: T, next: T, ttlSeconds: number) {
       return op("compareAndSet", key, (now) => {
         requirePositive(ttlSeconds, "ttlSeconds");
-        if (next.version !== expected.version + 1) {
-          throw new RangeError("next.version must be expected.version + 1");
-        }
+        requireNextVersion(expected, next);
         const stored = live(key, now)?.value as Partial<Versioned> | undefined;
         if (!stored || stored.version !== expected.version) return false;
         write(key, next, ttlSeconds, now);

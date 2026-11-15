@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Store, Versioned } from "./types";
+import { type Store, type Versioned, requireNextVersion, requirePositive } from "./types";
 
 /**
  * Supabase Store (production). Server only: it holds the service role key, so
@@ -15,8 +15,6 @@ import type { Store, Versioned } from "./types";
 export interface SupabaseStoreOptions {
   readonly url: string;
   readonly serviceRoleKey: string;
-  /** Injectable for tests. Defaults to the global fetch. */
-  readonly fetch?: typeof fetch;
   /** Per-request timeout. Default 10 s. */
   readonly timeoutMs?: number;
 }
@@ -38,10 +36,6 @@ export function keyPrefix(key: string): string {
   return head.length > 48 ? `${head.slice(0, 48)}...` : head;
 }
 
-function requirePositive(seconds: number, name: string): void {
-  if (!Number.isFinite(seconds) || seconds <= 0) throw new RangeError(`${name} must be a positive number of seconds`);
-}
-
 function withTimeout(base: typeof fetch, ms: number): typeof fetch {
   return (input, init) => {
     const timeout = AbortSignal.timeout(ms);
@@ -50,16 +44,10 @@ function withTimeout(base: typeof fetch, ms: number): typeof fetch {
   };
 }
 
-/** A store that can delete its expired rows in bulk (the daily cleanup cron). The memory store has none: it drops expired entries on read. */
-export type CleanableStore = Store & {
-  /** Deletes every expired row (`store_cleanup()`) and returns how many were deleted. */
-  cleanup(): Promise<number>;
-};
-
-export function createSupabaseStore(options: SupabaseStoreOptions): CleanableStore {
+export function createSupabaseStore(options: SupabaseStoreOptions): Store & Required<Pick<Store, "cleanup">> {
   const client = createClient(options.url, options.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    global: { fetch: withTimeout(options.fetch ?? fetch, options.timeoutMs ?? 10_000) },
+    global: { fetch: withTimeout(fetch, options.timeoutMs ?? 10_000) },
   });
 
   async function call<R>(operation: string, key: string, fn: string, args: Record<string, unknown>): Promise<R> {
@@ -101,7 +89,7 @@ export function createSupabaseStore(options: SupabaseStoreOptions): CleanableSto
 
     async compareAndSet<T extends Versioned>(key: string, expected: T, next: T, ttlSeconds: number) {
       requirePositive(ttlSeconds, "ttlSeconds");
-      if (next.version !== expected.version + 1) throw new RangeError("next.version must be expected.version + 1");
+      requireNextVersion(expected, next);
       return call<boolean>("compareAndSet", key, "store_compare_and_set", {
         p_key: key,
         p_expected_version: expected.version,

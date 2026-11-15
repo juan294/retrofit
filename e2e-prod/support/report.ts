@@ -3,7 +3,7 @@
 // commit comes from the deployment's own /api/version, so a report binds to what actually served it.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_PROD_URL, caseReport, writeCaseFile } from "./case-report.mjs";
+import { caseReport, prodUrl, writeCaseFile } from "./case-report.mjs";
 
 export type CaseStatus = "passed" | "failed";
 
@@ -16,8 +16,7 @@ export interface WriteCaseOptions {
   readonly fetch?: typeof fetch;
 }
 
-/** The production origin the cases run against (RETROFIT_PROD_URL, else the public domain). */
-export const prodUrl = (env: Env = process.env) => (env.RETROFIT_PROD_URL?.trim() || DEFAULT_PROD_URL).replace(/\/+$/, "");
+export { prodUrl };
 
 /** .local/evidence/production, or RETROFIT_EVIDENCE_DIR (relative to the repository root). */
 export const evidenceRoot = (env: Env = process.env) => path.resolve(ROOT, env.RETROFIT_EVIDENCE_DIR?.trim() || ".local/evidence/production");

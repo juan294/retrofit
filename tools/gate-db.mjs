@@ -140,12 +140,8 @@ function run(log, command, args, { env = process.env, quiet = false, tee = false
     });
     child.on("close", (code, signal) => {
       currentChild = null;
-      if (!tee) {
-        if (!quiet) log.output(stdout);
-        log.output(stderr);
-      } else {
-        log.output(stderr);
-      }
+      if (!tee && !quiet) log.output(stdout);
+      log.output(stderr);
       log.step(`  exit ${code ?? signal}`);
       resolve({ code: code ?? (signal ? 128 : null), stdout, stderr });
     });
@@ -285,12 +281,8 @@ const readText = (file) => {
   }
 };
 const readJson = (file) => {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (error) {
-    if (error.code === "ENOENT") return null;
-    throw error;
-  }
+  const text = readText(file);
+  return text === null ? null : JSON.parse(text);
 };
 const holderText = (h) => `pid ${h.pid} (worktree ${h.worktree}, started ${h.startedAt})`;
 

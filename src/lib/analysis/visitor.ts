@@ -24,6 +24,12 @@ export function sameHash(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+/** True when `Authorization` is exactly `Bearer <secret>`, compared in constant time. Always false without a secret. */
+export function hasBearer(request: Request, secret: string | null): boolean {
+  const auth = request.headers.get("authorization") ?? "";
+  return !!secret && auth.startsWith("Bearer ") && sameHash(auth.slice(7), secret);
+}
+
 /** The visitor token from the Cookie header, or null when absent or malformed. */
 export function readVisitorToken(request: Request): string | null {
   const header = request.headers.get("cookie");

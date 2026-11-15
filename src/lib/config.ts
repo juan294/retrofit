@@ -32,10 +32,14 @@ export interface Config {
   readonly fixturesEnabled: boolean;
   /** Phase 6: Retrofit's free inference path. */
   readonly free: FreeConfig;
-  /** Phase 7: the Supabase store. Both are required on Vercel; off Vercel both or neither (memory store). */
-  readonly supabaseUrl: string | null;
+  /** Phase 7: the Supabase store. Required on Vercel; null off Vercel without it (memory store). */
+  readonly supabase: SupabaseConfig | null;
+}
+
+export interface SupabaseConfig {
+  readonly url: string;
   /** Server only. Never sent to a browser, logged or written to evidence. */
-  readonly supabaseServiceRoleKey: string | null;
+  readonly serviceRoleKey: string;
 }
 
 export interface FreeConfig {
@@ -159,21 +163,21 @@ export function loadConfig(env: Env): Config {
 
   const supabase = loadSupabaseConfig(env, onVercel);
 
-  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, free, ...supabase });
+  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, free, supabase });
 }
 
 /** SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY: required on Vercel (https); off Vercel both or neither. */
-function loadSupabaseConfig(env: Env, onVercel: boolean): Pick<Config, "supabaseUrl" | "supabaseServiceRoleKey"> {
+function loadSupabaseConfig(env: Env, onVercel: boolean): SupabaseConfig | null {
   const rawUrl = env.SUPABASE_URL?.trim() || null;
   const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim() || null;
   if (onVercel && !rawUrl) throw new ConfigError("SUPABASE_URL", "is required on Vercel");
   if (onVercel && !key) throw new ConfigError("SUPABASE_SERVICE_ROLE_KEY", "is required on Vercel");
   if (rawUrl && !key) throw new ConfigError("SUPABASE_SERVICE_ROLE_KEY", "is required when SUPABASE_URL is set");
   if (key && !rawUrl) throw new ConfigError("SUPABASE_URL", "is required when SUPABASE_SERVICE_ROLE_KEY is set");
-  if (!rawUrl) return { supabaseUrl: null, supabaseServiceRoleKey: null };
-  const supabaseUrl = parseOrigin("SUPABASE_URL", rawUrl);
-  if (onVercel && !supabaseUrl.startsWith("https:")) throw new ConfigError("SUPABASE_URL", "must use https on Vercel");
-  return { supabaseUrl, supabaseServiceRoleKey: key };
+  if (!rawUrl || !key) return null;
+  const url = parseOrigin("SUPABASE_URL", rawUrl);
+  if (onVercel && !url.startsWith("https:")) throw new ConfigError("SUPABASE_URL", "must use https on Vercel");
+  return Object.freeze({ url, serviceRoleKey: key });
 }
 
 function parseNonNegative(env: Env, name: string, fallback: number): number {

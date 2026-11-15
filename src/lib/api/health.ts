@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { visitorTexts } from "@/lib/analysis/texts";
+import { StoreUnavailable } from "@/lib/store/supabase";
 import type { Store } from "@/lib/store/types";
 import { json } from "./json";
 
@@ -7,6 +8,9 @@ import { json } from "./json";
 export const HEALTH_DEGRADED_MESSAGE = visitorTexts.unavailable;
 
 const PROBE_TTL_S = 60;
+
+/** The 503 answer for a store that cannot be reached or read back. */
+export const healthDegraded = (): Response => json(503, { status: "degraded", message: HEALTH_DEGRADED_MESSAGE });
 
 export interface HealthDeps {
   readonly store: Store;
@@ -29,9 +33,9 @@ export async function handleHealth(deps: HealthDeps): Promise<Response> {
     if (readBack === probe) return json(200, { status: "ok" });
     console.error("[TABLE_FALLBACK] health probe row did not read back");
   } catch (e) {
-    if (!(e instanceof Error && e.name === "StoreUnavailable")) {
+    if (!(e instanceof StoreUnavailable)) {
       console.error("[TABLE_FALLBACK] health store check failed:", e instanceof Error ? e.name : "unknown");
     }
   }
-  return json(503, { status: "degraded", message: HEALTH_DEGRADED_MESSAGE });
+  return healthDegraded();
 }

@@ -103,19 +103,17 @@ describe("loadConfig", () => {
 
   it("reads the Supabase variables on Vercel", () => {
     const c = loadConfig(VERCEL_ENV);
-    expect(c.supabaseUrl).toBe("https://store.supabase.test");
-    expect(c.supabaseServiceRoleKey).toBe("service-role-key-test");
+    expect(c.supabase).toEqual({ url: "https://store.supabase.test", serviceRoleKey: "service-role-key-test" });
   });
 
   // Fails if local development needs Supabase, or a half configuration silently uses memory.
   it("leaves Supabase unset off Vercel and refuses only one of the two variables", () => {
     const c = loadConfig({ SESSION_SECRET: secret });
-    expect(c.supabaseUrl).toBeNull();
-    expect(c.supabaseServiceRoleKey).toBeNull();
+    expect(c.supabase).toBeNull();
     expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721" })).toThrow(/SUPABASE_SERVICE_ROLE_KEY/);
     expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_SERVICE_ROLE_KEY: "k" })).toThrow(/SUPABASE_URL/);
     const local = loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721/", SUPABASE_SERVICE_ROLE_KEY: "k" });
-    expect(local.supabaseUrl).toBe("http://127.0.0.1:54721");
+    expect(local.supabase).toEqual({ url: "http://127.0.0.1:54721", serviceRoleKey: "k" });
   });
 
   it("refuses a SUPABASE_URL that is not an http or https origin", () => {

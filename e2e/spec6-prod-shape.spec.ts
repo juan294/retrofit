@@ -1,13 +1,13 @@
 import { test, expect } from "./fixtures/csp";
 import { connectKey, mockOtari, traceEvents } from "./support/agent";
 import { callerScript, hostsOf } from "./support/caller";
+import { DENIED_ORIGIN } from "@/lib/peer/conformance";
+import { PEER_FIXTURE_HOST, PEER_HOST as PEER } from "@/lib/peer/host";
 
 type Page = import("@playwright/test").Page;
 type Request = import("@playwright/test").Request;
 
-const PEER = "demo-harbor.thecreativetoken.com";
-// The fixtures host the deployment serves the peer route for (src/lib/peer/host.ts), reached on loopback.
-const PEER_FIXTURE_HOST = "demo-harbor.fixture.test:3010";
+const DENIED_HOST = new URL(DENIED_ORIGIN).host;
 
 /** Serves the production peer origin from this deployment's own peer route (fixtures host), inside the test browser. */
 async function mapPeer(page: Page) {
@@ -65,7 +65,7 @@ test.describe("spec §6 with the production-shaped caller (retrofit_conformance 
     const s = await openConformance(page);
     await s.send("call none");
     await s.mount.locator(".ns-consent").last().getByRole("button", { name: "Allow", exact: true }).click();
-    await expect(page.getByTestId("preview-notices").locator('[data-kind="denied"]')).toContainText("demo-denied.thecreativetoken.com", { timeout: 20_000 });
-    expect(hostsOf(s.requests)).not.toContain("demo-denied.thecreativetoken.com");
+    await expect(page.getByTestId("preview-notices").locator('[data-kind="denied"]')).toContainText(DENIED_HOST, { timeout: 20_000 });
+    expect(hostsOf(s.requests)).not.toContain(DENIED_HOST);
   });
 });

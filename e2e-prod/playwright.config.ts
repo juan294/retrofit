@@ -5,9 +5,9 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
+import { prodUrl } from "./support/case-report.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const PROD_URL = (process.env.RETROFIT_PROD_URL?.trim() || "https://retrofit.thecreativetoken.com").replace(/\/+$/, "");
 
 export default defineConfig({
   // Paths in a config resolve against its own directory, so they are made absolute from the root.
@@ -22,7 +22,7 @@ export default defineConfig({
   reporter: [["list"], ["json", { outputFile: path.join(ROOT, ".local", "evidence", "production", "playwright-prod.json") }]],
   outputDir: path.join(ROOT, ".local", "playwright", "prod-results"),
   use: {
-    baseURL: PROD_URL,
+    baseURL: prodUrl(),
     trace: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

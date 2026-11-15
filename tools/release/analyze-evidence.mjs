@@ -402,13 +402,8 @@ export function analyze({ root, candidate, production, accept, reason }) {
   const coverage = checkCoverage(ctx, sealed, current);
   checkGateDb(ctx, declared, current);
 
-  let productionCases = null;
-  let requiredCases = [];
-  if (production) {
-    requiredCases = readList(root, "required-production-cases.json", "cases", ctx.reject);
-    productionCases = checkProduction(ctx, production, requiredCases);
-  }
-  return { reasons, exceptions: ctx.exceptions, notes: ctx.notes, counts, coverage, requiredTests, productionCases, requiredCases };
+  const productionCases = production ? checkProduction(ctx, production, readList(root, "required-production-cases.json", "cases", ctx.reject)) : null;
+  return { reasons, exceptions: ctx.exceptions, notes: ctx.notes, counts, coverage, requiredTests, productionCases };
 }
 
 function print(options, candidate, result) {

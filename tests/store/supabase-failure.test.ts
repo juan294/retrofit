@@ -114,7 +114,7 @@ describe("getStore", () => {
 
   // Fails if production can run without the Supabase store (a per-instance memory store would split state).
   it("throws on Vercel without Supabase configuration", () => {
-    const config = { ...local(), onVercel: true, supabaseUrl: null, supabaseServiceRoleKey: null };
+    const config = { ...local(), onVercel: true, supabase: null };
     expect(() => getStore(config)).toThrow(/Supabase store not configured/);
   });
 

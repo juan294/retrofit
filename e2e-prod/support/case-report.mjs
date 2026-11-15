@@ -14,6 +14,17 @@ export const CASE_ID = /^[a-z0-9][a-z0-9-]*$/;
 export const DEPLOYMENT_ID = /^dpl_[A-Za-z0-9]+$/;
 export const RUN_ID = /^run_[A-Za-z0-9]+$/;
 export const STATUSES = ["passed", "failed"];
+
+/**
+ * The production origin the cases run against: RETROFIT_PROD_URL, else the public domain, without a trailing slash.
+ *
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {string}
+ */
+export function prodUrl(env = process.env) {
+  return (env.RETROFIT_PROD_URL?.trim() || DEFAULT_PROD_URL).replace(/\/+$/, "");
+}
+
 const BINDING = ["case", "status", "deploymentId", "deploymentUrl", "commit", "recordedAt", "runId"];
 
 /**
