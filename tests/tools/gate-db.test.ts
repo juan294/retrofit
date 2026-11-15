@@ -345,6 +345,70 @@ describe("gate-db run", () => {
   });
 });
 
+describe("gate-db foreign consumers of owned resources (V11)", () => {
+  const VOLUME = "supabase_db_retrofit-gate";
+  const NETWORK = "supabase_network_retrofit-gate";
+  const foreign = (extra: Record<string, unknown>) => ({ name: "other_project_worker", labels: { "com.docker.compose.project": "other" }, ...extra });
+  const foreignContainer = () => readState().containers.find((c) => c.name === "other_project_worker");
+
+  // The V11 defect: the inventory filtered by project and name, so a container of another project
+  // that mounts a gate volume was never seen; reset and supabase stop --no-backup still ran.
+  it("gate-db: a foreign container that mounts a gate volume blocks reset and disposal", () => {
+    setScenario({ startAddsConsumer: foreign({ mounts: [VOLUME] }) });
+    const result = gate();
+    expect(result.status).toBe(12);
+    expect(result.stderr).toMatch(/volume supabase_db_retrofit-gate is used by container other_project_worker [0-9a-f]{12}, which is not part of the gate stack/);
+    expect(supabaseCalls("db reset")).toEqual([]);
+    expect(supabaseCalls("stop")).toEqual([]);
+    expect(calls().some((c) => c.tool === "pnpm")).toBe(false);
+    expect(foreignContainer()).toBeDefined();
+    expect(gateResources().length).toBeGreaterThan(0);
+    expect(fs.existsSync(receiptPath())).toBe(true);
+    expect(fs.existsSync(lockPath())).toBe(false);
+    expect(logLines()).not.toContain(MARKER);
+  });
+
+  // Fails if attached network containers are not inspected (a shared network is removed by stop).
+  it("gate-db: a foreign container attached to the gate network blocks reset and disposal", () => {
+    setScenario({ startAddsConsumer: foreign({ networks: [NETWORK] }) });
+    const result = gate();
+    expect(result.status).toBe(12);
+    expect(result.stderr).toMatch(/network supabase_network_retrofit-gate is used by container other_project_worker [0-9a-f]{12}, which is not part of the gate stack/);
+    expect(supabaseCalls("db reset")).toEqual([]);
+    expect(supabaseCalls("stop")).toEqual([]);
+    expect(foreignContainer()).toBeDefined();
+    expect(fs.existsSync(receiptPath())).toBe(true);
+  });
+
+  // Fails if consumers are checked only before reset: one that appears during the tests must block disposal.
+  it("gate-db: a foreign consumer that appears during the tests blocks disposal", () => {
+    setScenario({ vitestAddsConsumer: foreign({ mounts: [VOLUME] }) });
+    const result = gate();
+    // The tests passed, so only the cleanup bit is set.
+    expect(result.status).toBe(8);
+    expect(supabaseCalls("db reset")).toHaveLength(1);
+    expect(supabaseCalls("stop")).toEqual([]);
+    expect(result.stderr).toContain("other_project_worker");
+    expect(foreignContainer()).toBeDefined();
+    expect(fs.existsSync(receiptPath())).toBe(true);
+    // Recovery refuses too while the consumer exists.
+    const recover = gate("recover");
+    expect(recover.status).toBe(1);
+    expect(recover.stderr).toContain("other_project_worker");
+    expect(supabaseCalls("stop")).toEqual([]);
+  });
+
+  // The positive control: the gate's own containers mount the volume and join the network.
+  it("gate-db: the gate stack's own mounts and network attachments do not block disposal", () => {
+    const result = gate();
+    expect(result.status).toBe(0);
+    const ps = calls().filter((c) => c.tool === "docker" && c.args[0] === "ps" && c.args.some((a) => a.startsWith("volume=") || a.startsWith("network=")));
+    expect(ps.some((c) => c.args.includes(`volume=${VOLUME}`))).toBe(true);
+    expect(ps.some((c) => c.args.some((a) => a.startsWith("network=")))).toBe(true);
+    expect(gateResources()).toEqual([]);
+  });
+});
+
 describe("gate-db lock takeover", () => {
   const deadLock = (pid: number) => JSON.stringify({ runId: "dead-run", pid, worktree: "/elsewhere/worktree", startedAt: "2026-11-01T00:00:00.000Z" }, null, 2);
   const identity = (runId: string) => ({ runId, pid: process.pid, worktree: root, startedAt: new Date().toISOString() });
