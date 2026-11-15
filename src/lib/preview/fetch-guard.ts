@@ -142,13 +142,14 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
   // to the router path, with that runtime's abort signal added to the caller's own.
   const fromRuntime = (input: FetchInput, init: RequestInit | undefined, url: URL, marker: RegExpExecArray): [FetchInput, RequestInit] => {
     const prefix = url.pathname.slice(0, marker.index);
-    const current = router !== null && run !== null && marker[1] === String(run.id) && `${url.origin}${prefix}` === router.base;
-    if (!current) throw new TypeError(RETIRED_TEXT);
+    if (router === null || run === null || marker[1] !== String(run.id) || `${url.origin}${prefix}` !== router.base) {
+      throw new TypeError(RETIRED_TEXT);
+    }
     const target = `${url.origin}${prefix}${url.pathname.slice(marker.index + marker[0].length)}${url.search}`;
-    const callerSignal = init?.signal ?? (typeof input === "object" && !(input instanceof URL) ? input.signal : undefined);
-    const signal = callerSignal ? AbortSignal.any([callerSignal, run!.controller.signal]) : run!.controller.signal;
-    const mapped = typeof input === "object" && !(input instanceof URL) ? new Request(target, input) : target;
-    return [mapped, { ...init, signal }];
+    const request = typeof input === "object" && !(input instanceof URL) ? input : null;
+    const callerSignal = init?.signal ?? request?.signal;
+    const signal = callerSignal ? AbortSignal.any([callerSignal, run.controller.signal]) : run.controller.signal;
+    return [request ? new Request(target, request) : target, { ...init, signal }];
   };
 
   // async: a refusal rejects (as the platform fetch does) and never reaches originalFetch.

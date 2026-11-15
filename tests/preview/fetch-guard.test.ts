@@ -493,6 +493,18 @@ describe("runtime generations (V08)", () => {
     expect(calls).toHaveLength(1);
   });
 
+  // Fails if a Request object of the active runtime is not mapped, or loses its method, headers or body.
+  it("maps an active runtime's Request object and keeps its method, headers and body", async () => {
+    const { guard, calls } = setup();
+    const base = guard.setRouter(FREE)!;
+    await guard.fetch(new Request(`${base}/chat/completions`, { method: "POST", headers: { authorization: "Bearer k" }, body: '{"m":2}' }));
+    const sent = effective(calls[0]);
+    expect(sent.url).toBe(`${FREE}/chat/completions`);
+    expect(sent.method).toBe("POST");
+    expect(sent.headers.get("authorization")).toBe("Bearer k");
+    expect(await sent.text()).toBe('{"m":2}');
+  });
+
   // The V08 defect: after a switch, a retired free runtime's next model call still reached the free path.
   it("refuses a retired runtime's same-origin inference after the router changes", async () => {
     const { guard, calls } = setup();
