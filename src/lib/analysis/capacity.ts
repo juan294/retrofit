@@ -21,13 +21,22 @@ export interface Slot {
 
 export type StartCrawlResult =
   | { readonly ok: true; readonly jobId: string; readonly created: boolean }
-  | { readonly ok: false; readonly code: "daily_limit"; readonly retryAt: number };
+  | { readonly ok: false; readonly code: "daily_limit"; readonly retryAt: number }
+  | { readonly ok: false; readonly code: "counting" };
+
+/** Seconds until a caller retries a `counting` result (the texts say "a few seconds" and "2 seconds"). */
+export const COUNTING_RETRY_S = 2;
 
 /**
  * startOrJoinCrawl plus capacity: a new job counts against the daily origin cap
  * and is queued. The caller then calls dispatchQueued, which starts it when a
  * slot is free. A job over the daily cap is marked failed `daily_limit`, so it
  * is never reused and a later request (after 00:00 UTC) creates a new one.
+ *
+ * `counting`: another request of this origin is still being counted today, so
+ * the cap's answer is not known. The job is not queued or counted; it is marked
+ * failed `counting`, so it is never crawled or reused, and the caller answers a
+ * short retry. The retry creates a new job and decides again.
  */
 export async function startCrawlJob(deps: JobDeps, inputOrigin: string): Promise<StartCrawlResult> {
   const { jobId, created } = await startOrJoinCrawl(deps, inputOrigin);
@@ -37,14 +46,12 @@ export async function startCrawlJob(deps: JobDeps, inputOrigin: string): Promise
   const ttl = ttlUntil(midnight, now);
   const day = utcDay(now);
   const decision = await countOnce(deps.store, `crawl-origin-day:${day}:${shortHash(inputOrigin)}`, `crawl-origins:${day}`, ttl, deps.config.crawlMaxHostsPerDay);
-  // `undecided` (another job of this origin is still being counted today) starts the crawl. That
-  // other decision usually counts the origin; when its caller was refused or stopped before
-  // counting, this crawl runs uncounted, so at most one extra crawl per pending marker passes a
-  // full cap. Refusing would tell the visitor the daily limit was reached when it may not have been.
-  if (decision === "refused") {
+  if (decision !== "admitted") {
+    // Requests that joined this job meanwhile read the same answer from it.
+    const failure = decision === "refused" ? { code: "daily_limit", message: visitorTexts.dailyLimit } : { code: "counting", message: visitorTexts.counting };
     const job = await getJob(deps.store, jobId);
-    if (job) await updateJob(deps, job, { status: "failed", step: "failed", failure: { code: "daily_limit", message: visitorTexts.dailyLimit } });
-    return { ok: false, code: "daily_limit", retryAt: midnight };
+    if (job) await updateJob(deps, job, { status: "failed", step: "failed", failure });
+    return decision === "refused" ? { ok: false, code: "daily_limit", retryAt: midnight } : { ok: false, code: "counting" };
   }
   await deps.store.enqueue(CRAWL_QUEUE, jobId, deps.config.queueMaxWaitS);
   return { ok: true, jobId, created };

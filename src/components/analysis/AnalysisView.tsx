@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { AgentPanel } from "@/components/preview/AgentPanel";
 import { localizeRetry } from "./retry-time";
+import { COUNTING_ATTEMPTS, requestAnalysis } from "./request";
 import { pollAction, pollDelay } from "./poll";
 
 interface Failure {
@@ -178,39 +179,42 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
 }
 
 /** Failures that a new analysis of the same address can fix. Retry is hidden until any retryAt has passed. */
-const RETRYABLE = new Set(["stale", "queue_expired", "crawl_error", "robots_unavailable", "unavailable", "expired"]);
+const RETRYABLE = new Set(["stale", "queue_expired", "crawl_error", "robots_unavailable", "unavailable", "expired", "counting"]);
+/** Wait before the page retries a `counting` failure by itself (the server's retry time for it). */
+const COUNTING_RETRY_MS = 2000;
 
 function Notice({ failure, inputOrigin }: { failure: Failure; inputOrigin: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [retryError, setRetryError] = useState<Failure | null>(null);
-  async function retry() {
+  const [waiting, setWaiting] = useState<string | null>(null);
+  async function retry(attempts?: number) {
     setBusy(true);
-    try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ url: inputOrigin }),
-      });
-      const body = await res.json().catch(() => null);
-      if (res.ok && body?.id) {
-        router.push(`/r/${body.id}`);
-        return;
-      }
-      setRetryError({ code: body?.error ?? "unavailable", message: body?.message ?? visitorTexts.unavailable, retryAt: body?.retryAt });
-    } catch {
-      setRetryError({ code: "unavailable", message: visitorTexts.unavailable });
+    const result = await requestAnalysis(inputOrigin, { onRetry: setWaiting, attempts });
+    setWaiting(null);
+    if (result.ok) {
+      router.push(`/r/${result.id}`);
+      return;
     }
+    setRetryError(result.failure);
     setBusy(false);
   }
+  // A job held back while the site's daily count was undecided: start again by itself, once, after a moment.
+  const autoRetry = failure.code === "counting";
+  useEffect(() => {
+    if (!autoRetry) return;
+    setWaiting(visitorTexts.countingRetry);
+    const timer = setTimeout(() => void retry(COUNTING_ATTEMPTS - 1), COUNTING_RETRY_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once for the failure shown on mount.
+  }, [autoRetry]);
   const shown = retryError ?? failure;
   return (
     <div className="mt-8" role="alert">
-      <p>{localizeRetry(shown.message, shown.retryAt)}</p>
+      <p>{waiting ?? localizeRetry(shown.message, shown.retryAt)}</p>
       <p className="mt-4 flex gap-3">
         {RETRYABLE.has(failure.code) && !(failure.retryAt && Date.parse(failure.retryAt) > Date.now()) ? (
-          <button type="button" onClick={retry} disabled={busy} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
+          <button type="button" onClick={() => void retry()} disabled={busy} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
             {busy ? "Starting…" : failure.code === "expired" ? "Analyze again" : "Retry"}
           </button>
         ) : null}

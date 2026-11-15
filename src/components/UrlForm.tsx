@@ -2,13 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { visitorTexts } from "@/lib/analysis/texts";
 import { localizeRetry } from "./analysis/retry-time";
+import { requestAnalysis } from "./analysis/request";
 
 export function UrlForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [waiting, setWaiting] = useState<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -19,22 +20,13 @@ export function UrlForm() {
       return;
     }
     setBusy(true);
-    try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ url }),
-      });
-      const body = (await res.json().catch(() => null)) as { id?: string; message?: string; retryAt?: string } | null;
-      if (res.ok && body?.id) {
-        router.push(`/r/${body.id}`);
-        return;
-      }
-      setError(body?.message ? localizeRetry(body.message, body.retryAt) : visitorTexts.unavailable);
-    } catch {
-      setError(visitorTexts.unavailable);
+    const result = await requestAnalysis(url, { onRetry: setWaiting });
+    setWaiting(null);
+    if (result.ok) {
+      router.push(`/r/${result.id}`);
+      return;
     }
+    setError(localizeRetry(result.failure.message, result.failure.retryAt));
     setBusy(false);
   }
 
@@ -64,6 +56,7 @@ export function UrlForm() {
           {busy ? "Starting…" : "Score my site"}
         </button>
       </div>
+      {waiting ? <p role="status">{waiting}</p> : null}
       {error ? (
         <p id="site-url-error" role="alert" style={{ color: "var(--color-danger)" }}>
           {error}
