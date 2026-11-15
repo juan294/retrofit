@@ -232,6 +232,31 @@ describe("review fixes", () => {
     expect(gets).toEqual(["analysis", "crawl-job"]);
   });
 
+  // V01. Fails if the reader that loses the compare-and-set copying a ready job's result answers
+  // ready without a score (the page then stopped polling and showed "Reading the site" forever).
+  it("gives two tabs that read the first completed result at once the score and the report", async () => {
+    const server = await serveSites(() => ({ "bakery.fixture.test": bakery }));
+    close = () => server.close();
+    const d = testDeps();
+    const res = await handleAnalyze(analyzeRequest({ url: server.origin("bakery.fixture.test") }), d);
+    const cookie = cookieFrom(res);
+    const { id } = (await res.json()) as { id: string };
+    await d.settle();
+    expect((await getAnalysis(d.store, id))?.snapshot).toBeUndefined();
+    const compact = await Promise.all([0, 1].map(async () => (await handleAnalysisStatus(statusRequest(id, { cookie }), d, id)).json()));
+    for (const b of compact) expect(b).toEqual({ status: "ready", step: "ready", scoreReady: true });
+
+    const again = await handleAnalyze(analyzeRequest({ url: server.origin("bakery.fixture.test") }, { cookie }), d);
+    const { id: id2 } = (await again.json()) as { id: string };
+    await d.settle();
+    const full = await Promise.all([0, 1].map(async () => (await handleAnalysisStatus(statusRequest(id2, { cookie, include: "result" }), d, id2)).json()));
+    for (const b of full as { scoreReady: boolean; report: { status: string } | null }[]) {
+      expect(b.scoreReady).toBe(true);
+      expect(b.report?.status).toBe("ready");
+    }
+    await d.settle();
+  });
+
   // P3-R4b. Fails if a status read that loses the stale-marking race re-reads the job (jobs.ts).
   it("does not re-read the job after losing the race to mark it stale", async () => {
     const fc = fakeClock();
