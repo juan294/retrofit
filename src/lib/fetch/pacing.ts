@@ -3,8 +3,9 @@ import { CrawlDelayTooLong } from "./errors";
 
 /**
  * Stored at `nextAllowedAt:<host>`: `at` is the earliest time the next request
- * to the host may start; `last` is when the latest request started, so a crawl
- * delay learned after that request (from robots.txt) is measured from it.
+ * to the host may start; `last` is the latest time the latest request may
+ * start (its slot start plus LATE_START_TOLERANCE_MS), so a crawl delay
+ * learned after that request (from robots.txt) is measured from it.
  */
 interface Slot {
   readonly version: number;
@@ -17,6 +18,8 @@ export interface PacerOptions {
   clock?: Clock;
   sleep?: (ms: number) => Promise<void>;
   minIntervalMs?: number;
+  /** Latest start after a slot's start. Default LATE_START_TOLERANCE_MS; tests with a tiny interval lower it. */
+  lateStartToleranceMs?: number;
 }
 
 export interface Pacer {
@@ -49,16 +52,24 @@ const SLOT_TTL_MARGIN_S = 3600;
  */
 export const MAX_INTERVAL_MS = 24 * 3600 * 1000;
 /**
- * Latest a caller may start after its slot's start. The next caller's slot
- * starts one interval after this slot's start, so a caller that is later (a
- * held-back timer or a slow reservation) takes a new slot instead of sending.
+ * Latest a caller may start after its slot's start. A slot stores its start
+ * plus this tolerance as `last`, and the next slot starts at least one
+ * interval after `last`, so the gap between actual request starts is never
+ * shorter than the interval. A caller that would start later (a held-back
+ * timer or a slow reservation) takes a new slot instead of sending.
  */
 export const LATE_START_TOLERANCE_MS = 250;
 const MAX_ATTEMPTS = 1000;
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-export function createPacer({ store, clock = systemClock, sleep = realSleep, minIntervalMs = 1000 }: PacerOptions): Pacer {
+export function createPacer({
+  store,
+  clock = systemClock,
+  sleep = realSleep,
+  minIntervalMs = 1000,
+  lateStartToleranceMs = LATE_START_TOLERANCE_MS,
+}: PacerOptions): Pacer {
   return {
     async pace(host, crawlDelaySeconds, notAfter) {
       const key = `nextAllowedAt:${host.toLowerCase()}`;
@@ -76,7 +87,8 @@ export function createPacer({ store, clock = systemClock, sleep = realSleep, min
         if (tooLate(slotStart)) throw new CrawlDelayTooLong(host, slotStart - now);
         // A new record starts at version `now` (ms), above any earlier record's version, so a stale reader
         // of an expired record can never match a recreated one.
-        const next: Slot = { version: current ? current.version + 1 : now, at: slotStart + intervalMs, last: slotStart };
+        const latestStart = slotStart + lateStartToleranceMs;
+        const next: Slot = { version: current ? current.version + 1 : now, at: latestStart + intervalMs, last: latestStart };
         const ttlSeconds = Math.ceil((next.at - now) / 1000) + SLOT_TTL_MARGIN_S;
 
         const won = current
@@ -84,23 +96,16 @@ export function createPacer({ store, clock = systemClock, sleep = realSleep, min
           : (await store.putIfAbsent(key, next, ttlSeconds)).created;
         if (!won) continue;
 
-        // The slot is ours. Wait for its start from fresh time; a timer that wakes early waits again. A
-        // clock that did not move during a wait does not follow the timer (a fixed test clock), so that
-        // wait counts as done.
-        for (now = clock(); now < slotStart; ) {
-          const before = now;
-          await sleep(slotStart - now);
-          now = clock();
-          if (now === before) break;
-        }
+        // The slot is ours. Wait for its start from fresh time; a timer that wakes early waits again.
+        for (now = clock(); now < slotStart; now = clock()) await sleep(slotStart - now);
         // A deadline that passed during the reservation or the wait refuses the request. The reservation
         // stays: it only makes the next request to this host wait longer. Undoing it would need another
         // conditional write after the deadline, and an unconditional delete could erase a later caller's
         // slot and shorten its spacing.
         if (tooLate(now)) throw new CrawlDelayTooLong(host, Math.max(0, slotStart - now));
-        if (now - slotStart <= LATE_START_TOLERANCE_MS) return;
-        // Too late for this slot: the next caller may start one interval after the slot's start. Take a
-        // new slot, spaced from this one and from any later caller's.
+        if (now <= latestStart) return;
+        // Too late for this slot: the next caller may start one interval after its `last`. Take a new
+        // slot, spaced from this one and from any later caller's.
       }
       throw new Error(`pacing for ${host} did not get a slot after ${MAX_ATTEMPTS} attempts`);
     },
