@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { KeyPanel } from "@/components/key-panel/KeyPanel";
 import type { Connection } from "@/lib/keys/connect";
 import { pageGuard } from "@/lib/preview/page-guard";
@@ -25,11 +25,16 @@ export function AgentPanel({ basePath, label, title }: AgentPanelProps) {
 
   const onConnect = useCallback((c: Connection) => setInference({ router: c.router, key: c.key, model: c.model }), []);
   const onForget = useCallback(() => setInference(null), []);
-  const guard = typeof window === "undefined" ? null : pageGuard();
+  // The key panel renders only after mount: the server and the first client render match,
+  // and no key form exists before the page's scripts run.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const guard = mounted ? pageGuard() : null;
+  const headingId = useId();
 
   return (
-    <section className="mt-10" aria-labelledby={`${title}-heading`}>
-      <h2 id={`${title}-heading`} className="text-xl font-semibold">
+    <section className="mt-10" aria-labelledby={headingId}>
+      <h2 id={headingId} className="text-xl font-semibold">
         {title}
       </h2>
       {guard ? <KeyPanel guard={guard} onConnect={onConnect} onForget={onForget} /> : null}

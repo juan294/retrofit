@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { noticeForTrace, type Notice } from "@/lib/preview/notices";
 import type { ConsentInfo } from "@/lib/preview/fetch-guard";
-import { installPageGuard, pageGuard } from "@/lib/preview/page-guard";
+import { closePreviewAccess, installPageGuard } from "@/lib/preview/page-guard";
 
 /** Router, key and model the runtime uses. The key never leaves the browser except to `router`. */
 export interface Inference {
@@ -49,8 +49,7 @@ export function Preview({ originUrl, inference, label }: PreviewProps) {
     const mount = mountRef.current;
     if (!mount) return;
     let cancelled = false;
-    const uninstall = installPageGuard();
-    const guard = pageGuard();
+    const guard = installPageGuard();
     setNotices([]);
     setBootError(null);
 
@@ -66,6 +65,8 @@ export function Preview({ originUrl, inference, label }: PreviewProps) {
           throw new VisitorError(body?.message ?? `The agent manifest answered HTTP ${res.status}.`);
         }
         const manifest = (await res.json()) as { allowed_peers?: unknown };
+        // A cancelled boot must not write its peers into the guard the next preview uses.
+        if (cancelled) return;
         guard.setPolicyPeers(Array.isArray(manifest.allowed_peers) ? manifest.allowed_peers.filter((x): x is string => typeof x === "string") : []);
         if (cancelled) return;
 
@@ -103,7 +104,7 @@ export function Preview({ originUrl, inference, label }: PreviewProps) {
     return () => {
       cancelled = true;
       mount.replaceChildren();
-      uninstall();
+      closePreviewAccess(guard);
     };
   }, [originUrl, inference.router, inference.key, inference.model]);
 

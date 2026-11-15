@@ -12,8 +12,9 @@ test("a visitor previews the bakery agent with their own key", async ({ page }) 
   await expect(mount.locator('[data-ns-slot="chat"]')).toBeVisible();
 
   // The runtime's own layout is styled (its BASE_CSS was inserted and applied).
-  const styled = await mount.locator('[data-ns-slot="chat"]').evaluate((el) => document.querySelectorAll("style").length > 0 && getComputedStyle(el).display !== "");
-  expect(styled).toBe(true);
+  // BASE_CSS sets .ns-msgs{display:flex;flex-direction:column}; a browser default would be block.
+  const direction = await mount.locator(".ns-msgs").first().evaluate((el) => getComputedStyle(el).flexDirection + " " + getComputedStyle(el).display);
+  expect(direction).toBe("column flex");
 
   const input = mount.getByRole("textbox").last();
   await input.fill("What are your opening hours?");

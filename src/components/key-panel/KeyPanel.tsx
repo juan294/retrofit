@@ -125,7 +125,6 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
           <input
             id={`${ids}-key`}
             ref={keyRef}
-            name="key"
             type="password"
             autoComplete="off"
             autoCapitalize="off"

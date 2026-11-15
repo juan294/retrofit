@@ -138,4 +138,16 @@ test("Forget my key returns to the key prompt and no provider gets another reque
   expect(after.filter((r) => r.url.includes("/api/inference")).map((r) => r.url)).toEqual([]);
   expect(a.authorizations.length).toBe(aCount);
   expect(b.authorizations).toEqual([]);
+
+  // A runtime that outlives its preview still meets the guard: the forgotten provider is closed.
+  const blocked = await page.evaluate(async (url) => {
+    try {
+      await fetch(url, { method: "POST", body: "{}" });
+      return "sent";
+    } catch (e) {
+      return String((e as Error).message);
+    }
+  }, `${OTARI.routerBase}/chat/completions`);
+  expect(blocked).toBe("Retrofit blocked a request to https://api.otari.ai that was not approved.");
+  expect(await page.evaluate(() => "__nsweb" in window)).toBe(false);
 });
