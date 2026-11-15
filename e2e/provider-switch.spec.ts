@@ -4,6 +4,8 @@ import { installMockRouter, sse, type MockRouter } from "./support/mock-router";
 import { UPSTREAM_MODEL } from "./support/mock-upstream";
 import { RETROFIT_ORIGIN, recordRequests, type Page, type RecordedRequest } from "./support/extra-requests";
 
+type PwRequest = import("@playwright/test").Request;
+
 const GROQ = { routerBase: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-120b", key: "gsk_test_e2e_0123456789abcdef" };
 const BLOCKED = /Retrofit blocked a request to https:\/\/api\.groq\.com that was not approved\./;
 
@@ -215,15 +217,17 @@ test("connecting a key while the free runtime loads its network aborts that load
   let networkLoads = 0;
   let release!: () => void;
   const released = new Promise<void>((resolve) => (release = resolve));
-  const failed: string[] = [];
-  page.on("requestfailed", (r) => {
-    if (r.url().endsWith(".network.json")) failed.push(r.url());
-  });
+  let held: PwRequest | null = null;
+  const failed: PwRequest[] = [];
+  page.on("requestfailed", (r) => failed.push(r));
   await page.route(
     (url) => url.pathname.startsWith("/p/") && url.pathname.endsWith(".network.json"),
     async (route) => {
       networkLoads += 1;
-      if (networkLoads === 1) await released;
+      if (networkLoads === 1) {
+        held = route.request();
+        await released;
+      }
       await route.continue().catch(() => undefined);
     },
   );
@@ -234,7 +238,7 @@ test("connecting a key while the free runtime loads its network aborts that load
   await expect.poll(() => networkLoads, { timeout: 20_000 }).toBe(2);
   await runtimeHolds(page, OTARI.key);
   // Retiring the free runtime aborted its held load, so its boot never completes.
-  await expect.poll(() => failed.length).toBe(1);
+  await expect.poll(() => held !== null && failed.includes(held)).toBe(true);
   release();
   await page.waitForTimeout(1_000);
   expect(await page.evaluate(() => (window as unknown as { __nsweb?: { engine?: { byokKey?: string } } }).__nsweb?.engine?.byokKey ?? null)).toBe(OTARI.key);
