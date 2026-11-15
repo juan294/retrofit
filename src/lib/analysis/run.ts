@@ -3,9 +3,9 @@ import { NotPublicError } from "@/lib/fetch/errors";
 import { countClientAnalysis } from "@/lib/fetch/limits";
 import { validateUrl } from "@/lib/fetch/url";
 import type { ServerDeps } from "@/lib/server/runtime";
-import { COUNTING_RETRY_S, dispatchQueued, startCrawlJob, type Invocation } from "./capacity";
+import { dispatchQueued, startCrawlJob, type Invocation } from "./capacity";
 import { createAnalysis } from "./record";
-import { visitorTexts } from "./texts";
+import { COUNTING_RETRY_S, visitorTexts } from "./texts";
 
 /**
  * True for a request from Retrofit's own page: `Sec-Fetch-Site: same-origin`,

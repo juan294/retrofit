@@ -102,7 +102,7 @@ export function createPacer({
         // stays: it only makes the next request to this host wait longer. Undoing it would need another
         // conditional write after the deadline, and an unconditional delete could erase a later caller's
         // slot and shorten its spacing.
-        if (tooLate(now)) throw new CrawlDelayTooLong(host, Math.max(0, slotStart - now));
+        if (tooLate(now)) throw new CrawlDelayTooLong(host, 0);
         if (now <= latestStart) return;
         // Too late for this slot: the next caller may start one interval after its `last`. Take a new
         // slot, spaced from this one and from any later caller's.

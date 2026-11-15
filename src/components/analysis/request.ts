@@ -1,4 +1,4 @@
-import { visitorTexts } from "@/lib/analysis/texts";
+import { COUNTING_RETRY_S, visitorTexts } from "@/lib/analysis/texts";
 
 export interface RequestFailure {
   readonly code: string;
@@ -25,7 +25,6 @@ export interface RequestOptions {
  * limit, so the page stops after a few and shows the server's text.
  */
 export const COUNTING_ATTEMPTS = 3;
-const COUNTING_DEFAULT_S = 2;
 
 const realSleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
@@ -74,7 +73,7 @@ export async function requestAnalysis(url: string, o: RequestOptions = {}): Prom
     if (o.signal?.aborted) return ABORTED;
     if (res.ok && typeof body?.id === "string") return { ok: true, id: body.id };
     if (res.status === 503 && body?.error === "counting" && attempt < attempts) {
-      const seconds = typeof body.retryAfterSeconds === "number" && body.retryAfterSeconds > 0 ? body.retryAfterSeconds : COUNTING_DEFAULT_S;
+      const seconds = typeof body.retryAfterSeconds === "number" && body.retryAfterSeconds > 0 ? body.retryAfterSeconds : COUNTING_RETRY_S;
       o.onRetry?.(visitorTexts.countingRetry);
       await sleep(seconds * 1000);
       continue;

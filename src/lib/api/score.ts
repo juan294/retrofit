@@ -1,7 +1,7 @@
-import { COUNTING_RETRY_S, dispatchQueued, startCrawlJob } from "@/lib/analysis/capacity";
+import { dispatchQueued, startCrawlJob } from "@/lib/analysis/capacity";
 import { reportBody } from "@/lib/analysis/record";
 import { withDefaultScheme } from "@/lib/analysis/run";
-import { agentTexts, type AgentErrorCode } from "@/lib/analysis/texts";
+import { agentTexts, COUNTING_RETRY_S, type AgentErrorCode } from "@/lib/analysis/texts";
 import { VISITOR_COOKIE } from "@/lib/analysis/visitor";
 import { isQueueExpired, readJobMarkingStale, type CrawlJob } from "@/lib/crawl/jobs";
 import { NotPublicError } from "@/lib/fetch/errors";

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { visitorTexts } from "@/lib/analysis/texts";
+import { COUNTING_RETRY_S, visitorTexts } from "@/lib/analysis/texts";
 import { AgentPanel } from "@/components/preview/AgentPanel";
 import { localizeRetry } from "./retry-time";
 import { COUNTING_ATTEMPTS } from "./request";
@@ -181,8 +181,6 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
 
 /** Failures that a new analysis of the same address can fix. Retry is hidden until any retryAt has passed. */
 const RETRYABLE = new Set(["stale", "queue_expired", "crawl_error", "robots_unavailable", "unavailable", "expired", "counting"]);
-/** Wait before the page retries a `counting` failure by itself (the server's retry time for it). */
-const COUNTING_RETRY_MS = 2000;
 
 function Notice({ failure, inputOrigin }: { failure: Failure; inputOrigin: string }) {
   const router = useRouter();
@@ -199,7 +197,7 @@ function Notice({ failure, inputOrigin }: { failure: Failure; inputOrigin: strin
     });
     starts.current = controller;
     // A job held back while the site's daily count was undecided: start again by itself after a moment.
-    if (autoRetry) controller.schedule(inputOrigin, COUNTING_RETRY_MS, visitorTexts.countingRetry, COUNTING_ATTEMPTS - 1);
+    if (autoRetry) controller.schedule(inputOrigin, COUNTING_RETRY_S * 1000, visitorTexts.countingRetry, COUNTING_ATTEMPTS - 1);
     return () => controller.dispose();
   }, [autoRetry, inputOrigin, router]);
   const shown = retryError ?? failure;

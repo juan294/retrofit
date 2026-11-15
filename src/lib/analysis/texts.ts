@@ -16,6 +16,13 @@ export function hhmmUtc(at: Date): string {
 
 const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
+/**
+ * Seconds until a caller retries an undecided count (`counting`): the server's
+ * retryAfterSeconds and the page's own retry wait. The texts below say "a few
+ * seconds" and "2 seconds".
+ */
+export const COUNTING_RETRY_S = 2;
+
 export const visitorTexts = {
   stale: "This analysis took too long. Try again.",
   robotsBlocked: "This site asks automated tools not to read it. Retrofit stopped and read nothing else.",

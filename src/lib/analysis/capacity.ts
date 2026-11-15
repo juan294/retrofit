@@ -24,9 +24,6 @@ export type StartCrawlResult =
   | { readonly ok: false; readonly code: "daily_limit"; readonly retryAt: number }
   | { readonly ok: false; readonly code: "counting" };
 
-/** Seconds until a caller retries a `counting` result (the texts say "a few seconds" and "2 seconds"). */
-export const COUNTING_RETRY_S = 2;
-
 /**
  * startOrJoinCrawl plus capacity: a new job counts against the daily origin cap
  * and is queued. The caller then calls dispatchQueued, which starts it when a
@@ -48,10 +45,11 @@ export async function startCrawlJob(deps: JobDeps, inputOrigin: string): Promise
   const decision = await countOnce(deps.store, `crawl-origin-day:${day}:${shortHash(inputOrigin)}`, `crawl-origins:${day}`, ttl, deps.config.crawlMaxHostsPerDay);
   if (decision !== "admitted") {
     // Requests that joined this job meanwhile read the same answer from it.
-    const failure = decision === "refused" ? { code: "daily_limit", message: visitorTexts.dailyLimit } : { code: "counting", message: visitorTexts.counting };
+    const refused = decision === "refused";
+    const failure = refused ? { code: "daily_limit", message: visitorTexts.dailyLimit } : { code: "counting", message: visitorTexts.counting };
     const job = await getJob(deps.store, jobId);
     if (job) await updateJob(deps, job, { status: "failed", step: "failed", failure });
-    return decision === "refused" ? { ok: false, code: "daily_limit", retryAt: midnight } : { ok: false, code: "counting" };
+    return refused ? { ok: false, code: "daily_limit", retryAt: midnight } : { ok: false, code: "counting" };
   }
   await deps.store.enqueue(CRAWL_QUEUE, jobId, deps.config.queueMaxWaitS);
   return { ok: true, jobId, created };
