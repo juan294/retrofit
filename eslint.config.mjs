@@ -29,7 +29,7 @@ export default tseslint.config(
   },
   {
     // Every browser spec must use the CSP fixture.
-    files: ["e2e/**/*.spec.ts"],
+    files: ["e2e/**/*.spec.ts", "e2e-prod/**/*.spec.ts"],
     rules: { "no-restricted-imports": ["error", { paths: [{ name: "@playwright/test", message: "Import test and expect from ./fixtures/csp so the CSP checks run." }] }] },
   },
   {

@@ -27,8 +27,10 @@
     "hosting-and-domain-decision"
   ],
   "current_gaps": [
-    "no-release-evidence-analyzer",
-    "no-hosting-or-deployment-target"
+    "no-hosting-or-deployment-target",
+    "no-production-deployment-or-evidence",
+    "rpi-installation-check-failing",
+    "phase-6-owner-inputs-and-contract-probe"
   ],
   "invariants": [
     "passing-check-count-greater-than-zero",

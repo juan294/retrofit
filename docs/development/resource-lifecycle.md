@@ -16,7 +16,14 @@ The canonical workspace is `/Users/juan/code/retrofit`. Parallel code tasks use 
 
 If a port is busy before a run, find its pid (`lsof -nP -iTCP:<port> -sTCP:LISTEN`) and verify the owner before you stop anything. Do not stop a process that another task started.
 
-Supabase (Phase 7): reusable dev stack `retrofit` on 54720 to 54729, kept between tasks; disposable gate stack `retrofit-gate` on 54730 to 54739, created and removed by `pnpm test:db` with a receipt. The gate never touches the dev stack.
+Supabase:
+
+| Stack | Project id | Ports | Start | Stop | Data |
+| --- | --- | --- | --- | --- | --- |
+| Reusable dev stack | `retrofit` | 54720 to 54729 | `supabase start` in the canonical checkout | `supabase stop` (keeps data) | Kept between tasks. Never reset by the gate. |
+| Disposable gate stack | `retrofit-gate` | 54730 to 54739 | `pnpm test:db` (`tools/gate-db.mjs`), config generated into `.local/supabase-gate/` | The same command: `supabase stop --no-backup` after identity checks | Removed at the end of every run. |
+
+`pnpm test:db` takes a machine-wide lock and writes a receipt in `~/Library/Application Support/retrofit/gate-db/` before it starts anything. It refuses when a `retrofit-gate` container, volume or network exists without its own receipt, and never resets or removes such resources. A run that dies leaves its receipt; `pnpm gate-db:recover` disposes the stack only when the receipt's process is dead and every resource matches it, and otherwise reports and leaves everything in place. Each run logs to `.local/evidence/current/gate-db.log`, ending with `GATE-DB TEARDOWN COMPLETE` only after verified removal. Only one worktree can run the gate database at a time.
 
 ## Resource classes
 

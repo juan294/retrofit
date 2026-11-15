@@ -6,7 +6,7 @@ Start with [the briefing](docs/briefing.md) and [the accepted design brief](docs
 
 ## Current state and authority
 
-The application is being built under `docs/plans/2026-11-15-retrofit-url-to-preview.md`. See that plan's notes file for the phase status. There is no deployment target or domain configuration yet. The bundle, accounts and payment are proposed work, not implemented features.
+The application is being built under `docs/plans/2026-11-15-retrofit-url-to-preview.md`. See that plan's notes file for the phase status. Hosting is configured (`vercel.json`, Supabase migration) but not created: no Vercel project, database, domain or deployment exists yet. The bundle, accounts and payment are proposed work, not implemented features.
 
 Shared instructions live here; `CLAUDE.md` imports this file. Do not introduce an import cycle. Use the installed native RPI skill for the requested phase and read its full instructions and references. Claude invokes `/rpi-plan`, `/rpi-implement` and other `/rpi-*` skills; Codex invokes `$rpi-plan`, `$rpi-implement` and other `$rpi-*` skills. Native `/plan` and `/status` are not RPI workflows. Planning and implementation belong in this workspace, with the normal phase acceptance boundaries.
 
@@ -26,7 +26,7 @@ Run checks sequentially and keep the first failure evidence.
 python3 .rpi/scripts/rpi-verify.py
 ```
 
-The declared suite in `.rpi/policy.json` runs, in order: whitespace, RPI installation, `pnpm evidence:begin` (refuses a dirty tree), `vendor:verify`, `typecheck`, `lint`, `test`, `test:coverage` (statements 80%, branches 70% for `src/lib/**`), `build`, `test:e2e` and `evidence:seal`. Commit before running the gate. Reports land in ignored `.local/evidence/current/`. The authoritative release procedure is [docs/release/release-playbook.md](docs/release/release-playbook.md).
+The declared suite in `.rpi/policy.json` runs, in order: whitespace, RPI installation, `pnpm evidence:begin` (refuses a dirty tree), `vendor:verify`, `agent:check`, `peer:check`, `typecheck`, `lint`, `test`, `test:coverage` (statements 80%, branches 70% for `src/lib/**`), `test:db` (a disposable Supabase stack; needs Docker), `build`, `test:perf`, `test:e2e` and `evidence:seal`. Commit before running the gate. Analyze a candidate with `node tools/release/analyze-evidence.mjs <commit>`. Reports land in ignored `.local/evidence/current/`. The authoritative release procedure is [docs/release/release-playbook.md](docs/release/release-playbook.md).
 
 ## Git and publication
 
