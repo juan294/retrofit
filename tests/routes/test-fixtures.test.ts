@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { parseHocon } from "../../tools/agentic-web/runtime/hocon.js";
 import { AgentNetwork, allowedDownstreamSly, filterSlyData, validateNetwork } from "../../tools/agentic-web/runtime/kernel.js";
 import { CALLER_PRIVATE_SLY_KEY, callerArtifact } from "@/lib/test-fixtures/caller";
 import {

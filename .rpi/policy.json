@@ -47,6 +47,13 @@
       ]
     },
     {
+      "name": "agent-check",
+      "argv": [
+        "pnpm",
+        "agent:check"
+      ]
+    },
+    {
       "name": "typecheck",
       "argv": [
         "pnpm",

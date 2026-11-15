@@ -62,6 +62,11 @@ function sse(turn: Turn, model: string): string {
 export async function installMockRouter(page: Page, o: { routerBase: string; model: string; script: Script }): Promise<MockRouter> {
   const state = { bodies: [] as ChatBody[], authorizations: [] as string[], modelRequests: 0 };
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "GET, POST, OPTIONS" };
+  // The runtime probes `<router origin>/agent-manifest.json` once per boot (engine.js:41-52).
+  // Answer it here so no test ever reaches the real provider host.
+  await page.route(`${new URL(o.routerBase).origin}/agent-manifest.json`, (route: Route) =>
+    route.fulfill({ status: 404, headers: cors, body: "not found" }),
+  );
   await page.route(`${o.routerBase}/**`, async (route: Route) => {
     const req = route.request();
     if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });

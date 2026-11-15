@@ -1,4 +1,4 @@
-import { BLOCKED_TEXT } from "./fetch-guard";
+import { BLOCKED_TEXT, REDIRECT_BLOCKED_TEXT } from "./fetch-guard";
 
 /**
  * Visible notices for runtime outcomes that the unchanged runtime reports only
@@ -28,6 +28,8 @@ export function noticeForTrace(ev: TraceEvent): Notice | null {
   const error = str(ev.error);
   const blocked = /^Retrofit blocked a request to (\S+) that was not approved\./.exec(error);
   if (blocked) return { kind: "blocked", text: BLOCKED_TEXT(blocked[1]!) };
+  const redirect = /^Retrofit blocked a redirect from (\S+) to an address that was not approved\./.exec(error);
+  if (redirect) return { kind: "blocked", text: REDIRECT_BLOCKED_TEXT(redirect[1]!) };
   if (kind === "remote_fetch") return { kind: "error", text: `Retrofit could not load the network from ${str(ev.peerOrigin)}: ${error}` };
   const policy = /^Policy: (\S+) is not in .+ allowed_peers/.exec(error);
   if (kind === "tool" && policy) return { kind: "denied", text: `Retrofit refused to contact ${policy[1]} because this agent does not allow it.` };

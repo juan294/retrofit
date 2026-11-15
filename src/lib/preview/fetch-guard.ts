@@ -5,6 +5,10 @@
 export const BLOCKED_TEXT = (origin: string): string =>
   `Retrofit blocked a request to ${origin} that was not approved.`;
 
+/** A guarded request answered with a redirect. The target stays unknown and is never contacted. */
+export const REDIRECT_BLOCKED_TEXT = (origin: string): string =>
+  `Retrofit blocked a redirect from ${origin} to an address that was not approved.`;
+
 type FetchInput = RequestInfo | URL;
 type FetchFn = (input: FetchInput, init?: RequestInit) => Promise<Response>;
 
@@ -103,9 +107,15 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
     url.origin === p.origin && url.search === "" && method === "GET" && url.pathname === `${p.path}/models`;
 
   // fetch(input, init) builds new Request(input, init): init fields override a Request's own,
-  // and its body and headers are kept, so only `redirect` changes.
-  const withRedirectError = (input: FetchInput, init: RequestInit | undefined): Promise<Response> =>
-    originalFetch(input, { ...init, redirect: "error" });
+  // and its body and headers are kept, so only `redirect` changes. "manual" never follows a
+  // redirect (like "error"); the guard then refuses the redirect with a text the visitor can read.
+  const withRedirectError = async (input: FetchInput, init: RequestInit | undefined): Promise<Response> => {
+    const res = await originalFetch(input, { ...init, redirect: "manual" });
+    if (res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400)) {
+      throw new TypeError(REDIRECT_BLOCKED_TEXT(new URL(rawUrl(input), pageOrigin).origin));
+    }
+    return res;
+  };
 
   // async: a refusal rejects (as the platform fetch does) and never reaches originalFetch.
   async function guardedFetch(input: FetchInput, init?: RequestInit): Promise<Response> {

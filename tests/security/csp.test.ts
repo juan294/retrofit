@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "@/lib/config";
 import { buildConnectSrc, pageCsp, staticSecurityHeaders } from "@/lib/security/headers";
 import { connectOrigins } from "@/lib/security/origins";
+import { routerOrigins } from "@/lib/keys/providers";
 
 const secret = "s".repeat(32);
 const prod = loadConfig({ VERCEL: "1", SESSION_SECRET: secret, PUBLIC_ORIGIN: "https://retrofit.example" });
@@ -37,7 +38,8 @@ describe("page CSP", () => {
   // Fails if a fixture origin leaks into the production policy.
   it("has no fixture origin in production", () => {
     expect(csp).not.toMatch(/fixture\.test|127\.0\.0\.1|localhost/);
-    expect(directive(csp, "connect-src")).toEqual(["'self'"]);
+    // Phase 4: the provider routers of the key panel, and nothing else.
+    expect(directive(csp, "connect-src")).toEqual(["'self'", ...routerOrigins()]);
   });
 
   it("adds only the exact fixture origins in fixtures mode", () => {

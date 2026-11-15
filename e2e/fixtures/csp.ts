@@ -4,13 +4,36 @@ import { evaluateCsp, type CspViolation } from "./csp-eval";
 
 export type { CspViolation };
 
+interface NetworkFixtures {
+  /** Requests to a real external host that no test mock answered. Any entry fails the test. */
+  externalRequests: string[];
+}
+
 interface CspFixtures {
   /** Declare the exact violations this test must cause. Any other violation, or a missing one, fails the test. */
   expectCspViolations: (list: CspViolation[]) => void;
   cspViolations: CspViolation[];
 }
 
-export const test = base.extend<CspFixtures>({
+const LOCAL_HOST = /^(127\.0\.0\.1|localhost|[a-z0-9-]+\.fixture\.test)$/;
+
+export const test = base.extend<CspFixtures & NetworkFixtures>({
+  externalRequests: [
+    async ({ context }, use) => {
+      const seen: string[] = [];
+      // Context routes have the lowest priority: a test's page.route mock still answers first.
+      await context.route(
+        (url) => /^https?:$/.test(url.protocol) && !LOCAL_HOST.test(url.hostname),
+        (route) => {
+          seen.push(route.request().url());
+          return route.abort("blockedbyclient");
+        },
+      );
+      await use(seen);
+      expect(seen, "requests to real external hosts (mock them or remove them)").toEqual([]);
+    },
+    { auto: true },
+  ],
   cspViolations: [
     async ({ page }, use) => {
       const seen: CspViolation[] = [];

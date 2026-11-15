@@ -93,12 +93,12 @@ describe("rule 2: same-origin agent artifacts", () => {
     "/links.json",
   ];
 
-  // Fails if any artifact path loses redirect "error" or if the guard drops the caller's other init fields.
+  // Fails if any artifact path loses redirect "manual" or if the guard drops the caller's other init fields.
   it.each(artifacts)("%s gets redirect error and keeps the other options", async (path) => {
     const { guard, calls } = setup();
     await guard.fetch(`${PAGE}${path}`, { cache: "no-store", headers: { "x-test": "1" } });
     const request = effective(calls[0]);
-    expect(request.redirect).toBe("error");
+    expect(request.redirect).toBe("manual");
     expect(request.cache).toBe("no-store");
     expect(request.headers.get("x-test")).toBe("1");
   });
@@ -114,7 +114,7 @@ describe("rule 2: same-origin agent artifacts", () => {
 });
 
 describe("rule 3: the cross-origin router", () => {
-  // Fails if any of the three runtime requests is refused or sent without redirect "error".
+  // Fails if any of the three runtime requests is refused or sent without redirect "manual".
   it("allows chat, models and the probe with redirect error", async () => {
     const { guard, calls } = setup();
     guard.setRouter(ROUTER_A);
@@ -126,7 +126,7 @@ describe("rule 3: the cross-origin router", () => {
       `${ROUTER_A}/models`,
       "https://api.example/agent-manifest.json",
     ]);
-    expect(calls.map((c) => effective(c).redirect)).toEqual(["error", "error", "error"]);
+    expect(calls.map((c) => effective(c).redirect)).toEqual(["manual", "manual", "manual"]);
   });
 
   // Fails if router matching is by origin only, by path prefix, ignores the method or ignores the query.
@@ -170,13 +170,13 @@ describe("rule 3: the cross-origin router", () => {
 });
 
 describe("rule 4: provisional provider", () => {
-  // Fails if authorizeProvider grants chat or the probe, or if /models is sent without redirect "error".
+  // Fails if authorizeProvider grants chat or the probe, or if /models is sent without redirect "manual".
   it("allows only GET /models while validation runs", async () => {
     const { guard, calls } = setup();
     guard.setRouter(ROUTER_A);
     guard.authorizeProvider(ROUTER_B);
     await guard.fetch(`${ROUTER_B}/models`, { cache: "no-store" });
-    expect(effective(calls[0]).redirect).toBe("error");
+    expect(effective(calls[0]).redirect).toBe("manual");
     await expectBlocked(guard.fetch(`${ROUTER_B}/chat/completions`, { method: "POST" }), "https://router-b.example");
     await expectBlocked(guard.fetch("https://router-b.example/agent-manifest.json"), "https://router-b.example");
     expect(calls).toHaveLength(1);
@@ -240,7 +240,7 @@ describe("rule 5: policy peers need policy and approval", () => {
     await expect(wrapped({ kind: "network", peerOrigin: "peer-a.fixture.test:3011" })).resolves.toBe("allow");
     await guard.fetch(`${PEER_A}/agent-manifest.json`);
     await guard.fetch(`${PEER_A}/peer_demo.network.json`, { headers: { accept: "application/json" } });
-    expect(calls.map((c) => effective(c).redirect)).toEqual(["error", "error"]);
+    expect(calls.map((c) => effective(c).redirect)).toEqual(["manual", "manual"]);
     expect(effective(calls[1]).headers.get("accept")).toBe("application/json");
     await expectBlocked(guard.fetch(`${PEER_B}/agent-manifest.json`), PEER_B);
     expect(calls).toHaveLength(2);
@@ -341,7 +341,7 @@ describe("Request objects", () => {
     await guard.fetch(request);
     const sent = effective(calls[0]);
     expect(sent.method).toBe("POST");
-    expect(sent.redirect).toBe("error");
+    expect(sent.redirect).toBe("manual");
     expect(sent.headers.get("authorization")).toBe("Bearer test-key");
     expect(await sent.text()).toBe('{"model":"m"}');
   });
@@ -369,7 +369,7 @@ describe("Request objects", () => {
   it("sets redirect error on a same-origin artifact Request", async () => {
     const { guard, calls } = setup();
     await guard.fetch(new Request(`${PAGE}/p/abc/agent-manifest.json`, { redirect: "follow" }));
-    expect(effective(calls[0]).redirect).toBe("error");
+    expect(effective(calls[0]).redirect).toBe("manual");
   });
 });
 
@@ -423,5 +423,20 @@ describe("state", () => {
     (snapshot.approvedPeers as string[]).push(PEER_A);
     await expectBlocked(guard.fetch(`${PEER_A}/x`), PEER_A);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("redirects on guarded requests", () => {
+  // Fails if a guarded request follows or passes on a redirect instead of refusing it with the visitor text.
+  it("refuses a redirect answer with the redirect text and never follows it", async () => {
+    const { REDIRECT_BLOCKED_TEXT } = await import("@/lib/preview/fetch-guard");
+    const seen: string[] = [];
+    const recorder = async (input: RequestInfo | URL) => {
+      seen.push(String(input instanceof Request ? input.url : input));
+      return new Response(null, { status: 302, headers: { location: "http://third.example/x" } });
+    };
+    const guard = createFetchGuard({ pageOrigin: "https://retrofit.example", originalFetch: recorder as typeof fetch });
+    await expect(guard.fetch("https://retrofit.example/p/abc/agent-manifest.json")).rejects.toThrow(REDIRECT_BLOCKED_TEXT("https://retrofit.example"));
+    expect(seen).toEqual(["https://retrofit.example/p/abc/agent-manifest.json"]);
   });
 });

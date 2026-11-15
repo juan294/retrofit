@@ -21,7 +21,11 @@ export default defineConfig({
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
-        launchOptions: { args: ['--host-resolver-rules=MAP *.fixture.test 127.0.0.1'] },
+        launchOptions: {
+          args: [
+            "--host-resolver-rules=MAP *.fixture.test 127.0.0.1",
+          ],
+        },
       },
     },
   ],
@@ -30,6 +34,7 @@ export default defineConfig({
     url: `${BASE_URL}/`,
     reuseExistingServer: false,
     timeout: 60_000,
-    env: { RETROFIT_TEST_FIXTURES: "1", PUBLIC_ORIGIN: BASE_URL },
+    // One client IP runs every spec, so the hourly analysis limit is raised for the test server only.
+    env: { RETROFIT_TEST_FIXTURES: "1", PUBLIC_ORIGIN: BASE_URL, ANALYSES_PER_CLIENT_HOUR: "1000" },
   },
 });

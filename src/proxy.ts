@@ -2,17 +2,27 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getConfig } from "@/lib/config";
 import { pageCsp } from "@/lib/security/headers";
 import { connectOrigins } from "@/lib/security/origins";
+import { CALLER_HOSTS, FIXTURE_PEER_ORIGINS } from "@/lib/test-fixtures/origins";
+
+/** Agent artifact paths that the fixture callers serve at their origin root (fixtures mode only). */
+const CALLER_ARTIFACT = /^\/(agent-manifest\.json|[a-z0-9_]+\.network\.json|links\.json|site-actions\.js)$/;
 
 export function proxy(request: NextRequest) {
   const config = getConfig();
   const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64");
-  const csp = pageCsp(config, nonce, { dev: process.env.NODE_ENV === "development", phase: connectOrigins(config) });
+  const csp = pageCsp(config, nonce, { dev: process.env.NODE_ENV === "development", phase: connectOrigins(config, FIXTURE_PEER_ORIGINS) });
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", csp);
 
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  // Fixtures mode only: the spec §6 callers are host-routed at their origin root, because the
+  // runtime matches a cycle back edge only for a network at an origin root (notes, Phase 4).
+  const host = (request.headers.get("host") ?? "").toLowerCase();
+  const fixtureCaller = config.fixturesEnabled && (CALLER_HOSTS as readonly string[]).includes(host) && CALLER_ARTIFACT.test(request.nextUrl.pathname);
+  const response = fixtureCaller
+    ? NextResponse.rewrite(new URL(`/test-fixtures/caller${request.nextUrl.pathname}`, request.url), { request: { headers: requestHeaders } })
+    : NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", csp);
   // API routes set their own Cache-Control (the score contract requires exactly "no-store");
   // a header set here would win over the route's.
