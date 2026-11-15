@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "@/lib/config";
+import { VERCEL_ENV } from "../helpers/vercel-env";
 import { buildConnectSrc, pageCsp, staticSecurityHeaders } from "@/lib/security/headers";
 import { connectOrigins } from "@/lib/security/origins";
 import { routerOrigins } from "@/lib/keys/providers";
 
 const secret = "s".repeat(32);
-const prod = loadConfig({ VERCEL: "1", SESSION_SECRET: secret, PUBLIC_ORIGIN: "https://retrofit.example" });
+const prod = loadConfig(VERCEL_ENV);
 const fixtures = loadConfig({ RETROFIT_TEST_FIXTURES: "1", SESSION_SECRET: secret });
 
 function directive(csp: string, name: string): string[] {

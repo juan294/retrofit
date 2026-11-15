@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ConfigError, loadConfig } from "@/lib/config";
+import { VERCEL_ENV } from "./helpers/vercel-env";
 
 const secret = "s".repeat(32);
 
@@ -79,7 +80,7 @@ describe("loadConfig", () => {
   });
 
   it("accepts a valid Vercel configuration", () => {
-    const c = loadConfig({ VERCEL: "1", SESSION_SECRET: secret, PUBLIC_ORIGIN: "https://r.example/" });
+    const c = loadConfig({ ...VERCEL_ENV, PUBLIC_ORIGIN: "https://r.example/" });
     expect(c.onVercel).toBe(true);
     expect(c.publicOrigin).toBe("https://r.example");
   });

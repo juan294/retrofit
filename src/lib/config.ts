@@ -30,6 +30,46 @@ export interface Config {
   readonly sessionSecret: string;
   readonly onVercel: boolean;
   readonly fixturesEnabled: boolean;
+  /** Phase 6: Retrofit's free inference path. */
+  readonly free: FreeConfig;
+}
+
+export interface FreeConfig {
+  readonly model: string;
+  /** USD per million input and output tokens, from the Otari model list. */
+  readonly priceInPerM: number;
+  readonly priceOutPerM: number;
+  /** USD added to every reservation when the provider lists a per-request fee. */
+  readonly perRequestFeeUsd: number;
+  readonly creditUsd: number;
+  readonly judgeReserveUsd: number;
+  /** End of the free period (ms since epoch), for the public daily budget. */
+  readonly serviceEndMs: number;
+  readonly maxTokens: number;
+  readonly maxBodyBytes: number;
+  readonly framingTokensPerMessage: number;
+  readonly framingTokensBase: number;
+  readonly maxMessages: number;
+  readonly maxTools: number;
+  readonly maxToolBytes: number;
+  readonly inflightPerSession: number;
+  readonly inflightGlobal: number;
+  readonly callsPerSession: number;
+  readonly sessionsPerClientHour: number;
+  readonly judgeCallsPerSession: number;
+  readonly judgeSessionsPerClientDay: number;
+  readonly upstreamTimeoutMs: number;
+  /** Fractions of the credit that raise one alert each, ascending. */
+  readonly alertThresholds: readonly number[];
+  /** OpenAI-compatible base URL of the provider (Otari). Overridable off Vercel only (tests). */
+  readonly upstreamUrl: string;
+  /** Server keys per pool. One key serves both when Otari has no per-key limits (qualified guarantee). */
+  readonly keyPublic: string | null;
+  readonly keyJudge: string | null;
+  readonly judgeCode: string | null;
+  readonly cronSecret: string | null;
+  readonly alertGithubToken: string | null;
+  readonly alertRepo: string;
 }
 
 const NUMBERS = {
@@ -110,7 +150,94 @@ export function loadConfig(env: Env): Config {
 
   const publicOrigin = parseOrigin("PUBLIC_ORIGIN", env.PUBLIC_ORIGIN ?? "http://127.0.0.1:3010");
 
-  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled });
+  const free = loadFreeConfig(env, onVercel);
+  if (free.upstreamTimeoutMs > 50_000) throw new ConfigError("FREE_UPSTREAM_TIMEOUT_MS", "must be at most 50000 (maxDuration 60 s)");
+
+  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, free });
+}
+
+function parseNonNegative(env: Env, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined || raw === "") return fallback;
+  if (!/^\d+(\.\d+)?$/.test(raw.trim())) throw new ConfigError(name, `must be a non-negative number, got "${raw}"`);
+  return Number(raw);
+}
+
+/** Off Vercel, placeholder amounts keep local development and tests running; Vercel requires the real values. */
+const LOCAL_FREE_DEFAULTS = { FREE_PRICE_IN_PER_M: 0.1, FREE_PRICE_OUT_PER_M: 0.4, FREE_CREDIT_USD: 10, JUDGE_RESERVE_USD: 3 } as const;
+
+export function loadFreeConfig(env: Env, onVercel: boolean): FreeConfig {
+  const required = (name: keyof typeof LOCAL_FREE_DEFAULTS): number => {
+    if (onVercel && !env[name]) throw new ConfigError(name, "is required on Vercel");
+    return parsePositive(env, name, LOCAL_FREE_DEFAULTS[name]);
+  };
+  const secret = (name: string): string | null => {
+    const v = env[name]?.trim();
+    if (onVercel && !v) throw new ConfigError(name, "is required on Vercel");
+    return v || null;
+  };
+  const priceInPerM = required("FREE_PRICE_IN_PER_M");
+  const priceOutPerM = required("FREE_PRICE_OUT_PER_M");
+  const creditUsd = required("FREE_CREDIT_USD");
+  const judgeReserveUsd = required("JUDGE_RESERVE_USD");
+  if (judgeReserveUsd >= creditUsd) throw new ConfigError("JUDGE_RESERVE_USD", "must be less than FREE_CREDIT_USD");
+
+  const serviceEndRaw = env.FREE_SERVICE_END ?? "2027-01-18T23:59:59Z";
+  const serviceEndMs = Date.parse(serviceEndRaw);
+  if (!Number.isFinite(serviceEndMs)) throw new ConfigError("FREE_SERVICE_END", "must be an ISO date and time");
+
+  const thresholds = (env.CREDIT_ALERT_THRESHOLDS ?? "0.5,0.8,0.95").split(",").map((x) => Number(x.trim()));
+  if (!thresholds.length || thresholds.some((t, i) => !(t > 0 && t < 1) || (i > 0 && t <= thresholds[i - 1]!))) {
+    throw new ConfigError("CREDIT_ALERT_THRESHOLDS", "must be ascending fractions between 0 and 1");
+  }
+
+  if (onVercel && env.FREE_UPSTREAM_URL) throw new ConfigError("FREE_UPSTREAM_URL", "must not be set on Vercel");
+  const upstreamUrl = (env.FREE_UPSTREAM_URL ?? "https://api.otari.ai/api/v1").replace(/\/$/, "");
+  try {
+    const u = new URL(upstreamUrl);
+    if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error();
+  } catch {
+    throw new ConfigError("FREE_UPSTREAM_URL", "must be an http or https URL");
+  }
+
+  // Either one key for both pools, or one per pool (provider-backed isolation).
+  const single = env.OTARI_API_KEY?.trim() || null;
+  const keyPublic = env.OTARI_API_KEY_PUBLIC?.trim() || single;
+  const keyJudge = env.OTARI_API_KEY_JUDGE?.trim() || single;
+  if (onVercel && (!keyPublic || !keyJudge)) throw new ConfigError("OTARI_API_KEY", "is required on Vercel (or OTARI_API_KEY_PUBLIC and OTARI_API_KEY_JUDGE)");
+
+  const n = (name: string, fallback: number) => parsePositive(env, name, fallback);
+  return Object.freeze({
+    model: env.FREE_MODEL?.trim() || "alibaba/qwen3.8-flash",
+    priceInPerM,
+    priceOutPerM,
+    perRequestFeeUsd: parseNonNegative(env, "FREE_PER_REQUEST_FEE_USD", 0),
+    creditUsd,
+    judgeReserveUsd,
+    serviceEndMs,
+    maxTokens: n("FREE_MAX_TOKENS", 1024),
+    maxBodyBytes: n("FREE_MAX_BODY_BYTES", 98304),
+    framingTokensPerMessage: n("FREE_FRAMING_TOKENS_PER_MESSAGE", 16),
+    framingTokensBase: n("FREE_FRAMING_TOKENS_BASE", 512),
+    maxMessages: n("FREE_MAX_MESSAGES", 80),
+    maxTools: n("FREE_MAX_TOOLS", 16),
+    maxToolBytes: n("FREE_MAX_TOOL_BYTES", 4096),
+    inflightPerSession: n("FREE_INFLIGHT_PER_SESSION", 2),
+    inflightGlobal: n("FREE_INFLIGHT_GLOBAL", 16),
+    callsPerSession: n("FREE_CALLS_PER_SESSION", 40),
+    sessionsPerClientHour: n("FREE_SESSIONS_PER_CLIENT_HOUR", 6),
+    judgeCallsPerSession: n("JUDGE_CALLS_PER_SESSION", 200),
+    judgeSessionsPerClientDay: n("JUDGE_SESSIONS_PER_CLIENT_DAY", 3),
+    upstreamTimeoutMs: n("FREE_UPSTREAM_TIMEOUT_MS", 45000),
+    alertThresholds: Object.freeze(thresholds),
+    upstreamUrl,
+    keyPublic,
+    keyJudge,
+    judgeCode: secret("JUDGE_CODE"),
+    cronSecret: secret("CRON_SECRET"),
+    alertGithubToken: secret("ALERT_GITHUB_TOKEN"),
+    alertRepo: "juan294/retrofit",
+  });
 }
 
 let cached: Config | undefined;
