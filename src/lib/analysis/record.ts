@@ -1,0 +1,152 @@
+import { randomBytes } from "node:crypto";
+import type { Config } from "@/lib/config";
+import { isQueueExpired, readJobMarkingStale, type CrawlFailure, type CrawlJob, type JobDeps } from "@/lib/crawl/jobs";
+import type { Snapshot } from "@/lib/snapshot/types";
+import type { Store } from "@/lib/store/types";
+import { visitorFailure, visitorTexts } from "./texts";
+
+/**
+ * A visitor-owned analysis. It links one visitor (by cookie hash) to a shared
+ * crawl job. When the job is ready, the analysis copies the snapshot and score,
+ * so the preview survives the 24 h crawl cache until the analysis expires.
+ */
+export type AnalysisStatus = "queued" | "crawling" | "ready" | "failed" | "expired";
+
+export interface Analysis<R = unknown> {
+  readonly version: number;
+  readonly id: string;
+  readonly ownerHash: string;
+  readonly jobId: string;
+  readonly inputOrigin: string;
+  readonly createdAt: number;
+  /** createdAt + ANALYSIS_TTL_S. */
+  readonly expiresAt: number;
+  /** The ready job's updatedAt, for the report's cachedUntil. */
+  readonly readyAt?: number;
+  readonly snapshot?: Snapshot;
+  readonly score?: R;
+}
+
+export interface VisitorFailure {
+  readonly code: string;
+  readonly message: string;
+  readonly retryAt?: string;
+}
+
+export interface AnalysisView<R = unknown> {
+  readonly status: AnalysisStatus;
+  readonly step: string;
+  readonly failure?: VisitorFailure;
+  /** The analysis as now stored (with the copied snapshot and score once ready). */
+  readonly analysis: Analysis<R>;
+}
+
+/** Expired analyses stay readable this long, so the visitor sees "expired on <date>" instead of a 404. */
+export const EXPIRED_GRACE_S = 7 * 24 * 3600;
+const ID = /^[0-9a-f]{32}$/;
+
+export const analysisKey = (id: string) => `analysis:${id}`;
+
+export function isAnalysisId(id: string): boolean {
+  return ID.test(id);
+}
+
+export function newAnalysisId(): string {
+  return randomBytes(16).toString("hex");
+}
+
+function storeTtl(a: Pick<Analysis, "expiresAt">, now: number): number {
+  return Math.max(1, Math.ceil((a.expiresAt + EXPIRED_GRACE_S * 1000 - now) / 1000));
+}
+
+export async function createAnalysis(
+  deps: { store: Store; config: Config; clock: () => number },
+  o: { ownerHash: string; jobId: string; inputOrigin: string },
+): Promise<Analysis> {
+  const now = deps.clock();
+  const analysis: Analysis = {
+    version: 1,
+    id: newAnalysisId(),
+    ownerHash: o.ownerHash,
+    jobId: o.jobId,
+    inputOrigin: o.inputOrigin,
+    createdAt: now,
+    expiresAt: now + deps.config.analysisTtlS * 1000,
+  };
+  await deps.store.set(analysisKey(analysis.id), analysis, storeTtl(analysis, now));
+  return analysis;
+}
+
+export async function getAnalysis<R = unknown>(store: Store, id: string): Promise<Analysis<R> | null> {
+  return store.get<Analysis<R>>(analysisKey(id));
+}
+
+export function isExpired(a: Pick<Analysis, "expiresAt">, now: number): boolean {
+  return now >= a.expiresAt;
+}
+
+function failureView(f: CrawlFailure | undefined): VisitorFailure {
+  const code = f?.code ?? "unavailable";
+  const retryAt = f?.retryAt ? new Date(f.retryAt) : undefined;
+  const valid = retryAt && !Number.isNaN(retryAt.getTime()) ? retryAt : undefined;
+  return { code, message: visitorFailure(code, { retryAt: valid }), ...(valid ? { retryAt: valid.toISOString() } : {}) };
+}
+
+/**
+ * The visitor's view of an analysis. Reads the job at most once (through
+ * readJobMarkingStale, which marks a stale job failed). When the job is ready,
+ * or the job id moved through a join, the analysis is updated so the next read
+ * needs no job read at all.
+ */
+export async function readAnalysisView<R>(deps: JobDeps, analysis: Analysis<R>): Promise<AnalysisView<R>> {
+  const now = deps.clock();
+  if (isExpired(analysis, now)) {
+    return { status: "expired", step: "expired", failure: { code: "expired", message: visitorTexts.expired(new Date(analysis.expiresAt)) }, analysis };
+  }
+  if (analysis.snapshot !== undefined) return { status: "ready", step: "ready", analysis };
+
+  const job = await readJobMarkingStale<Snapshot, R>(deps, analysis.jobId);
+  if (!job) {
+    // The job left the store before this analysis copied it (no read for over a day).
+    return { status: "failed", step: "failed", failure: failureView({ code: "stale", message: "" }), analysis };
+  }
+
+  let current = analysis;
+  if (job.status === "ready" || job.id !== analysis.jobId) {
+    const next: Analysis<R> = {
+      ...analysis,
+      version: analysis.version + 1,
+      jobId: job.id,
+      ...(job.status === "ready" ? { snapshot: job.snapshot, score: job.score, readyAt: job.updatedAt } : {}),
+    };
+    if (await deps.store.compareAndSet(analysisKey(analysis.id), analysis, next, storeTtl(next, now))) current = next;
+  }
+  return { ...viewOfJob(job, deps.config, now), analysis: current };
+}
+
+function viewOfJob(job: CrawlJob, config: Config, now: number): Omit<AnalysisView, "analysis"> {
+  switch (job.status) {
+    case "ready":
+      return { status: "ready", step: "ready" };
+    case "crawling":
+      return { status: "crawling", step: job.step };
+    case "queued":
+      if (isQueueExpired(job, config, now)) {
+        return { status: "failed", step: "failed", failure: { code: "queue_expired", message: visitorTexts.queueExpired } };
+      }
+      return { status: "queued", step: "queued" };
+    case "failed":
+      return { status: "failed", step: "failed", failure: failureView(job.failure) };
+    default:
+      // A join chain longer than resolveJob follows.
+      return { status: "failed", step: "failed", failure: failureView(undefined) };
+  }
+}
+
+/**
+ * The contract's ScoreReport body: `status` first, the stored score fields, and
+ * `cachedUntil` = the ready job's updatedAt + CRAWL_CACHE_TTL_S.
+ */
+export function reportBody(score: unknown, readyAt: number, config: Pick<Config, "crawlCacheTtlS">): Record<string, unknown> {
+  return { status: "ready", ...(score as Record<string, unknown>), cachedUntil: new Date(readyAt + config.crawlCacheTtlS * 1000).toISOString() };
+}

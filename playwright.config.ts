@@ -11,6 +11,7 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"], ["json", { outputFile: ".local/evidence/current/playwright.json" }]],
   outputDir: ".local/playwright/results",
+  globalSetup: "./e2e/support/global-setup.ts",
   use: {
     baseURL: BASE_URL,
     trace: "retain-on-failure",

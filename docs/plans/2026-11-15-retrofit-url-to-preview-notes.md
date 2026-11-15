@@ -20,6 +20,14 @@ Implementation notes for the plan `2026-11-15-retrofit-url-to-preview.md` and it
 | 2 | Store keys `crawl:<inputOrigin>` and `crawl:<destinationHost>` | Origins and hosts share one key space | `crawl:origin:<origin>` and `crawl:dest:<host>` | Avoids a collision between an origin and a host string. |
 | 2 | Stale rule reads the lease | The Store contract has no lease read | The worker records `leaseExpiresAt` on the job at each renewal; the stale check reads it | Same rule, one store read. |
 | 2 | Pacing interval `max(1 s, crawl delay)` with no upper bound | A large `Crawl-delay` would make the worker sleep past its 60 s lease | Waits are capped at `MAX_CRAWL_DELAY_S` (10 s). Above it Retrofit reads only robots.txt and the home page, 10 s apart; skipped pages carry reason `crawl-delay` | Honours the site's request without losing the lease; the visitor still gets a score from the home page. |
+| 3 | `ScoreReport`, `/api/score` codes, texts and headers named only in outline | The tool contract `docs/research/score-tool-contract.md` (2026-11-15) defines them, with 16 listed differences | The contract, as `phase-3.md` requires | The contract wins; its gap 6 decided as string mapping of `NotPublicError.reason` with a test per reason; gap 10 decided as the endpoint description on `/bot`. |
+| 3 | Daily cap counts destination hosts | The destination host is unknown until the crawl runs | Counts distinct input origins per UTC day | The cap applies before any request is sent. |
+| 3 | Client window of one hour | `incrementWindow` returns no window end | Windows aligned to the clock hour | Gives an exact retry time. |
+| 3 | Visitor texts show `HH:MM` | Server time zone is unknown to the visitor | `HH:MM` in UTC in the text, plus `retryAt` in the body | Correct time without guessing a zone. |
+| 3 | `POST /api/analyze` takes the URL as given | Visitors type `example.com` | Adds `https://` when no scheme is given (contract item 5) | Same input rule for visitors and agents. |
+| 3 | The analysis copies the snapshot "when the job is ready" | No hook runs per analysis when a shared job finishes | The copy happens on the first status or result read after the job is ready; the results page reads it | The visitor's page triggers it; an analysis nobody reads for 24 h shows the stale text. |
+| 3 | Expired analysis reads as `expired` | The record must outlive `expiresAt` to show the date | Kept 7 more days (`EXPIRED_GRACE_S`) | The visitor sees "expired on <date>" instead of a 404. |
+| 3 | Perf test counts store reads with an instrumented memory store | The server runs in another process | In fixtures mode only, the status route reports its analysis and job reads in `x-retrofit-store-reads` | Measures the real server; absent in production. |
 
 ## Phase 1 handoff
 

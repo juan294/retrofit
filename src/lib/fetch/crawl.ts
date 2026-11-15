@@ -6,10 +6,12 @@ import {
   mergeRecords,
   validateSnapshot,
   type Probe,
+  type Probes,
   type SkippedPage,
   type Snapshot,
   type SnapshotPage,
 } from "../snapshot/types";
+import { declaredNetworkUrl } from "../score/manifest";
 import { extractPage, scrubEmails } from "./extract";
 import { MAX_CRAWL_DELAY_S, guardedFetch, type FetchContext, type FetchResult } from "./http";
 
@@ -123,12 +125,18 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
     await step(`probe ${path}`);
     return probe(url, o.fetch);
   };
-  const probes = {
+  const probes: Probes = {
     robots: await probeAt("/robots.txt"),
     agentManifest: await probeAt("/agent-manifest.json"),
     llmsTxt: await probeAt("/llms.txt"),
     sitemap: await probeAt("/sitemap.xml"),
   };
+  // The network the manifest declares (networks[0].hocon), for the aw.network-valid check.
+  const networkUrl = declaredNetworkUrl(probes.agentManifest);
+  if (networkUrl && !slow && !overBudget()) {
+    await step("probe network");
+    probes.network = await probe(networkUrl, o.fetch);
+  }
 
   const seen = new Set<string>([normalize(inputUrl)!, normalize(home.url)!]);
   const queue: string[] = [];

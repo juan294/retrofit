@@ -94,6 +94,8 @@ export interface Probes {
   llmsTxt: Probe;
   sitemap: Probe;
   robots: Probe;
+  /** The network file named by the manifest's `networks[0].hocon`; absent when the manifest declares none or it was not read. */
+  network?: Probe;
 }
 
 export interface SkippedPage {
@@ -368,6 +370,7 @@ export function validateSnapshot(value: unknown): Snapshot {
       llmsTxt: probe(probes.llmsTxt, "$.probes.llmsTxt"),
       sitemap: probe(probes.sitemap, "$.probes.sitemap"),
       robots: probe(probes.robots, "$.probes.robots"),
+      ...(probes.network === undefined ? {} : { network: probe(probes.network, "$.probes.network") }),
     },
     skipped: arr(input.skipped, "$.skipped").map((item, i) => {
       const entry = obj(item, `$.skipped[${i}]`);

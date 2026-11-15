@@ -35,11 +35,11 @@ function hostnameOf(req: IncomingMessage): string {
 }
 
 /**
- * Loopback HTTP server on an ephemeral port. Routes by the Host header, so
+ * Loopback HTTP server on an ephemeral port (or `options.port`). Routes by the Host header, so
  * 127.0.0.1, localhost and any number of <label>.fixture.test names act as
  * separate hosts. Unknown hosts and paths answer 404.
  */
-export async function startFixtureServer(routes: FixtureRoutes): Promise<FixtureServer> {
+export async function startFixtureServer(routes: FixtureRoutes, options: { port?: number } = {}): Promise<FixtureServer> {
   const requests: FixtureRequest[] = [];
   const server = createServer((req, res) => {
     const host = hostnameOf(req);
@@ -58,7 +58,7 @@ export async function startFixtureServer(routes: FixtureRoutes): Promise<Fixture
     }
     res.writeHead(route.status ?? 200, route.headers ?? {}).end(route.body ?? "");
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(options.port ?? 0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   return {
     port,

@@ -3,7 +3,8 @@ import { loadConfig } from "@/lib/config";
 import { crawlSite, LeaseLost } from "@/lib/fetch/crawl";
 import { createFetchContext } from "@/lib/fetch/context";
 import { createMemoryStore } from "@/lib/store/memory";
-import { bakery, hostile, INJECTION, noindexPage, type FixtureSite } from "../fixtures/sites";
+import { agentified, bakery, hostile, INJECTION, noindexPage, type FixtureSite } from "../fixtures/sites";
+import { validateSnapshot } from "@/lib/snapshot/types";
 import { serveSites } from "../helpers/sites";
 
 const config = loadConfig({ SESSION_SECRET: "x".repeat(32), RETROFIT_TEST_FIXTURES: "1", FETCH_MAX_BYTES: "1048576" });
@@ -157,6 +158,23 @@ describe("crawlSite", () => {
     const { snapshot } = await crawl({ "bakery.fixture.test": site }, "bakery.fixture.test");
     expect(snapshot.probes.llmsTxt.body).toContain("[email removed]");
     expect(snapshot.probes.llmsTxt.body).not.toContain("owner@crumb.example");
+  });
+
+  // Fails if the declared network is not fetched after the manifest, fetched without a progress step, or kept out of the snapshot.
+  it("records the network the manifest declares, and nothing for a site without one", async () => {
+    const steps: string[] = [];
+    const { snapshot, server } = await crawl({ "kayak.fixture.test": agentified }, "kayak.fixture.test", { progress: async (s) => (steps.push(s), true) });
+    const network = snapshot.probes.network!;
+    expect(network.url).toBe(`${server.origin("kayak.fixture.test")}/kayak_guide.network.json`);
+    expect(network.status).toBe(200);
+    expect(JSON.parse(network.body!).tools[0].name).toBe("kayak_guide");
+    expect(steps.indexOf("probe network")).toBeGreaterThan(steps.indexOf("probe /agent-manifest.json"));
+    expect(validateSnapshot(snapshot).probes.network).toEqual(network);
+    const { network: _dropped, ...older } = snapshot.probes;
+    expect(validateSnapshot({ ...snapshot, probes: older }).probes).not.toHaveProperty("network");
+    await close?.();
+    const plain = await crawl({ "bakery.fixture.test": bakery }, "bakery.fixture.test");
+    expect(plain.snapshot.probes).not.toHaveProperty("network");
   });
 
   // Fails if the crawl ignores a lost lease reported between pages.

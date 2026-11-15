@@ -82,6 +82,13 @@
       ]
     },
     {
+      "name": "perf",
+      "argv": [
+        "pnpm",
+        "test:perf"
+      ]
+    },
+    {
       "name": "e2e",
       "argv": [
         "pnpm",

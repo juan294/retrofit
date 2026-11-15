@@ -1,0 +1,121 @@
+{
+  "scoreVersion": "score/v1",
+  "note": "Written by hand from the score/v1 rules (phase-3.md and docs/research/score-tool-contract.md), not copied from output. Fixture sites run on http over loopback, so sec.https fails for every site.",
+  "sites": {
+    "bakery": {
+      "score": 62,
+      "checked": 16,
+      "passed": 11,
+      "checks": {
+        "aw.manifest": "fail",
+        "aw.network-valid": "fail",
+        "aw.cors": "fail",
+        "disc.robots-agents": "pass",
+        "disc.sitemap": "pass",
+        "disc.llms-txt": "fail",
+        "read.server-text": "pass",
+        "read.title-description": "pass",
+        "read.lang": "pass",
+        "data.jsonld": "pass",
+        "data.business": "pass",
+        "data.offers": "pass",
+        "data.hours": "pass",
+        "act.form-labels": "pass",
+        "act.task-links": "pass",
+        "sec.https": "fail"
+      }
+    },
+    "spaOnly": {
+      "score": 10,
+      "checked": 14,
+      "passed": 2,
+      "checks": {
+        "aw.manifest": "fail",
+        "aw.network-valid": "fail",
+        "aw.cors": "fail",
+        "disc.robots-agents": "pass",
+        "disc.sitemap": "fail",
+        "disc.llms-txt": "fail",
+        "read.server-text": "fail",
+        "read.title-description": "fail",
+        "read.lang": "pass",
+        "data.jsonld": "fail",
+        "data.business": "fail",
+        "data.offers": "fail",
+        "data.hours": "not-checked",
+        "act.form-labels": "not-checked",
+        "act.task-links": "fail",
+        "sec.https": "fail"
+      }
+    },
+    "agentified": {
+      "score": 93,
+      "checked": 16,
+      "passed": 14,
+      "checks": {
+        "aw.manifest": "pass",
+        "aw.network-valid": "pass",
+        "aw.cors": "pass",
+        "disc.robots-agents": "pass",
+        "disc.sitemap": "pass",
+        "disc.llms-txt": "pass",
+        "read.server-text": "pass",
+        "read.title-description": "pass",
+        "read.lang": "pass",
+        "data.jsonld": "pass",
+        "data.business": "pass",
+        "data.offers": "pass",
+        "data.hours": "fail",
+        "act.form-labels": "pass",
+        "act.task-links": "pass",
+        "sec.https": "fail"
+      }
+    },
+    "hostile": {
+      "score": 39,
+      "checked": 14,
+      "passed": 5,
+      "checks": {
+        "aw.manifest": "fail",
+        "aw.network-valid": "fail",
+        "aw.cors": "fail",
+        "disc.robots-agents": "pass",
+        "disc.sitemap": "fail",
+        "disc.llms-txt": "fail",
+        "read.server-text": "pass",
+        "read.title-description": "fail",
+        "read.lang": "pass",
+        "data.jsonld": "pass",
+        "data.business": "fail",
+        "data.offers": "pass",
+        "data.hours": "not-checked",
+        "act.form-labels": "not-checked",
+        "act.task-links": "fail",
+        "sec.https": "fail"
+      }
+    },
+    "noindexPage": {
+      "score": 23,
+      "checked": 14,
+      "passed": 3,
+      "checks": {
+        "aw.manifest": "fail",
+        "aw.network-valid": "fail",
+        "aw.cors": "fail",
+        "disc.robots-agents": "pass",
+        "disc.sitemap": "fail",
+        "disc.llms-txt": "fail",
+        "read.server-text": "pass",
+        "read.title-description": "fail",
+        "read.lang": "pass",
+        "data.jsonld": "fail",
+        "data.business": "fail",
+        "data.offers": "fail",
+        "data.hours": "not-checked",
+        "act.form-labels": "not-checked",
+        "act.task-links": "fail",
+        "sec.https": "fail"
+      }
+    }
+  }
+}
