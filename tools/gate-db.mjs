@@ -110,14 +110,14 @@ let currentChild = null;
 
 // Runs a command without a shell. Children get their own process group so a terminal Ctrl-C
 // reaches only this tool, which then disposes in order. `quiet` keeps stdout out of the log.
-function run(log, command, args, { env = process.env, quiet = false, tee = false } = {}) {
+function run(log, command, args, { env = process.env, quiet = false, tee = false, cwd } = {}) {
   log.step(`$ ${command} ${args.join(" ")}`);
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
     let child;
     try {
-      child = spawn(command, args, { env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(command, args, { env, cwd, detached: true, stdio: ["ignore", "pipe", "pipe"] });
     } catch (error) {
       log.step(`  could not start ${command}: ${error.message}`);
       resolve({ code: null, stdout, stderr: error.message });
@@ -276,6 +276,14 @@ const isAlive = (pid) => {
     return error.code === "EPERM";
   }
 };
+const readText = (file) => {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+};
 const readJson = (file) => {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -300,6 +308,48 @@ function acquireLock(lockFile, identity) {
 function releaseLock(lockFile, runId) {
   const holder = readJson(lockFile);
   if (holder?.runId === runId) fs.rmSync(lockFile);
+}
+
+// Takes over the lock of a dead holder. The `<lock>.takeover` marker (exclusive create) admits one
+// recover at a time. Under it the lock must still be byte-identical to the dead lock that was read
+// (null: there was none); it is renamed to a tombstone unique to this takeover and the new lock is
+// created exclusively. The lock is never written except by exclusive create.
+export function takeOverLock(lockFile, deadLockText, identity) {
+  const marker = `${lockFile}.takeover`;
+  try {
+    fs.writeFileSync(marker, JSON.stringify(identity, null, 2), { flag: "wx" });
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    return { ok: false, tombstone: null, reason: `another recover holds ${marker}; if its pid is dead, remove that file after checking` };
+  }
+  try {
+    const current = readText(lockFile);
+    if (current !== deadLockText) return { ok: false, tombstone: null, reason: "the lock changed after it was read" };
+    let tombstone = null;
+    if (current !== null) {
+      tombstone = `${lockFile}.dead-${identity.runId}`;
+      fs.renameSync(lockFile, tombstone);
+    }
+    const held = acquireLock(lockFile, identity);
+    if (held) return { ok: false, tombstone, reason: `the lock was taken by ${holderText(held)}` };
+    return { ok: true, tombstone, reason: null };
+  } finally {
+    fs.rmSync(marker, { force: true });
+  }
+}
+
+// Puts a dead holder's lock back only if no lock exists now (link fails on an existing file).
+// Returns false and keeps the tombstone when another lock is in place.
+export function restoreLock(lockFile, tombstone) {
+  if (!tombstone || !fs.existsSync(tombstone)) return true;
+  try {
+    fs.linkSync(tombstone, lockFile);
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    return false;
+  }
+  fs.rmSync(tombstone);
+  return true;
 }
 
 function writeReceiptOnce(file, receipt) {
@@ -347,6 +397,18 @@ function gateEnvFromStatus(stdout) {
   }
   secrets.add(key);
   return { SUPABASE_GATE_URL: url, SUPABASE_GATE_SERVICE_ROLE_KEY: key, SUPABASE_GATE_DB_URL: dbUrl };
+}
+
+// The analyzer reads named db tests from the JSON reporter output (testResults[].assertionResults).
+function reportProblem(file) {
+  let json;
+  try {
+    json = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    return `vitest-db.json is missing or unreadable: ${error.message}`;
+  }
+  const ok = Array.isArray(json.testResults) && json.testResults.some((t) => Array.isArray(t.assertionResults) && t.assertionResults.length > 0);
+  return ok ? null : "vitest-db.json has no testResults with assertionResults";
 }
 
 // ---------------------------------------------------------------- disposal
@@ -444,8 +506,8 @@ async function runGateDb({ root, coordDir }) {
   } catch (error) {
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
-    if (!(error instanceof Refusal)) throw error;
-    log.problem(error.message);
+    // Nothing was started and no receipt was written, so the lock is released on any error.
+    log.problem(error instanceof Refusal ? error.message : `unexpected error before anything was started: ${error?.stack ?? error}`);
     releaseLock(lockFile, runId);
     log.step("lock released; refused");
     return EXIT.refused;
@@ -512,15 +574,21 @@ async function runGateDb({ root, coordDir }) {
         }
       }
       if (gateEnv && !runFailure) {
-        fs.rmSync(path.join(root, VITEST_REPORT), { force: true });
+        // Absolute, derived from --root, so the report never lands in another checkout.
+        const report = path.join(root, VITEST_REPORT);
+        fs.rmSync(report, { force: true });
         const vitest = await run(
           log,
           "pnpm",
-          ["exec", "vitest", "run", "--project", "db", "--reporter=default", "--reporter=json", `--outputFile.json=${VITEST_REPORT}`],
-          { env: { ...process.env, ...gateEnv }, tee: true },
+          ["exec", "vitest", "run", "--project", "db", "--reporter=default", "--reporter=json", `--outputFile.json=${report}`],
+          { env: { ...process.env, ...gateEnv }, tee: true, cwd: root },
         );
         if (vitest.code !== 0) fail(`vitest db project exited ${vitest.code}`);
-        else log.step("vitest db project passed");
+        else {
+          const problem = reportProblem(report);
+          if (problem) fail(problem);
+          else log.step(`vitest db project passed; ${report} holds the JSON reporter output`);
+        }
       }
     }
   } catch (error) {
@@ -582,7 +650,8 @@ async function recover({ root, coordDir }) {
   log.step(`gate-db recover ${runId}: pid ${process.pid}, coordination ${coordDir}`);
 
   const receipt = readJson(receiptFile);
-  const lock = readJson(lockFile);
+  const lockText = readText(lockFile);
+  const lock = lockText === null ? null : JSON.parse(lockText);
   if (!receipt) {
     if (lock && !isAlive(lock.pid)) {
       log.problem(`no receipt, but ${lockFile} is held by dead ${holderText(lock)}; the run stopped before it wrote a receipt. Check for retrofit-gate resources, then remove the lock file.`);
@@ -600,33 +669,24 @@ async function recover({ root, coordDir }) {
     return EXIT.refused;
   }
 
-  // Take over a stale lock atomically: only one recover can rename it.
-  const staleCopy = `${lockFile}.stale-${process.pid}`;
-  if (lock) {
-    try {
-      fs.renameSync(lockFile, staleCopy);
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-      log.problem("the lock changed during recovery; leaving everything in place");
-      return EXIT.refused;
-    }
-  }
-  const held = acquireLock(lockFile, { runId, pid: process.pid, worktree: root, startedAt: new Date().toISOString(), recovering: receipt.runId });
-  if (held) {
-    log.problem(`${lockFile} was taken by ${holderText(held)} during recovery; leaving everything in place`);
+  const takeover = takeOverLock(lockFile, lockText, { runId, pid: process.pid, worktree: root, startedAt: new Date().toISOString(), recovering: receipt.runId });
+  if (!takeover.ok) {
+    log.problem(`lock takeover refused: ${takeover.reason}; leaving everything in place`);
+    if (takeover.tombstone) log.problem(`the dead holder's lock is kept at ${takeover.tombstone}`);
     return EXIT.refused;
   }
+  const { tombstone } = takeover;
   const done = (code) => {
     releaseLock(lockFile, runId);
-    fs.rmSync(staleCopy, { force: true });
+    if (tombstone) fs.rmSync(tombstone, { force: true });
     log.step(`lock released; result: exit ${code}`);
     return code;
   };
-  // A refusal leaves the receipt and puts the dead holder's lock back in place, so nothing changes.
+  // A refusal leaves the receipt and puts the dead holder's lock back only if no other lock exists.
   const refuse = (message) => {
     log.problem(message);
     releaseLock(lockFile, runId);
-    if (lock && fs.existsSync(staleCopy)) fs.renameSync(staleCopy, lockFile);
+    if (!restoreLock(lockFile, tombstone)) log.problem(`another lock now exists; the dead holder's lock is kept at ${tombstone}`);
     log.step("everything left in place; result: exit 1");
     return EXIT.refused;
   };

@@ -23,7 +23,10 @@ export async function handleHealth(deps: HealthDeps): Promise<Response> {
   const probe = randomUUID();
   try {
     await deps.store.set(key, probe, PROBE_TTL_S);
-    if ((await deps.store.get(key)) === probe) return json(200, { status: "ok" });
+    const readBack = await deps.store.get(key);
+    // Delete the probe row at once, so repeated unauthenticated checks cannot grow the table.
+    await deps.store.delete(key);
+    if (readBack === probe) return json(200, { status: "ok" });
     console.error("[TABLE_FALLBACK] health probe row did not read back");
   } catch (e) {
     if (!(e instanceof Error && e.name === "StoreUnavailable")) {

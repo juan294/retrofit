@@ -9,7 +9,8 @@
 //
 // Local mode reads .rpi/local/verification.json (written by .rpi/scripts/rpi-verify.py) and the
 // reports sealed by tools/evidence.mjs in .local/evidence/current/. Production mode also reads
-// <evidence-dir>/deployment.json and every other <evidence-dir>/*.json case report.
+// <evidence-dir>/deployment.json, <evidence-dir>/run.json (the evidence run's runId, which every
+// report must carry) and every other <evidence-dir>/*.json case report.
 //
 // Gate database teardown marker: the gate database tool (`pnpm test:db`) writes its log to
 // .local/evidence/current/gate-db.log and writes the line `GATE-DB TEARDOWN COMPLETE` only after
@@ -320,9 +321,11 @@ function checkProduction(ctx, dir, requiredCases) {
       reject(`deployment.json commit ${deployment.commit} differs from the candidate ${ctx.candidate.commit}`);
     }
   }
+  const run = readJson(path.join(dir, "run.json"), "run.json", reject);
+  if (run && (typeof run.runId !== "string" || !run.runId)) reject("run.json has no runId");
   const kinds = new Map(requiredCases.map((c) => [c.id, c.kind]));
   const seen = new Map();
-  const files = fs.readdirSync(dir).filter((name) => name.endsWith(".json") && name !== "deployment.json").sort();
+  const files = fs.readdirSync(dir).filter((name) => name.endsWith(".json") && name !== "deployment.json" && name !== "run.json").sort();
   for (const name of files) {
     const report = readJson(path.join(dir, name), name, reject);
     if (!report) continue;
@@ -337,6 +340,14 @@ function checkProduction(ctx, dir, requiredCases) {
     if (kinds.get(report.case) === "partner") {
       if (typeof report.exitCode !== "number") reject(`partner check ${report.case} recorded no exit code`);
       else if (report.exitCode !== 0) reject(`partner check ${report.case} exited ${report.exitCode}`);
+    }
+    if (kinds.get(report.case) === "binding") {
+      for (const field of ["deploymentCommit", "aliasCommit"]) {
+        if (report[field] !== ctx.candidate.commit) reject(`binding check ${report.case} ${field} ${report[field]} differs from the candidate ${ctx.candidate.commit}`);
+      }
+    }
+    if (typeof run?.runId === "string" && run.runId && report.runId !== run.runId) {
+      reject(`${name} run id ${report.runId} differs from run.json ${run.runId}`);
     }
     if (!deployment) continue;
     if (report.deploymentId !== deployment.deploymentId) {

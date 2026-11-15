@@ -137,8 +137,10 @@ const requiredCases = {
   cases: [
     { id: "partner-harbor-tours", kind: "partner" },
     { id: "health-ok", kind: "probe" },
+    { id: "alias-binding", kind: "binding" },
   ],
 };
+const RUN_ID = "run_0123456789abcdef";
 
 function seal() {
   const attemptFile = path.join(current(), "attempt.json");
@@ -188,6 +190,7 @@ function caseReport(id: string, extra: Json = {}) {
     deploymentUrl: "https://retrofit-abc123.vercel.app",
     commit: candidate,
     recordedAt: "2026-11-16T09:05:00.000Z",
+    runId: RUN_ID,
     ...extra,
   };
 }
@@ -201,6 +204,8 @@ function writeProduction() {
   });
   write(path.join(production(), "partner-harbor-tours.json"), caseReport("partner-harbor-tours", { exitCode: 0 }));
   write(path.join(production(), "health-ok.json"), caseReport("health-ok"));
+  write(path.join(production(), "alias-binding.json"), caseReport("alias-binding", { deploymentCommit: candidate, aliasCommit: candidate }));
+  write(path.join(production(), "run.json"), { runId: RUN_ID, startedAt: "2026-11-16T09:01:00.000Z", deploymentId: "dpl_candidate" });
 }
 
 beforeEach(() => {
@@ -657,7 +662,35 @@ describe("analyze-evidence production mode", () => {
   it("accepts production evidence bound to the candidate deployment", () => {
     const result = run();
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain("2 required production cases passed");
+    expect(result.out).toContain("3 required production cases passed");
+  });
+
+  it("rejects a report from another run of the evidence script", () => {
+    write(path.join(production(), "health-ok.json"), caseReport("health-ok", { runId: "run_older" }));
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.out).toContain(`health-ok.json run id run_older differs from run.json ${RUN_ID}`);
+  });
+
+  it("rejects production evidence without run.json", () => {
+    fs.rmSync(path.join(production(), "run.json"));
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.out).toContain("run.json is missing");
+  });
+
+  it("rejects an alias that serves another commit than the deployment", () => {
+    write(path.join(production(), "alias-binding.json"), caseReport("alias-binding", { deploymentCommit: candidate, aliasCommit: "d".repeat(40) }));
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.out).toContain(`binding check alias-binding aliasCommit ${"d".repeat(40)} differs from the candidate`);
+  });
+
+  it("rejects a binding check that recorded no deployment commit", () => {
+    write(path.join(production(), "alias-binding.json"), caseReport("alias-binding", { aliasCommit: candidate }));
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.out).toContain("binding check alias-binding deploymentCommit undefined differs from the candidate");
   });
 
   it("still applies every local rejection", () => {

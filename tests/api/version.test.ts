@@ -23,3 +23,11 @@ describe("vercel.json", () => {
     expect(v.functions["src/app/api/**/*.ts"].maxDuration).toBe(60);
   });
 });
+
+describe("build commit inlining", () => {
+  // Fails if version.ts reads BUILD_COMMIT through a variable env object, which Next.js does not inline
+  // (the deployed /api/version would then report "unknown"). The e2e version case checks the built value.
+  it("reads the literal process.env.BUILD_COMMIT token", () => {
+    expect(readFileSync("src/lib/api/version.ts", "utf8")).toContain("process.env.BUILD_COMMIT;");
+  });
+});

@@ -5,17 +5,35 @@
  * Nothing here reaches the real Docker daemon or the real coordination directory.
  */
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { takeOverLock } from "../../tools/gate-db.mjs";
 
 const tool = fileURLToPath(new URL("../../tools/gate-db.mjs", import.meta.url));
 const fakeCli = fileURLToPath(new URL("./shims/fake-cli.mjs", import.meta.url));
 const MARKER = "GATE-DB TEARDOWN COMPLETE";
 const PROJECT_LABEL = "com.supabase.cli.project";
 const WORKDIR_LABEL = "com.supabase.cli.workdir";
+
+// The real repository's evidence must not change while this suite runs (every write belongs under
+// the test's temporary --root).
+const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+function evidenceSnapshot(): Record<string, string> {
+  const dir = path.join(repoRoot, ".local", "evidence");
+  const out: Record<string, string> = {};
+  if (!fs.existsSync(dir)) return out;
+  for (const entry of fs.readdirSync(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const file = path.join(entry.parentPath, entry.name);
+    out[path.relative(dir, file)] = createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  }
+  return out;
+}
+const realEvidenceBefore = evidenceSnapshot();
 
 type Resource = { id?: string; name: string; labels: Record<string, string>; created: string };
 type State = {
@@ -301,9 +319,75 @@ describe("gate-db run", () => {
     expect(supabaseCalls()).toEqual([]);
     expect(fs.existsSync(receiptPath())).toBe(false);
   });
+
+  it("gate-db: writes vitest-db.json under --root and requires the full JSON reporter output", () => {
+    const report = path.join(root, ".local", "evidence", "current", "vitest-db.json");
+    expect(gate().status).toBe(0);
+    const json = JSON.parse(fs.readFileSync(report, "utf8"));
+    expect(json.testResults[0].assertionResults[0].status).toBe("passed");
+
+    setScenario({ vitestReportMinimal: true });
+    const result = gate();
+    expect(result.status).toBe(4);
+    expect(result.stderr).toContain("first failure: vitest-db.json has no testResults with assertionResults");
+    expect(logLines()).toContain(MARKER);
+  });
+
+  it("gate-db: an unexpected error while inspecting releases the lock because nothing was started", () => {
+    setScenario({ contextInspectGarbage: true });
+    const result = gate();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("unexpected error before anything was started");
+    expect(supabaseCalls()).toEqual([]);
+    expect(fs.existsSync(lockPath())).toBe(false);
+    expect(fs.existsSync(receiptPath())).toBe(false);
+  });
+});
+
+describe("gate-db lock takeover", () => {
+  const deadLock = (pid: number) => JSON.stringify({ runId: "dead-run", pid, worktree: "/elsewhere/worktree", startedAt: "2026-11-01T00:00:00.000Z" }, null, 2);
+  const identity = (runId: string) => ({ runId, pid: process.pid, worktree: root, startedAt: new Date().toISOString() });
+
+  it("gate-db: two recovers that read the same dead lock cannot both take it over", () => {
+    fs.mkdirSync(coord, { recursive: true });
+    const dead = deadLock(deadPid());
+    fs.writeFileSync(lockPath(), dead);
+    // Both recovers read the same dead lock; the first takes over, then the second tries.
+    const first = takeOverLock(lockPath(), dead, identity("recover-a"));
+    expect(first.ok).toBe(true);
+    const lockAfterFirst = fs.readFileSync(lockPath(), "utf8");
+    expect(JSON.parse(lockAfterFirst).runId).toBe("recover-a");
+
+    const second = takeOverLock(lockPath(), dead, identity("recover-b"));
+    expect(second.ok).toBe(false);
+    expect(fs.readFileSync(lockPath(), "utf8")).toBe(lockAfterFirst);
+  });
+
+  it("gate-db: a takeover marker held by another recover blocks the takeover", () => {
+    fs.mkdirSync(coord, { recursive: true });
+    const dead = deadLock(deadPid());
+    fs.writeFileSync(lockPath(), dead);
+    fs.writeFileSync(`${lockPath()}.takeover`, JSON.stringify({ pid: process.pid }));
+    const result = takeOverLock(lockPath(), dead, identity("recover-c"));
+    expect(result.ok).toBe(false);
+    expect(fs.readFileSync(lockPath(), "utf8")).toBe(dead);
+  });
 });
 
 describe("gate-db recover", () => {
+  it("gate-db: a refused recover never overwrites a lock another run acquired meanwhile", () => {
+    const pid = deadPid();
+    writeForeignReceipt(pid);
+    fs.writeFileSync(lockPath(), JSON.stringify({ runId: "other-run", pid, worktree: "/elsewhere/worktree", startedAt: "2026-11-01T00:00:00.000Z" }));
+    const newLock = JSON.stringify({ runId: "new-run", pid: process.pid, worktree: "/third/worktree", startedAt: new Date().toISOString() });
+    // The context differs from the receipt, so recover refuses; meanwhile another run writes the lock.
+    writeState({ ...readState(), context: "another-context", scenario: { writeLockOnContextShow: { path: lockPath(), content: newLock } } });
+    const result = gate("recover");
+    expect(result.status).toBe(1);
+    expect(fs.readFileSync(lockPath(), "utf8")).toBe(newLock);
+    expect(fs.existsSync(receiptPath())).toBe(true);
+  });
+
   it("gate-db: an interrupted run leaves a receipt that recover disposes when its pid is dead", () => {
     setScenario({ vitestKillParent: true });
     const killed = gate();
@@ -359,5 +443,11 @@ describe("gate-db recover", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("nothing to recover");
     expect(supabaseCalls()).toEqual([]);
+  });
+});
+
+describe("gate-db test isolation", () => {
+  it("gate-db: the suite leaves the real repository's .local/evidence unchanged", () => {
+    expect(evidenceSnapshot()).toEqual(realEvidenceBefore);
   });
 });

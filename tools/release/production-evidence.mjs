@@ -4,7 +4,11 @@
 // analyze-evidence.mjs --production reads.
 //
 //   node tools/release/production-evidence.mjs <deployment-id> <deployment-url> <commit>
-//        [--created-at <ISO time>] [--dry-run] [--skip-playwright] [--evidence-dir <dir>]
+//        [--created-at <ISO time>] [--dry-run] [--fresh] [--skip-playwright] [--evidence-dir <dir>]
+//
+// Each run writes run.json with a new random run id and stamps every case report with it; the
+// analyzer rejects a report from another run. It refuses to start when the evidence directory
+// already holds files; --fresh first moves them to <dir>.previous-<time>.
 //
 // It contacts production: Vercel (inspect, list), the deployment's API, the organizers'
 // partner check and a Playwright run against the live pages. Run it only as the integration
@@ -12,9 +16,10 @@
 // --dry-run prints every command and URL and contacts nothing.
 //
 // Exit 0: every case passed. Exit 1: a case failed or is missing (reports are still written).
-// Exit 2: usage error, or the deployment's creation time cannot be established.
+// Exit 2: usage error, earlier evidence without --fresh, or no deployment creation time.
 // The release decision is analyze-evidence.mjs <commit> --production <dir>, not this exit code.
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -33,12 +38,12 @@ const ANALYSIS_DEADLINE_MS = 180_000;
 const POLL_MS = 2_000;
 const USAGE =
   "usage: production-evidence.mjs <deployment-id> <deployment-url> <commit> " +
-  "[--created-at <ISO time>] [--dry-run] [--skip-playwright] [--evidence-dir <dir>]";
+  "[--created-at <ISO time>] [--dry-run] [--fresh] [--skip-playwright] [--evidence-dir <dir>]";
 
 class UsageError extends Error {}
 
 function parseArgs(argv) {
-  const o = { dryRun: false, skipPlaywright: false, createdAt: null, evidenceDir: null, positional: [] };
+  const o = { dryRun: false, fresh: false, skipPlaywright: false, createdAt: null, evidenceDir: null, positional: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const value = () => {
@@ -46,6 +51,7 @@ function parseArgs(argv) {
       return argv[++i];
     };
     if (arg === "--dry-run") o.dryRun = true;
+    else if (arg === "--fresh") o.fresh = true;
     else if (arg === "--skip-playwright") o.skipPlaywright = true;
     else if (arg === "--created-at") o.createdAt = value();
     else if (arg === "--evidence-dir") o.evidenceDir = value();
@@ -155,6 +161,7 @@ function steps(o, cases, pwCases) {
     `RETROFIT_DEPLOYMENT_ID=${o.deploymentId}`,
     `RETROFIT_DEPLOYMENT_URL=${o.deploymentUrl}`,
     `RETROFIT_EVIDENCE_DIR=${o.evidenceRoot}`,
+    "RETROFIT_RUN_ID=<this run's id>",
     "JUDGE_CODE=<from the environment, not printed>",
   ];
   return [
@@ -165,6 +172,12 @@ function steps(o, cases, pwCases) {
       run: recordDeployment,
     },
     { name: "version", produces: ["version-commit"], show: [`GET ${o.prod}/api/version`], run: checkVersion },
+    {
+      name: "alias-binding",
+      produces: ["alias-binding"],
+      show: [`GET ${o.deploymentUrl}/api/version`, `GET ${o.prod}/api/version`, "  both must return the candidate commit: the alias serves this deployment"],
+      run: checkAliasBinding,
+    },
     { name: "health", produces: ["health-ok"], show: [`GET ${o.prod}/api/health`], run: checkHealth },
     {
       name: "partners",
@@ -208,6 +221,7 @@ function record(ctx, caseId, passed, extra = {}) {
     deploymentId: ctx.o.deploymentId,
     deploymentUrl: ctx.o.deploymentUrl,
     commit: ctx.served,
+    runId: ctx.runId,
     extra,
   });
   writeCaseFile(ctx.o.evidenceRoot, report);
@@ -252,6 +266,8 @@ function recordDeployment(ctx) {
     ctx.say(`  note: --created-at ${o.createdAt} ignored; vercel inspect gives ${createdAt}`);
   }
   fs.mkdirSync(o.dir, { recursive: true });
+  fs.writeFileSync(path.join(o.dir, "run.json"), `${JSON.stringify({ runId: ctx.runId, startedAt: ctx.startedAt, deploymentId: o.deploymentId, commit: o.commit }, null, 2)}\n`);
+  ctx.say(`  run.json runId ${ctx.runId}`);
   const deployment = { deploymentId: o.deploymentId, deploymentUrl: o.deploymentUrl, createdAt, commit: o.commit, createdAtSource: source };
   fs.writeFileSync(path.join(o.dir, "deployment.json"), `${JSON.stringify(deployment, null, 2)}\n`);
   ctx.say(`  deployment.json createdAt ${createdAt} (${source})`);
@@ -262,6 +278,21 @@ async function checkVersion(ctx) {
   const served = typeof res.json?.commit === "string" && res.json.commit ? res.json.commit : `unavailable (status ${res.status})`;
   ctx.served = served;
   record(ctx, "version-commit", res.status === 200 && served === ctx.o.commit, { httpStatus: res.status, ms: res.ms, served, expected: ctx.o.commit });
+}
+
+async function checkAliasBinding(ctx) {
+  const [deployment, alias] = await Promise.all([http("GET", `${ctx.o.deploymentUrl}/api/version`), http("GET", `${ctx.o.prod}/api/version`)]);
+  const commitOf = (res) => (typeof res.json?.commit === "string" && res.json.commit ? res.json.commit : `unavailable (status ${res.status})`);
+  const deploymentCommit = commitOf(deployment);
+  const aliasCommit = commitOf(alias);
+  record(ctx, "alias-binding", deploymentCommit === ctx.o.commit && aliasCommit === ctx.o.commit, {
+    alias: ctx.o.prod,
+    deploymentCommit,
+    aliasCommit,
+    expected: ctx.o.commit,
+    deploymentStatus: deployment.status,
+    aliasStatus: alias.status,
+  });
 }
 
 async function checkHealth(ctx) {
@@ -309,6 +340,7 @@ function runPlaywright(ctx, pwCases) {
     RETROFIT_DEPLOYMENT_ID: ctx.o.deploymentId,
     RETROFIT_DEPLOYMENT_URL: ctx.o.deploymentUrl,
     RETROFIT_EVIDENCE_DIR: ctx.o.evidenceRoot,
+    RETROFIT_RUN_ID: ctx.runId,
   };
   const r = spawnSync("pnpm", PLAYWRIGHT_ARGV, { cwd: ROOT, env, stdio: "inherit", timeout: 1_800_000 });
   ctx.playwrightExit = typeof r?.status === "number" ? r.status : -1;
@@ -349,7 +381,11 @@ export async function main(argv, io = { stdout: (s) => console.log(s), stderr: (
   say(`deployment ${o.deploymentId} ${o.deploymentUrl}, commit ${o.commit}, production ${o.prod}`);
   say(`evidence ${o.dir}`);
   say(`covers ${cases.length - missing.length} of ${cases.length} required production cases${missing.length ? `; no step produces: ${missing.join(", ")}` : ""}`);
+  const earlier = fs.existsSync(o.dir) && fs.readdirSync(o.dir).length > 0;
+  const aside = `${o.dir}.previous-${new Date().toISOString().replace(/[:.]/g, "-")}`;
   if (o.dryRun) {
+    if (earlier) say(o.fresh ? `would move the earlier evidence to ${aside}` : `would refuse: ${o.dir} already holds evidence; pass --fresh to move it aside`);
+    say("writes run.json with a new run id; every case report carries it");
     plan.forEach((s, i) => {
       say(`step ${i + 1} ${s.name} -> ${s.produces.join(", ")}`);
       for (const line of s.show) say(`  ${line}`);
@@ -358,7 +394,23 @@ export async function main(argv, io = { stdout: (s) => console.log(s), stderr: (
     return missing.length === 0 ? 0 : 1;
   }
 
-  const ctx = { o, say, served: "unavailable (not read)", results: new Map(), playwrightExit: null };
+  if (earlier && !o.fresh) {
+    io.stderr(`production-evidence: ${o.dir} already holds evidence from an earlier run; pass --fresh to move it to ${aside} first`);
+    return 2;
+  }
+  if (earlier) {
+    fs.renameSync(o.dir, aside);
+    say(`moved the earlier evidence to ${aside}`);
+  }
+  const ctx = {
+    o,
+    say,
+    runId: `run_${randomBytes(8).toString("hex")}`,
+    startedAt: new Date().toISOString(),
+    served: "unavailable (not read)",
+    results: new Map(),
+    playwrightExit: null,
+  };
   for (const [i, s] of plan.entries()) {
     say(`step ${i + 1} ${s.name} -> ${s.produces.join(", ")}`);
     try {

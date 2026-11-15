@@ -131,3 +131,14 @@ describe("getStore", () => {
     expect(await store.get("probe:x")).toBe(1);
   });
 });
+
+describe("health probe rows", () => {
+  // Fails if each health check leaves its probe row behind (repeated checks would grow the table).
+  it("deletes its probe row after reading it", async () => {
+    const { createMemoryBacking, createMemoryStore } = await import("@/lib/store/memory");
+    const backing = createMemoryBacking();
+    const store = createMemoryStore({ backing });
+    for (let i = 0; i < 5; i++) expect((await handleHealth({ store })).status).toBe(200);
+    expect([...backing.values.keys()].filter((k) => k.startsWith("health:"))).toEqual([]);
+  });
+});

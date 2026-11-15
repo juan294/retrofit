@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { peerHostRewrite } from "@/lib/peer/host";
+import { PEER_HOST, peerHostRewrite } from "@/lib/peer/host";
 import { getConfig } from "@/lib/config";
 import { pageCsp } from "@/lib/security/headers";
 import { connectOrigins } from "@/lib/security/origins";
@@ -9,7 +9,11 @@ export function proxy(request: NextRequest) {
   const config = getConfig();
   // The synthetic peer demo-harbor is served from this deployment for its own host only. Its
   // route sets every header itself, so the page CSP and no-store are not added here.
-  const peerPath = peerHostRewrite(request.headers.get("host") ?? "", request.nextUrl.pathname, config);
+  const host0 = (request.headers.get("host") ?? "").toLowerCase();
+  // Production peer host: next.config.ts rewrites every path before files; add no page headers here.
+  if (host0 === PEER_HOST) return NextResponse.next();
+  // Fixtures stand-in host: rewrite here (the before-files rule covers only the production host).
+  const peerPath = peerHostRewrite(host0, request.nextUrl.pathname, config);
   if (peerPath) return NextResponse.rewrite(new URL(peerPath, request.url));
   const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64");
   const csp = pageCsp(config, nonce, { dev: process.env.NODE_ENV === "development", phase: connectOrigins() });

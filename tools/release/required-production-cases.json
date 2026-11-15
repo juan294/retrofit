@@ -1,11 +1,12 @@
 {
-  "description": "Production cases that must pass against the candidate deployment (phase-7.md, Production evidence, step 12). Each case writes one <case>.json report into .local/evidence/production/<deployment id>/ with {case, status, deploymentId, deploymentUrl, commit, recordedAt}; a case of kind partner also records exitCode from check_partner.mjs. The analyzer rejects a case that is missing, not passed, bound to another deployment or commit, or recorded before the deployment was created.",
+  "description": "Production cases that must pass against the candidate deployment (phase-7.md, Production evidence, step 12). Each case writes one <case>.json report into .local/evidence/production/<deployment id>/ with {case, status, deploymentId, deploymentUrl, commit, recordedAt, runId}; a case of kind partner also records exitCode from check_partner.mjs, and a case of kind binding records deploymentCommit and aliasCommit. run.json in the same directory holds the runId of the evidence run. The analyzer rejects a case that is missing, not passed, bound to another deployment, commit or run, or recorded before the deployment was created.",
   "cases": [
     { "id": "partner-retrofit-guide", "kind": "partner", "target": "https://retrofit.thecreativetoken.com/retrofit_guide" },
     { "id": "partner-retrofit-conformance", "kind": "partner", "target": "https://retrofit.thecreativetoken.com/retrofit_conformance" },
     { "id": "partner-harbor-tours", "kind": "partner", "target": "https://demo-harbor.thecreativetoken.com/harbor_tours" },
     { "id": "health-ok", "kind": "probe", "target": "/api/health returns ok" },
     { "id": "version-commit", "kind": "probe", "target": "/api/version returns the merge commit" },
+    { "id": "alias-binding", "kind": "binding", "target": "/api/version on the deployment URL and on the production alias both return the merge commit (deploymentCommit, aliasCommit)" },
     { "id": "spec6-two-agent-free-path", "kind": "e2e-prod", "target": "the two-agent network runs with the published default router (free path, one real model call)" },
     { "id": "spec6-score-site", "kind": "e2e-prod", "target": "score_site runs as the grounded capability" },
     { "id": "spec6-consent-peer", "kind": "e2e-prod", "target": "a consent card names demo-harbor.thecreativetoken.com; declining sends nothing; approving runs harbor_tours in the browser" },

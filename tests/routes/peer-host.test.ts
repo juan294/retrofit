@@ -148,3 +148,17 @@ describe("peer route with fixturesEnabled true", () => {
     for (const host of MAIN_HOSTS) expect((await get(GET, host, ["agent-manifest.json"])).status, host).toBe(404);
   });
 });
+
+describe("peer host rewrites before files", () => {
+  // Fails if the peer host could reach Retrofit's static files (runtime, bridge, _next) that the request hook skips.
+  it("sends every path on the production peer host to the peer route", async () => {
+    const { peerRewrites } = await import("@/lib/peer/rewrites");
+    const rules = peerRewrites();
+    expect(rules).toHaveLength(2);
+    for (const r of rules) {
+      expect(r.has).toEqual([{ type: "host", value: "demo-harbor.thecreativetoken.com" }]);
+      expect(r.destination.startsWith("/peer/")).toBe(true);
+    }
+    expect(rules.find((r) => r.source === "/:path((?!peer/).+)")?.destination).toBe("/peer/:path");
+  });
+});

@@ -68,8 +68,13 @@ function docker() {
   if (scenario.dockerFail === sub) fail(1, `Cannot connect to the Docker daemon (fake failure on ${sub})`);
   switch (sub) {
     case "context show":
+      // Simulates another process writing the lock while the tool waits on Docker.
+      if (scenario.writeLockOnContextShow) {
+        fs.writeFileSync(scenario.writeLockOnContextShow.path, scenario.writeLockOnContextShow.content);
+      }
       return out(state.context);
     case "context inspect":
+      if (scenario.contextInspectGarbage) return out("this is not JSON");
       return out(JSON.stringify([{ Name: args[2], Endpoints: { docker: { Host: state.contextHost } } }]));
     case "ps":
       return out(state.containers.filter((c) => matches(c, filtersOf())).map((c) => c.id).join("\n"));
@@ -183,7 +188,19 @@ async function pnpm() {
     return process.exit(137);
   }
   const output = flag("--outputFile.json");
-  if (output) fs.writeFileSync(output, JSON.stringify({ success: !scenario.vitestExit, numPassedTests: 2 }));
+  if (output) {
+    // The shape of Vitest's JSON reporter that tools/release/analyze-evidence.mjs reads.
+    const status = scenario.vitestExit ? "failed" : "passed";
+    const report = scenario.vitestReportMinimal
+      ? { success: true }
+      : {
+          success: !scenario.vitestExit,
+          numPassedTests: scenario.vitestExit ? 0 : 1,
+          numTotalTests: 1,
+          testResults: [{ name: "tests/db/store.test.ts", status, assertionResults: [{ fullName: "fake db test", status }] }],
+        };
+    fs.writeFileSync(output, JSON.stringify(report));
+  }
   out(scenario.vitestExit ? " FAIL  tests/db/store.test.ts" : " PASS  tests/db/store.test.ts");
   process.exit(scenario.vitestExit ?? 0);
 }

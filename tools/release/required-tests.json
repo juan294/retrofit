@@ -2046,43 +2046,43 @@
       "rule": "spec 6",
       "suite": "playwright",
       "file": "spec6.spec.ts",
-      "title": "spec §6 locally (organizers' cases L1 to L10, C1 to C8) a two-agent network runs in the browser"
+      "title": "spec \u00a76 locally (organizers' cases L1 to L10, C1 to C8) a two-agent network runs in the browser"
     },
     {
       "rule": "spec 6",
       "suite": "playwright",
       "file": "spec6.spec.ts",
-      "title": "spec §6 locally (organizers' cases L1 to L10, C1 to C8) score_site runs as the grounded site capability"
+      "title": "spec \u00a76 locally (organizers' cases L1 to L10, C1 to C8) score_site runs as the grounded site capability"
     },
     {
       "rule": "spec 6",
       "suite": "playwright",
       "file": "spec6.spec.ts",
-      "title": "spec §6 locally (organizers' cases L1 to L10, C1 to C8) consent names the peer before any contact; decline sends nothing; approve runs the peer locally"
+      "title": "spec \u00a76 locally (organizers' cases L1 to L10, C1 to C8) consent names the peer before any contact; decline sends nothing; approve runs the peer locally"
     },
     {
       "rule": "spec 6",
       "suite": "playwright",
       "file": "spec6.spec.ts",
-      "title": "spec §6 locally (organizers' cases L1 to L10, C1 to C8) an invalid peer network shows a visible error"
+      "title": "spec \u00a76 locally (organizers' cases L1 to L10, C1 to C8) an invalid peer network shows a visible error"
     },
     {
       "rule": "spec 6",
       "suite": "playwright",
       "file": "spec6.spec.ts",
-      "title": "spec §6 locally (organizers' cases L1 to L10, C1 to C8) a turn over the runtime's per-partner budget shows a visible limit notice"
+      "title": "spec \u00a76 locally (organizers' cases L1 to L10, C1 to C8) a turn over the runtime's per-partner budget shows a visible limit notice"
     },
     {
       "rule": "spec 6",
       "suite": "playwright",
       "file": "spec6.spec.ts",
-      "title": "spec §6 locally (organizers' cases L1 to L10, C1 to C8) a peer outside allowed_peers shows a visible refusal and is never contacted"
+      "title": "spec \u00a76 locally (organizers' cases L1 to L10, C1 to C8) a peer outside allowed_peers shows a visible refusal and is never contacted"
     },
     {
       "rule": "spec 6",
       "suite": "playwright",
       "file": "spec6.spec.ts",
-      "title": "spec §6 locally (organizers' cases L1 to L10, C1 to C8) a cycle is prevented: no back edge in the peer hop, no second caller fetch, a skip event and a loop notice"
+      "title": "spec \u00a76 locally (organizers' cases L1 to L10, C1 to C8) a cycle is prevented: no back edge in the peer hop, no second caller fetch, a skip event and a loop notice"
     },
     {
       "rule": "conformance",
@@ -3031,6 +3031,1038 @@
       "suite": "unit",
       "file": "tests/ops/credit-check.test.ts",
       "title": "GET /api/cron/credit-check answers 503 when the ledger is unavailable"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "published peer and conformance networks harbor_tours passes the vendored validateNetwork, from its source and from the served file"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "published peer and conformance networks harbor_loop passes the vendored validateNetwork, from its source and from the served file"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "published peer and conformance networks retrofit_guide passes the vendored validateNetwork, from its source and from the served file"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "published peer and conformance networks retrofit_conformance passes the vendored validateNetwork, from its source and from the served file"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "published peer and conformance networks harbor_invalid parses but fails validateNetwork, so the caller's runtime refuses it"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "published peer and conformance networks no published network forwards private sly_data downstream"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "build_network.mjs on the committed outputs --check passes for harbor_tours with the peer manifest and its discovery files"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "build_network.mjs on the committed outputs --check passes for harbor_loop and retrofit_conformance (network-only builds)"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "build_network.mjs on the committed outputs --check fails when a committed output differs"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "build_network.mjs on the committed outputs harbor_loop passes the full partner checks with the peer manifest (label, https, allowed origin)"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "build_network.mjs on the committed outputs retrofit_conformance fails the full partner checks only for the demo-denied tool"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "manifests the peer manifest lists the three networks under a closed policy that allows only Retrofit"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "manifests Retrofit's manifest publishes retrofit_conformance second and allows only the peer origin"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "manifests Retrofit's guide calls harbor_tours with a link label"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "manifests retrofit_conformance calls exactly the documented fixtures, each with its label"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "manifests the policy allows the peer, refuses demo-denied, and lets harbor_loop call Retrofit"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "manifests index.html and harbor_tours carry the same tours"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "cycle prevention for harbor_loop drops the call back when /conformance boots retrofit_conformance at the origin root"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "withTopNetwork and serveTopManifest moves the named network first and keeps every other field"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "withTopNetwork and serveTopManifest answers only GET for the exact manifest URL until released, then restores fetch"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "withTopNetwork and serveTopManifest does not restore over a fetch that replaced it later"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "check_partner.mjs on the served files exits 0 for https://demo-harbor.thecreativetoken.com/harbor_tours"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "check_partner.mjs on the served files exits 0 for https://demo-harbor.thecreativetoken.com/harbor_loop"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "check_partner.mjs on the served files exits 0 for https://retrofit.thecreativetoken.com/retrofit_guide"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "check_partner.mjs on the served files exits 0 for https://retrofit.thecreativetoken.com/retrofit_conformance"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "check_partner.mjs on the served files exits 1 for harbor_invalid, because the runtime's validation refuses it"
+    },
+    {
+      "rule": "production peer and conformance networks",
+      "suite": "unit",
+      "file": "tests/peer/networks.test.ts",
+      "title": "check_partner.mjs on the served files the peer host serves no network that the manifest does not list"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence usage exits 2 without a candidate"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence usage exits 2 for a candidate Git cannot resolve"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence usage exits 2 for an unknown argument"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode accepts a complete set sealed for the candidate"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode accepts a short candidate commit that resolves to the sealed commit"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects an attempt bound to another commit than the candidate"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects an attempt bound to another tree than the candidate's"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects an attempt whose commit differs from the verification identity"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects an attempt that started before the verification attempt"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a verification receipt from a custom check selection"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a verification run whose inputs changed during the run"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a missing verification receipt"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects an attempt that was never sealed"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a report that is not listed in the seal"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a report whose hash differs from the seal"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a sealed report that is gone"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a required check that is missing from the verification receipt"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a required check that ran a different command"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a required check with a non-zero exit"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects zero passing tests in the unit suite"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects zero passing tests in the perf suite"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects zero passing tests in the playwright suite"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a failed test in any suite"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a missing suite report"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a skipped required vitest test"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a missing required vitest test"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a required test found only in another file"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a skipped required playwright test"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects statement coverage below 80"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects branch coverage below 70"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode rejects a missing coverage summary"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence local mode lists every reason when several items fail"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence gate database accepts a db run whose log records a completed teardown"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence gate database rejects zero passing tests in the db suite"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence gate database rejects a db suite report that is missing when test:db is declared"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence gate database rejects a gate database log without a completed teardown"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence gate database rejects a gate database run with no log"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence gate database checks a gate database log that is present even when test:db is not declared"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence accepted check exceptions rejects a failed rpi-installation check without an exception"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence accepted check exceptions accepts a failed rpi-installation check with an exception and prints it prominently"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence accepted check exceptions still rejects other failures when an exception is given"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence accepted check exceptions does not excuse a missing check"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence accepted check exceptions notes an exception that the evidence did not need"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence accepted check exceptions refuses an exception for a check outside the environment allowlist"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence accepted check exceptions refuses an exception without a reason"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence accepted check exceptions refuses a blank reason"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode accepts production evidence bound to the candidate deployment"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode still applies every local rejection"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a report bound to another deployment id"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a report bound to another deployment URL"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a report whose /api/version commit differs from the candidate"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a deployment record for another commit"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a report recorded before the deployment was created"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a missing required production case"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a failed production case"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a skipped production case"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a partner check with a non-zero exit"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a partner check with no recorded exit code"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a missing deployment record"
+    },
+    {
+      "rule": "evidence analyzer",
+      "suite": "unit",
+      "file": "tests/release/analyze-evidence.test.ts",
+      "title": "analyze-evidence production mode rejects a missing production evidence directory"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs --dry-run prints every command and URL, covers every required case, and contacts nothing"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs --dry-run refuses a short commit, a bad deployment id and a non-https deployment URL"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "writeCase report shape binds the report to the deployment and the commit from /api/version; extra data cannot rebind it"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "writeCase report shape refuses to write without the deployment id and URL"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "writeCase report shape records an unreadable /api/version as unavailable, which the analyzer rejects"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "writeCase report shape the analyzer's production mode accepts a full set written by writeCase"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs run (stubbed boundary) writes deployment.json and every script case, runs Playwright with the binding environment, and the analyzer accepts the set"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs run (stubbed boundary) records a failed case, not a pass, when /api/version serves another commit"
+    },
+    {
+      "rule": "production peer host",
+      "suite": "unit",
+      "file": "tests/routes/peer-host.test.ts",
+      "title": "peerHostRewrite rewrites every path on the peer host to the peer route, and / to index.html"
+    },
+    {
+      "rule": "production peer host",
+      "suite": "unit",
+      "file": "tests/routes/peer-host.test.ts",
+      "title": "peerHostRewrite never rewrites on the main host"
+    },
+    {
+      "rule": "production peer host",
+      "suite": "unit",
+      "file": "tests/routes/peer-host.test.ts",
+      "title": "peerHostRewrite serves the loopback fixture host only in fixtures mode, and only on its exact port"
+    },
+    {
+      "rule": "production peer host",
+      "suite": "unit",
+      "file": "tests/routes/peer-host.test.ts",
+      "title": "peer route with fixturesEnabled false answers 404 on the main host for every peer file"
+    },
+    {
+      "rule": "production peer host",
+      "suite": "unit",
+      "file": "tests/routes/peer-host.test.ts",
+      "title": "peer route with fixturesEnabled false serves every public agent file on the peer host with CORS for every origin"
+    },
+    {
+      "rule": "production peer host",
+      "suite": "unit",
+      "file": "tests/routes/peer-host.test.ts",
+      "title": "peer route with fixturesEnabled false serves index.html with its own page CSP: no scripts, no framing, no connections"
+    },
+    {
+      "rule": "production peer host",
+      "suite": "unit",
+      "file": "tests/routes/peer-host.test.ts",
+      "title": "peer route with fixturesEnabled false refuses traversal, source files and unknown paths"
+    },
+    {
+      "rule": "production peer host",
+      "suite": "unit",
+      "file": "tests/routes/peer-host.test.ts",
+      "title": "peer route with fixturesEnabled false lists exactly the published files, all present on disk"
+    },
+    {
+      "rule": "production peer host",
+      "suite": "unit",
+      "file": "tests/routes/peer-host.test.ts",
+      "title": "peer route with fixturesEnabled true serves the same files on the loopback fixture host and the peer host, and nothing on the main host"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port cleanup throws StoreUnavailable and logs [TABLE_FALLBACK]"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port get throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port set throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port delete throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port putIfAbsent throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port compareAndSet throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port incrementWindow throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port acquireLease throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port renewLease throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port releaseLease throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port enqueue throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port claimNext throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "Supabase adapter on a closed port rejects a bad TTL or version locally with RangeError and logs nothing"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "GET /api/health answers degraded with 503 and the visitor text when the store is unreachable"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "GET /api/health answers degraded when the row it wrote does not read back"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "GET /api/health answers ok with 200 after writing and reading a health row with a 60 s TTL"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "getStore throws on Vercel without Supabase configuration"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "getStore uses the Supabase store when SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set"
+    },
+    {
+      "rule": "store unavailable",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "getStore uses memory off Vercel without Supabase configuration"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: a clean run starts, verifies, resets, tests, stops, verifies removal and only then writes the teardown line"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: two concurrent runs, the second exits 1 naming the holder and touches nothing"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: an inherited retrofit-gate stack without a receipt is refused; nothing is started, reset or stopped"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: a resource named for retrofit-gate without the project label is refused as unknown"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: a receipt from another run is refused and left unchanged"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: a container replaced between the verify steps is not disposed and the run reports it"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: a test failure still disposes and releases, with exit 4 and the teardown line"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: a cleanup failure is reported separately from a test failure"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: the teardown line is not written when stop succeeds but a volume remains"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: a Docker inspection failure is not treated as a clean inventory"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db recover gate-db: an interrupted run leaves a receipt that recover disposes when its pid is dead"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db recover gate-db: recover leaves a receipt alone while its pid is alive"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db recover gate-db: recover refuses resources that do not match the receipt"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db recover gate-db: recover with no receipt reports nothing to recover"
+    },
+    {
+      "rule": "spec \u00a76 (production-shaped caller)",
+      "suite": "playwright",
+      "file": "spec6-prod-shape.spec.ts",
+      "title": "spec \u00a76 with the production-shaped caller (retrofit_conformance and demo-harbor, mapped to loopback) consent names demo-harbor, and approving runs harbor_tours in the browser"
+    },
+    {
+      "rule": "spec \u00a76 (production-shaped caller)",
+      "suite": "playwright",
+      "file": "spec6-prod-shape.spec.ts",
+      "title": "spec \u00a76 with the production-shaped caller (retrofit_conformance and demo-harbor, mapped to loopback) harbor_invalid shows the invalid-network error"
+    },
+    {
+      "rule": "spec \u00a76 (production-shaped caller)",
+      "suite": "playwright",
+      "file": "spec6-prod-shape.spec.ts",
+      "title": "spec \u00a76 with the production-shaped caller (retrofit_conformance and demo-harbor, mapped to loopback) the demo-denied tool shows the refusal and no request reaches that host"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/sql-access.test.ts",
+      "title": "store access: anon and authenticated are denied, service_role works, later objects stay private"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > a value written by one client is read by the other"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > get returns null after the TTL and the value before it"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > delete removes the value for both clients"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > set replaces the value and its TTL"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > callers cannot mutate stored state through written or read values"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > rejects a TTL that is not positive"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > putIfAbsent > keeps the live value and reports created false"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > putIfAbsent > writes over an expired value"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > putIfAbsent > creates exactly once under 20 concurrent calls from two clients"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > replaces the value when the stored version matches"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > fails for a stale expected version and keeps the newer value"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > rejects a next version that is not expected.version + 1 and leaves the value"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > returns false for a missing key and writes nothing"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > returns false for an expired value"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > lets exactly one of 10 concurrent writers succeed"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > incrementWindow > counts increments from both clients and honors by"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > incrementWindow > loses no increment under 20 concurrent calls"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > incrementWindow > starts a new count after the window ends"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > leases > is exclusive across clients"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > leases > gives exactly one token to 10 concurrent acquirers"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > leases > renewal keeps the lease past its first TTL"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > leases > can be reacquired after it expires"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > leases > cannot be renewed after expiry or with a wrong token"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > leases > release by the owner frees it"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > leases > a late release or renewal by the old owner does not touch the successor's lease"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > queues > claims items in enqueue order"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > queues > enqueue is idempotent for a live item"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > queues > concurrent claims never return the same item twice"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > queues > skips and removes expired items"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "Store contract: supabase (two clients, real clock) > queues > keeps queues separate"
+    },
+    {
+      "rule": "store contract and database privileges",
+      "suite": "db",
+      "file": "tests/db/store.test.ts",
+      "title": "cleanup deletes expired rows across tables and keeps live ones"
     }
   ]
 }

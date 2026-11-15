@@ -50,17 +50,19 @@ export function resetCommitCache() {
 }
 
 /**
- * Writes <evidence root>/<RETROFIT_DEPLOYMENT_ID>/<caseId>.json and returns its path.
- * Throws when the deployment id or URL is missing: a report without them binds to nothing.
+ * Writes <evidence root>/<RETROFIT_DEPLOYMENT_ID>/<caseId>.json, stamped with RETROFIT_RUN_ID, and returns its path.
+ * Throws when the deployment id, URL or run id is missing: a report without them binds to nothing.
  */
 export async function writeCase(caseId: string, status: CaseStatus, extra: Record<string, unknown> = {}, options: WriteCaseOptions = {}): Promise<string> {
   const env = options.env ?? process.env;
   const deploymentId = env.RETROFIT_DEPLOYMENT_ID?.trim();
   const deploymentUrl = env.RETROFIT_DEPLOYMENT_URL?.trim();
+  const runId = env.RETROFIT_RUN_ID?.trim();
   if (!deploymentId || !deploymentUrl) {
     throw new Error("RETROFIT_DEPLOYMENT_ID and RETROFIT_DEPLOYMENT_URL must be set (tools/release/production-evidence.mjs sets them)");
   }
+  if (!runId) throw new Error("RETROFIT_RUN_ID must be set: it is the run id in run.json (tools/release/production-evidence.mjs sets it)");
   const commit = await deployedCommit(env, options.fetch ?? fetch);
-  const report = caseReport({ caseId, status, deploymentId, deploymentUrl, commit, extra });
+  const report = caseReport({ caseId, status, deploymentId, deploymentUrl, commit, runId, extra });
   return writeCaseFile(evidenceRoot(env), report);
 }

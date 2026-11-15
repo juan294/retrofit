@@ -80,7 +80,9 @@ describe("production-evidence.mjs --dry-run", () => {
     // Every outward call is named.
     expect(out).toContain(`$ vercel inspect ${DEPLOYMENT_URL} --format json --scope thecreativetoken`);
     expect(out).toContain(`GET ${PROD}/api/version`);
+    expect(out).toContain(`GET ${DEPLOYMENT_URL}/api/version`);
     expect(out).toContain(`GET ${PROD}/api/health`);
+    expect(out).toMatch(/run\.json with a new run id/);
     for (const c of required.filter((x) => x.kind === "partner")) expect(out).toContain(`tools/agentic-web/scripts/check_partner.mjs ${(c as { target?: string }).target}`);
     expect(out).toMatch(/POST https:\/\/retrofit\.thecreativetoken\.com\/api\/analyze x5 \(concurrent\)/);
     expect(out).toContain("$ vercel list retrofit --environment preview --scope thecreativetoken");
@@ -103,7 +105,7 @@ describe("production-evidence.mjs --dry-run", () => {
 });
 
 describe("writeCase report shape", () => {
-  const env = { RETROFIT_DEPLOYMENT_ID: DEPLOYMENT_ID, RETROFIT_DEPLOYMENT_URL: DEPLOYMENT_URL, RETROFIT_PROD_URL: PROD };
+  const env = { RETROFIT_DEPLOYMENT_ID: DEPLOYMENT_ID, RETROFIT_DEPLOYMENT_URL: DEPLOYMENT_URL, RETROFIT_PROD_URL: PROD, RETROFIT_RUN_ID: "run_test0001" };
 
   it("binds the report to the deployment and the commit from /api/version; extra data cannot rebind it", async () => {
     fetchStub.mockImplementation(async (url: string) => {
@@ -113,12 +115,13 @@ describe("writeCase report shape", () => {
     const file = await writeCase("spec6-score-site", "passed", { scoreCalls: 1, commit: "f".repeat(40), deploymentId: "dpl_other" }, { env: { ...env, RETROFIT_EVIDENCE_DIR: tmp } });
     expect(file).toBe(path.join(tmp, DEPLOYMENT_ID, "spec6-score-site.json"));
     const report = JSON.parse(fs.readFileSync(file, "utf8"));
-    expect(report).toMatchObject({ case: "spec6-score-site", status: "passed", deploymentId: DEPLOYMENT_ID, deploymentUrl: DEPLOYMENT_URL, commit: COMMIT, scoreCalls: 1 });
+    expect(report).toMatchObject({ case: "spec6-score-site", status: "passed", deploymentId: DEPLOYMENT_ID, deploymentUrl: DEPLOYMENT_URL, commit: COMMIT, runId: "run_test0001", scoreCalls: 1 });
     expect(Number.isFinite(Date.parse(report.recordedAt))).toBe(true);
   });
 
-  it("refuses to write without the deployment id and URL", async () => {
+  it("refuses to write without the deployment id and URL, or without the run id", async () => {
     await expect(writeCase("health-ok", "passed", {}, { env: { RETROFIT_EVIDENCE_DIR: tmp } })).rejects.toThrow(/RETROFIT_DEPLOYMENT_ID/);
+    await expect(writeCase("health-ok", "passed", {}, { env: { ...env, RETROFIT_RUN_ID: "", RETROFIT_EVIDENCE_DIR: tmp } })).rejects.toThrow(/RETROFIT_RUN_ID/);
   });
 
   it("records an unreadable /api/version as unavailable, which the analyzer rejects", async () => {
@@ -132,10 +135,17 @@ describe("writeCase report shape", () => {
     const dir = path.join(tmp, DEPLOYMENT_ID);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "deployment.json"), JSON.stringify({ deploymentId: DEPLOYMENT_ID, deploymentUrl: DEPLOYMENT_URL, createdAt: new Date(Date.now() - 60_000).toISOString(), commit: COMMIT }));
-    for (const c of required) await writeCase(c.id, "passed", c.kind === "partner" ? { exitCode: 0 } : {}, { env: { ...env, RETROFIT_EVIDENCE_DIR: tmp } });
+    fs.writeFileSync(path.join(dir, "run.json"), JSON.stringify({ runId: "run_test0001", deploymentId: DEPLOYMENT_ID }));
+    const kindExtra = (kind: string) => (kind === "partner" ? { exitCode: 0 } : kind === "binding" ? { deploymentCommit: COMMIT, aliasCommit: COMMIT } : {});
+    for (const c of required) await writeCase(c.id, "passed", kindExtra(c.kind), { env: { ...env, RETROFIT_EVIDENCE_DIR: tmp } });
     const verdict = productionVerdict(dir);
     expect(verdict.reasons).toEqual([]);
     expect(verdict.passed).toBe(required.length);
+
+    // It rejects a report from another run.
+    await writeCase("health-ok", "passed", {}, { env: { ...env, RETROFIT_RUN_ID: "run_other", RETROFIT_EVIDENCE_DIR: tmp } });
+    expect(productionVerdict(dir).reasons.map((r: { message: string }) => r.message)).toContain("health-ok.json run id run_other differs from run.json run_test0001");
+    await writeCase("health-ok", "passed", {}, { env: { ...env, RETROFIT_EVIDENCE_DIR: tmp } });
 
     // And it rejects the same set when one case failed.
     await writeCase("spec6-cycle-prevention", "failed", {}, { env: { ...env, RETROFIT_EVIDENCE_DIR: tmp } });
@@ -156,8 +166,9 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
         const env = options.env!;
         expect(env.RETROFIT_DEPLOYMENT_ID).toBe(DEPLOYMENT_ID);
         expect(env.RETROFIT_DEPLOYMENT_URL).toBe(DEPLOYMENT_URL);
+        expect(env.RETROFIT_RUN_ID).toMatch(/^run_[0-9a-f]{16}$/);
         for (const c of required.filter((x) => x.kind === "e2e-prod" || x.id === "analyze-own-site" || x.id === "judge-path")) {
-          writeCaseFile(env.RETROFIT_EVIDENCE_DIR!, caseReport({ caseId: c.id, status: "passed", deploymentId: DEPLOYMENT_ID, deploymentUrl: DEPLOYMENT_URL, commit: COMMIT }));
+          writeCaseFile(env.RETROFIT_EVIDENCE_DIR!, caseReport({ caseId: c.id, status: "passed", deploymentId: DEPLOYMENT_ID, deploymentUrl: DEPLOYMENT_URL, commit: COMMIT, runId: env.RETROFIT_RUN_ID! }));
         }
         return { status: 0, stdout: "", stderr: "" };
       }
@@ -165,9 +176,11 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
     });
     const ids = ["0".repeat(32), "1".repeat(32), "2".repeat(32), "3".repeat(32), "4".repeat(32)];
     let posted = 0;
+    const versionOrigins: string[] = [];
     fetchStub.mockImplementation(async (url: string, init?: RequestInit) => {
       const u = new URL(url);
-      expect(u.origin).toBe(PROD);
+      versionOrigins.push(u.pathname === "/api/version" ? u.origin : "");
+      expect(u.origin).toBe(u.pathname === "/api/version" && u.origin === DEPLOYMENT_URL ? DEPLOYMENT_URL : PROD);
       if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: COMMIT }), { status: 200 });
       if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
       if (u.pathname === "/api/analyze" && init?.method === "POST") {
@@ -198,9 +211,51 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
     expect(concurrent.analyses.every((a: { finalStatus: string }) => a.finalStatus === "ready")).toBe(true);
     expect(JSON.parse(fs.readFileSync(path.join(dir, "partner-harbor-tours.json"), "utf8")).exitCode).toBe(0);
 
+    expect(versionOrigins).toContain(DEPLOYMENT_URL);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, "alias-binding.json"), "utf8"))).toMatchObject({ status: "passed", deploymentCommit: COMMIT, aliasCommit: COMMIT, alias: PROD });
+    const runId = JSON.parse(fs.readFileSync(path.join(dir, "run.json"), "utf8")).runId;
+    expect(runId).toMatch(/^run_[0-9a-f]{16}$/);
+    for (const name of fs.readdirSync(dir).filter((n) => n.endsWith(".json") && n !== "deployment.json" && n !== "run.json")) {
+      expect(JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")).runId, name).toBe(runId);
+    }
+
     const verdict = productionVerdict(dir);
     expect(verdict.reasons).toEqual([]);
     expect(verdict.passed).toBe(required.length);
+  });
+
+  it("refuses to start over earlier reports; --fresh moves them aside and starts a new run", async () => {
+    const dir = path.join(tmp, DEPLOYMENT_ID);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "health-ok.json"), JSON.stringify({ case: "health-ok", runId: "run_old" }));
+    const { lines, io } = capture();
+    expect(await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright"], io)).toBe(2);
+    expect(lines.join("\n")).toContain("--fresh");
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(fetchStub).not.toHaveBeenCalled();
+    expect(fs.readdirSync(dir)).toEqual(["health-ok.json"]);
+
+    spawnSync.mockImplementation(() => ({ status: 0, stdout: "", stderr: "" }));
+    fetchStub.mockImplementation(async () => new Response(JSON.stringify({ commit: COMMIT, status: "ok" }), { status: 200 }));
+    await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright", "--fresh", "--created-at", new Date(Date.now() - 1000).toISOString()], io);
+    const moved = fs.readdirSync(tmp).filter((n) => n.startsWith(`${DEPLOYMENT_ID}.previous-`));
+    expect(moved).toHaveLength(1);
+    expect(fs.readdirSync(path.join(tmp, moved[0]!))).toEqual(["health-ok.json"]);
+    const runId = JSON.parse(fs.readFileSync(path.join(dir, "run.json"), "utf8")).runId;
+    expect(JSON.parse(fs.readFileSync(path.join(dir, "health-ok.json"), "utf8")).runId).toBe(runId);
+  });
+
+  it("fails the binding case when the alias serves another commit than the deployment", async () => {
+    spawnSync.mockImplementation(() => ({ status: 0, stdout: "", stderr: "" }));
+    fetchStub.mockImplementation(async (url: string) => {
+      const u = new URL(url);
+      if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: u.origin === DEPLOYMENT_URL ? COMMIT : "c".repeat(40) }), { status: 200 });
+      return new Response("{}", { status: 503 });
+    });
+    const { io } = capture();
+    await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright", "--created-at", new Date(Date.now() - 1000).toISOString()], io);
+    const binding = JSON.parse(fs.readFileSync(path.join(tmp, DEPLOYMENT_ID, "alias-binding.json"), "utf8"));
+    expect(binding).toMatchObject({ status: "failed", deploymentCommit: COMMIT, aliasCommit: "c".repeat(40), expected: COMMIT });
   });
 
   it("records a failed case, not a pass, when /api/version serves another commit", async () => {

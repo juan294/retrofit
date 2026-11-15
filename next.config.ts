@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { peerRewrites } from "./src/lib/peer/rewrites";
 import { staticSecurityHeaders } from "./src/lib/security/headers";
 
 const nextConfig: NextConfig = {
@@ -15,6 +16,10 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return staticSecurityHeaders();
+  },
+  // The peer host serves only its own site, including paths the request hook does not see.
+  async rewrites() {
+    return { beforeFiles: peerRewrites(), afterFiles: [], fallback: [] };
   },
 };
 
