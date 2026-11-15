@@ -138,3 +138,6 @@ Implementation notes for the plan `2026-11-15-retrofit-url-to-preview.md` and it
   - Run the contract probe through the local proxy (one streamed tool call; 8 KB of emoji, CJK and base64 against the input bound). Not run: no key exists. Until then the bound and the stream format are tested against the mock only.
   - Confirm the caps and the reserve, and accept the reserve guarantee level in writing: provider-backed isolation with two capped keys, or the qualified guarantee in the parent plan's words ("the reserve is protected while the bound holds; a detected overrun stops public use; charges already made cannot be undone").
 - Owner acceptance: pending; the run continued under the all-phases instruction.
+- Re-review of `7260f0c` (same reviewer): P6-R1 to R7 closed with evidence. P6-R8 (S4, a stored key whose router maps to no provider blocked the free path) fixed in `c002368`.
+- Simplify pass (Phase 6) in `c002368`: the placeholder key and unavailable text shared by client and proxy, one UTC day helper, shared counter deps and SSE line reader, shared test helpers. No change to reservation, ledger, hold, quota or session rules.
+- Final Phase 6 gate on `c002368`: every check passed except `rpi-installation` (pre-existing); `identity_unchanged: true`. Unit 826, coverage 93.05% statements and 87.75% branches, perf p95 15.4 ms, e2e 50.

@@ -27,6 +27,7 @@
     "ops:resume-free": "node tools/ops/resume-free.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.119.0",
     "cheerio": "1.2.0",
     "ipaddr.js": "2.5.0",
     "next": "16.4.6",
