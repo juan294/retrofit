@@ -4,9 +4,9 @@ import { peerSites, thirdSites } from "../../tests/peer-fixture";
 import { OTARI_ROUTER_ORIGIN } from "./router-origin";
 
 /** Port of the second loopback test origin (Archy port list). */
-export const FIXTURE_PORT = 3011;
+const FIXTURE_PORT = 3011;
 /** Port of the third loopback test origin, never configured anywhere. */
-export const THIRD_PORT = 3013;
+const THIRD_PORT = 3013;
 export const fixtureOrigin = (host: string) => `http://${host}:${FIXTURE_PORT}`;
 
 /**

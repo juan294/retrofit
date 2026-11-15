@@ -1,10 +1,8 @@
 import type { Page, Request } from "@playwright/test";
+import { CALLER_E2E_ORIGIN } from "@/lib/test-fixtures/origins";
 import { expect } from "../fixtures/csp";
-import { OTARI, connectKey } from "./agent";
-import { installMockRouter, last, lastToolResult, systemText, toolNames, type ChatBody, type Script } from "./mock-router";
-
-export const CALLER = "http://caller-e2e.fixture.test:3010";
-export const CALLER_DENIED = "http://caller-denied.fixture.test:3010";
+import { connectKey, mockOtari } from "./agent";
+import { last, lastToolResult, systemText, toolNames, type ChatBody, type MockRouter, type Script } from "./mock-router";
 
 const userText = (b: ChatBody) => [...b.messages].reverse().find((m) => m.role === "user")?.content ?? "";
 
@@ -43,13 +41,13 @@ export const callerScript: Script = (body) => {
 export interface CallerSession {
   readonly page: Page;
   readonly requests: Request[];
-  readonly router: Awaited<ReturnType<typeof installMockRouter>>;
+  readonly router: MockRouter;
   send(text: string): Promise<void>;
   chat(): ReturnType<Page["getByTestId"]>;
 }
 
 /** Opens the host-routed fixture caller, connects the Otari test key and returns a chat driver. */
-export async function openCaller(page: Page, origin = CALLER, script: Script = callerScript): Promise<CallerSession> {
+export async function openCaller(page: Page, origin = CALLER_E2E_ORIGIN, script: Script = callerScript): Promise<CallerSession> {
   const requests: Request[] = [];
   page.on("request", (r) => requests.push(r));
   // Test-only shim: the http fixture callers are not secure contexts, so crypto.randomUUID is
@@ -67,7 +65,7 @@ export async function openCaller(page: Page, origin = CALLER, script: Script = c
       });
     }
   });
-  const router = await installMockRouter(page, { routerBase: OTARI.routerBase, model: OTARI.model, script });
+  const router = await mockOtari(page, script);
   await page.goto(`${origin}/`);
   await connectKey(page);
   const mount = page.getByTestId("preview-mount");
@@ -83,13 +81,6 @@ export async function openCaller(page: Page, origin = CALLER, script: Script = c
       await input.press("Enter");
     },
   };
-}
-
-export async function traceEvents(page: Page): Promise<Record<string, unknown>[]> {
-  return page.evaluate(() => {
-    const w = window as unknown as { __nsweb?: { trace: { events: Record<string, unknown>[] } } };
-    return JSON.parse(JSON.stringify(w.__nsweb?.trace.events ?? []));
-  });
 }
 
 export const hostsOf = (requests: Request[]) => requests.map((r) => new URL(r.url()).host);

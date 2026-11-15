@@ -28,3 +28,11 @@ export const CALLER_DENIED_HOST = "caller-denied.fixture.test:3010";
 export const CALLER_HOSTS = [CALLER_E2E_HOST, CALLER_DENIED_HOST] as const;
 export const CALLER_E2E_ORIGIN = `http://${CALLER_E2E_HOST}`;
 export const CALLER_DENIED_ORIGIN = `http://${CALLER_DENIED_HOST}`;
+
+/** Agent artifact paths that the fixture callers serve at their origin root (fixtures mode only). */
+const CALLER_ARTIFACT = /^\/(agent-manifest\.json|[a-z0-9_]+\.network\.json|links\.json|site-actions\.js)$/;
+
+/** True when the request hook must rewrite this request to the caller fixture route: fixtures mode, a caller host (host:port) and an artifact path. */
+export function isCallerArtifactRequest(config: { readonly fixturesEnabled: boolean }, host: string, pathname: string): boolean {
+  return config.fixturesEnabled && (CALLER_HOSTS as readonly string[]).includes(host.toLowerCase()) && CALLER_ARTIFACT.test(pathname);
+}

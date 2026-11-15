@@ -25,11 +25,9 @@ export function AgentPanel({ basePath, label, title }: AgentPanelProps) {
 
   const onConnect = useCallback((c: Connection) => setInference({ router: c.router, key: c.key, model: c.model }), []);
   const onForget = useCallback(() => setInference(null), []);
-  // The key panel renders only after mount: the server and the first client render match,
-  // and no key form exists before the page's scripts run.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const guard = mounted ? pageGuard() : null;
+  // The key panel renders only after mount (originUrl is set by the mount effect): the server and
+  // the first client render match, and no key form exists before the page's scripts run.
+  const guard = originUrl ? pageGuard() : null;
   const headingId = useId();
 
   return (

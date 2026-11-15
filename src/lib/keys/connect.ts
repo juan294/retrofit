@@ -6,7 +6,7 @@
 import type { FetchGuard } from "@/lib/preview/fetch-guard";
 import { detectProvider } from "./detect";
 import { PROVIDERS, providerForRouter, type Provider } from "./providers";
-import { testKey, type PricePerMillion } from "./test-key";
+import { UNSUPPORTED_PROVIDER, testKey, type PricePerMillion } from "./test-key";
 
 export type KeyGuard = Pick<FetchGuard, "authorizeProvider" | "revokeProvider">;
 
@@ -45,7 +45,7 @@ export async function connectKey(input: ConnectInput): Promise<ConnectResult> {
   let provider: Provider | null;
   if (input.router) {
     provider = providerForRouter(input.router);
-    if (!provider) return { ok: false, message: "Retrofit cannot use this provider. Choose one from the list." };
+    if (!provider) return { ok: false, message: UNSUPPORTED_PROVIDER };
   } else {
     provider = detectProvider(key);
     if (!provider) return { ok: false, message: UNRECOGNIZED };

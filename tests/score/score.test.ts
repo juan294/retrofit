@@ -1,36 +1,22 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadConfig } from "@/lib/config";
-import { crawlSite } from "@/lib/fetch/crawl";
-import { createFetchContext } from "@/lib/fetch/context";
+import { beforeAll, describe, expect, it } from "vitest";
 import { CHECK_IDS, MAX_EVIDENCE_CHARS, MAX_REPORT_BYTES, SCORE_WEIGHTS, scoreChecks, scoreSnapshot, type CheckResult, type ScoreReport } from "@/lib/score/score";
 import type { Snapshot } from "@/lib/snapshot/types";
-import { createMemoryStore } from "@/lib/store/memory";
 import expected from "../fixtures/expected-scores.json";
-import { agentified, bakery, hostile, INJECTION, noindexPage, spaOnly, type FixtureSite } from "../fixtures/sites";
-import { serveSites } from "../helpers/sites";
-
-const config = loadConfig({ SESSION_SECRET: "x".repeat(32), RETROFIT_TEST_FIXTURES: "1", FETCH_MAX_BYTES: "1048576" });
+import { INJECTION, type FixtureSite } from "../fixtures/sites";
+import { SITES as FIXTURE_SITES, crawlFixtureSnapshots } from "../helpers/fixture-snapshots";
 
 // Whole-site fixtures. `blocked` is left out: its robots.txt stops the crawl, so there is no snapshot to score.
-const SITES: Record<keyof typeof expected.sites, FixtureSite> = { bakery, spaOnly, agentified, hostile, noindexPage };
-const host = (name: string) => `${name.toLowerCase()}.fixture.test`;
+const SITES: Record<keyof typeof expected.sites, FixtureSite> = FIXTURE_SITES;
 
-let server: Awaited<ReturnType<typeof serveSites>>;
 const reports = new Map<string, ScoreReport>();
 const snapshots = new Map<string, Snapshot>();
 
 beforeAll(async () => {
-  server = await serveSites(() => Object.fromEntries(Object.entries(SITES).map(([name, site]) => [host(name), site])));
-  for (const name of Object.keys(SITES)) {
-    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1 });
-    const snapshot = (await crawlSite(server.origin(host(name)), { config, fetch, clock: Date.now }))!;
+  for (const [name, snapshot] of await crawlFixtureSnapshots()) {
     snapshots.set(name, snapshot);
     reports.set(name, scoreSnapshot(snapshot));
   }
 }, 60_000);
-afterAll(async () => {
-  await server?.close();
-});
 
 describe("score/v1 table", () => {
   // Fails if a weight changes without a new score version, or a check is added or dropped.

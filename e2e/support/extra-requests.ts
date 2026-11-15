@@ -18,8 +18,6 @@ export interface RecordedRequest {
 export interface RequestLog {
   /** Waits for pending header reads and returns every request seen so far. */
   all(): Promise<RecordedRequest[]>;
-  /** Origins of every request seen so far (data: and blob: URLs excluded). */
-  origins(): Promise<string[]>;
 }
 
 const originOf = (url: string) => {
@@ -54,10 +52,7 @@ export function recordRequests(target: Page | BrowserContext): RequestLog {
   };
   target.on("request", onRequest);
   const all = async () => (await Promise.all(pending)).filter((r) => !/^(data|blob):/.test(r.url));
-  return {
-    all,
-    origins: async () => [...new Set((await all()).map((r) => r.origin))],
-  };
+  return { all };
 }
 
 /** The places in one request where `secret` appears: url, a header name, body. */
@@ -117,18 +112,4 @@ export function storageNames(page: Page): Promise<{ local: string[]; session: st
         .filter(Boolean),
     };
   });
-}
-
-/**
- * Answers the runtime's router probe (`GET <router origin>/agent-manifest.json`, runtime/engine.js:41-52)
- * inside the browser with a 404, so a spec never reaches the real provider host. The mock
- * routers only intercept `<routerBase>/**`. The request still appears in request logs.
- */
-export async function stubRouterProbe(page: Page, routerBase: string): Promise<string[]> {
-  const seen: string[] = [];
-  await page.route(`${new URL(routerBase).origin}/agent-manifest.json`, (route) => {
-    seen.push(route.request().url());
-    return route.fulfill({ status: 404, headers: { "access-control-allow-origin": "*" }, body: "not found" });
-  });
-  return seen;
 }

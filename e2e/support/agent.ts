@@ -2,8 +2,9 @@ import type { Page } from "@playwright/test";
 import { expect } from "../fixtures/csp";
 import { fixtureOrigin } from "./global-setup";
 import { installMockRouter, lastToolResult, systemText, toolNames, type Script } from "./mock-router";
+import { OTARI_ROUTER_ORIGIN } from "./router-origin";
 
-export const OTARI = { routerBase: "https://api.otari.ai/api/v1", model: "alibaba/qwen3.8-flash", key: "otk_test_e2e_0123456789abcdef" };
+export const OTARI = { routerBase: `${OTARI_ROUTER_ORIGIN}/api/v1`, model: "alibaba/qwen3.8-flash", key: "otk_test_e2e_0123456789abcdef" };
 
 /**
  * Scripted two-agent turn for a generated preview network: the front agent delegates to
@@ -46,4 +47,12 @@ export async function connectKey(page: Page, key = OTARI.key) {
 
 export async function mockOtari(page: Page, script: Script = previewScript) {
   return installMockRouter(page, { routerBase: OTARI.routerBase, model: OTARI.model, script });
+}
+
+/** The events the runtime recorded in its trace (`window.__nsweb.trace`). */
+export async function traceEvents(page: Page): Promise<Record<string, unknown>[]> {
+  return page.evaluate(() => {
+    const w = window as unknown as { __nsweb?: { trace: { events: Record<string, unknown>[] } } };
+    return JSON.parse(JSON.stringify(w.__nsweb?.trace.events ?? []));
+  });
 }

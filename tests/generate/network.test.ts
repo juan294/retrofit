@@ -3,7 +3,7 @@ import { GenerationFailed, generateNetwork, networkNameFor, type GeneratedPrevie
 import { toSiteContent, type Snapshot } from "@/lib/snapshot/types";
 import { AgentNetwork, validateNetwork } from "../../tools/agentic-web/runtime/kernel.js";
 import { INJECTION } from "../fixtures/sites";
-import { crawlFixtureSnapshots, PUBLIC_ORIGIN, SITES, type SiteName } from "./snapshots";
+import { crawlFixtureSnapshots, PUBLIC_ORIGIN, SITES, type SiteName } from "../helpers/fixture-snapshots";
 
 const NAME = /^[a-z][a-z0-9_]{0,39}$/;
 let snapshots: Map<SiteName, Snapshot>;

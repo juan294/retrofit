@@ -2,13 +2,14 @@
 // visitor ticks "Remember on this device". Every storage access is wrapped: private windows and
 // blocked site data make Web Storage and document.cookie throw.
 
+import type { Connection } from "./connect";
+
 export const KEY_ITEM = "retrofit-key-v1";
-const RETROFIT_PREFIX = "retrofit-key-v1";
 const RUNTIME_PREFIX = "nsweb-byok-";
 // The runtime's loopback mirror cookie (runtime/byok.js:12, :195).
 const RUNTIME_COOKIE_EXPIRE = "nsweb_byok_profiles_v1=; Path=/; Max-Age=0; SameSite=Lax";
 
-export type SavedKey = { provider: string; router: string; model: string; key: string };
+export type SavedKey = Connection;
 export type LoadedKey = SavedKey & { remembered: boolean };
 
 export type KeyStorageEnv = {
@@ -69,7 +70,7 @@ function clearPrefixed(storage: Storage | null | undefined): void {
     const found: string[] = [];
     for (let i = 0; i < storage.length; i += 1) {
       const name = storage.key(i);
-      if (name !== null && (name.startsWith(RETROFIT_PREFIX) || name.startsWith(RUNTIME_PREFIX))) found.push(name);
+      if (name !== null && (name.startsWith(KEY_ITEM) || name.startsWith(RUNTIME_PREFIX))) found.push(name);
     }
     return found;
   }, [] as string[]);

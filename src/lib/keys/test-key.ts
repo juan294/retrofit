@@ -8,6 +8,8 @@ export type KeyTestFailureKind = "unauthorized" | "cors" | "model-missing" | "ne
 
 export type PricePerMillion = { input: number; output: number };
 
+export const UNSUPPORTED_PROVIDER = "Retrofit cannot use this provider. Choose one from the list.";
+
 export type KeyTestResult =
   | { ok: true; models?: string[]; pricePerMillion?: PricePerMillion; checkedOnFirstMessage?: true }
   | { ok: false; kind: KeyTestFailureKind; message: string };
@@ -65,7 +67,7 @@ export async function testKey(input: KeyTestInput): Promise<KeyTestResult> {
   const provider = input.provider ?? (input.router ? providerForRouter(input.router) : null);
   const router = input.router ?? provider?.router;
   if (!provider || !router || providerForRouter(router) === null) {
-    return fail("http", "Retrofit cannot use this provider. Choose one from the list.");
+    return fail("http", UNSUPPORTED_PROVIDER);
   }
   const { name, keyUrl } = provider;
   const model = input.model ?? provider.model;
@@ -124,7 +126,6 @@ export async function testKey(input: KeyTestInput): Promise<KeyTestResult> {
     return fail("model-missing", `${name} does not list the model ${model}. Choose another model under Advanced.`);
   }
   const price = priceOf(match);
-  return price
-    ? { ok: true, models: entries.map((e) => bareId(e.id)), pricePerMillion: price }
-    : { ok: true, models: entries.map((e) => bareId(e.id)) };
+  const models = entries.map((e) => bareId(e.id));
+  return price ? { ok: true, models, pricePerMillion: price } : { ok: true, models };
 }

@@ -4,7 +4,7 @@ import { createFetchContext } from "@/lib/fetch/context";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { createMemoryStore } from "@/lib/store/memory";
 import { agentified, bakery, hostile, noindexPage, spaOnly, type FixtureSite } from "../fixtures/sites";
-import { serveSites } from "../helpers/sites";
+import { serveSites } from "./sites";
 
 const config = loadConfig({ SESSION_SECRET: "x".repeat(32), RETROFIT_TEST_FIXTURES: "1", FETCH_MAX_BYTES: "1048576" });
 
@@ -13,7 +13,7 @@ export const SITES = { bakery, spaOnly, agentified, hostile, noindexPage } satis
 export type SiteName = keyof typeof SITES;
 const host = (name: string) => `${name.toLowerCase()}.fixture.test`;
 
-/** Crawls every fixture site once, as tests/score/score.test.ts does, and returns the snapshots. */
+/** Crawls every fixture site once and returns the snapshots. */
 export async function crawlFixtureSnapshots(): Promise<Map<SiteName, Snapshot>> {
   const server = await serveSites(() => Object.fromEntries(Object.entries(SITES).map(([name, site]) => [host(name), site])));
   try {
@@ -30,4 +30,4 @@ export async function crawlFixtureSnapshots(): Promise<Map<SiteName, Snapshot>> 
   }
 }
 
-export const PUBLIC_ORIGIN = "https://retrofit.test";
+export { PUBLIC_ORIGIN } from "./server-deps";

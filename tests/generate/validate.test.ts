@@ -3,7 +3,7 @@ import { visitorTexts } from "@/lib/analysis/texts";
 import { GenerationFailed, generateNetwork, validateGenerated } from "@/lib/generate/network";
 import { handlePreviewFile } from "@/lib/preview/artifacts";
 import type { Snapshot } from "@/lib/snapshot/types";
-import { crawlFixtureSnapshots, PUBLIC_ORIGIN } from "./snapshots";
+import { crawlFixtureSnapshots, PUBLIC_ORIGIN } from "../helpers/fixture-snapshots";
 import { previewRequest, readyBakeryPreview, type ReadyPreview } from "./preview-setup";
 
 let bakery: Snapshot;

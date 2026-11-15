@@ -1,10 +1,10 @@
+import { KEY_ITEM } from "@/lib/keys/storage";
 import { test, expect } from "./fixtures/csp";
 import { OTARI, analyzeFixture, connectKey, mockOtari } from "./support/agent";
-import { RETROFIT_ORIGIN, recordRequests, stubRouterProbe, type Page, recordStorageWrites, storageNames, whereSecretAppears } from "./support/extra-requests";
+import { RETROFIT_ORIGIN, recordRequests, type Page, recordStorageWrites, storageNames, whereSecretAppears } from "./support/extra-requests";
 
 const RUNTIME_PREFIX = "nsweb-byok-";
 const RUNTIME_COOKIE = "nsweb_byok_profiles_v1";
-const KEY_ITEM = "retrofit-key-v1";
 
 /** Sends one question in the preview and waits for the scripted answer. */
 async function askHours(page: Page) {
@@ -18,7 +18,6 @@ async function askHours(page: Page) {
 test("the key goes only to the provider, never to Retrofit's origin", async ({ page, context }) => {
   const log = recordRequests(context);
   const router = await mockOtari(page);
-  await stubRouterProbe(page, OTARI.routerBase);
   const id = await analyzeFixture(page, "bakery.fixture.test");
   await connectKey(page);
   await askHours(page);
@@ -61,7 +60,6 @@ test("the key goes only to the provider, never to Retrofit's origin", async ({ p
 test("the runtime writes no nsweb-byok item during a chat, and Forget my key clears every key item", async ({ page }) => {
   const writes = await recordStorageWrites(page);
   await mockOtari(page);
-  await stubRouterProbe(page, OTARI.routerBase);
   await analyzeFixture(page, "bakery.fixture.test");
   await connectKey(page);
   await askHours(page);
@@ -108,7 +106,6 @@ test("the runtime writes no nsweb-byok item during a chat, and Forget my key cle
 
 test("with Remember on this device unticked, a new tab does not get the key", async ({ page, context }) => {
   await mockOtari(page);
-  await stubRouterProbe(page, OTARI.routerBase);
   const id = await analyzeFixture(page, "bakery.fixture.test");
   await expect(page.getByRole("checkbox", { name: "Remember on this device" })).not.toBeChecked();
   await connectKey(page);
@@ -116,7 +113,6 @@ test("with Remember on this device unticked, a new tab does not get the key", as
 
   const second = await context.newPage();
   const router2 = await mockOtari(second);
-  await stubRouterProbe(second, OTARI.routerBase);
   await second.goto(`/r/${id}`);
   await expect(second.getByTestId("score-total")).toBeVisible({ timeout: 30_000 });
   await expect(second.getByLabel("Paste your key")).toBeVisible();
@@ -130,7 +126,6 @@ test("with Remember on this device unticked, a new tab does not get the key", as
 
 test("with Remember on this device ticked, a new tab restores the key", async ({ page, context }) => {
   await mockOtari(page);
-  await stubRouterProbe(page, OTARI.routerBase);
   const id = await analyzeFixture(page, "bakery.fixture.test");
   await page.getByRole("checkbox", { name: "Remember on this device" }).check();
   await connectKey(page);
@@ -140,7 +135,6 @@ test("with Remember on this device ticked, a new tab restores the key", async ({
 
   const second = await context.newPage();
   const router2 = await mockOtari(second);
-  await stubRouterProbe(second, OTARI.routerBase);
   await second.goto(`/r/${id}`);
   await expect(second.getByText(/Connected to Otari/)).toBeVisible({ timeout: 30_000 });
   await expect(second.getByLabel("Paste a different key")).toBeVisible();

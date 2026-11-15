@@ -1,7 +1,6 @@
 import { createFetchGuard, installFetchGuard, type FetchGuard } from "./fetch-guard";
 
 let guard: FetchGuard | undefined;
-let installed = false;
 
 /** The page's single fetch guard, created on first use in the browser. */
 export function pageGuard(): FetchGuard {
@@ -19,10 +18,8 @@ export function pageGuard(): FetchGuard {
  */
 export function installPageGuard(target: { fetch: typeof fetch } = window): FetchGuard {
   const g = pageGuard();
-  if (!installed) {
-    installFetchGuard(target, g);
-    installed = true;
-  }
+  // installFetchGuard replaces target.fetch only on the first install; the release is never called.
+  installFetchGuard(target, g);
   return g;
 }
 

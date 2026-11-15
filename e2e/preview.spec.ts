@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures/csp";
-import { analyzeFixture, connectKey, mockOtari } from "./support/agent";
+import { analyzeFixture, connectKey, mockOtari, traceEvents } from "./support/agent";
 
 test("a visitor previews the bakery agent with their own key", async ({ page }) => {
   const router = await mockOtari(page);
@@ -25,10 +25,7 @@ test("a visitor previews the bakery agent with their own key", async ({ page }) 
   await expect(page.getByTestId("preview-label")).toBeVisible();
 
   // The content tool ran, as the trace records (the visible status names it "Website Search Site Content").
-  const tools = await page.evaluate(() => {
-    const w = window as unknown as { __nsweb?: { trace: { events: { kind: string; tool?: string }[] } } };
-    return (w.__nsweb?.trace.events ?? []).filter((e) => e.kind === "tool").map((e) => e.tool);
-  });
+  const tools = (await traceEvents(page)).filter((e) => e.kind === "tool").map((e) => e.tool);
   expect(tools).toContain("website_search_site_content");
   expect(router.bodies.length).toBeGreaterThanOrEqual(4);
 });

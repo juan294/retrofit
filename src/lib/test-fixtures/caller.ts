@@ -18,7 +18,7 @@ import { CALLER_DENIED_HOST, CALLER_E2E_HOST, FIXTURE_PEER_ORIGINS, PEER_A_ORIGI
  */
 export const CALLER_PRIVATE_SLY_KEY = "backend_token";
 
-export interface FixtureArtifact {
+interface FixtureArtifact {
   readonly status: number;
   readonly headers: Record<string, string>;
   readonly body: string;

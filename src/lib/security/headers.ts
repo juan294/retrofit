@@ -69,7 +69,7 @@ interface HeaderRule {
  * check_partner.mjs read them from another origin, so each one allows every origin.
  * The private previews under /p/ never get CORS.
  */
-export const PUBLIC_AGENT_FILES = [
+const PUBLIC_AGENT_FILES = [
   "/agent-manifest.json",
   "/retrofit_guide.network.json",
   "/links.json",

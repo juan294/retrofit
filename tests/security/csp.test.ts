@@ -15,7 +15,7 @@ function directive(csp: string, name: string): string[] {
 
 describe("page CSP", () => {
   // The same composition the request hook uses (src/proxy.ts).
-  const csp = pageCsp(prod, "abc123", { phase: connectOrigins(prod) });
+  const csp = pageCsp(prod, "abc123", { phase: connectOrigins() });
 
   // Fails if a host source or strict-dynamic is added to script-src.
   it("allows only self and the nonce in script-src", () => {

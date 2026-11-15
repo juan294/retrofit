@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateNetwork, type GeneratedPreview } from "@/lib/generate/network";
 import type { Snapshot } from "@/lib/snapshot/types";
-import { crawlFixtureSnapshots, PUBLIC_ORIGIN, SITES, type SiteName } from "./snapshots";
+import { crawlFixtureSnapshots, PUBLIC_ORIGIN, SITES, type SiteName } from "../helpers/fixture-snapshots";
 
 // The organizers' own build script is the oracle (research 2026-11-15-phase-4-entry.md §3).
 const run = promisify(execFile);

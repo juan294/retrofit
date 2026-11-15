@@ -14,12 +14,14 @@ export interface ChatBody {
   stream?: boolean;
 }
 export type Turn = { text: string } | { call: { name: string; args: Record<string, unknown> }[] };
-export type Script = (body: ChatBody, ctx: { n: number }) => Turn;
+export type Script = (body: ChatBody) => Turn;
 
 export interface MockRouter {
   readonly bodies: ChatBody[];
   readonly authorizations: string[];
   readonly modelRequests: number;
+  /** URLs of the runtime's router probes (`GET <router origin>/agent-manifest.json`), answered with a 404. */
+  readonly probes: string[];
 }
 
 /** Tool names offered to the model in this request. */
@@ -60,13 +62,14 @@ function sse(turn: Turn, model: string): string {
  * with the script's turn as SSE. Every request body and Authorization header is recorded.
  */
 export async function installMockRouter(page: Page, o: { routerBase: string; model: string; script: Script }): Promise<MockRouter> {
-  const state = { bodies: [] as ChatBody[], authorizations: [] as string[], modelRequests: 0 };
+  const state = { bodies: [] as ChatBody[], authorizations: [] as string[], modelRequests: 0, probes: [] as string[] };
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "GET, POST, OPTIONS" };
   // The runtime probes `<router origin>/agent-manifest.json` once per boot (engine.js:41-52).
-  // Answer it here so no test ever reaches the real provider host.
-  await page.route(`${new URL(o.routerBase).origin}/agent-manifest.json`, (route: Route) =>
-    route.fulfill({ status: 404, headers: cors, body: "not found" }),
-  );
+  // Answer it here so no test ever reaches the real provider host. The request still appears in request logs.
+  await page.route(`${new URL(o.routerBase).origin}/agent-manifest.json`, (route: Route) => {
+    state.probes.push(route.request().url());
+    return route.fulfill({ status: 404, headers: cors, body: "not found" });
+  });
   await page.route(`${o.routerBase}/**`, async (route: Route) => {
     const req = route.request();
     if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
@@ -79,7 +82,7 @@ export async function installMockRouter(page: Page, o: { routerBase: string; mod
     if (req.method() === "POST" && path.endsWith("/chat/completions")) {
       const body = JSON.parse(req.postData() ?? "{}") as ChatBody;
       state.bodies.push(body);
-      const turn = o.script(body, { n: state.bodies.length });
+      const turn = o.script(body);
       return route.fulfill({ status: 200, headers: { ...cors, "content-type": "text/event-stream" }, body: sse(turn, o.model) });
     }
     return route.fulfill({ status: 404, headers: cors, body: "not found" });

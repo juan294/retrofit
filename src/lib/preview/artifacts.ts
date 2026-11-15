@@ -19,7 +19,7 @@ const TYPES: Record<string, string> = { ".js": "text/javascript; charset=utf-8",
 // One plain file name inside bridge/: no dot files, no separators, no traversal.
 const BRIDGE_FILE = /^[a-z0-9][a-z0-9-]*\.(?:html|js|json)$/;
 /** What the runtime's links loader reads: `doc.networks[<name>]`, here nothing (runtime/engine.js `_loadPublishedLinks`). */
-export const EMPTY_LINKS = { version: 1, networks: {} } as const;
+const EMPTY_LINKS = { version: 1, networks: {} } as const;
 
 function respond(status: number, body: string, contentType: string): Response {
   return new Response(body, {

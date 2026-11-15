@@ -6,9 +6,9 @@
 // field is uncontrolled and cleared on every submit, and React state never holds the key.
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { connectKey, type Connection, type KeyGuard } from "@/lib/keys/connect";
+import { connectKey, priceText, type Connection, type KeyGuard } from "@/lib/keys/connect";
 import { detectProvider } from "@/lib/keys/detect";
-import { PROVIDERS, providerForRouter } from "@/lib/keys/providers";
+import { PROVIDERS, providerForRouter, type Provider } from "@/lib/keys/providers";
 import { forgetAll, loadKey, saveKey } from "@/lib/keys/storage";
 
 export type KeyPanelProps = {
@@ -21,7 +21,7 @@ export type KeyPanelProps = {
   freePathActive?: boolean;
 };
 
-type Connected = { provider: string; keyUrl: string; price: string; note: string | null };
+type Connected = { provider: string; price: string; note: string | null };
 
 const field = { borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" };
 const muted = { color: "var(--color-muted)" };
@@ -30,7 +30,7 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
   const ids = useId();
   const keyRef = useRef<HTMLInputElement>(null);
   const attempt = useRef(0);
-  const [detected, setDetected] = useState<string | null>(null);
+  const [detected, setDetected] = useState<Provider | null>(null);
   const [router, setRouter] = useState("");
   const [model, setModel] = useState("");
   const [remember, setRemember] = useState(false);
@@ -39,7 +39,7 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
   const [connected, setConnected] = useState<Connected | null>(null);
 
   const advancedProvider = router ? providerForRouter(router) : null;
-  const keyPage = advancedProvider ?? (detected ? PROVIDERS.find((p) => p.name === detected) : null) ?? null;
+  const keyPage = advancedProvider ?? detected;
 
   // Restore a key saved earlier in this tab (or remembered on this device) once on mount.
   const restored = useRef(false);
@@ -50,7 +50,7 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
     const provider = saved ? providerForRouter(saved.router) : null;
     if (!saved || !provider) return;
     setRemember(saved.remembered);
-    setConnected({ provider: provider.name, keyUrl: provider.keyUrl, price: "Cost depends on your provider.", note: null });
+    setConnected({ provider: provider.name, price: priceText(undefined), note: null });
     onConnect({ provider: provider.name, router: provider.router, model: saved.model, key: saved.key });
   }, [onConnect]);
 
@@ -71,9 +71,8 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
       setError(result.message);
       return;
     }
-    const provider = providerForRouter(result.connection.router)!;
     saveKey(result.connection, { remember });
-    setConnected({ provider: provider.name, keyUrl: provider.keyUrl, price: result.price, note: result.note });
+    setConnected({ provider: result.connection.provider, price: result.price, note: result.note });
     onConnect(result.connection);
   }
 
@@ -134,7 +133,7 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
             className="min-w-0 flex-1 rounded border px-3 py-2"
             style={field}
             aria-describedby={`${ids}-hint${error ? ` ${ids}-error` : ""}`}
-            onChange={(e) => setDetected(detectProvider(e.currentTarget.value)?.name ?? null)}
+            onChange={(e) => setDetected(detectProvider(e.currentTarget.value))}
           />
           <button
             type="submit"
@@ -146,7 +145,7 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
           </button>
         </div>
         <p id={`${ids}-hint`} className="text-sm" style={muted}>
-          {detected ? <>Detected: {detected}. </> : null}
+          {detected ? <>Detected: {detected.name}. </> : null}
           The key goes straight from this browser to your provider. Use a key with a spending limit.
         </p>
         {keyPage ? (

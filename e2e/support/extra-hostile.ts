@@ -1,10 +1,11 @@
 import type { Page } from "@playwright/test";
+import { THIRD_ORIGIN } from "@/lib/test-fixtures/origins";
 import { expect } from "../fixtures/csp";
 import { lastToolResult, toolNames, type Script } from "./mock-router";
 import type { RequestLog } from "./extra-requests";
 
 /** Never configured anywhere (tests/peer-fixture); a request there means a payload fetched. */
-export const THIRD = "http://third.fixture.test:3013";
+export const THIRD = THIRD_ORIGIN;
 export const IMG = "<img src=x onerror=window.__pwned=1>";
 export const SCRIPT = "<script>window.__pwned=1</script>";
 export const JS_LINK = "[click](javascript:window.__pwned=1)";
@@ -57,14 +58,6 @@ export function hostileScript(finalAnswer: string): Script {
     if (tools.includes("website_get_site_records")) calls.push({ name: "website_get_site_records", args: { collection: "products" } });
     return calls.length ? { call: calls } : { text: `No tools. ${ALL}` };
   };
-}
-
-/** Tool results the runtime recorded in its trace, as text. */
-export async function traceToolResults(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
-    const w = window as unknown as { __nsweb?: { trace: { events: Record<string, unknown>[] } } };
-    return (w.__nsweb?.trace.events ?? []).filter((e) => e.kind === "tool_result" || e.kind === "tool").map((e) => JSON.stringify(e));
-  });
 }
 
 /**

@@ -68,7 +68,6 @@ export function Preview({ originUrl, inference, label }: PreviewProps) {
         // A cancelled boot must not write its peers into the guard the next preview uses.
         if (cancelled) return;
         guard.setPolicyPeers(Array.isArray(manifest.allowed_peers) ? manifest.allowed_peers.filter((x): x is string => typeof x === "string") : []);
-        if (cancelled) return;
 
         mount.replaceChildren();
         const chat = document.createElement("div");
@@ -90,7 +89,11 @@ export function Preview({ originUrl, inference, label }: PreviewProps) {
           router: inference.router,
           model: inference.model,
         });
-        if (cancelled) return;
+        if (cancelled) {
+          // A boot that finished after unmount re-exposed its engine (and key) on window.__nsweb.
+          delete (window as { __nsweb?: unknown }).__nsweb;
+          return;
+        }
         handle.engine.requestConsent = guard.wrapRequestConsent(handle.engine.requestConsent);
         handle.trace.addEventListener("event", (e) => {
           const notice = noticeForTrace((e as CustomEvent<Record<string, unknown>>).detail);

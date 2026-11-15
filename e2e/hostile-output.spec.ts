@@ -4,9 +4,9 @@
 // fixture default). Paths fed only by peers, the generator or constants (consent card, linker
 // form, network tree, header, settings, action review) are not reachable from a preview.
 import { test, expect } from "./fixtures/csp";
-import { OTARI, analyzeFixture, connectKey } from "./support/agent";
-import { installMockRouter, type MockRouter } from "./support/mock-router";
-import { RETROFIT_ORIGIN, recordRequests, stubRouterProbe, type BrowserContext, type Page, type RequestLog } from "./support/extra-requests";
+import { OTARI, analyzeFixture, connectKey, mockOtari } from "./support/agent";
+import type { MockRouter } from "./support/mock-router";
+import { RETROFIT_ORIGIN, recordRequests, type BrowserContext, type Page, type RequestLog } from "./support/extra-requests";
 import { ALL, CSS, CSS_URL, IMG, JS_LINK, RAW_JS_LINK, SCRIPT, THIRD, expectInert, hostileScript, injectHostileContent } from "./support/extra-hostile";
 
 const ALLOWED = [RETROFIT_ORIGIN, new URL(OTARI.routerBase).origin];
@@ -42,8 +42,7 @@ interface Session {
 async function hostileSession(page: Page, context: BrowserContext, finalAnswer: string, o: { dev?: boolean } = {}): Promise<Session> {
   const log = recordRequests(context);
   if (o.dev) await page.addInitScript(() => localStorage.setItem("nsweb-dev", "1"));
-  const router = await installMockRouter(page, { routerBase: OTARI.routerBase, model: OTARI.model, script: hostileScript(finalAnswer) });
-  await stubRouterProbe(page, OTARI.routerBase);
+  const router = await mockOtari(page, hostileScript(finalAnswer));
   const injected = await injectHostileContent(page);
   await analyzeFixture(page, "hostile.fixture.test");
   await connectKey(page);
@@ -182,13 +181,12 @@ test("error bubble shows a hostile router error body as text", async ({ page, co
   const body = `${ALL} ${MARKDOWN}`;
   let errors = 0;
   const log = recordRequests(context);
-  await installMockRouter(page, { routerBase: OTARI.routerBase, model: OTARI.model, script: hostileScript(MARKDOWN) });
+  await mockOtari(page, hostileScript(MARKDOWN));
   await page.route(`${OTARI.routerBase}/chat/completions`, async (route) => {
     if (route.request().method() === "OPTIONS") return route.fallback();
     errors++;
     return route.fulfill({ status: 500, headers: { "access-control-allow-origin": "*", "content-type": "text/html" }, body });
   });
-  await stubRouterProbe(page, OTARI.routerBase);
   await analyzeFixture(page, "hostile.fixture.test");
   await connectKey(page);
   const mount = page.getByTestId("preview-mount");

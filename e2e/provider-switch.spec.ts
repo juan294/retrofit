@@ -1,16 +1,14 @@
 import { test, expect } from "./fixtures/csp";
-import { OTARI, analyzeFixture, connectKey, previewScript } from "./support/agent";
+import { OTARI, analyzeFixture, connectKey, mockOtari, previewScript } from "./support/agent";
 import { installMockRouter, type MockRouter } from "./support/mock-router";
-import { RETROFIT_ORIGIN, recordRequests, stubRouterProbe, type Page, type RecordedRequest } from "./support/extra-requests";
+import { RETROFIT_ORIGIN, recordRequests, type Page, type RecordedRequest } from "./support/extra-requests";
 
 const GROQ = { routerBase: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-120b", key: "gsk_test_e2e_0123456789abcdef" };
 const BLOCKED = /Retrofit blocked a request to https:\/\/api\.groq\.com that was not approved\./;
 
 async function routers(page: Page): Promise<{ a: MockRouter; b: MockRouter }> {
-  const a = await installMockRouter(page, { routerBase: OTARI.routerBase, model: OTARI.model, script: previewScript });
+  const a = await mockOtari(page);
   const b = await installMockRouter(page, { routerBase: GROQ.routerBase, model: GROQ.model, script: previewScript });
-  await stubRouterProbe(page, OTARI.routerBase);
-  await stubRouterProbe(page, GROQ.routerBase);
   return { a, b };
 }
 

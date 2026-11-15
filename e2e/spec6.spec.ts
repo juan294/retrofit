@@ -1,7 +1,8 @@
 import { test, expect } from "./fixtures/csp";
 import { fixtureOrigin } from "./support/global-setup";
-import { CALLER_DENIED, hostsOf, openCaller, traceEvents } from "./support/caller";
-import { OTARI } from "./support/agent";
+import { CALLER_DENIED_ORIGIN } from "@/lib/test-fixtures/origins";
+import { hostsOf, openCaller } from "./support/caller";
+import { OTARI, traceEvents } from "./support/agent";
 
 const PEER_A = "peer-a.fixture.test:3011";
 const PEER_A_FACT = "The Peer A demo harbor ferry leaves at 09:30 every day.";
@@ -72,7 +73,7 @@ test.describe("spec §6 locally (organizers' cases L1 to L10, C1 to C8)", () => 
   });
 
   test("a peer outside allowed_peers shows a visible refusal and is never contacted", async ({ page }) => {
-    const s = await openCaller(page, CALLER_DENIED);
+    const s = await openCaller(page, CALLER_DENIED_ORIGIN);
     await s.send("call peer_demo");
     await s.chat().locator(".ns-consent").last().getByRole("button", { name: "Allow", exact: true }).click();
     await expect(page.getByTestId("preview-notices").locator('[data-kind="denied"]')).toContainText(PEER_A, { timeout: 20_000 });
