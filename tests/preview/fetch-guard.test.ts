@@ -569,6 +569,33 @@ describe("runtime generations (V08)", () => {
     expect(calls[0]!.signal?.aborted).toBe(true);
   });
 
+  // Review S4: fails if a replaced runtime's pending site-content or peer request can still complete
+  // (its tool round-trip would continue after the switch).
+  it("aborts a retired runtime's pending agent-artifact and peer requests", async () => {
+    const { guard, calls } = holding();
+    guard.setRouter(FREE);
+    guard.setPolicyPeers([PEER_A]);
+    guard.approveFromConsent("peer-a.fixture.test:3011");
+    const artifact = guard.fetch(`${PAGE}/p/abc123/site-content.json`);
+    const peer = guard.fetch(`${PEER_A}/peer_demo.network.json`);
+    await Promise.resolve();
+    expect(calls).toHaveLength(2);
+    guard.setRouter(ROUTER_A);
+    await expect(artifact).rejects.toThrow(RETIRED_TEXT);
+    await expect(peer).rejects.toThrow(RETIRED_TEXT);
+    expect(calls.every((c) => c.signal?.aborted)).toBe(true);
+  });
+
+  // Fails if artifact requests made while no runtime is active get an abort signal they never had.
+  it("leaves agent-artifact requests without a runtime unchanged", async () => {
+    const { guard, calls } = holding();
+    const pending = guard.fetch(`${PAGE}/p/abc123/agent-manifest.json`);
+    await Promise.resolve();
+    expect(calls[0]!.signal).toBeUndefined();
+    calls[0]!.release();
+    await expect(pending).resolves.toBeInstanceOf(Response);
+  });
+
   // Fails if retiring a runtime also aborts ordinary same-origin requests (score polling, the session renewal).
   it("does not abort other same-origin requests when a runtime retires", async () => {
     const { guard, calls } = holding();
