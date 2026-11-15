@@ -4,7 +4,7 @@
 > Worktree `retrofit-worktrees/url-to-preview`, branch `feat/url-to-preview`, `HEAD` `69afc8554412972adeda10d409d6ea28dde23b83` at writing. Node v24.22.3, Playwright 1.65.1, headless Chromium.
 > Specification commit: `git ls-remote https://github.com/cognizant-ai-labs/agentic-web HEAD` returned `63a956cf4653f610b1c238c70946f4d7647d17a8` on 2026-11-15, the same commit the plan pins. The local clone in `.local/vendor/agentic-web` is at that commit. The runtime's write handling is therefore unchanged from the plan's reading.
 > Runtime under test: the vendored copy in `public/runtime/`, served by path and not modified.
-> Evidence: `.local/spikes/` (ignored). Each scenario has a JSON record and, where a dialog was open, a screenshot; Playwright traces are in `.local/spikes/test-results/<test>/trace.zip`. The throwaway fixture source is archived in `.local/spikes/source/`; `spikes/` was deleted.
+> Evidence: `.local/spikes/` (ignored), archived in the canonical checkout at `.local/runs/2026-11-15-url-to-preview/spikes/`. Each scenario has a JSON record and, where a dialog was open, a screenshot; Playwright traces are in `.local/spikes/test-results/<test>/trace.zip`. The throwaway fixture source is archived in `.local/spikes/source/`; `spikes/` was deleted.
 
 ## Recommendation
 
@@ -45,6 +45,8 @@ Observed (VERIFIED, `.local/spikes/1a-irreversible.json`, `1a-add-dialog.png`, `
 - The model's `website_add_to_cart` and `website_place_order` calls each opened the runtime dialog before the handler ran. The dialog showed the destination origin, the effect, the description and every argument: `place_order — http://localhost:3012 (irreversible)` then `{"expectedVersion": 1, "items": [{"item": "croissant", "qty": 2}], "totalCents": 700}`.
 - Binding: a host `onActionConfirm` hook changed `qty` to 12 and `totalCents` to 1 in the items it received, after the visitor approved. The handlers ran with `qty: 2` and `totalCents: 700`. The model has no channel to change a pending call; the plan is fixed before the dialog opens.
 - Receipts reached the model with `status: "succeeded"`, the action ref and the `requestId`; the order stored the same `requestId`.
+
+Confirmed booking (VERIFIED, `1c-irreversible-book-confirmed.json`, `1c-book-confirm-dialog.png`, `1c-booking-stored.png`; added on 2026-11-15 for validation finding V14): the scripted model called `website_book_table` with `{"name": "Test Visitor", "date": "2026-12-01", "time": "19:00", "guests": 2}`. The runtime dialog showed `book_table — http://localhost:3012 (irreversible)`, the description and these four arguments. No booking existed before the visitor confirmed. A host `onActionConfirm` hook (`mutate=1`, extended for this case) changed `guests` to 8 and `name` to "Changed After Approval" after approval. The exact recorded mutation was one booking, `{"name": "Test Visitor", "date": "2026-12-01", "time": "19:00", "guests": 2, "id": "BK-1"}`, from one `execute` log entry with the reviewed arguments and `requestId` `5e3dfe85-2857-4f3a-b38c-4b4bd594a80d:0`. The cart and the orders stayed empty. The model received `{"status": "succeeded", "result": {"ok": true, "booking": {..., "id": "BK-1"}}}` with the same `requestId`, and made one more request. The scenario asserts these facts in code; it passed.
 
 Two calls in one reply and declines (VERIFIED, `1b-irreversible-parallel-decline.json`, `1b-book-dialog.png`): the two `add_to_cart` calls opened two dialogs in turn (website tools are `parallelSafe: false`, `runner.js:207`, `:250`). Approving the first and cancelling the second added only the first item; the second receipt was `{"status": "cancelled", "message": "Customer declined; nothing was submitted."}` (`runner.js:359`). A cancelled `book_table` stored nothing.
 
@@ -146,6 +148,7 @@ Consequence: each demo merchant must run its bundle on its own origin. A merchan
 | --- | --- | --- | --- |
 | 1a option 1 dialog and binding | `1a-irreversible.json` | `1a-add-dialog.png`, `1a-order-dialog.png` | `test-results/spike-1a-*/trace.zip` |
 | 1b two calls, declines | `1b-irreversible-parallel-decline.json` | `1b-book-dialog.png` | `test-results/spike-1b-*/trace.zip` |
+| 1c confirmed booking, binding | `1c-irreversible-book-confirmed.json` | `1c-book-confirm-dialog.png`, `1c-booking-stored.png` | `test-results/spike-1c/trace.zip` |
 | 2a option 2 handler dialog, extra key | `2a-write-guard.json` | `2a-handler-dialog.png` | `test-results/spike-2a-*/trace.zip` |
 | 2b option 2 via proposal | `2b-write-guard-proposal.json` | | `test-results/spike-2b-*/trace.zip` |
 | 2c option 2 naive timeout | `2c-write-guard-naive-timeout.json` | `2c-dialog-after-timeout.png` | `test-results/spike-2c-*/trace.zip` |
@@ -156,3 +159,5 @@ Consequence: each demo merchant must run its bundle on its own origin. A merchan
 | 5 cross-origin | `5-cross-origin.json` | `5-cross-origin.png` | `test-results/spike-5-*/trace.zip` |
 
 All ten scenarios ran in one Playwright run (10 passed, 20.6 s). The merchant server pid 16192 was recorded in `.local/spikes/merchant.pid` at start and stopped with `kill 16192`; port 3012 was free afterwards.
+
+The 1c booking case ran later, on 2026-11-15 at 13:39 UTC, from a copy of the archived source in the ignored `.local/spikes-v14/` of worktree `retrofit-worktrees/repair-evidence` (branch `fix/repair-evidence`), with the same unmodified `public/runtime/`. Only `1c` ran (1 passed, 0.9 s). The merchant server pid 47752 was recorded at start and stopped with `kill 47752`; port 3012 was free afterwards. The record, the two screenshots, the trace and the source used (`source-1c/`, with `run-1c.log`) were added as new files to `.local/runs/2026-11-15-url-to-preview/spikes/`; no earlier file there changed.
