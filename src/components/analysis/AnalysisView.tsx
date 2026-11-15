@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { AgentPanel } from "@/components/preview/AgentPanel";
 import { localizeRetry } from "./retry-time";
-import { COUNTING_ATTEMPTS, requestAnalysis } from "./request";
+import { COUNTING_ATTEMPTS } from "./request";
+import { createStartController, type StartController, type StartState } from "./start-controller";
 import { pollAction, pollDelay } from "./poll";
 
 interface Failure {
@@ -185,36 +186,29 @@ const COUNTING_RETRY_MS = 2000;
 
 function Notice({ failure, inputOrigin }: { failure: Failure; inputOrigin: string }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
   const [retryError, setRetryError] = useState<Failure | null>(null);
-  const [waiting, setWaiting] = useState<string | null>(null);
-  async function retry(attempts?: number) {
-    setBusy(true);
-    const result = await requestAnalysis(inputOrigin, { onRetry: setWaiting, attempts });
-    setWaiting(null);
-    if (result.ok) {
-      router.push(`/r/${result.id}`);
-      return;
-    }
-    setRetryError(result.failure);
-    setBusy(false);
-  }
-  // A job held back while the site's daily count was undecided: start again by itself, once, after a moment.
+  const [{ busy, waiting }, setState] = useState<StartState>({ busy: false, waiting: null });
+  const starts = useRef<StartController | null>(null);
   const autoRetry = failure.code === "counting";
+  // One start at a time: a click during the automatic retry's wait replaces it, and leaving the page
+  // aborts the start so a late answer never navigates.
   useEffect(() => {
-    if (!autoRetry) return;
-    setWaiting(visitorTexts.countingRetry);
-    const timer = setTimeout(() => void retry(COUNTING_ATTEMPTS - 1), COUNTING_RETRY_MS);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once for the failure shown on mount.
-  }, [autoRetry]);
+    const controller = createStartController({
+      onState: setState,
+      onResult: (r) => (r.ok ? router.push(`/r/${r.id}`) : setRetryError(r.failure)),
+    });
+    starts.current = controller;
+    // A job held back while the site's daily count was undecided: start again by itself after a moment.
+    if (autoRetry) controller.schedule(inputOrigin, COUNTING_RETRY_MS, visitorTexts.countingRetry, COUNTING_ATTEMPTS - 1);
+    return () => controller.dispose();
+  }, [autoRetry, inputOrigin, router]);
   const shown = retryError ?? failure;
   return (
     <div className="mt-8" role="alert">
       <p>{waiting ?? localizeRetry(shown.message, shown.retryAt)}</p>
       <p className="mt-4 flex gap-3">
         {RETRYABLE.has(failure.code) && !(failure.retryAt && Date.parse(failure.retryAt) > Date.now()) ? (
-          <button type="button" onClick={() => void retry()} disabled={busy} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
+          <button type="button" onClick={() => starts.current?.start(inputOrigin)} disabled={busy} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
             {busy ? "Starting…" : failure.code === "expired" ? "Analyze again" : "Retry"}
           </button>
         ) : null}

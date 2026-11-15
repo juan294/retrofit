@@ -1,17 +1,27 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { localizeRetry } from "./analysis/retry-time";
-import { requestAnalysis } from "./analysis/request";
+import { createStartController, type StartController, type StartState } from "./analysis/start-controller";
 
 export function UrlForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [waiting, setWaiting] = useState<string | null>(null);
+  const [{ busy, waiting }, setState] = useState<StartState>({ busy: false, waiting: null });
+  const starts = useRef<StartController | null>(null);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  // One start at a time; leaving the page aborts it, so a late answer never navigates.
+  useEffect(() => {
+    const controller = createStartController({
+      onState: setState,
+      onResult: (r) => (r.ok ? router.push(`/r/${r.id}`) : setError(localizeRetry(r.failure.message, r.failure.retryAt))),
+    });
+    starts.current = controller;
+    return () => controller.dispose();
+  }, [router]);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     const url = String(new FormData(event.currentTarget).get("url") ?? "").trim();
@@ -19,15 +29,7 @@ export function UrlForm() {
       setError("Paste the address of a public website.");
       return;
     }
-    setBusy(true);
-    const result = await requestAnalysis(url, { onRetry: setWaiting });
-    setWaiting(null);
-    if (result.ok) {
-      router.push(`/r/${result.id}`);
-      return;
-    }
-    setError(localizeRetry(result.failure.message, result.failure.retryAt));
-    setBusy(false);
+    starts.current?.start(url);
   }
 
   return (
@@ -56,7 +58,8 @@ export function UrlForm() {
           {busy ? "Starting…" : "Score my site"}
         </button>
       </div>
-      {waiting ? <p role="status">{waiting}</p> : null}
+      {/* Always mounted, so a screen reader announces the text when it appears. */}
+      <p role="status">{waiting ?? ""}</p>
       {error ? (
         <p id="site-url-error" role="alert" style={{ color: "var(--color-danger)" }}>
           {error}

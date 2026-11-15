@@ -74,4 +74,30 @@ describe("requestAnalysis (validation V04)", () => {
     const garbled = (async () => new Response("not json", { status: 502 })) as typeof globalThis.fetch;
     expect(await requestAnalysis("https://a.example.com", { fetch: garbled })).toEqual({ ok: false, failure: { code: "unavailable", message: visitorTexts.unavailable } });
   });
+
+  // Review F4. Fails if an aborted start keeps retrying, or resolves with an id the page would navigate to.
+  it("stops when its signal aborts during the retry wait, without a second request", async () => {
+    const { fetch, calls } = scripted([
+      { status: 503, body: COUNTING },
+      { status: 200, body: { id: "b".repeat(32) } },
+    ]);
+    const controller = new AbortController();
+    const r = await requestAnalysis("https://pending.example.com", { fetch, signal: controller.signal, sleep: async () => controller.abort() });
+    expect(r).toEqual({ ok: false, failure: { code: "aborted", message: visitorTexts.unavailable } });
+    expect(calls).toHaveLength(1);
+  });
+
+  // Review F4. Fails if the signal does not reach fetch, so leaving the page cannot cancel the request.
+  it("passes its signal to fetch and reports an abort as aborted", async () => {
+    const controller = new AbortController();
+    let seen: AbortSignal | undefined;
+    const fetch = (async (_url: string, init?: RequestInit) => {
+      seen = init?.signal ?? undefined;
+      controller.abort();
+      throw new DOMException("aborted", "AbortError");
+    }) as typeof globalThis.fetch;
+    const r = await requestAnalysis("https://a.example.com", { fetch, signal: controller.signal });
+    expect(seen).toBe(controller.signal);
+    expect(r).toEqual({ ok: false, failure: { code: "aborted", message: visitorTexts.unavailable } });
+  });
 });

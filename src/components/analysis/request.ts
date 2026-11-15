@@ -15,6 +15,8 @@ export interface RequestOptions {
   readonly onRetry?: (message: string) => void;
   /** Attempts in all while the answer is `counting`. Default COUNTING_ATTEMPTS. */
   readonly attempts?: number;
+  /** Aborts the request and any retry wait; the result is then the `aborted` failure. */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -25,7 +27,14 @@ export interface RequestOptions {
 export const COUNTING_ATTEMPTS = 3;
 const COUNTING_DEFAULT_S = 2;
 
-const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const realSleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
+  });
+
+/** The result of an aborted start. The page that aborted it is gone and shows nothing. */
+const ABORTED: AnalysisRequestResult = { ok: false, failure: { code: "aborted", message: visitorTexts.unavailable } };
 
 interface AnalyzeBody {
   id?: unknown;
@@ -39,13 +48,15 @@ interface AnalyzeBody {
  * POST /api/analyze `{url}`. A 503 `counting` answer (another request for the
  * site is still starting, so nothing was started) is retried by itself after
  * its `retryAfterSeconds`, up to `attempts` (COUNTING_ATTEMPTS) in all. Every other
- * answer is returned at once.
+ * answer is returned at once. After `signal` aborts, nothing else is sent and
+ * the result is the `aborted` failure, never an id.
  */
 export async function requestAnalysis(url: string, o: RequestOptions = {}): Promise<AnalysisRequestResult> {
   const send = o.fetch ?? fetch;
-  const sleep = o.sleep ?? realSleep;
+  const sleep = o.sleep ?? ((ms: number) => realSleep(ms, o.signal));
   const attempts = o.attempts ?? COUNTING_ATTEMPTS;
   for (let attempt = 1; ; attempt++) {
+    if (o.signal?.aborted) return ABORTED;
     let res: Response;
     let body: AnalyzeBody | null;
     try {
@@ -54,11 +65,13 @@ export async function requestAnalysis(url: string, o: RequestOptions = {}): Prom
         headers: { "content-type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify({ url }),
+        signal: o.signal,
       });
       body = (await res.json().catch(() => null)) as AnalyzeBody | null;
     } catch {
-      return { ok: false, failure: { code: "unavailable", message: visitorTexts.unavailable } };
+      return o.signal?.aborted ? ABORTED : { ok: false, failure: { code: "unavailable", message: visitorTexts.unavailable } };
     }
+    if (o.signal?.aborted) return ABORTED;
     if (res.ok && typeof body?.id === "string") return { ok: true, id: body.id };
     if (res.status === 503 && body?.error === "counting" && attempt < attempts) {
       const seconds = typeof body.retryAfterSeconds === "number" && body.retryAfterSeconds > 0 ? body.retryAfterSeconds : COUNTING_DEFAULT_S;
