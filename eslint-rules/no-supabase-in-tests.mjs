@@ -9,11 +9,13 @@ export default {
     const rel = file.slice(file.lastIndexOf("/tests/") + 1);
     if (!rel.startsWith("tests/") || rel.startsWith("tests/db/") || ALLOWED.includes(rel)) return {};
     const check = (node, source) => {
-      if (typeof source === "string" && /(^|\/)store\/supabase(\.ts)?$/.test(source)) context.report({ node, messageId: "forbidden" });
+      if (typeof source === "string" && /(^|\/)store\/supabase(\/index)?(\.[cm]?[jt]sx?)?$/.test(source)) context.report({ node, messageId: "forbidden" });
     };
     return {
       ImportDeclaration(node) { check(node, node.source.value); },
       ImportExpression(node) { if (node.source.type === "Literal") check(node, node.source.value); },
+      ExportNamedDeclaration(node) { if (node.source) check(node, node.source.value); },
+      ExportAllDeclaration(node) { check(node, node.source.value); },
     };
   },
 };

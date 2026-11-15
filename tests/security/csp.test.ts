@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "@/lib/config";
 import { buildConnectSrc, pageCsp, staticSecurityHeaders } from "@/lib/security/headers";
+import { connectOrigins } from "@/lib/security/origins";
 
 const secret = "s".repeat(32);
 const prod = loadConfig({ VERCEL: "1", SESSION_SECRET: secret, PUBLIC_ORIGIN: "https://retrofit.example" });
@@ -12,7 +13,8 @@ function directive(csp: string, name: string): string[] {
 }
 
 describe("page CSP", () => {
-  const csp = pageCsp(prod, "abc123");
+  // The same composition the request hook uses (src/proxy.ts).
+  const csp = pageCsp(prod, "abc123", { phase: connectOrigins(prod) });
 
   // Fails if a host source or strict-dynamic is added to script-src.
   it("allows only self and the nonce in script-src", () => {

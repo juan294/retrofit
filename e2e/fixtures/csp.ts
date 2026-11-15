@@ -1,17 +1,14 @@
 import { test as base, expect, type ConsoleMessage } from "@playwright/test";
 
-export interface CspViolation {
-  directive: string;
-  blockedURI: string;
-}
+import { evaluateCsp, type CspViolation } from "./csp-eval";
+
+export type { CspViolation };
 
 interface CspFixtures {
   /** Declare the exact violations this test must cause. Any other violation, or a missing one, fails the test. */
   expectCspViolations: (list: CspViolation[]) => void;
   cspViolations: CspViolation[];
 }
-
-const matches = (v: CspViolation, e: CspViolation) => v.directive === e.directive && v.blockedURI.startsWith(e.blockedURI);
 
 export const test = base.extend<CspFixtures>({
   cspViolations: [
@@ -47,13 +44,10 @@ export const test = base.extend<CspFixtures>({
       page.off("console", onConsole);
       // Let late events (images, async fetches) arrive.
       await page.waitForTimeout(100).catch(() => {});
-      const exp = expected ?? [];
-      const unexpected = cspViolations.filter((v) => !exp.some((e) => matches(v, e)));
-      const missing = exp.filter((e) => !cspViolations.some((v) => matches(v, e)));
-      const strayConsole = consoleCsp.filter((t) => !exp.some((e) => e.blockedURI && t.includes(e.blockedURI)));
-      expect(unexpected, "unexpected CSP violations").toEqual([]);
-      expect(missing, "expected CSP violations that did not occur").toEqual([]);
-      if (cspViolations.length === 0) expect(strayConsole, "CSP errors in the console").toEqual([]);
+      const result = evaluateCsp(cspViolations, expected ?? [], consoleCsp);
+      expect(result.unexpected, "unexpected CSP violations").toEqual([]);
+      expect(result.missing, "expected CSP violations that did not occur").toEqual([]);
+      expect(result.strayConsole, "CSP errors in the console that match no expected violation").toEqual([]);
     },
     { auto: true },
   ],

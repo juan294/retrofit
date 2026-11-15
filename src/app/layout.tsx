@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import type { ReactNode } from "react";
 import "./globals.css";
 
@@ -7,7 +8,9 @@ export const metadata: Metadata = {
   description: "Turn an existing website into an agentic website without a rebuild.",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  // Every page, including not-found and error pages, renders per request so it carries the nonce.
+  await connection();
   return (
     <html lang="en">
       <body>{children}</body>

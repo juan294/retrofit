@@ -94,6 +94,8 @@ function sync(root, sourceArg, commit) {
   if (head !== commit) {
     fail(`clone HEAD ${head} does not match the requested commit ${commit}; check out ${commit} in ${clone} first`);
   }
+  const dirty = git(clone, ["status", "--porcelain", "--untracked-files=all"]);
+  if (dirty) fail(`clone ${clone} has local changes or untracked files; vendor only a clean checkout:\n${dirty}`);
   const commitDate = git(clone, ["log", "-1", "--format=%cI", "HEAD"]);
 
   const skill = join(clone, SKILL);

@@ -19,7 +19,8 @@ const tool = fileURLToPath(new URL("../../tools/vendor-agentic-web.mjs", import.
 const upstream: Record<string, string> = {
   "runtime/index.js": "export const runtime = 1;\n",
   "runtime/generated/bundle.js": "var bundled = true;\n",
-  "scripts/build.mjs": "// must never run\nprocess.exit(42);\n",
+  // If the sync ever executed this script, it would leave a marker file next to the clone.
+  "scripts/build.mjs": "import { writeFileSync } from 'node:fs';\nwriteFileSync(new URL('../../../../ran.marker', import.meta.url), 'ran');\n",
   "templates/site.js": "export const site = 1;\n",
   "templates/content-actions.js": "export const contentActions = [];\n",
   "templates/bridge/action-bridge.html": "<!doctype html><title>bridge</title>\n",
@@ -96,6 +97,18 @@ describe("vendor-agentic-web sync", () => {
     expect(existsSync(join(root, "public/runtime"))).toBe(false);
   });
 
+  // Fails if sync vendors a working tree that differs from the recorded commit.
+  it("refuses a clone with local changes or untracked files", () => {
+    writeFileSync(join(clone, "skills/agentify-website/runtime/index.js"), "tampered\n");
+    expect(run("sync", "--source", clone, "--commit", head).status).toBe(1);
+    git(["checkout", "--", "."], clone);
+    writeFileSync(join(clone, "skills/agentify-website/runtime/extra.js"), "untracked\n");
+    const result = run("sync", "--source", clone, "--commit", head);
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("extra.js");
+    expect(existsSync(join(root, "vendor/agentic-web.json"))).toBe(false);
+  });
+
   it("copies exactly the vendored files and records their hashes", () => {
     mkdirSync(join(root, "public/runtime"), { recursive: true });
     writeFileSync(join(root, "public/runtime/stale.js"), "stale\n");
@@ -116,7 +129,8 @@ describe("vendor-agentic-web sync", () => {
       expect(manifest.files[dest]).toBe(sha256(upstream[src] ?? ""));
     }
     expect(existsSync(join(root, "public/runtime/stale.js"))).toBe(false);
-    // The copied script must not have been executed (it would exit 42 and nothing else).
+    // Fails if the sync executes an upstream script (the script writes ran.marker).
+    expect(existsSync(join(work, "ran.marker"))).toBe(false);
     expect(existsSync(join(root, "tools/agentic-web/SKILL.md"))).toBe(false);
   });
 });

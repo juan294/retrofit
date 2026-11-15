@@ -21,8 +21,11 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      // Document pages only. API routes, agent artifacts, vendored assets and files with an extension are excluded.
-      source: "/((?!api/|_next/|runtime/|preview-assets/|bridge/|p/|.*\\.[A-Za-z0-9]+$).*)",
+      // Every response except static build assets, vendored files and the bridge,
+      // which carry their own policies (next.config.ts). Unknown paths and
+      // not-found pages get the page CSP too. Prefetch requests return RSC
+      // payloads, never documents.
+      source: "/((?!_next/static/|_next/image|runtime/|preview-assets/|bridge/|p/[^/]+/bridge/|favicon.ico).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },

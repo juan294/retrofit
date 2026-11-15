@@ -27,8 +27,6 @@
     "hosting-and-domain-decision"
   ],
   "current_gaps": [
-    "no-application-code",
-    "no-test-suite",
     "no-release-evidence-analyzer",
     "no-hosting-or-deployment-target"
   ],

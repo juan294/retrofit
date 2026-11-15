@@ -15,6 +15,10 @@ tester.run("no-supabase-in-tests", rule, {
     { code: 'import { x } from "@/lib/store/supabase";', filename: "/repo/src/lib/store/index.ts" },
   ],
   invalid: [
+    { code: 'import { x } from "@/lib/store/supabase.js";', filename: "/repo/tests/api/x.test.ts", errors: [{ messageId: "forbidden" }] },
+    { code: 'import { x } from "@/lib/store/supabase/index";', filename: "/repo/tests/api/x.test.ts", errors: [{ messageId: "forbidden" }] },
+    { code: 'export { x } from "@/lib/store/supabase";', filename: "/repo/tests/api/x.test.ts", errors: [{ messageId: "forbidden" }] },
+    { code: 'export * from "@/lib/store/supabase";', filename: "/repo/tests/api/x.test.ts", errors: [{ messageId: "forbidden" }] },
     { code: 'import { x } from "@/lib/store/supabase";', filename: "/repo/tests/store/memory.test.ts", errors: [{ messageId: "forbidden" }] },
     { code: 'const m = await import("../../src/lib/store/supabase.ts");', filename: "/repo/tests/api/x.test.ts", errors: [{ messageId: "forbidden" }] },
   ],
