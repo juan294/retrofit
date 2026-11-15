@@ -4,6 +4,7 @@ import { createFetchContext } from "@/lib/fetch/context";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { createMemoryStore } from "@/lib/store/memory";
 import { agentified, bakery, hostile, noindexPage, spaOnly, type FixtureSite } from "../fixtures/sites";
+import { FAST_TOLERANCE_MS } from "./server-deps";
 import { serveSites } from "./sites";
 
 const config = loadConfig({ SESSION_SECRET: "x".repeat(32), RETROFIT_TEST_FIXTURES: "1", FETCH_MAX_BYTES: "1048576" });
@@ -19,7 +20,7 @@ export async function crawlFixtureSnapshots(): Promise<Map<SiteName, Snapshot>> 
   try {
     const out = new Map<SiteName, Snapshot>();
     for (const name of Object.keys(SITES) as SiteName[]) {
-      const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1 });
+      const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS });
       const snapshot = await crawlSite(server.origin(host(name)), { config, fetch, clock: Date.now });
       if (!snapshot) throw new Error(`no snapshot for ${name}`);
       out.set(name, snapshot);

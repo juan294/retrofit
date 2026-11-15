@@ -6,7 +6,9 @@ import { handleAnalysisStatus } from "@/lib/api/status";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { handleScore } from "@/lib/api/score";
 import { getJob, leaseKey, originAliasKey, resolveJob, startOrJoinCrawl, type CrawlJob } from "@/lib/crawl/jobs";
+import { loadConfig } from "@/lib/config";
 import { createMemoryStore } from "@/lib/store/memory";
+import type { Store } from "@/lib/store/types";
 import { shortHash } from "@/lib/fetch/limits";
 import { bakery } from "../fixtures/sites";
 import {
@@ -206,17 +208,76 @@ describe("capacity", () => {
     expect((await analyze("three.example.com", "203.0.113.99")).status).toBe(200);
   });
 
-  // F1. Fails if an undecided daily count (another job of the same origin still being counted) fails the
-  // job as daily_limit, which would tell the visitor the limit was reached when it may not have been.
-  it("queues the job when the origin's daily count is still undecided", async () => {
+  // F1, validation V04. Fails if an undecided daily count (another job of the same origin still being
+  // counted) queues or counts the job, which would let it pass a full daily cap, or answers daily_limit,
+  // which would tell the visitor the limit was reached when it may not have been. The next request must
+  // decide again with a new job.
+  it("leaves the job undispatched with a counting retry when the origin's daily count is still undecided", async () => {
     const fc = fakeClock(Date.parse("2026-11-15T10:20:00.000Z"));
     const d = testDeps({ clock: fc.clock });
     await holdAllSlots(d);
     const origin = "https://pending.example.com";
-    await d.store.putIfAbsent(`crawl-origin-day:2026-11-15:${shortHash(origin)}`, { version: 1, state: "pending" }, 10);
+    const marker = `crawl-origin-day:2026-11-15:${shortHash(origin)}`;
+    await d.store.putIfAbsent(marker, { version: 1, state: "pending" }, 10);
     const r = await startCrawlJob(d, origin);
-    expect(r.ok).toBe(true);
-    if (r.ok) expect((await getJob(d.store, r.jobId))?.status).toBe("queued");
+    expect(r).toEqual({ ok: false, code: "counting" });
+    expect(await d.store.claimNext(CRAWL_QUEUE)).toBeNull();
+    expect(await d.store.incrementWindow("crawl-origins:2026-11-15", 3600, 0)).toBe(0);
+    const held = await jobFor(d, origin);
+    expect(held?.status).toBe("failed");
+    expect(held?.failure?.code).toBe("counting");
+
+    // Once the other decision is gone, the next request creates a new job, counts it and queues it.
+    await d.store.delete(marker);
+    const next = await startCrawlJob(d, origin);
+    expect(next.ok && next.created).toBe(true);
+    if (next.ok) expect(next.jobId).not.toBe(held?.id);
+    expect(await d.store.incrementWindow("crawl-origins:2026-11-15", 3600, 0)).toBe(1);
+    expect(await d.store.claimNext(CRAWL_QUEUE)).toBe(next.ok ? next.jobId : "none");
+  });
+
+  // Adopted from the validator's reproduction (.local/validation-2141fc4/regressions.test.ts:19), validation
+  // V04. Fails if a replacement job queues while the first request's daily decision is pending at an
+  // exhausted cap (supported QUEUE_MAX_WAIT_S=1 lets the replacement start), or if it reports daily_limit.
+  it("does not queue a replacement while the daily cap decision remains pending at an exhausted cap", async () => {
+    let t = Date.parse("2026-11-15T10:20:00Z");
+    const clock = () => t;
+    const config = loadConfig({ SESSION_SECRET: "s".repeat(32), CRAWL_MAX_HOSTS_PER_DAY: "1", QUEUE_MAX_WAIT_S: "1" });
+    const store = createMemoryStore({ clock });
+    await store.incrementWindow("crawl-origins:2026-11-15", 3600);
+    let release!: () => void;
+    let entered!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const pause = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstCount = true;
+    const delayed: Store = {
+      ...store,
+      async incrementWindow(key: string, ttl: number, by?: number) {
+        if (key.startsWith("crawl-origins:") && firstCount) {
+          firstCount = false;
+          entered();
+          await pause;
+        }
+        return store.incrementWindow(key, ttl, by);
+      },
+    };
+    const deps = { store: delayed, config, clock };
+    const first = startCrawlJob(deps, "https://pending.example.com");
+    await waiting;
+    t += 1001;
+    let second;
+    try {
+      second = await startCrawlJob(deps, "https://pending.example.com");
+    } finally {
+      release();
+    }
+    expect(second).toEqual({ ok: false, code: "counting" });
+    expect(await first).toEqual({ ok: false, code: "daily_limit", retryAt: Date.parse("2026-11-16T00:00:00Z") });
+    expect(await store.claimNext(CRAWL_QUEUE)).toBeNull();
   });
 
   // Fails if a worker that finds its job lease held ("busy") keeps the capacity slot.

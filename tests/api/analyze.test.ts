@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
+import { CRAWL_QUEUE } from "@/lib/analysis/capacity";
 import { getAnalysis } from "@/lib/analysis/record";
 import { handleAnalysisStatus } from "@/lib/api/status";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { getJob, leaseKey, startOrJoinCrawl, updateJob, type CrawlJob } from "@/lib/crawl/jobs";
+import { shortHash } from "@/lib/fetch/limits";
 import { bakery } from "../fixtures/sites";
 import { serveSites } from "../helpers/sites";
 import { analyzeRequest, cookieFrom, fakeClock, holdAllSlots, PUBLIC_ORIGIN, statusRequest, storeDump, testDeps } from "../helpers/server-deps";
@@ -93,6 +95,26 @@ describe("POST /api/analyze", () => {
     });
     expect((await handleAnalyze(analyzeRequest({ url: "https://b.example.com" }, { ip: "203.0.113.78" }), d)).status).toBe(200);
     expect(storeDump(d.backing)).not.toContain(ip);
+  });
+
+  // Validation V04. Fails if a visitor whose site's daily count is still undecided gets an analysis (a job
+  // that could pass the daily cap), a daily_limit refusal, or a failure without a short retry.
+  it("answers 503 counting with a 2 s retry and creates no analysis while the site's daily count is undecided", async () => {
+    const fc = fakeClock(Date.parse("2026-11-15T10:20:00.000Z"));
+    const d = testDeps({ clock: fc.clock });
+    await holdAllSlots(d);
+    const origin = "https://pending.example.com";
+    await d.store.putIfAbsent(`crawl-origin-day:2026-11-15:${shortHash(origin)}`, { version: 1, state: "pending" }, 10);
+    const res = await handleAnalyze(analyzeRequest({ url: origin }), d);
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("2");
+    expect(await res.json()).toEqual({
+      error: "counting",
+      message: "Retrofit is still starting another analysis of this site. Try again in a few seconds.",
+      retryAfterSeconds: 2,
+    });
+    expect(storeDump(d.backing)).not.toContain("analysis:");
+    expect(await d.store.claimNext(CRAWL_QUEUE)).toBeNull();
   });
 
   // Fails if a malformed body or a non-public address is not refused with the visitor text.

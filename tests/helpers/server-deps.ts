@@ -12,6 +12,12 @@ import { materialize, type FixtureSite } from "../fixtures/sites";
 
 export const PUBLIC_ORIGIN = "https://retrofit.test";
 
+/**
+ * Pacing start tolerance for test contexts with a 1 ms interval, so a real-time crawl is not slowed by
+ * the production 250 ms. A start later than this takes a new slot, which only adds a short wait.
+ */
+export const FAST_TOLERANCE_MS = 20;
+
 /** Every non-fixture name "resolves" to a private address, so a test can never reach the network. */
 export const privateResolver: Resolver = async () => [{ address: "10.0.0.5", family: 4 }];
 
@@ -27,15 +33,27 @@ export interface FakeClock {
   advance(ms: number): void;
 }
 
-/** A clock that only moves when the test moves it. */
+/** Moves a fake clock's time, keyed by its `clock` function, so testDeps can pace on it. */
+const advancers = new WeakMap<Clock, (ms: number) => void>();
+
+/** A clock that only moves when the test moves it, or when pacing in testDeps sleeps on it. */
 export function fakeClock(start = Date.parse("2026-11-15T10:20:00.000Z")): FakeClock {
   let now = start;
+  const clock: Clock = () => now;
+  const advance = (ms: number) => void (now += ms);
+  advancers.set(clock, advance);
   return {
-    clock: () => now,
+    clock,
     now: () => now,
     set: (ms) => void (now = ms),
-    advance: (ms) => void (now += ms),
+    advance,
   };
+}
+
+/** A sleep that moves `clock` when it is a fakeClock (time passes during the wait); otherwise a timer. */
+function sleepFor(clock: Clock): ((ms: number) => Promise<void>) | undefined {
+  const advance = advancers.get(clock);
+  return advance ? async (ms) => advance(ms) : undefined;
 }
 
 export interface TestDepsOptions {
@@ -62,7 +80,7 @@ export function testDeps(o: TestDepsOptions = {}): TestDeps {
   const clock = o.clock ?? Date.now;
   const backing = o.backing ?? createMemoryBacking();
   const store = o.store ?? createMemoryStore({ clock, backing, instrument: o.instrument });
-  const fetch = createFetchContext({ config, store, clock, lookup: o.lookup ?? privateResolver, minIntervalMs: 1 });
+  const fetch = createFetchContext({ config, store, clock, sleep: sleepFor(clock), lookup: o.lookup ?? privateResolver, minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS });
   const pending: Promise<unknown>[] = [];
   const errors: unknown[] = [];
   return {

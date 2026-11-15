@@ -137,9 +137,13 @@ export function loadConfig(env: Env): Config {
   if (numbers.crawlBudgetMs > 50_000) {
     throw new ConfigError("CRAWL_BUDGET_MS", "must be at most 50000 so a crawl fits in one function invocation");
   }
-  // A crawl starts no request after its budget, and a request lasts at most FETCH_TIMEOUT_MS,
-  // so this keeps every request of a crawl inside the lease taken when it started (fetch/crawl.ts).
-  // FETCH_TIMEOUT_MS is positive, so it also keeps CRAWL_BUDGET_MS below CRAWL_LEASE_TTL_S * 1000.
+  // A crawl starts no request after its budget (the pacer checks the time after every store call and
+  // wait), and a request is aborted FETCH_TIMEOUT_MS after it starts, so every request ends within
+  // CRAWL_BUDGET_MS + FETCH_TIMEOUT_MS of the crawl's start (fetch/crawl.ts). The job lease is taken
+  // a few store calls before that start and renewed before each later page, so this bound keeps
+  // every request inside the lease except for those calls and the time to handle the abort; the
+  // defaults leave 7 s for them. FETCH_TIMEOUT_MS is positive, so it also keeps CRAWL_BUDGET_MS
+  // below CRAWL_LEASE_TTL_S * 1000.
   if (numbers.crawlBudgetMs + numbers.fetchTimeoutMs > numbers.crawlLeaseTtlS * 1000) {
     throw new ConfigError("CRAWL_BUDGET_MS", "CRAWL_BUDGET_MS + FETCH_TIMEOUT_MS must be at most CRAWL_LEASE_TTL_S * 1000");
   }

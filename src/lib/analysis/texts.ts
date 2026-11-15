@@ -34,6 +34,10 @@ export const visitorTexts = {
   crossOrigin: "Open Retrofit at its own address and paste the website address there.",
   // Not in the plan table: a POST /api/analyze body over 8 KB.
   tooLarge: "Send only the website address.",
+  // Not in the plan table: the site's daily count is still undecided (another request for it is starting).
+  counting: "Retrofit is still starting another analysis of this site. Try again in a few seconds.",
+  // Not in the plan table: shown while the page retries a counting answer by itself.
+  countingRetry: "Retrofit is still starting another analysis of this site. Trying again in a moment.",
 } as const;
 
 /** Visitor text for a failure code from a crawl job or the analysis routes. Unknown codes get the generic text. */
@@ -53,6 +57,8 @@ export function visitorFailure(code: string, o: { retryAt?: Date } = {}): string
       return visitorTexts.queueExpired;
     case "daily_limit":
       return visitorTexts.dailyLimit;
+    case "counting":
+      return visitorTexts.counting;
     default:
       return visitorTexts.unavailable;
   }
@@ -102,5 +108,7 @@ export const agentTexts = {
   unavailable: "Retrofit is having trouble. Try again in a few minutes.",
   // Not in the contract table: a 503 `unavailable` while another call's count-once decision is pending.
   counting: "Retrofit is still counting another call for this site from this client. Call again in 2 seconds with the same URL.",
+  // Not in the contract table: a 503 `unavailable` while the site's daily count is undecided.
+  countingSite: "Retrofit is still starting another score of this site. Call again in 2 seconds with the same URL.",
   method_not_allowed: "Use GET /api/score with the website address in the url query parameter.",
 } as const;
