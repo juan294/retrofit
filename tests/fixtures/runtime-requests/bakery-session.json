@@ -1,7 +1,6 @@
 {
-  "capturedAt": "2026-11-15T08:56:03.858Z",
   "vendorManifestSha256": "5d264186923af812095b44a96743e6629e19e913239770f7ec67bdc6eb8d3430",
-  "note": "Request bodies sent by the vendored runtime to <router>/chat/completions. Synthetic bakery fixture; test key only.",
+  "note": "Request bodies sent by the vendored runtime to <router>/chat/completions. Synthetic bakery fixture; test key only. Ids and timestamps normalized.",
   "bodies": [
     {
       "model": "alibaba/qwen3.8-flash",
@@ -186,7 +185,7 @@
           "content": null,
           "tool_calls": [
             {
-              "id": "call_1794732963819_0",
+              "id": "call_ID",
               "type": "function",
               "function": {
                 "name": "website_search_site_content",
@@ -197,9 +196,9 @@
         },
         {
           "role": "tool",
-          "tool_call_id": "call_1794732963819_0",
+          "tool_call_id": "call_ID",
           "name": "website_search_site_content",
-          "content": "{\"action\":\"http://127.0.0.1:3010/p/ANALYSIS_ID/site_bakery_fixture_test_3011#search_site_content\",\"requestId\":\"83efb176-c3e7-4522-85ed-d1063aa0c29d:0\",\"status\":\"succeeded\",\"result\":{\"source\":\"http://bakery.fixture.test:3011/\",\"fetchedAt\":\"2026-11-15T08:55:32.777Z\",\"results\":[{\"url\":\"http://bakery.fixture.test:3011/\",\"title\":\"Crumb and Crust Bakery\",\"score\":2,\"excerpt\":\" in Exampleton. We bake sourdough, rye and seasonal pastries every morning from organic flour. Order ahead for pickup, or visit us on Flour Lane. Our opening hours are Monday to Friday 7:00 to 18:00 and Saturday 8:00 to 14:00. Write to [email removed] for catering.\"}]}}"
+          "content": "{\"action\":\"http://127.0.0.1:3010/p/ANALYSIS_ID/site_bakery_fixture_test_3011#search_site_content\",\"requestId\":\"UUID:0\",\"status\":\"succeeded\",\"result\":{\"source\":\"http://bakery.fixture.test:3011/\",\"fetchedAt\":\"TIMESTAMP\",\"results\":[{\"url\":\"http://bakery.fixture.test:3011/\",\"title\":\"Crumb and Crust Bakery\",\"score\":2,\"excerpt\":\" in Exampleton. We bake sourdough, rye and seasonal pastries every morning from organic flour. Order ahead for pickup, or visit us on Flour Lane. Our opening hours are Monday to Friday 7:00 to 18:00 and Saturday 8:00 to 14:00. Write to [email removed] for catering.\"}]}}"
         }
       ],
       "stream": true,
@@ -280,7 +279,7 @@
           "content": null,
           "tool_calls": [
             {
-              "id": "call_1794732963808_0",
+              "id": "call_ID",
               "type": "function",
               "function": {
                 "name": "content_specialist",
@@ -291,7 +290,7 @@
         },
         {
           "role": "tool",
-          "tool_call_id": "call_1794732963808_0",
+          "tool_call_id": "call_ID",
           "name": "content_specialist",
           "content": "{\"cruse\":1,\"text\":\"Our opening hours are Monday to Friday 7:00 to 18:00 and Saturday 8:00 to 14:00. Source: [http://bakery.fixture.test:3011/](http://bakery.fixture.test:3011/)\",\"presentation\":null,\"source\":{\"origin\":\"127.0.0.1:3010\",\"network\":\"site_bakery_fixture_test_3011\",\"agent\":\"content_specialist\",\"invocation\":\"cruse-2\"}}"
         }
