@@ -4,27 +4,35 @@ This is the single release procedure for Retrofit. Native `rpi-release` delegate
 
 ## Present readiness
 
-The repository holds workspace setup only. There is no application code, test suite, deployment target or candidate-bound evidence. Release readiness is **BLOCKED**. The setup checks can pass while this stays true. Do not report a test count or a coverage percentage that no suite produced.
+The application is built through Phase 7's local work (`docs/plans/2026-11-15-retrofit-url-to-preview-notes.md`). Release readiness is **BLOCKED** until the Phase 7 external actions are authorized and done (hosting, database, domains, production evidence), the owner's Phase 6 inputs exist (Otari key, prices, credit, reserve, judge code, contract probe) and the `rpi-installation` gate check passes again. Do not report a test count or coverage that the current gate run did not produce.
 
-Machine-readable selection and gaps are in `.rpi/release-profile.json`. The product plan must supply executable checks and the evidence analyzer described below before the first release. Installing RPI does not implement them.
+Machine-readable selection and gaps are in `.rpi/release-profile.json`.
 
 ## Adaptation profile
 
 | Area | Retrofit decision |
 | --- | --- |
-| Product | Web tool and browser runtime that conforms to the open agentic web specification. Stack not decided. |
-| Repository | `juan294/retrofit`. Public since 2026-11-15, by Juan's authorization (private at bootstrap). The hackathon requires open source. |
-| Branches | `develop` integration, `main` production, merge-commit promotion |
-| Artifact | Not decided. Expected: one deployed site at `retrofit.thecreativetoken.com` plus the published runtime and manifest files, each tied to a source commit. |
-| State | Not decided. Expected: accounts, saved reports and site claims. Visitor LLM keys stay in the browser and are never server state. |
-| Network | Reads third-party public sites through a server-side fetch service. Calls LLM providers from the browser. |
+| Product | Next.js 16 web tool and the vendored agentic-web browser runtime (`docs/decisions/2026-11-15-stack-and-hosting.md`). |
+| Repository | `juan294/retrofit`. Public since 2026-11-15, by Juan's authorization. |
+| Branches | `develop` integration, `main` production, merge-commit promotion. |
+| Artifact | One Vercel production deployment of the merge commit on `main`, serving `retrofit.thecreativetoken.com` and, host-routed, `demo-harbor.thecreativetoken.com`. `/api/version` reports the commit (`BUILD_COMMIT`). |
+| State | Supabase Postgres project `retrofit`: crawl jobs, visitor-owned analyses (7 days), free-inference sessions, quotas, the ledger and the overrun hold. Visitor LLM keys stay in the browser and are never server state. |
+| Network | Server: guarded fetch of public sites (robots, pacing, SSRF guard) and the Otari upstream for the free path. Browser: the visitor's provider router or Retrofit's free path, and consented peers. |
 | Release owner | Juan |
-| Rollback | Restore the previous verified deployment with owner authorization. Decide the exact mechanism with the hosting choice. |
-| Hosted CI | None configured at bootstrap. Sutura owns fleet CI routing. |
+| Rollback | First release: remove the production aliases with owner authorization. Later releases: `vercel rollback <previous deployment>` with owner authorization; the database keeps its data (no destructive migration in this plan). |
+| Hosted CI | None in this repository. Sutura owns fleet CI routing (`docs/development/ci-handoff.md`). |
 | Deadline | Submission closes 2027-01-11 8:00 am PT. Judges need free access until 2027-01-18. |
 | Wave A | Mandatory: fixed candidate, nonempty passing evidence, required miss blocks, tag last. |
-| Wave B | Not selected. Retrofit ships no code that runs unattended or destructively on users' machines. Reassess if that changes. |
-| Waves C to H | Reassess after the product plan fixes the stack, the data model and the payment scope. |
+| Wave B | Not selected. Retrofit ships no code that runs unattended or destructively on users' machines. |
+| Waves C to H | Reassess before the second plan's release. |
+
+### Wave A commands for this stack
+
+1. Candidate: merge `develop` into `main` locally with a merge commit; `git status` clean.
+2. Local gate on that commit: `python3 .rpi/scripts/rpi-verify.py` (includes `pnpm test:db`, the disposable gate database, and `pnpm test:e2e`).
+3. Local analysis: `node tools/release/analyze-evidence.mjs <merge commit>`. Any accepted exception (`--accept-failed-check <name> --reason <text>`) is shown to Juan with the candidate.
+4. After the authorized candidate deployment (`vercel deploy --prod --build-env BUILD_COMMIT=<merge commit>` from a clean checkout of that commit): production evidence into `.local/evidence/production/<deployment id>/` (phase-7.md "Production evidence"), then `node tools/release/analyze-evidence.mjs <merge commit> --production .local/evidence/production/<deployment id>`.
+5. Juan's final acceptance, then the release tag last through `rpi-release`.
 
 ## Required ordering
 

@@ -4,6 +4,8 @@ import { VERCEL_ENV } from "../helpers/vercel-env";
 import { buildConnectSrc, pageCsp, staticSecurityHeaders } from "@/lib/security/headers";
 import { connectOrigins } from "@/lib/security/origins";
 import { routerOrigins } from "@/lib/keys/providers";
+import { DENIED_ORIGIN } from "@/lib/peer/conformance";
+import { PEER_ORIGIN } from "@/lib/peer/host";
 
 const secret = "s".repeat(32);
 const prod = loadConfig(VERCEL_ENV);
@@ -39,8 +41,18 @@ describe("page CSP", () => {
   // Fails if a fixture origin leaks into the production policy.
   it("has no fixture origin in production", () => {
     expect(csp).not.toMatch(/fixture\.test|127\.0\.0\.1|localhost/);
-    // Phase 4: the provider routers of the key panel, and nothing else.
-    expect(directive(csp, "connect-src")).toEqual(["'self'", ...routerOrigins()]);
+    // Phase 4: the provider routers of the key panel; Phase 7: the production peer. Nothing else.
+    expect(directive(csp, "connect-src")).toEqual(["'self'", ...routerOrigins(), PEER_ORIGIN]);
+  });
+
+  // Fails if the peer origin is missing or the denied conformance origin becomes reachable.
+  it("allows the production peer and never the denied conformance origin", () => {
+    expect(PEER_ORIGIN).toBe("https://demo-harbor.thecreativetoken.com");
+    for (const config of [prod, fixtures]) {
+      const c = directive(pageCsp(config, "n", { phase: connectOrigins() }), "connect-src");
+      expect(c).toContain(PEER_ORIGIN);
+      expect(c).not.toContain(DENIED_ORIGIN);
+    }
   });
 
   it("adds only the exact fixture origins in fixtures mode", () => {
@@ -99,6 +111,7 @@ describe("static headers", () => {
     const published = [
       "/agent-manifest.json",
       "/retrofit_guide.network.json",
+      "/retrofit_conformance.network.json",
       "/links.json",
       "/agent-mcp.json",
       "/.well-known/nsdeploy.json",

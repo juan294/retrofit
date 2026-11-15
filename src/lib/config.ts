@@ -32,6 +32,10 @@ export interface Config {
   readonly fixturesEnabled: boolean;
   /** Phase 6: Retrofit's free inference path. */
   readonly free: FreeConfig;
+  /** Phase 7: the Supabase store. Both are required on Vercel; off Vercel both or neither (memory store). */
+  readonly supabaseUrl: string | null;
+  /** Server only. Never sent to a browser, logged or written to evidence. */
+  readonly supabaseServiceRoleKey: string | null;
 }
 
 export interface FreeConfig {
@@ -153,7 +157,23 @@ export function loadConfig(env: Env): Config {
   const free = loadFreeConfig(env, onVercel);
   if (free.upstreamTimeoutMs > 50_000) throw new ConfigError("FREE_UPSTREAM_TIMEOUT_MS", "must be at most 50000 (maxDuration 60 s)");
 
-  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, free });
+  const supabase = loadSupabaseConfig(env, onVercel);
+
+  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, free, ...supabase });
+}
+
+/** SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY: required on Vercel (https); off Vercel both or neither. */
+function loadSupabaseConfig(env: Env, onVercel: boolean): Pick<Config, "supabaseUrl" | "supabaseServiceRoleKey"> {
+  const rawUrl = env.SUPABASE_URL?.trim() || null;
+  const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim() || null;
+  if (onVercel && !rawUrl) throw new ConfigError("SUPABASE_URL", "is required on Vercel");
+  if (onVercel && !key) throw new ConfigError("SUPABASE_SERVICE_ROLE_KEY", "is required on Vercel");
+  if (rawUrl && !key) throw new ConfigError("SUPABASE_SERVICE_ROLE_KEY", "is required when SUPABASE_URL is set");
+  if (key && !rawUrl) throw new ConfigError("SUPABASE_URL", "is required when SUPABASE_SERVICE_ROLE_KEY is set");
+  if (!rawUrl) return { supabaseUrl: null, supabaseServiceRoleKey: null };
+  const supabaseUrl = parseOrigin("SUPABASE_URL", rawUrl);
+  if (onVercel && !supabaseUrl.startsWith("https:")) throw new ConfigError("SUPABASE_URL", "must use https on Vercel");
+  return { supabaseUrl, supabaseServiceRoleKey: key };
 }
 
 function parseNonNegative(env: Env, name: string, fallback: number): number {

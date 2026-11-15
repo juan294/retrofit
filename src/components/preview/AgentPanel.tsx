@@ -15,6 +15,8 @@ export interface AgentPanelProps {
   readonly basePath: string;
   readonly label?: ReactNode;
   readonly title: string;
+  /** A network of the manifest to run instead of networks[0] (Preview's `network`). */
+  readonly network?: string;
 }
 
 /**
@@ -22,7 +24,7 @@ export interface AgentPanelProps {
  * Retrofit's free path; a connected key reboots the runtime with that
  * provider, and "Forget my key" returns to the free path.
  */
-export function AgentPanel({ basePath, label, title }: AgentPanelProps) {
+export function AgentPanel({ basePath, label, title, network }: AgentPanelProps) {
   const [ownKey, setOwnKey] = useState<Inference | null>(null);
   // The runtime needs an absolute base (research §4); the origin is known only in the browser.
   const [originUrl, setOriginUrl] = useState<string | null>(null);
@@ -66,7 +68,7 @@ export function AgentPanel({ basePath, label, title }: AgentPanelProps) {
           <KeyPanel guard={guard} onConnect={onConnect} onForget={onForget} freePathActive={!ownKey && free.status === "ready"} />
         </div>
       ) : null}
-      {inference && originUrl ? <Preview originUrl={originUrl} inference={inference} label={label} onNotice={onNotice} /> : null}
+      {inference && originUrl ? <Preview originUrl={originUrl} inference={inference} label={label} onNotice={onNotice} network={network} /> : null}
       {!inference && label ? (
         <p data-testid="preview-label" className="mt-3 rounded border px-3 py-2 text-sm" style={{ borderColor: "var(--color-border)", color: "var(--color-muted)" }}>
           {label}

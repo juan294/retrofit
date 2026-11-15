@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { serveTopManifest, withTopNetwork } from "@/lib/peer/conformance";
 import { noticeForTrace, type Notice } from "@/lib/preview/notices";
 import type { ConsentInfo } from "@/lib/preview/fetch-guard";
 import { closePreviewAccess, installPageGuard } from "@/lib/preview/page-guard";
@@ -28,6 +29,11 @@ export interface PreviewProps {
   readonly label?: ReactNode;
   /** Called for each new notice (the agent panel shows free-path notices as a banner). */
   readonly onNotice?: (notice: Notice) => void;
+  /**
+   * A network of the manifest to run instead of networks[0] (the /conformance page). The
+   * runtime always runs networks[0], so during boot it gets the manifest with this network first.
+   */
+  readonly network?: string;
 }
 
 const RUNTIME_URL = "/runtime/index.js";
@@ -42,7 +48,7 @@ class VisitorError extends Error {}
  * the engine's consent hook so approvals reach the guard, and shows trace
  * outcomes that the runtime reports only as tool results.
  */
-export function Preview({ originUrl, inference, label, onNotice }: PreviewProps) {
+export function Preview({ originUrl, inference, label, onNotice, network }: PreviewProps) {
   const onNoticeRef = useRef(onNotice);
   onNoticeRef.current = onNotice;
   const mountRef = useRef<HTMLDivElement>(null);
@@ -68,7 +74,9 @@ export function Preview({ originUrl, inference, label, onNotice }: PreviewProps)
           const body = (await res.json().catch(() => null)) as { message?: string } | null;
           throw new VisitorError(body?.message ?? `The agent manifest answered HTTP ${res.status}.`);
         }
-        const manifest = (await res.json()) as { allowed_peers?: unknown };
+        const manifest = (await res.json()) as { allowed_peers?: unknown; networks: { name?: unknown }[] };
+        const top = network ? withTopNetwork(manifest, network) : manifest;
+        if (!top) throw new VisitorError(`This site's agent manifest does not list the network ${network}.`);
         // A cancelled boot must not write its peers into the guard the next preview uses.
         if (cancelled) return;
         guard.setPolicyPeers(Array.isArray(manifest.allowed_peers) ? manifest.allowed_peers.filter((x): x is string => typeof x === "string") : []);
@@ -86,13 +94,20 @@ export function Preview({ originUrl, inference, label, onNotice }: PreviewProps)
 
         const runtime = (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ RUNTIME_URL)) as RuntimeModule;
         if (cancelled) return;
-        const handle = await runtime.boot(mount, {
-          originUrl,
-          sandboxWorkerUrl: "/runtime/sandbox-worker.js",
-          byokKey: inference.key,
-          router: inference.router,
-          model: inference.model,
-        });
+        // boot fetches the manifest once (runtime/engine.js loadTop); the reordered copy answers only that fetch.
+        const release = network ? serveTopManifest(window, `${originUrl}/agent-manifest.json`, top) : () => {};
+        let handle: RuntimeHandle;
+        try {
+          handle = await runtime.boot(mount, {
+            originUrl,
+            sandboxWorkerUrl: "/runtime/sandbox-worker.js",
+            byokKey: inference.key,
+            router: inference.router,
+            model: inference.model,
+          });
+        } finally {
+          release();
+        }
         if (cancelled) {
           // A boot that finished after unmount re-exposed its engine (and key) on window.__nsweb.
           delete (window as { __nsweb?: unknown }).__nsweb;
@@ -115,7 +130,7 @@ export function Preview({ originUrl, inference, label, onNotice }: PreviewProps)
       mount.replaceChildren();
       closePreviewAccess(guard);
     };
-  }, [originUrl, inference.router, inference.key, inference.model]);
+  }, [originUrl, inference.router, inference.key, inference.model, network]);
 
   return (
     <section className="mt-6" aria-label="Agent">

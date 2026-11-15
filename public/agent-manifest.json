@@ -15,6 +15,18 @@
         "How ready is example.com for AI agents?",
         "What should I fix first on my site?"
       ]
+    },
+    {
+      "name": "retrofit_conformance",
+      "front_man": "conformance_guide",
+      "hocon": "./retrofit_conformance.network.json",
+      "description": "Conformance fixtures: one working peer network and three that must fail safely. See https://retrofit.thecreativetoken.com/conformance.",
+      "sample_queries": [
+        "Ask the Harbor tours demo what tours it offers.",
+        "Call the invalid network.",
+        "Call the loop network.",
+        "Call the denied network."
+      ]
     }
   ],
   "llm_router": {
@@ -23,11 +35,13 @@
     "mock": false,
     "byok_router": "https://api.otari.ai/api/v1"
   },
-  "allowed_peers": [],
+  "allowed_peers": [
+    "https://demo-harbor.thecreativetoken.com"
+  ],
   "peer_policy": {
     "mode": "closed",
     "deny_origins": [],
-    "note": "Local agents and page-local actions only."
+    "note": "Only Retrofit's synthetic demo peer, Harbor tours demo."
   },
   "agent_mcp": {
     "protocol": "nsdeploy-agent-mcp/v1",

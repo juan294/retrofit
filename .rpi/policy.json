@@ -54,6 +54,13 @@
       ]
     },
     {
+      "name": "peer-check",
+      "argv": [
+        "pnpm",
+        "peer:check"
+      ]
+    },
+    {
       "name": "typecheck",
       "argv": [
         "pnpm",
@@ -79,6 +86,13 @@
       "argv": [
         "pnpm",
         "test:coverage"
+      ]
+    },
+    {
+      "name": "db-tests",
+      "argv": [
+        "pnpm",
+        "test:db"
       ]
     },
     {

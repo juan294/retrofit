@@ -54,6 +54,9 @@ function body<T>(host: string, path: string): T {
   return JSON.parse(r!.body) as T;
 }
 const remoteTools = (n: NetworkConfig) => n.tools.flatMap((a) => (a.tools ?? []).filter((t) => /^https?:\/\//.test(t)));
+/** Remote tools the callers inherit from Retrofit's own network (Phase 7: the production peer), outside their allowed_peers. */
+const INHERITED_TOOLS = remoteTools(retrofitNetwork);
+const fixtureTools = (n: NetworkConfig) => remoteTools(n).filter((t) => !INHERITED_TOOLS.includes(t));
 
 const EXPECTED_E2E_TOOLS = [
   "http://peer-a.fixture.test:3011/peer_demo",
@@ -148,16 +151,16 @@ describe("fixture routes with fixturesEnabled true", () => {
     expect(front.instructions).toBe(retrofitNetwork.tools[0]!.instructions);
     expect(front.tools).toEqual([...retrofitNetwork.tools[0]!.tools!, ...EXPECTED_E2E_TOOLS]);
     expect(n.tools[1]).toEqual(retrofitNetwork.tools[1]);
-    expect(Object.keys(n.link_labels ?? {}).sort()).toEqual([...EXPECTED_E2E_TOOLS].sort());
-    expect(new Set(Object.values(n.link_labels ?? {})).size).toBe(EXPECTED_E2E_TOOLS.length);
+    expect(Object.keys(n.link_labels ?? {}).sort()).toEqual([...INHERITED_TOOLS, ...EXPECTED_E2E_TOOLS].sort());
+    expect(new Set(Object.values(n.link_labels ?? {})).size).toBe(INHERITED_TOOLS.length + EXPECTED_E2E_TOOLS.length);
     // Retrofit's published files are untouched.
-    expect(retrofitNetwork.tools[0]!.tools).toEqual(["readiness_specialist"]);
+    expect(retrofitNetwork.tools[0]!.tools).toEqual(["readiness_specialist", "https://demo-harbor.thecreativetoken.com/harbor_tours"]);
   });
 
   it("every e2e remote tool lands on a peer fixture base that serves a manifest", () => {
     const sites = peerSites({ routerOrigin: "http://127.0.0.1:4555" });
     const allowed = body<Manifest>(CALLER_E2E_HOST, "/agent-manifest.json").allowed_peers;
-    for (const tool of remoteTools(body<NetworkConfig>(CALLER_E2E_HOST, "/retrofit_guide_e2e.network.json"))) {
+    for (const tool of fixtureTools(body<NetworkConfig>(CALLER_E2E_HOST, "/retrofit_guide_e2e.network.json"))) {
       const u = new URL(tool);
       expect(allowed, tool).toContain(u.origin);
       const segments = u.pathname.split("/");
@@ -176,7 +179,7 @@ describe("fixture routes with fixturesEnabled true", () => {
     expect(m.allowed_peers).toEqual([PEER_B_ORIGIN]);
     const n = body<NetworkConfig>(CALLER_DENIED_HOST, "/retrofit_guide_denied.network.json");
     expect(validateNetwork(new AgentNetwork(n, "retrofit_guide_denied")).errors).toEqual([]);
-    expect(remoteTools(n)).toEqual([`${PEER_A_ORIGIN}/peer_demo`]);
+    expect(fixtureTools(n)).toEqual([`${PEER_A_ORIGIN}/peer_demo`]);
     expect(m.allowed_peers).not.toContain(PEER_A_ORIGIN);
     expect(n.link_labels?.[`${PEER_A_ORIGIN}/peer_demo`]).toBeTruthy();
   });

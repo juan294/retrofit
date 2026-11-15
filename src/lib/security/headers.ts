@@ -72,6 +72,7 @@ interface HeaderRule {
 const PUBLIC_AGENT_FILES = [
   "/agent-manifest.json",
   "/retrofit_guide.network.json",
+  "/retrofit_conformance.network.json",
   "/links.json",
   "/agent-mcp.json",
   "/.well-known/nsdeploy.json",

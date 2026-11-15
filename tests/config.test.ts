@@ -89,4 +89,37 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ PUBLIC_ORIGIN: "https://r.example/path", SESSION_SECRET: secret })).toThrow(/PUBLIC_ORIGIN/);
     expect(() => loadConfig({ PUBLIC_ORIGIN: "ftp://r.example", SESSION_SECRET: secret })).toThrow(/PUBLIC_ORIGIN/);
   });
+
+  // Fails if production can start without the Supabase store (it would fall back to per-instance memory).
+  it.each(["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"])("refuses missing %s on Vercel", (name) => {
+    expect(() => loadConfig({ ...VERCEL_ENV, [name]: undefined })).toThrow(ConfigError);
+    expect(() => loadConfig({ ...VERCEL_ENV, [name]: " " })).toThrow(new RegExp(name));
+  });
+
+  // Fails if the service role key could travel over plain HTTP in production.
+  it("refuses an http SUPABASE_URL on Vercel", () => {
+    expect(() => loadConfig({ ...VERCEL_ENV, SUPABASE_URL: "http://store.supabase.test" })).toThrow(/SUPABASE_URL/);
+  });
+
+  it("reads the Supabase variables on Vercel", () => {
+    const c = loadConfig(VERCEL_ENV);
+    expect(c.supabaseUrl).toBe("https://store.supabase.test");
+    expect(c.supabaseServiceRoleKey).toBe("service-role-key-test");
+  });
+
+  // Fails if local development needs Supabase, or a half configuration silently uses memory.
+  it("leaves Supabase unset off Vercel and refuses only one of the two variables", () => {
+    const c = loadConfig({ SESSION_SECRET: secret });
+    expect(c.supabaseUrl).toBeNull();
+    expect(c.supabaseServiceRoleKey).toBeNull();
+    expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721" })).toThrow(/SUPABASE_SERVICE_ROLE_KEY/);
+    expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_SERVICE_ROLE_KEY: "k" })).toThrow(/SUPABASE_URL/);
+    const local = loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721/", SUPABASE_SERVICE_ROLE_KEY: "k" });
+    expect(local.supabaseUrl).toBe("http://127.0.0.1:54721");
+  });
+
+  it("refuses a SUPABASE_URL that is not an http or https origin", () => {
+    expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "ftp://x.test", SUPABASE_SERVICE_ROLE_KEY: "k" })).toThrow(/SUPABASE_URL/);
+    expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "not a url", SUPABASE_SERVICE_ROLE_KEY: "k" })).toThrow(/SUPABASE_URL/);
+  });
 });

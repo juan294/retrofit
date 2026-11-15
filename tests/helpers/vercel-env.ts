@@ -11,4 +11,6 @@ export const VERCEL_ENV: Record<string, string> = {
   JUDGE_CODE: "judge-code-test-0123456789",
   CRON_SECRET: "cron-secret-test",
   ALERT_GITHUB_TOKEN: "github-token-test",
+  SUPABASE_URL: "https://store.supabase.test",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role-key-test",
 };

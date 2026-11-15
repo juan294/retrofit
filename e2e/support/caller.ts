@@ -18,6 +18,12 @@ export const callerScript: Script = (body) => {
   const tools = toolNames(body);
   const result = lastToolResult(body);
   if (/Answer only with this fact: /.test(sys)) return { text: /Answer only with this fact: (.*?) If the request/.exec(sys)?.[1] ?? "unknown" };
+  // demo-harbor's agents (production peer, served locally in fixtures mode).
+  if (/facts about the Harbor tours demo/.test(sys)) return { text: "Harbor fact: the morning harbor tour leaves at 10:00." };
+  if (/assistant of the Harbor tours demo site/.test(sys)) {
+    if (result !== null) return { text: `Harbor answer: ${result.slice(0, 300)}` };
+    return { call: [{ name: "tour_specialist", args: { request: "When does the morning tour leave?" } }] };
+  }
   if (/for another site's assistant/.test(sys)) {
     if (result !== null) return { text: `Peer answer: ${result.slice(0, 300)}` };
     return { call: [{ name: "peer_facts", args: { request: "When does it open?" } }] };

@@ -6,6 +6,7 @@ import type { FetchContext } from "@/lib/fetch/http";
 import { scoreSnapshot } from "@/lib/score/score";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { createMemoryStore } from "@/lib/store/memory";
+import { createSupabaseStore } from "@/lib/store/supabase";
 import { fixtureClock } from "@/lib/test-fixtures/clock";
 import { systemClock, type Clock, type Store } from "@/lib/store/types";
 
@@ -62,13 +63,21 @@ const g = globalThis as typeof globalThis & { __retrofitRuntime?: Singletons };
 const singletons: Singletons = (g.__retrofitRuntime ??= {});
 
 /**
- * The process-wide Store. Memory for tests and local development. On Vercel it
- * throws until Phase 7 adds the Supabase adapter, so production never falls
- * back to a per-instance memory store.
+ * The process-wide Store: Supabase when SUPABASE_URL and
+ * SUPABASE_SERVICE_ROLE_KEY are set, memory for tests and local development
+ * without them. On Vercel without them it throws, so production never falls
+ * back to a per-instance memory store (loadConfig already refuses that
+ * configuration on Vercel).
  */
 export function getStore(config: Config = getConfig()): Store {
-  if (config.onVercel) throw new Error("Supabase store not configured");
-  singletons.store ??= createMemoryStore();
+  if (singletons.store) return singletons.store;
+  if (config.supabaseUrl && config.supabaseServiceRoleKey) {
+    singletons.store = createSupabaseStore({ url: config.supabaseUrl, serviceRoleKey: config.supabaseServiceRoleKey });
+  } else if (config.onVercel) {
+    throw new Error("Supabase store not configured");
+  } else {
+    singletons.store = createMemoryStore();
+  }
   return singletons.store;
 }
 
