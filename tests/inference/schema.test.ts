@@ -108,6 +108,22 @@ describe("parseChatRequest", () => {
     expectRejected({ ...base(), messages: [{ role: "user", content: 7 }] }, /content/i);
   });
 
+  // Fails if a role is looked up through the prototype chain (V09): an inherited name such as "__proto__" threw instead of refusing.
+  const INHERITED = Object.getOwnPropertyNames(Object.prototype);
+  it.each(INHERITED)("rejects the inherited name %j as a role with a 400 refusal", (role) => {
+    expect(INHERITED).toEqual(expect.arrayContaining(["__proto__", "constructor", "toString", "hasOwnProperty", "valueOf"]));
+    expectRejected({ ...base(), messages: [{ role, content: "x" }] }, /role must be system, user, assistant or tool/);
+  });
+
+  // Fails if an inherited name passes as a field of a message, a tool, a tool call or the request.
+  it.each(INHERITED)("rejects the inherited name %j as a field name", (field) => {
+    const own = (o: Json): Json => Object.defineProperty({ ...o }, field, { value: "x", enumerable: true, configurable: true, writable: true });
+    expectRejected(own(base()), /is not accepted/);
+    expectRejected({ ...base(), messages: [own({ role: "user", content: "x" })] }, /is not accepted/);
+    expectRejected({ ...base(), tools: [own(tool("lookup"))] }, /is not accepted/);
+    expectRejected({ ...base(), tools: [{ type: "function", function: own({ name: "lookup" }) }] }, /is not accepted/);
+  });
+
   // Fails if unknown roles are accepted.
   it.each(["developer", "function", "admin", ""])("rejects role %j", (role) => {
     expectRejected({ ...base(), messages: [{ role, content: "x" }] }, /role/i);

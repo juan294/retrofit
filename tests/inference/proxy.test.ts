@@ -256,6 +256,18 @@ describe("chat: refusals before any upstream call", () => {
     expect(upstream).toHaveLength(0);
   });
 
+  // Fails if a prototype-named role escapes the schema as an internal error instead of a 400 refusal (V09).
+  it.each(["__proto__", "constructor", "toString"])("refuses the role %j with 400 and no upstream call", async (role) => {
+    const { d } = setup();
+    const cookie = await session(d);
+    const res = await handleChat(chat({ ...BODY, messages: [{ role, content: "x" }] }, { cookie }), d);
+    expect(res.status).toBe(400);
+    const e = await errorOf(res);
+    expect(e.type).toBe("invalid_request_error");
+    expect(e.message).toMatch(/role must be system, user, assistant or tool/);
+    expect(upstream).toHaveLength(0);
+  });
+
   // Fails if the body limit is applied after JSON parsing (the refusal must name the size, even for a body that is not JSON).
   it("refuses an oversize body before parsing it", async () => {
     const { d } = setup();
@@ -447,7 +459,10 @@ describe("chat: upstream failures", () => {
     expect(upstream[0]!.signal?.aborted).toBe(false);
     visitor.abort();
     const res = await pending;
-    expect(res.status).not.toBe(200);
+    expect(res.status).toBe(502);
+    const e = await errorOf(res);
+    expect(e.code).toBe("visitor_disconnected");
+    expect(e.message).toBe(FREE_FAILED_MESSAGE);
     expect(upstream[0]!.signal?.aborted).toBe(true);
     expect(upstream).toHaveLength(1);
     const b = await ledger.budgets();
