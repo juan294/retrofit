@@ -185,4 +185,3 @@ describe("createPacer", () => {
     expect(entry.expiresAt - START).toBeLessThanOrEqual(MAX_INTERVAL_MS + 3600 * 1000);
   });
 });
-
