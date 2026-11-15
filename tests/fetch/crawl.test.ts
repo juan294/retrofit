@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "@/lib/config";
-import { crawlSite, LeaseLost } from "@/lib/fetch/crawl";
+import { crawlSite, LeaseLost, SKIP_PATH } from "@/lib/fetch/crawl";
 import { createFetchContext } from "@/lib/fetch/context";
+import { CrawlDelayTooLong, PrivatePathRefused } from "@/lib/fetch/errors";
+import { guardedFetch, type FetchContext } from "@/lib/fetch/http";
+import { createPacer } from "@/lib/fetch/pacing";
+import { createRobots } from "@/lib/fetch/robots";
 import { createMemoryStore } from "@/lib/store/memory";
 import { agentified, bakery, hostile, INJECTION, noindexPage, type FixtureSite } from "../fixtures/sites";
 import { validateSnapshot } from "@/lib/snapshot/types";
@@ -13,6 +17,26 @@ afterEach(async () => {
   await close?.();
   close = undefined;
 });
+
+/**
+ * A fetch context on a fake clock: the real store-backed pacer sleeps by moving the clock, and
+ * `starts` records the clock when each request leaves the pacer (just before it is sent).
+ */
+function fakeTimeContext() {
+  let now = Date.parse("2026-11-15T10:00:00Z");
+  const clock = () => now;
+  const store = createMemoryStore({ clock });
+  const pacer = createPacer({ store, clock, sleep: async (ms) => void (now += ms), minIntervalMs: 1000 });
+  const starts: { host: string; at: number }[] = [];
+  const pace = async (host: string, delay?: number, notAfter?: number) => {
+    await pacer.pace(host, delay, notAfter);
+    starts.push({ host, at: now });
+  };
+  const fetch: FetchContext = { config, store, pace, robots: createRobots({ config, store, pace, clock }) };
+  return { fetch, clock, starts, startedAt: now };
+}
+
+const gaps = (xs: { at: number }[]) => xs.slice(1).map((x, i) => x.at - (xs[i] as { at: number }).at);
 
 async function crawl(sites: Record<string, FixtureSite>, host: string, hooks?: Parameters<typeof crawlSite>[1]["hooks"]) {
   const server = await serveSites(() => sites);
@@ -119,28 +143,105 @@ describe("crawlSite", () => {
       "/": { headers: { "content-type": "text/html" }, body: `<main>home <a href="/members">Members</a></main>` },
       "/members": { status: 302, headers: { location: "/login" } },
     };
-    const { snapshot } = await crawl({ "bakery.fixture.test": site }, "bakery.fixture.test");
+    const { snapshot, server } = await crawl({ "bakery.fixture.test": site }, "bakery.fixture.test");
     expect(snapshot.pages.map((p) => new URL(p.url).pathname)).toEqual(["/"]);
     expect(snapshot.skipped.find((s) => s.url.endsWith("/members"))?.reason).toBe("private-path");
+    // Fails if the redirect hop to the private path is requested before the path rule applies (validation V06).
+    expect(server.requests.map((r) => r.path)).toContain("/members");
+    expect(server.requests.map((r) => r.path)).not.toContain("/login");
   });
 
-  // Fails if a large Crawl-delay makes the worker sleep (losing its lease) instead of stopping early.
-  it("reads only the home page when Crawl-delay is above the limit", async () => {
+  // Fails if a home page that redirects to a sign-in path is requested or extracted.
+  it("never contacts a private path that the home page redirects to", async () => {
+    const site: FixtureSite = { ...bakery, "/": { status: 302, headers: { location: "/account/login?next=%2F" } } };
+    const server = await serveSites(() => ({ "gated.fixture.test": site }));
+    close = () => server.close();
+    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1 });
+    const err = await crawlSite(server.origin("gated.fixture.test"), { config, fetch, clock: Date.now }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PrivatePathRefused);
+    expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt", "/"]);
+  });
+
+  // Fails if a probe or the declared network is fetched on a private path, directly or through a redirect.
+  it("never requests a private path for a probe or the declared network", async () => {
+    const site: FixtureSite = {
+      ...agentified,
+      "/llms.txt": { status: 301, headers: { location: "/login?next=llms" } },
+      "/agent-manifest.json": {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ networks: [{ name: "n", front_man: "n", hocon: "/account/network.json" }] }),
+      },
+    };
+    const { snapshot, server } = await crawl({ "kayak.fixture.test": site }, "kayak.fixture.test");
+    const paths = server.requests.map((r) => r.path);
+    expect(paths).toContain("/llms.txt");
+    expect(paths.filter((p) => SKIP_PATH.test(p.split("?")[0] as string))).toEqual([]);
+    expect(snapshot.probes.llmsTxt.status).toBeNull();
+  });
+
+  // Fails if guardedFetch contacts a private path when given the path rule.
+  it("guardedFetch refuses a private path before any request", async () => {
+    const server = await serveSites(() => ({ "bakery.fixture.test": bakery }));
+    close = () => server.close();
+    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1 });
+    const err = await guardedFetch(new URL(`${server.origin("bakery.fixture.test")}/cart`), fetch, { privatePath: SKIP_PATH }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PrivatePathRefused);
+    expect(server.requests).toEqual([]);
+  });
+
+  // Fails if a requested Crawl-delay is shortened (validation V07: a 30 s delay got a 10 s wait), or if
+  // requests continue once the next one would start after the crawl budget.
+  it("waits the full 30 s Crawl-delay, then stops before a request that would pass the budget", async () => {
     const site: FixtureSite = { ...bakery, "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nCrawl-delay: 30\nAllow: /\n" } };
     const server = await serveSites(() => ({ "slow.fixture.test": site }));
     close = () => server.close();
-    const store = createMemoryStore();
-    const base = createFetchContext({ config, store, minIntervalMs: 1 });
-    const waits: (number | undefined)[] = [];
-    const fetch = { ...base, pace: async (h: string, d?: number) => void waits.push(d) };
-    const { createRobots } = await import("@/lib/fetch/robots");
-    const snapshot = (await crawlSite(server.origin("slow.fixture.test"), { config, fetch: { ...fetch, robots: createRobots({ config, store, pace: fetch.pace }) }, clock: Date.now }))!;
+    const t = fakeTimeContext();
+    const snapshot = (await crawlSite(server.origin("slow.fixture.test"), { config, fetch: t.fetch, clock: t.clock }))!;
+    expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt", "/"]);
+    expect(gaps(t.starts)).toEqual([30_000]);
     expect(snapshot.pages).toHaveLength(1);
     expect(snapshot.probes.sitemap.status).toBeNull();
     expect(snapshot.skipped.filter((s) => s.reason === "crawl-delay").length).toBeGreaterThan(0);
-    expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt", "/"]);
-    // Fails if a wait longer than the cap is requested (it would outlast the lease).
-    expect(Math.max(...waits.map((w) => w ?? 0))).toBe(10);
+  });
+
+  // Fails if a moderate delay is shortened or if any request starts after the crawl budget ends.
+  it("keeps a 12 s Crawl-delay between every request and starts none after the budget", async () => {
+    const site: FixtureSite = { ...bakery, "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nCrawl-delay: 12\nAllow: /\n" } };
+    const server = await serveSites(() => ({ "slow.fixture.test": site }));
+    close = () => server.close();
+    const t = fakeTimeContext();
+    await crawlSite(server.origin("slow.fixture.test"), { config, fetch: t.fetch, clock: t.clock });
+    expect(t.starts.length).toBeGreaterThan(2);
+    for (const gap of gaps(t.starts)) expect(gap).toBeGreaterThanOrEqual(12_000);
+    for (const s of t.starts) expect(s.at - t.startedAt).toBeLessThanOrEqual(config.crawlBudgetMs);
+    expect(server.requests).toHaveLength(t.starts.length);
+  });
+
+  // Fails if a Crawl-delay longer than the whole budget makes the worker sleep past its lease,
+  // or if the home page is requested anyway.
+  it("stops before the home page when the Crawl-delay cannot fit the budget", async () => {
+    const site: FixtureSite = { ...bakery, "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nCrawl-delay: 60\nAllow: /\n" } };
+    const server = await serveSites(() => ({ "slower.fixture.test": site }));
+    close = () => server.close();
+    const t = fakeTimeContext();
+    const err = await crawlSite(server.origin("slower.fixture.test"), { config, fetch: t.fetch, clock: t.clock }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CrawlDelayTooLong);
+    expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt"]);
+    expect(t.clock() - t.startedAt).toBeLessThan(config.crawlBudgetMs);
+  });
+
+  // Fails if a redirect chain is not bounded as a whole: a hop to a host with a long delay must be
+  // refused before contact when its wait would pass the deadline (plan notes, delayed redirect chains).
+  it("refuses a redirect hop whose host delay would pass the deadline", async () => {
+    const server = await serveSites((o) => ({
+      "start.fixture.test": { "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nAllow: /\n" }, "/": { status: 301, headers: { location: `${o("far.fixture.test")}/` } } },
+      "far.fixture.test": { ...bakery, "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nCrawl-delay: 50\nAllow: /\n" } },
+    }));
+    close = () => server.close();
+    const t = fakeTimeContext();
+    const err = await crawlSite(server.origin("start.fixture.test"), { config, fetch: t.fetch, clock: t.clock }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CrawlDelayTooLong);
+    expect(server.requests.map((r) => `${r.host}${r.path}`)).toEqual(["start.fixture.test/robots.txt", "start.fixture.test/", "far.fixture.test/robots.txt"]);
   });
 
   // Fails if kept header values are not clipped (an oversized header would fail validation and the crawl).

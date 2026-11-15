@@ -181,16 +181,16 @@ describe("robots per origin (RFC 9309 section 2.3: scheme and authority)", () =>
 });
 
 describe("crawl delay", () => {
-  // Fails if Crawl-delay for RetrofitBot is not read, or not passed to pacing for page requests.
+  // Fails if Crawl-delay for RetrofitBot is not read, or not passed (uncapped) to pacing for page requests.
   it("exposes the crawl delay and passes it to pacing", async () => {
     const store = createMemoryStore({ clock });
     const robots = robotsFor(store);
     await guardedFetch(u("delay.fixture.test"), { config, store, robots, pace, lookup: noRealDns });
     await expect(robots.crawlDelay(new URL(server.url("delay.fixture.test")).origin)).resolves.toBe(5);
-    // robots.txt request, then the slot reservation with the delay, then the page request.
+    // robots.txt request (delay not known yet), then the page request with the full delay. The pacer
+    // measures the delay from the robots.txt request (tests/fetch/pacing.test.ts).
     expect(paced).toEqual([
       [hostOf("delay.fixture.test"), undefined],
-      [hostOf("delay.fixture.test"), 5],
       [hostOf("delay.fixture.test"), 5],
     ]);
   });

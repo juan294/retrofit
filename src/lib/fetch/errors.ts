@@ -45,3 +45,24 @@ export class TooManyRedirects extends Error {
     this.name = "TooManyRedirects";
   }
 }
+
+/** A request (or redirect hop) to a path the crawler never reads, refused before any contact. */
+export class PrivatePathRefused extends Error {
+  readonly code = "private_path" as const;
+  constructor(readonly url: string) {
+    super(`Refused a private path: ${url}`);
+    this.name = "PrivatePathRefused";
+  }
+}
+
+/** The host's crawl delay puts the next request after the caller's deadline; nothing was sent or reserved. */
+export class CrawlDelayTooLong extends Error {
+  readonly code = "crawl_delay" as const;
+  constructor(
+    readonly host: string,
+    readonly waitMs: number,
+  ) {
+    super(`The next request to ${host} may start only in ${waitMs} ms, after the deadline`);
+    this.name = "CrawlDelayTooLong";
+  }
+}
