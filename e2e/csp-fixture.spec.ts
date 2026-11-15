@@ -1,4 +1,7 @@
 import { test, expect } from "./fixtures/csp";
+import { evaluateCsp, type CspViolation } from "./fixtures/csp-eval";
+
+type CspMonitorView = { readonly seen: CspViolation[]; readonly console: string[] };
 
 const VIOLATION = { directive: "img-src", blockedURI: "http://blocked.fixture.test:3013/pixel.png" };
 
@@ -36,37 +39,42 @@ test.describe("CSP fixture", () => {
   });
 
   // V12: the fixture watched only its own page. A violation in another tab of the test's context,
-  // or in a context the test creates, must fail the test too. Each body first proves the monitor saw
-  // the violation (as the first case above does), so the body passes and only the fixture can fail it.
-  test("fails on a violation in a second tab", async ({ page, context, cspViolations }) => {
-    test.fail();
+  // or in a context the test creates, must reach the fixture's monitor and count as unexpected.
+  // These cases do not use test.fail() (any failure would satisfy it): each reads the same monitor
+  // and runs the same evaluateCsp the fixture runs at teardown with no declaration, requires exactly
+  // this violation as unexpected, and then declares it so the fixture passes. A monitor miss fails.
+  const unexpectedNow = (m: CspMonitorView) => evaluateCsp(m.seen, [], m.console).unexpected;
+  const seenKeys = (m: CspMonitorView) => [...new Set(m.seen.map((v) => `${v.directive} ${v.blockedURI}`))];
+
+  test("reports a violation in a second tab as unexpected", async ({ page, context, cspMonitor, expectCspViolations }) => {
     await page.goto("/");
     const tab = await context.newPage();
     await tab.goto("/test-fixtures/csp-violation");
     await expect(tab.getByText("CSP fixture")).toBeVisible();
-    await tab.waitForLoadState("networkidle");
-    await expect.poll(() => [...new Set(cspViolations.map((v) => `${v.directive} ${v.blockedURI}`))]).toEqual([`${VIOLATION.directive} ${VIOLATION.blockedURI}`]);
+    await expect.poll(() => seenKeys(cspMonitor)).toEqual([`${VIOLATION.directive} ${VIOLATION.blockedURI}`]);
+    expect(unexpectedNow(cspMonitor)).toEqual([VIOLATION]);
+    expectCspViolations([VIOLATION]);
   });
 
-  test("fails on a violation in a second browser context", async ({ page, browser, cspViolations }) => {
-    test.fail();
+  test("reports a violation in a second browser context as unexpected", async ({ page, browser, cspMonitor, expectCspViolations }) => {
     await page.goto("/");
     const other = await browser.newContext();
     const tab = await other.newPage();
     await tab.goto("/test-fixtures/csp-violation");
     await expect(tab.getByText("CSP fixture")).toBeVisible();
-    await tab.waitForLoadState("networkidle");
-    await expect.poll(() => [...new Set(cspViolations.map((v) => `${v.directive} ${v.blockedURI}`))]).toEqual([`${VIOLATION.directive} ${VIOLATION.blockedURI}`]);
+    await expect.poll(() => seenKeys(cspMonitor)).toEqual([`${VIOLATION.directive} ${VIOLATION.blockedURI}`]);
+    expect(unexpectedNow(cspMonitor)).toEqual([VIOLATION]);
+    expectCspViolations([VIOLATION]);
     await other.close();
   });
 
-  test("fails on a violation in a page opened with browser.newPage", async ({ browser, cspViolations }) => {
-    test.fail();
+  test("reports a violation in a page opened with browser.newPage as unexpected", async ({ browser, cspMonitor, expectCspViolations }) => {
     const tab = await browser.newPage();
     await tab.goto("/test-fixtures/csp-violation");
     await expect(tab.getByText("CSP fixture")).toBeVisible();
-    await tab.waitForLoadState("networkidle");
-    await expect.poll(() => [...new Set(cspViolations.map((v) => `${v.directive} ${v.blockedURI}`))]).toEqual([`${VIOLATION.directive} ${VIOLATION.blockedURI}`]);
+    await expect.poll(() => seenKeys(cspMonitor)).toEqual([`${VIOLATION.directive} ${VIOLATION.blockedURI}`]);
+    expect(unexpectedNow(cspMonitor)).toEqual([VIOLATION]);
+    expectCspViolations([VIOLATION]);
     await tab.close();
   });
 
