@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { type FreeConfig, loadFreeConfig } from "@/lib/config";
-import { HOLD_KEY, HOLD_TTL_S, createHold, describeFreeState, recordOverrun, resumeFree } from "@/lib/inference/hold";
-import { createLedger } from "@/lib/inference/ledger";
+import { AUDIT_PREFIX, HOLD_TTL_S, LEGACY_HOLD_KEY, type OverrunAlert, createHold, describeFreeState, recordOverrun, resumeFree } from "@/lib/inference/hold";
+import { LEDGER_KEY, LEDGER_TTL_S, createLedger } from "@/lib/inference/ledger";
 import { createMemoryBacking, createMemoryStore } from "@/lib/store/memory";
+import type { Store } from "@/lib/store/types";
 import { fakeClock } from "../helpers/server-deps";
 
 const DAY = 86_400_000;
@@ -83,14 +84,28 @@ describe("overrun hold", () => {
     expect(await i.ledger.reserve({ pool: "public", sid: "s", microUsd: 1 })).toEqual({ ok: false, reason: "hold" });
   });
 
-  // Fails if the hold record is written with a short TTL.
+  // Fails if the hold record (kept in the ledger document) or the audit records are written with a short TTL.
   it("stores the hold with a ten-year TTL", async () => {
     expect(HOLD_TTL_S).toBeGreaterThanOrEqual(10 * 365 * 86_400);
+    expect(LEDGER_TTL_S).toBeGreaterThanOrEqual(10 * 365 * 86_400);
     const clock = fakeClock(START);
     const i = instance(createMemoryBacking(), clock);
     await overrun(i);
     clock.advance(9 * 365 * DAY);
-    expect(await i.store.get(HOLD_KEY)).not.toBeNull();
+    expect(await i.hold.read()).toMatchObject({ reason: "reservation_overrun" });
+    expect(await i.hold.isHeld()).toBe(true);
+  });
+
+  // Fails if a hold record written by the earlier separate-key layout no longer holds the pool, or survives resumption.
+  it("treats a legacy separate hold record as held until resumed", async () => {
+    const i = instance(createMemoryBacking(), fakeClock(START));
+    const legacy = { reason: "reservation_overrun", at: new Date(START).toISOString(), overrunMicroUsd: 1, reservationMicroUsd: 1 };
+    await i.store.set(LEGACY_HOLD_KEY, legacy, HOLD_TTL_S);
+    expect(await i.hold.isHeld()).toBe(true);
+    expect(await i.hold.read()).toEqual(legacy);
+    expect(await resumeFree(i.deps, { reconciledBalanceUsd: 10, note: "legacy record" })).toMatchObject({ ok: true });
+    expect(await i.store.get(LEGACY_HOLD_KEY)).toBeNull();
+    expect(await i.hold.isHeld()).toBe(false);
   });
 
   // Fails if the hold also closes the judge pool, or the judge pool ignores its remaining budget.
@@ -176,5 +191,312 @@ describe("resumeFree", () => {
       hold: { reservationMicroUsd: 700_000 },
       bound: { priceInPerM: free.priceInPerM, priceOutPerM: free.priceOutPerM, framingTokensBase: 512, framingTokensPerMessage: 16, maxTokens: 1024 },
     });
+  });
+});
+
+/**
+ * Concurrent settlement during resumption (V03). Judge requests keep running while
+ * public inference is held, so a judge reservation can settle as a new overrun at
+ * any point inside resumeFree. Each case runs that settlement inside one store
+ * call that resumeFree makes after its inspection.
+ */
+describe("resumeFree with a concurrent hold event", () => {
+  type Interleave = (i: ReturnType<typeof instance>) => Promise<void>;
+
+  /** A store that runs `event` once, just before the first call that `matches`. */
+  function interleaved(store: Store, matches: (op: string, key: string) => boolean, event: () => Promise<void>): Store & { fired: () => boolean } {
+    let fired = false;
+    const before = async (op: string, key: string) => {
+      if (!fired && matches(op, key)) {
+        fired = true;
+        await event();
+      }
+    };
+    return {
+      ...store,
+      fired: () => fired,
+      async putIfAbsent(key, value, ttl) {
+        await before("putIfAbsent", key);
+        return store.putIfAbsent(key, value, ttl);
+      },
+      async delete(key) {
+        await before("delete", key);
+        return store.delete(key);
+      },
+      async compareAndSet(key, expected, next, ttl) {
+        await before("compareAndSet", key);
+        return store.compareAndSet(key, expected, next, ttl);
+      },
+    };
+  }
+
+  /** A judge request that settles above its reservation: a new overrun while the hold exists. */
+  const judgeOverrun = async (i: ReturnType<typeof instance>, alert: OverrunAlert = async () => {}) => {
+    const j = await i.ledger.reserve({ pool: "judge", sid: "judge", microUsd: 100 });
+    if (!j.ok) throw new Error(`judge refused: ${j.reason}`);
+    await recordOverrun(i.deps, await i.ledger.reconcile(j.reservationId, 1000), alert);
+  };
+
+  /** A judge request whose prompt tokens exceed the input bound, with no overrun. */
+  const inputBoundBreach: Interleave = async (i) => {
+    const j = await i.ledger.reserve({ pool: "judge", sid: "judge", microUsd: 1000 });
+    if (!j.ok) throw new Error(`judge refused: ${j.reason}`);
+    await recordOverrun(i.deps, await i.ledger.reconcile(j.reservationId, 900), async () => {}, { inputBoundExceeded: true });
+  };
+
+  const points: Array<[string, (op: string, key: string) => boolean]> = [
+    ["while the audit record is written", (op, key) => op === "putIfAbsent" && key.startsWith(AUDIT_PREFIX)],
+    ["just before the ledger flag is cleared", (op, key) => op === "compareAndSet" && key === LEDGER_KEY],
+  ];
+
+  async function heldWithInterleave(matches: (op: string, key: string) => boolean, event: Interleave) {
+    const clock = fakeClock(START);
+    const backing = createMemoryBacking();
+    const i = instance(backing, clock);
+    await overrun(i);
+    const other = instance(backing, clock);
+    const store = interleaved(i.store, matches, () => event(other));
+    return { i, store, deps: { ...i.deps, store } };
+  }
+
+  for (const [when, matches] of points) {
+    for (const [what, event] of [
+      ["a judge overrun", (i: ReturnType<typeof instance>) => judgeOverrun(i)],
+      ["an input-bound breach", inputBoundBreach],
+    ] as const) {
+      // Fails if resumption clears the flag or the record from a snapshot that a newer hold event made stale.
+      it(`keeps the hold and refuses when ${what} happens ${when}`, async () => {
+        const { i, store, deps } = await heldWithInterleave(matches, event);
+        const r = await resumeFree(deps, { reconciledBalanceUsd: 10, note: "balance inspected before the concurrent settlement" });
+        expect(store.fired()).toBe(true);
+        expect(r).toMatchObject({ ok: false, reason: "hold_changed" });
+        if (r.ok) return;
+        expect(r.message).toMatch(/hold stays in place/i);
+        expect(await i.hold.isHeld()).toBe(true);
+        expect((await i.ledger.budgets()).held).toBe(true);
+        expect(await i.hold.read()).not.toBeNull();
+        expect(await i.ledger.reserve({ pool: "public", sid: "s", microUsd: 1 })).toEqual({ ok: false, reason: "hold" });
+      });
+    }
+  }
+
+  // Fails if the refused attempt leaves no audit evidence of the refusal.
+  it("records the refused attempt in the audit trail", async () => {
+    const { store, deps } = await heldWithInterleave(points[0]![1], (i) => judgeOverrun(i));
+    const r = await resumeFree(deps, { reconciledBalanceUsd: 10, note: "first attempt" });
+    expect(r).toMatchObject({ ok: false, reason: "hold_changed" });
+    const attempt = await store.get<Record<string, unknown>>(`${AUDIT_PREFIX}${new Date(START).toISOString()}`);
+    const refusal = await store.get<Record<string, unknown>>(`${AUDIT_PREFIX}${new Date(START).toISOString()}-1`);
+    expect(attempt).toMatchObject({ action: "resume-free", note: "first attempt" });
+    expect(refusal).toMatchObject({ action: "resume-free-refused", reason: "hold_changed", attempt: `${AUDIT_PREFIX}${new Date(START).toISOString()}` });
+  });
+
+  // Fails if unrelated ledger activity (a judge request settled within its reservation) blocks resumption.
+  it("still resumes when only ordinary judge requests settle during resumption", async () => {
+    const ordinary: Interleave = async (i) => {
+      const j = await i.ledger.reserve({ pool: "judge", sid: "judge", microUsd: 1000 });
+      if (!j.ok) throw new Error("judge refused");
+      await recordOverrun(i.deps, await i.ledger.reconcile(j.reservationId, 900), async () => {});
+    };
+    const { i, store, deps } = await heldWithInterleave(points[1]![1], ordinary);
+    const r = await resumeFree(deps, { reconciledBalanceUsd: 10, note: "ordinary traffic" });
+    expect(store.fired()).toBe(true);
+    expect(r).toMatchObject({ ok: true });
+    expect(await i.hold.isHeld()).toBe(false);
+  });
+
+  // Fails if the balance check uses only the inspected snapshot when settlement raises the ledger's remaining credit before clearing.
+  it("rechecks the balance against the ledger at the moment the hold is cleared", async () => {
+    const clock = fakeClock(START);
+    const backing = createMemoryBacking();
+    const i = instance(backing, clock);
+    await overrun(i);
+    const j = await i.ledger.reserve({ pool: "judge", sid: "judge", microUsd: 2_000_000 });
+    if (!j.ok) throw new Error("judge refused");
+    // 7.2 USD remains at inspection; the judge request then settles at 0.1 USD, so 9.1 USD remains when clearing.
+    const other = instance(backing, clock);
+    const store = interleaved(i.store, points[1]![1], async () => void (await other.ledger.reconcile(j.reservationId, 100_000)));
+    const r = await resumeFree({ ...i.deps, store }, { reconciledBalanceUsd: 7.5, note: "balance read before the settlement" });
+    expect(store.fired()).toBe(true);
+    expect(r).toMatchObject({ ok: false, reason: "balance_below_ledger" });
+    expect(await i.hold.isHeld()).toBe(true);
+    expect(await i.hold.read()).not.toBeNull();
+  });
+
+  // Fails if a store failure while clearing leaves the hold without its record.
+  it("keeps the hold record when clearing the ledger flag fails", async () => {
+    const clock = fakeClock(START);
+    const i = instance(createMemoryBacking(), clock);
+    await overrun(i);
+    const failing: Store = {
+      ...i.store,
+      async compareAndSet() {
+        throw new Error("store unavailable");
+      },
+    };
+    await expect(resumeFree({ ...i.deps, store: failing }, { reconciledBalanceUsd: 10, note: "x" })).rejects.toThrow();
+    expect(await i.hold.read()).toMatchObject({ reason: "reservation_overrun" });
+    expect(await i.hold.isHeld()).toBe(true);
+  });
+
+  // Fails if a thrown store error leaves only the "resume-free" attempt in the audit trail, with no outcome.
+  it("records a resume-free-failed audit record when the store fails while clearing", async () => {
+    const i = instance(createMemoryBacking(), fakeClock(START));
+    await overrun(i);
+    const failing: Store = {
+      ...i.store,
+      async compareAndSet() {
+        throw new Error("store unavailable");
+      },
+    };
+    await expect(resumeFree({ ...i.deps, store: failing }, { reconciledBalanceUsd: 10, note: "x" })).rejects.toThrow();
+    const stamp = new Date(START).toISOString();
+    expect(await i.store.get(`${AUDIT_PREFIX}${stamp}`)).toMatchObject({ action: "resume-free", note: "x" });
+    expect(await i.store.get(`${AUDIT_PREFIX}${stamp}-1`)).toMatchObject({
+      action: "resume-free-failed",
+      attempt: `${AUDIT_PREFIX}${stamp}`,
+      error: expect.stringContaining("inference counters unavailable"),
+    });
+  });
+
+  // Fails if resumption reports success while a hold record remains: here a judge overrun's hold write is
+  // delayed past the inspection and lands while resumption runs (the review probe).
+  it("never reports success while a hold record remains when a hold write is delayed past inspection", async () => {
+    const clock = fakeClock(START);
+    const backing = createMemoryBacking();
+    const i = instance(backing, clock);
+    await overrun(i);
+    clock.advance(1000);
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const judgeBase = createMemoryStore({ clock: clock.now, backing });
+    const judgeStore: Store = {
+      ...judgeBase,
+      // Any write by the judge instance other than the ledger compare-and-set waits for the gate.
+      async putIfAbsent(key, value, ttl) {
+        if (key !== LEDGER_KEY) await gate;
+        return judgeBase.putIfAbsent(key, value, ttl);
+      },
+    };
+    const judgeDeps = { store: judgeStore, config: free, clock: clock.now };
+    const judgeLedger = createLedger(judgeDeps);
+    const j = await judgeLedger.reserve({ pool: "judge", sid: "j", microUsd: 100 });
+    if (!j.ok) throw new Error("judge refused");
+    const alert = vi.fn(async () => {});
+    const judgeDone = (async () => recordOverrun(judgeDeps, await judgeLedger.reconcile(j.reservationId, 1000), alert))();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const store = interleaved(createMemoryStore({ clock: clock.now, backing }), (op, key) => op === "compareAndSet" && key === LEDGER_KEY, async () => {
+      release();
+      await judgeDone;
+    });
+    const r = await resumeFree({ ...i.deps, store }, { reconciledBalanceUsd: 10, note: "probe" });
+    release();
+    await judgeDone;
+    const record = await i.hold.read();
+    const held = await i.hold.isHeld();
+    if (r.ok) {
+      expect(record).toBeNull();
+      expect(held).toBe(false);
+    } else {
+      expect(r.reason).toBe("hold_changed");
+      expect(record).not.toBeNull();
+      expect(held).toBe(true);
+      expect((await i.ledger.budgets()).held).toBe(true);
+    }
+  });
+
+  // Fails if a second resumption that inspected the same hold erases a newer hold written after the first one succeeded.
+  it("a second concurrent resumption refuses and keeps the newer hold record", async () => {
+    const clock = fakeClock(START);
+    const backing = createMemoryBacking();
+    const i = instance(backing, clock);
+    await overrun(i);
+    const a = instance(backing, clock);
+    const alert = vi.fn(async () => {});
+    let firstResult: unknown;
+    // B inspects first; before B's first change to the hold, A resumes and a new judge overrun holds again.
+    const storeB = interleaved(i.store, (op) => op === "delete" || op === "compareAndSet", async () => {
+      firstResult = await resumeFree(a.deps, { reconciledBalanceUsd: 10, note: "A" });
+      clock.advance(1000);
+      await judgeOverrun(a, alert);
+    });
+    const b = await resumeFree({ ...i.deps, store: storeB }, { reconciledBalanceUsd: 10, note: "B" });
+    expect(storeB.fired()).toBe(true);
+    expect(firstResult).toMatchObject({ ok: true });
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(b).toMatchObject({ ok: false, reason: "hold_changed" });
+    expect((await i.hold.read())?.at).toBe(new Date(START + 1000).toISOString());
+    expect(await i.hold.isHeld()).toBe(true);
+    expect((await i.ledger.budgets()).held).toBe(true);
+  });
+
+  // Fails if a failed delete of the legacy record after the ledger was cleared is reported as a store failure (nothing resumed).
+  it("reports the clear and the legacy delete error when only the legacy delete fails", async () => {
+    const i = instance(createMemoryBacking(), fakeClock(START));
+    await overrun(i);
+    const legacy = { reason: "reservation_overrun", at: new Date(START).toISOString(), overrunMicroUsd: 1, reservationMicroUsd: 1 };
+    await i.store.set(LEGACY_HOLD_KEY, legacy, HOLD_TTL_S);
+    const failingDelete: Store = {
+      ...i.store,
+      async delete(key) {
+        if (key === LEGACY_HOLD_KEY) throw new Error("store unavailable");
+        return i.store.delete(key);
+      },
+    };
+    const r = await resumeFree({ ...i.deps, store: failingDelete }, { reconciledBalanceUsd: 10, note: "legacy delete fails" });
+    expect(r).toMatchObject({ ok: true, legacyDeleteError: expect.stringContaining("inference counters unavailable") });
+    const b = await i.ledger.budgets();
+    expect(b.held).toBe(false);
+    expect(b.hold).toBeNull();
+    // The legacy record still holds the public pool until it is deleted.
+    expect(await i.store.get(LEGACY_HOLD_KEY)).toEqual(legacy);
+    expect(await i.hold.isHeld()).toBe(true);
+    const stamp = new Date(START).toISOString();
+    expect(await i.store.get(`${AUDIT_PREFIX}${stamp}-1`)).toMatchObject({
+      action: "resume-free-legacy-delete-failed",
+      attempt: `${AUDIT_PREFIX}${stamp}`,
+      error: expect.stringContaining("inference counters unavailable"),
+    });
+    // A rerun with a working store finds the legacy record and deletes it.
+    expect(await resumeFree(i.deps, { reconciledBalanceUsd: 10, note: "rerun" })).toMatchObject({ ok: true });
+    expect(await i.store.get(LEGACY_HOLD_KEY)).toBeNull();
+    expect(await i.hold.isHeld()).toBe(false);
+  });
+
+  // Fails if a resumed pool cannot be held again, or a second hold cannot be resumed with its own audit record.
+  it("supports repeated holds and resumptions", async () => {
+    const clock = fakeClock(START);
+    const i = instance(createMemoryBacking(), clock);
+    await overrun(i);
+    const first = await resumeFree(i.deps, { reconciledBalanceUsd: 10, note: "first" });
+    expect(first).toMatchObject({ ok: true });
+    expect(await i.hold.isHeld()).toBe(false);
+
+    clock.advance(DAY);
+    const alert = vi.fn(async () => {});
+    await judgeOverrun(i, alert);
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(await i.hold.isHeld()).toBe(true);
+    expect((await i.hold.read())?.at).toBe(new Date(START + DAY).toISOString());
+
+    clock.advance(60_000);
+    const second = await resumeFree(i.deps, { reconciledBalanceUsd: 10, note: "second" });
+    expect(second).toMatchObject({ ok: true });
+    if (!first.ok || !second.ok) return;
+    expect(second.auditKey).not.toBe(first.auditKey);
+    expect(await i.store.get(second.auditKey)).toMatchObject({ note: "second", hold: { at: new Date(START + DAY).toISOString() } });
+    expect(await i.hold.isHeld()).toBe(false);
+  });
+
+  // Fails if an overrun after a completed resumption is lost (no hold, no record or no alert).
+  it("holds again for an overrun that settles after resumption completes", async () => {
+    const i = instance(createMemoryBacking(), fakeClock(START));
+    await overrun(i);
+    expect(await resumeFree(i.deps, { reconciledBalanceUsd: 10, note: "done" })).toMatchObject({ ok: true });
+    const alert = vi.fn(async () => {});
+    await judgeOverrun(i, alert);
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(await i.hold.read()).toMatchObject({ reason: "reservation_overrun", overrunMicroUsd: 900 });
+    expect((await i.ledger.budgets()).held).toBe(true);
   });
 });
