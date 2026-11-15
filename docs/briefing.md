@@ -19,7 +19,7 @@ This repository holds the workspace setup only: shared instructions, native RPI 
 - Repository: https://github.com/juan294/retrofit
 - Local workspace: `/Users/juan/code/retrofit`
 - Integration branch: `develop`. Production branch: `main`.
-- License: Apache-2.0, the same license as the specification repository. The organizers have not stated which license they expect.
+- License: Apache-2.0, the same license as the specification repository. The whole project, including server-side code, is open source (owner decision, 2026-11-15, [decision record](decisions/2026-11-15-open-source-and-key-panel-style.md)).
 
 ## Constraints that the plan must keep
 

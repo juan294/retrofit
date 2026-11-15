@@ -13,7 +13,7 @@ Machine-readable selection and gaps are in `.rpi/release-profile.json`. The prod
 | Area | Retrofit decision |
 | --- | --- |
 | Product | Web tool and browser runtime that conforms to the open agentic web specification. Stack not decided. |
-| Repository | `juan294/retrofit`. Private at bootstrap. The hackathon requires open source, so visibility must change before submission, with Juan's authorization. |
+| Repository | `juan294/retrofit`. Private at bootstrap. The hackathon requires open source, and the owner accepts a public repository (2026-11-15). Visibility must change before submission, with Juan's authorization for that exact action. |
 | Branches | `develop` integration, `main` production, merge-commit promotion |
 | Artifact | Not decided. Expected: one deployed site at `retrofit.thecreativetoken.com` plus the published runtime and manifest files, each tied to a source commit. |
 | State | Not decided. Expected: accounts, saved reports and site claims. Visitor LLM keys stay in the browser and are never server state. |

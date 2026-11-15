@@ -50,8 +50,8 @@ The idea was shaped in an Archy session on 2026-11-13 and 2026-11-14. Its resear
 
 Threads that were open when the session ended:
 
-- **Key panel mockup.** A visual mockup of the key-entry panel was planned and not started. The proposal was a new neutral style. The owner's existing design systems (Chapa, Coach Anvil "Bedrock", Portfolio) were offered as alternatives and no choice was made.
-- **Question to the organizers.** Which license they expect and whether server-side code must be open. Not sent. Posting needs the owner's approval and agreed wording.
+- **Key panel mockup.** A visual mockup of the key-entry panel was planned and not started. The owner chose a new neutral style for now (2026-11-15, [decision record](decisions/2026-11-15-open-source-and-key-panel-style.md)).
+- **Question to the organizers.** Closed without sending (2026-11-15). The owner decided that the whole project, including server-side code, is open source, so the question is no longer needed. See the [decision record](decisions/2026-11-15-open-source-and-key-panel-style.md).
 - **Name.** Settled as Retrofit. Names the owner rejected, so that they are not proposed again: Asturian words (Pasera, Injerto, Ponte, Umbral, Faro), Welcomat, Second Door, Wakesite, Open Counter, AgentScore, In-House. AgentReady is taken by at least three products.
 - **Existing projects.** Chapa, Portfolio and Coach were considered as entries and set aside for this new project. Sutura and Cirujano are under a publication lockdown until 2026-12-23 and are not part of this work.
 - **Lesson from the session.** A claim that the hackathon does not require something needs every official page read in full (overview, rules, resources, updates and the Discord announcements). An early answer that open source was not required was wrong for this reason.
@@ -59,8 +59,8 @@ Threads that were open when the session ended:
 ## Open items for the owner
 
 - The name stays Retrofit (owner decision, 2026-11-14): publishing under a `thecreativetoken.com` subdomain removes the domain constraint. No trademark search was done. Retrofit is also a well-known open-source HTTP client from Square (recalled from memory, not checked).
-- The repository is private. The hackathon requires open source, so it must become public before submission.
-- The license is Apache-2.0, chosen to match the specification repository. The organizers have not stated which license they expect.
+- The repository is private. The owner accepts a public repository for the hackathon (2026-11-15). The change to public still needs authorization for that exact action.
+- The license is Apache-2.0, chosen to match the specification repository, and covers the whole project including server-side code (owner decision, 2026-11-15).
 - The address is `retrofit.thecreativetoken.com` (owner decision, 2026-11-14). No DNS record or deployment exists.
 - No local development port is reserved, because the stack is not decided.
 
