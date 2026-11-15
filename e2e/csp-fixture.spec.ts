@@ -36,17 +36,19 @@ test.describe("CSP fixture", () => {
   });
 
   // V12: the fixture watched only its own page. A violation in another tab of the test's context,
-  // or in a context the test creates, must fail the test too (each body passes; only the fixture can fail it).
-  test("fails on a violation in a second tab", async ({ page, context }) => {
+  // or in a context the test creates, must fail the test too. Each body first proves the monitor saw
+  // the violation (as the first case above does), so the body passes and only the fixture can fail it.
+  test("fails on a violation in a second tab", async ({ page, context, cspViolations }) => {
     test.fail();
     await page.goto("/");
     const tab = await context.newPage();
     await tab.goto("/test-fixtures/csp-violation");
     await expect(tab.getByText("CSP fixture")).toBeVisible();
     await tab.waitForLoadState("networkidle");
+    await expect.poll(() => [...new Set(cspViolations.map((v) => `${v.directive} ${v.blockedURI}`))]).toEqual([`${VIOLATION.directive} ${VIOLATION.blockedURI}`]);
   });
 
-  test("fails on a violation in a second browser context", async ({ page, browser }) => {
+  test("fails on a violation in a second browser context", async ({ page, browser, cspViolations }) => {
     test.fail();
     await page.goto("/");
     const other = await browser.newContext();
@@ -54,15 +56,17 @@ test.describe("CSP fixture", () => {
     await tab.goto("/test-fixtures/csp-violation");
     await expect(tab.getByText("CSP fixture")).toBeVisible();
     await tab.waitForLoadState("networkidle");
+    await expect.poll(() => [...new Set(cspViolations.map((v) => `${v.directive} ${v.blockedURI}`))]).toEqual([`${VIOLATION.directive} ${VIOLATION.blockedURI}`]);
     await other.close();
   });
 
-  test("fails on a violation in a page opened with browser.newPage", async ({ browser }) => {
+  test("fails on a violation in a page opened with browser.newPage", async ({ browser, cspViolations }) => {
     test.fail();
     const tab = await browser.newPage();
     await tab.goto("/test-fixtures/csp-violation");
     await expect(tab.getByText("CSP fixture")).toBeVisible();
     await tab.waitForLoadState("networkidle");
+    await expect.poll(() => [...new Set(cspViolations.map((v) => `${v.directive} ${v.blockedURI}`))]).toEqual([`${VIOLATION.directive} ${VIOLATION.blockedURI}`]);
     await tab.close();
   });
 
@@ -76,5 +80,12 @@ test.describe("CSP fixture", () => {
     const otherTab = await other.newPage();
     await otherTab.goto("/test-fixtures/csp-violation");
     await expect(otherTab.getByText("CSP fixture")).toBeVisible();
+  });
+
+  test("passes with the exact expectation for a violation in a page opened with browser.newPage", async ({ browser, expectCspViolations }) => {
+    expectCspViolations([VIOLATION]);
+    const tab = await browser.newPage();
+    await tab.goto("/test-fixtures/csp-violation");
+    await expect(tab.getByText("CSP fixture")).toBeVisible();
   });
 });
