@@ -43,7 +43,9 @@ function urlFrom(text: string): string | null {
 /**
  * POST /api/analyze `{url}` -> 200 `{id}`. Same-origin only (403 otherwise).
  * Sets the visitor cookie when absent. Errors: 400 not_public, 413 too_large,
- * 429 client_limit or daily_limit (`{error, message, retryAt?}`), 503 unavailable.
+ * 429 client_limit or daily_limit (`{error, message, retryAt?}`), 503 unavailable,
+ * and 503 counting (`{error, message, retryAfterSeconds}` with Retry-After) while
+ * the site's daily count is undecided: no analysis is created, so the page retries.
  * Every request, including the early returns, dispatches queued work.
  */
 export async function handleAnalyze(request: Request, deps: ServerDeps): Promise<Response> {
@@ -59,6 +61,12 @@ export async function handleAnalyze(request: Request, deps: ServerDeps): Promise
     const clientId = clientIdFromRequest(request, deps.config, deps.clock());
     const outcome = await startAnalysis(deps, { rawUrl, ownerHash: visitor.hash, clientId, invocation });
     if (outcome.ok) return json(200, { id: outcome.id }, visitor.setCookie);
+    if (outcome.code === "counting") {
+      const { status, code, message, retryAfterSeconds } = outcome;
+      const res = json(status, { error: code, message, retryAfterSeconds }, visitor.setCookie);
+      res.headers.set("retry-after", String(retryAfterSeconds));
+      return res;
+    }
     const { status, code, message, retryAt } = outcome;
     return json(status, { error: code, message, ...(retryAt ? { retryAt } : {}) }, visitor.setCookie);
   } catch (e) {

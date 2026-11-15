@@ -94,6 +94,18 @@ function isArtifactPath(pathname: string): boolean {
 }
 
 /**
+ * An artifact load that the vendored code keeps for the whole page, across runtimes: the content
+ * module caches its snapshot promise at module scope (public/preview-assets/content-actions.js:38-43),
+ * and every later boot imports the same module URL (runtime/action-transport.js:19) and reuses it.
+ * Aborting it when its runtime retires would reject that promise for every later runtime, so it is
+ * never tied to a runtime. It is a read of the preview's own file and makes no model call.
+ * The runtime's other artifact loads are per boot (engine and registry instances), so they stay tied.
+ */
+function sharedAcrossRuntimes(pathname: string): boolean {
+  return pathname.toLowerCase().endsWith("/site-content.json");
+}
+
+/**
  * An unmarked request to a same-origin router: its path, with repeated slashes collapsed (the
  * server redirects "//" to the cleaned path) and the URL parser's backslash and dot handling, is
  * the router path or under it. Only `<router>/models` stays open: the free session's model check.
@@ -193,8 +205,10 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
 
     // 1 and 2: same origin; agent artifacts must not follow redirects.
     if (url.origin === pageOrigin) {
-      // Agent artifacts (network, content, action modules) belong to the active runtime and end with it.
-      return isArtifactPath(url.pathname) ? withRedirectError(input, tiedToRun(input, init)) : originalFetch(input, init);
+      if (!isArtifactPath(url.pathname)) return originalFetch(input, init);
+      // Agent artifacts (manifest, networks, links) belong to the active runtime and end with it,
+      // except the page-wide snapshot load, which a later runtime shares.
+      return withRedirectError(input, sharedAcrossRuntimes(url.pathname) ? init : tiedToRun(input, init));
     }
 
     const method = requestMethod(input, init);

@@ -1,7 +1,7 @@
 import { dispatchQueued, startCrawlJob } from "@/lib/analysis/capacity";
 import { reportBody } from "@/lib/analysis/record";
 import { withDefaultScheme } from "@/lib/analysis/run";
-import { agentTexts, type AgentErrorCode } from "@/lib/analysis/texts";
+import { agentTexts, COUNTING_RETRY_S, type AgentErrorCode } from "@/lib/analysis/texts";
 import { VISITOR_COOKIE } from "@/lib/analysis/visitor";
 import { isQueueExpired, readJobMarkingStale, type CrawlJob } from "@/lib/crawl/jobs";
 import { NotPublicError } from "@/lib/fetch/errors";
@@ -19,8 +19,6 @@ export const MAX_REPORT_BYTES = 16 * 1024;
 const POLL_MS = 250;
 const RUNNING_RETRY_S = 20;
 const BUSY_RETRY_S = 120;
-/** Retry after an undecided client count (agentTexts.counting says 2 seconds). */
-const COUNTING_RETRY_S = 2;
 
 const HTTP: Record<AgentErrorCode, number> = {
   missing_url: 400,
@@ -60,6 +58,8 @@ function error(code: AgentErrorCode, message: string, o: { retryAfterSeconds?: n
 
 const fixed = (code: "missing_url" | "invalid_url" | "not_public" | "robots_blocked" | "crawl_error" | "method_not_allowed") => error(code, agentTexts[code]);
 const unavailable = () => error("unavailable", agentTexts.unavailable, { retryAfterSeconds: BUSY_RETRY_S });
+/** A job held back because the site's daily count was undecided (agentTexts.countingSite says 2 seconds). */
+const countingSite = () => error("unavailable", agentTexts.countingSite, { retryAfterSeconds: COUNTING_RETRY_S });
 const secondsUntil = (at: number, now: number) => Math.max(0, Math.ceil((at - now) / 1000));
 
 /** Validation rule 4: NotPublicError.reason (free text, url.ts) to the contract's error code. */
@@ -128,6 +128,8 @@ export async function handleScore(request: Request, deps: ServerDeps): Promise<R
 
     // Rule 7: start or join, capacity and daily cap, then dispatch.
     const crawl = await startCrawlJob(deps, origin);
+    // The site's daily count is undecided: nothing was queued; retry in a moment.
+    if (!crawl.ok && crawl.code === "counting") return countingSite();
     if (!crawl.ok) {
       return error("daily_limit", agentTexts.daily_limit, { retryAfterSeconds: secondsUntil(crawl.retryAt, deps.clock()), retryAt: new Date(crawl.retryAt) });
     }
@@ -184,6 +186,9 @@ function failureResponse(job: CrawlJob, now: number): Response {
       return fixed(code);
     case "stale":
       return error("stale", agentTexts.stale, { retryAfterSeconds: 0 });
+    case "counting":
+      // This call joined a job whose daily count came back undecided.
+      return countingSite();
     case "daily_limit": {
       // A job that another request failed at the daily cap.
       const midnight = nextUtcMidnight(now);

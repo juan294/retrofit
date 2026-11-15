@@ -10,8 +10,10 @@ export const MAX_REDIRECTS = 5;
 
 /**
  * Per-host pacing slot (`createPacer`). `host` is `URL.host`. The crawl delay
- * is honored in full (up to one day); a slot that would start after `notAfter` (ms) is refused
- * with CrawlDelayTooLong before any wait.
+ * is honored in full (up to one day). It never resolves after `notAfter` (ms):
+ * a slot that would start later, or a deadline that passes during its store
+ * calls or wait, throws CrawlDelayTooLong. `follow` sends at once after it
+ * resolves, with no other wait between, so no request starts after `notAfter`.
  */
 export type Pace = (host: string, crawlDelaySeconds?: number, notAfter?: number) => Promise<void>;
 

@@ -5007,12 +5007,6 @@
       "title": "connecting a key while the free runtime loads its network aborts that load and leaves only the new runtime"
     },
     {
-      "rule": "V16 dispatch store work",
-      "suite": "unit",
-      "file": "tests/analysis/capacity.test.ts",
-      "title": "capacity queues the job when the origin's daily count is still undecided"
-    },
-    {
       "rule": "V04 count-once admission",
       "suite": "unit",
       "file": "tests/api/score.test.ts",
@@ -5251,6 +5245,198 @@
       "suite": "unit",
       "file": "tests/release/production-evidence.test.ts",
       "title": "production-evidence.mjs reads vercel inspect from stdout only refuses to start when vercel inspect exits 0 but its output is not a deployment record"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "playwright",
+      "file": "provider-switch.spec.ts",
+      "title": "connecting a key while the free runtime loads its site snapshot boots the new runtime and completes a tool round-trip"
+    },
+    {
+      "rule": "V16 dispatch store work",
+      "suite": "unit",
+      "file": "tests/analysis/capacity.test.ts",
+      "title": "capacity does not queue a replacement while the daily cap decision remains pending at an exhausted cap"
+    },
+    {
+      "rule": "V16 dispatch store work",
+      "suite": "unit",
+      "file": "tests/analysis/capacity.test.ts",
+      "title": "capacity leaves the job undispatched with a counting retry when the origin's daily count is still undecided"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/request.test.ts",
+      "title": "requestAnalysis (validation V04) honors a smaller attempt limit"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/request.test.ts",
+      "title": "requestAnalysis (validation V04) passes its signal to fetch and reports an abort as aborted"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/request.test.ts",
+      "title": "requestAnalysis (validation V04) returns any other failure at once, with its retryAt"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/request.test.ts",
+      "title": "requestAnalysis (validation V04) returns the unavailable text when the request fails or the body is unreadable"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/request.test.ts",
+      "title": "requestAnalysis (validation V04) stops after 3 attempts and returns the counting failure"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/request.test.ts",
+      "title": "requestAnalysis (validation V04) stops when its signal aborts during the retry wait, without a second request"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/request.test.ts",
+      "title": "requestAnalysis (validation V04) tries again after retryAfterSeconds on 503 counting and returns the new analysis id"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/run.test.ts",
+      "title": "visitor texts maps a counting failure to the counting text"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/start-controller.test.ts",
+      "title": "createStartController (review F3, F4) aborts on dispose and drops a late success"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/start-controller.test.ts",
+      "title": "createStartController (review F3, F4) cancels a scheduled start on dispose"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/start-controller.test.ts",
+      "title": "createStartController (review F3, F4) ignores starts and schedules while a request is in flight"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/start-controller.test.ts",
+      "title": "createStartController (review F3, F4) sends one request when a click comes while the automatic retry waits"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/start-controller.test.ts",
+      "title": "createStartController (review F3, F4) shows the retry text while waiting and stays busy after a success"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/url-form.test.ts",
+      "title": "UrlForm (review F5) renders the status region before there is any text in it"
+    },
+    {
+      "rule": "V01 concurrent result reads",
+      "suite": "unit",
+      "file": "tests/api/analyze.test.ts",
+      "title": "POST /api/analyze answers 503 counting with a 2 s retry and creates no analysis while the site's daily count is undecided"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/api/score.test.ts",
+      "title": "GET /api/score daily cap (contract rule 7) answers 503 with Retry-After 2 and queues nothing while the site's daily count is undecided"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/api/score.test.ts",
+      "title": "GET /api/score daily cap (contract rule 7) answers the same 2 s retry for a call that joined a job held back by an undecided daily count"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/http.test.ts",
+      "title": "deadline through the production fetch context (validation V07) paces on the sleep it is given"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/http.test.ts",
+      "title": "deadline through the production fetch context (validation V07) sends no request when the pacing reservation returns after notAfter"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/pacing.test.ts",
+      "title": "createPacer deadline after asynchronous work (validation V07) computes the remaining wait from the time after the reservation"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/pacing.test.ts",
+      "title": "createPacer deadline after asynchronous work (validation V07) does not grant a request slot when its store round trip crosses the crawl deadline"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/pacing.test.ts",
+      "title": "createPacer deadline after asynchronous work (validation V07) keeps the full interval between request starts when each reservation takes 200 ms"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/pacing.test.ts",
+      "title": "createPacer deadline after asynchronous work (validation V07) refuses a slot when its store read ends after notAfter, without reserving it"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/pacing.test.ts",
+      "title": "createPacer deadline after asynchronous work (validation V07) refuses after a reservation that returns past notAfter, and keeps that reservation's spacing"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/pacing.test.ts",
+      "title": "createPacer deadline after asynchronous work (validation V07) refuses when the wait's timer wakes after notAfter"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/pacing.test.ts",
+      "title": "createPacer deadline after asynchronous work (validation V07) takes a new slot when it wakes too late for its own, so the next request keeps the full interval"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/pacing.test.ts",
+      "title": "createPacer deadline after asynchronous work (validation V07) waits again when the timer wakes early, so the full crawl delay passes"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "runtime generations (V08) keeps a retired runtime's pending site snapshot load, which the next runtime shares"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "runtime generations (V08) keeps the caller's abort signal on the site snapshot load"
     }
   ],
   "repairs": {

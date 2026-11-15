@@ -4,11 +4,12 @@ import { crawlSite, isPrivatePath, LeaseLost } from "@/lib/fetch/crawl";
 import { createFetchContext } from "@/lib/fetch/context";
 import { CrawlDelayTooLong, PrivatePathRefused } from "@/lib/fetch/errors";
 import { guardedFetch, type FetchContext } from "@/lib/fetch/http";
-import { createPacer } from "@/lib/fetch/pacing";
+import { createPacer, LATE_START_TOLERANCE_MS } from "@/lib/fetch/pacing";
 import { createRobots } from "@/lib/fetch/robots";
 import { createMemoryStore } from "@/lib/store/memory";
 import { agentified, bakery, hostile, INJECTION, noindexPage, type FixtureSite } from "../fixtures/sites";
 import { validateSnapshot } from "@/lib/snapshot/types";
+import { FAST_TOLERANCE_MS } from "../helpers/server-deps";
 import { serveSites } from "../helpers/sites";
 
 const config = loadConfig({ SESSION_SECRET: "x".repeat(32), RETROFIT_TEST_FIXTURES: "1", FETCH_MAX_BYTES: "1048576" });
@@ -42,7 +43,7 @@ async function crawl(sites: Record<string, FixtureSite>, host: string, hooks?: P
   const server = await serveSites(() => sites);
   close = () => server.close();
   const store = createMemoryStore();
-  const fetch = createFetchContext({ config, store, minIntervalMs: 1 });
+  const fetch = createFetchContext({ config, store, minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS });
   const snapshot = await crawlSite(server.origin(host), { config, fetch, clock: Date.now, hooks });
   return { snapshot: snapshot!, server };
 }
@@ -142,13 +143,13 @@ describe("crawlSite", () => {
     const server = await serveSites(() => ({ "bakery.fixture.test": bakery }));
     close = () => server.close();
     const store = createMemoryStore();
-    const base = createFetchContext({ config, store, minIntervalMs: 1 });
+    const base = createFetchContext({ config, store, minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS });
     const paced: string[] = [];
     const pace = async (host: string, delay?: number) => {
       paced.push(host);
       await base.pace(host, delay);
     };
-    const fetch = { ...createFetchContext({ config, store, minIntervalMs: 1 }), pace };
+    const fetch = { ...createFetchContext({ config, store, minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS }), pace };
     // Robots must use the same paced path.
     const { createRobots } = await import("@/lib/fetch/robots");
     const ctx = { ...fetch, robots: createRobots({ config, store, pace }) };
@@ -178,7 +179,7 @@ describe("crawlSite", () => {
     const site: FixtureSite = { ...bakery, "/": { status: 302, headers: { location: "/account/login?next=%2F" } } };
     const server = await serveSites(() => ({ "gated.fixture.test": site }));
     close = () => server.close();
-    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1 });
+    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS });
     const err = await crawlSite(server.origin("gated.fixture.test"), { config, fetch, clock: Date.now }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(PrivatePathRefused);
     expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt", "/"]);
@@ -225,7 +226,7 @@ describe("crawlSite", () => {
   it("guardedFetch refuses a private path before any request", async () => {
     const server = await serveSites(() => ({ "bakery.fixture.test": bakery }));
     close = () => server.close();
-    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1 });
+    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS });
     const err = await guardedFetch(new URL(`${server.origin("bakery.fixture.test")}/cart`), fetch, { privatePath: isPrivatePath }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(PrivatePathRefused);
     expect(server.requests).toEqual([]);
@@ -240,7 +241,8 @@ describe("crawlSite", () => {
     const t = fakeTimeContext();
     const snapshot = (await crawlSite(server.origin("slow.fixture.test"), { config, fetch: t.fetch, clock: t.clock }))!;
     expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt", "/"]);
-    expect(gaps(t.starts)).toEqual([30_000]);
+    // The full 30 s, measured from the robots.txt request's latest allowed start.
+    expect(gaps(t.starts)).toEqual([30_000 + LATE_START_TOLERANCE_MS]);
     expect(snapshot.pages).toHaveLength(1);
     expect(snapshot.probes.sitemap.status).toBeNull();
     expect(snapshot.skipped.filter((s) => s.reason === "crawl-delay").length).toBeGreaterThan(0);
@@ -278,7 +280,7 @@ describe("crawlSite", () => {
     const site: FixtureSite = { ...bakery, "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nCrawl-delay: 60\nAllow: /\n" } };
     const server = await serveSites(() => ({ "slower.fixture.test": site }));
     close = () => server.close();
-    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1 });
+    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS });
     const err = await crawlSite(server.origin("slower.fixture.test"), { config, fetch, clock: Date.now }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CrawlDelayTooLong);
     expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt"]);
@@ -289,7 +291,7 @@ describe("crawlSite", () => {
     const site: FixtureSite = { ...bakery, "/robots.txt": { status: 302, headers: { location: "/login?next=robots" } } };
     const server = await serveSites(() => ({ "gated.fixture.test": site }));
     close = () => server.close();
-    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1 });
+    const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS });
     await crawlSite(server.origin("gated.fixture.test"), { config, fetch, clock: Date.now }).catch(() => null);
     expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt"]);
   });

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { slotKey } from "@/lib/analysis/capacity";
+import { CRAWL_QUEUE, slotKey } from "@/lib/analysis/capacity";
 import { codeForNotPublicReason, handleScore } from "@/lib/api/score";
-import { getJob, originAliasKey, resolveJob, updateJob, type CrawlJob } from "@/lib/crawl/jobs";
-import { clientIdFor, clientOriginMarker, clientWindow } from "@/lib/fetch/limits";
+import { getJob, originAliasKey, resolveJob, startOrJoinCrawl, updateJob, type CrawlJob } from "@/lib/crawl/jobs";
+import { clientIdFor, clientOriginMarker, clientWindow, shortHash } from "@/lib/fetch/limits";
 import { robotsKey } from "@/lib/fetch/robots";
 import { createMemoryStore } from "@/lib/store/memory";
 import type { Store } from "@/lib/store/types";
@@ -18,6 +18,7 @@ afterEach(async () => {
   close = undefined;
 });
 
+const COUNTING_SITE = "Retrofit is still starting another score of this site. Call again in 2 seconds with the same URL.";
 const MESSAGES = {
   missing_url: "Add the website address in the url query parameter, such as /api/score?url=https%3A%2F%2Fexample.com.",
   invalid_url:
@@ -295,6 +296,47 @@ describe("GET /api/score client limit (contract rule 6)", () => {
       retryAfterSeconds: 2,
     });
     expect(await d.store.get(originAliasKey(origin))).toBeNull();
+  });
+});
+
+describe("GET /api/score daily cap (contract rule 7)", () => {
+  // Validation V04. Fails if a score call whose site's daily count is still undecided is admitted (its job
+  // queued, so it could pass the daily cap) or refused with daily_limit, instead of a 2 s retry.
+  it("answers 503 with Retry-After 2 and queues nothing while the site's daily count is undecided", async () => {
+    const fc = fakeClock(Date.parse("2026-11-15T10:20:00.000Z"));
+    const d = testDeps({ clock: fc.clock, sleep: async (ms) => fc.advance(ms), env: { SCORE_WAIT_MS: "1" } });
+    await holdAllSlots(d);
+    const origin = "https://pending.example.com";
+    await d.store.putIfAbsent(`crawl-origin-day:2026-11-15:${shortHash(origin)}`, { version: 1, state: "pending" }, 10);
+    const res = await call(d, q(origin));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("2");
+    expect(res.json).toEqual({ status: "error", error: "unavailable", message: COUNTING_SITE, retryAfterSeconds: 2 });
+    expect(await d.store.claimNext(CRAWL_QUEUE)).toBeNull();
+  });
+
+  // Validation V04. Fails if a call that joined a job while its daily count was pending reports the
+  // general two-minute "trouble" answer, instead of the same 2 s retry, once that job is held back.
+  it("answers the same 2 s retry for a call that joined a job held back by an undecided daily count", async () => {
+    const fc = fakeClock(Date.parse("2026-11-15T10:20:00.000Z"));
+    let held = false;
+    const d: TestDeps = testDeps({
+      clock: fc.clock,
+      sleep: async () => {
+        if (held) return;
+        held = true;
+        // The creating request's daily count came back undecided while this call waited on the job.
+        const job = await resolveJob<unknown, unknown>(d.store, (await d.store.get<{ jobId: string }>(originAliasKey(origin)))!.jobId);
+        await updateJob(d, job!, { status: "failed", step: "failed", failure: { code: "counting", message: "held back" } });
+      },
+    });
+    await holdAllSlots(d);
+    const origin = "https://joined.example.com";
+    await startOrJoinCrawl(d, origin);
+    const res = await call(d, q(origin));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("2");
+    expect(res.json).toEqual({ status: "error", error: "unavailable", message: COUNTING_SITE, retryAfterSeconds: 2 });
   });
 });
 

@@ -7,6 +7,7 @@ import type { FetchContext } from "@/lib/fetch/http";
 import { createMemoryBacking, createMemoryStore } from "@/lib/store/memory";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { bakery, blocked, convergeTo, redirectWww } from "../fixtures/sites";
+import { FAST_TOLERANCE_MS } from "../helpers/server-deps";
 import { serveSites } from "../helpers/sites";
 
 const config = loadConfig({ SESSION_SECRET: "x".repeat(32), RETROFIT_TEST_FIXTURES: "1" });
@@ -18,7 +19,7 @@ afterEach(async () => {
 
 function instance(backing: ReturnType<typeof createMemoryBacking>, clock: () => number): WorkerDeps {
   const store = createMemoryStore({ backing, clock });
-  return { store, config, clock, fetch: createFetchContext({ config, store, clock, minIntervalMs: 1 }) };
+  return { store, config, clock, fetch: createFetchContext({ config, store, clock, minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS }) };
 }
 
 describe("runCrawl", () => {

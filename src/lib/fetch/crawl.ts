@@ -98,8 +98,11 @@ function toPage(r: FetchResult): SnapshotPage {
  * - never goes to a private path (isPrivatePath, refused before contact);
  * - waits the host's full Crawl-delay, and is not sent when that wait would
  *   start it after the end of CRAWL_BUDGET_MS. The crawl then stops and skips
- *   what is left with reason "crawl-delay". loadConfig keeps the budget plus
- *   FETCH_TIMEOUT_MS within the lease, so every request ends inside it.
+ *   what is left with reason "crawl-delay". A deadline that passes during
+ *   pacing's store calls or wait also refuses the request. A request ends at
+ *   most FETCH_TIMEOUT_MS after it starts, so within the budget plus
+ *   FETCH_TIMEOUT_MS of the crawl's start, which loadConfig keeps within the
+ *   lease TTL (see config.ts for the margin this leaves).
  *
  * Throws RobotsBlocked, RobotsUnavailable, NotPublicError, PrivatePathRefused
  * or CrawlDelayTooLong for the home page, and LeaseLost when a hook reports
@@ -110,9 +113,10 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
   const started = o.clock();
   const budgetEnd = started + o.config.crawlBudgetMs;
   const overBudget = () => o.clock() >= budgetEnd;
-  // One deadline for every request of the crawl. The lease was taken or renewed at `started`, and
-  // loadConfig requires CRAWL_BUDGET_MS + FETCH_TIMEOUT_MS <= CRAWL_LEASE_TTL_S * 1000, so a request
-  // that starts by the deadline also ends inside the lease.
+  // One deadline for every request of the crawl: none starts after it. The lease was taken just before
+  // `started` and is renewed before each later page, and loadConfig requires
+  // CRAWL_BUDGET_MS + FETCH_TIMEOUT_MS <= CRAWL_LEASE_TTL_S * 1000, so a request that starts by the
+  // deadline ends inside the lease, up to the store calls before `started` and the abort's handling.
   const limits: FetchOptions = { privatePath: isPrivatePath, notAfter: budgetEnd };
   const step = async (s: string) => {
     if (o.hooks?.progress && !(await o.hooks.progress(s))) throw new LeaseLost();

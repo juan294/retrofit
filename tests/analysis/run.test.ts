@@ -92,6 +92,12 @@ describe("isSameOrigin", () => {
 });
 
 describe("visitor texts", () => {
+  // Validation V04. Fails if a job held back by an undecided daily count shows the general "trouble" text
+  // (which says to wait minutes) instead of the short counting text.
+  it("maps a counting failure to the counting text", () => {
+    expect(visitorFailure("counting")).toBe("Retrofit is still starting another analysis of this site. Try again in a few seconds.");
+  });
+
   // Fails if any visitor text drifts from the parent plan's stuck-state table.
   it("match the parent plan's stuck-state table verbatim", () => {
     const at = new Date("2026-11-15T14:05:00.000Z");

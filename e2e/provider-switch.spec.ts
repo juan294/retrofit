@@ -246,6 +246,44 @@ test("connecting a key while the free runtime loads its network aborts that load
   await ask(page, a);
 });
 
+test("connecting a key while the free runtime loads its site snapshot boots the new runtime and completes a tool round-trip", async ({ page }) => {
+  const a = await mockOtari(page);
+  // Hold the free runtime's snapshot load. The vendored content module keeps this one load for the
+  // whole page (public/preview-assets/content-actions.js:38-43), and the new runtime imports the same
+  // module URL, so it shares the load the free runtime started.
+  let snapshotLoads = 0;
+  let networkLoads = 0;
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route(
+    (url) => url.pathname.startsWith("/p/") && url.pathname.endsWith("/site-content.json"),
+    async (route) => {
+      snapshotLoads += 1;
+      if (snapshotLoads === 1) await released;
+      await route.continue().catch(() => undefined);
+    },
+  );
+  await page.route(
+    (url) => url.pathname.startsWith("/p/") && url.pathname.endsWith(".network.json"),
+    async (route) => {
+      networkLoads += 1;
+      await route.continue();
+    },
+  );
+  await analyzeFixture(page, "bakery.fixture.test");
+  await expect(page.getByText(/Using Retrofit's free AI/)).toBeVisible();
+  await expect.poll(() => snapshotLoads, { timeout: 20_000 }).toBe(1);
+  await connectKey(page);
+  // The new runtime's boot has started, so the free runtime is retired while its snapshot load waits.
+  await expect.poll(() => networkLoads, { timeout: 20_000 }).toBe(2);
+  release();
+  await runtimeHolds(page, OTARI.key);
+  await expect(page.getByTestId("preview-mount").locator('[data-ns-slot="chat"]')).toHaveCount(1);
+  // The new agent answers from the snapshot through its search tool (previewScript quotes the tool result).
+  await ask(page, a);
+  await expect(page.getByRole("alert").filter({ hasText: "Retrofit could not start this agent" })).toHaveCount(0);
+});
+
 test("a replaced runtime whose boot finishes late does not take over the live runtime's handle", async ({ page }) => {
   const { a, b } = await routers(page);
   await analyzeFixture(page, "bakery.fixture.test");
