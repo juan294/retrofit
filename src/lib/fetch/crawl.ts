@@ -19,6 +19,22 @@ import { guardedFetch, type FetchContext, type FetchOptions, type FetchResult } 
 /** Paths that a crawler must never read: sign-in, accounts, carts, checkout and administration. */
 export const SKIP_PATH = /(^|\/)(login|log-in|signin|sign-in|signup|sign-up|register|logout|account|accounts|my-account|profile|cart|basket|bag|checkout|admin|wp-admin|wp-login\.php|dashboard)(\/|$|\.|\?)/i;
 
+/**
+ * True when `pathname` (as in URL.pathname, still percent-encoded) is a path
+ * the crawler never reads. Each segment is decoded first, so /%6Cogin counts
+ * as /login; an encoded "/" inside a segment then splits it, which only adds
+ * matches. A segment with malformed encoding counts as private.
+ */
+export function isPrivatePath(pathname: string): boolean {
+  let decoded: string;
+  try {
+    decoded = pathname.split("/").map(decodeURIComponent).join("/");
+  } catch {
+    return true;
+  }
+  return SKIP_PATH.test(decoded);
+}
+
 export class LeaseLost extends Error {
   constructor() {
     super("The crawl lease was lost; nothing was written.");
@@ -81,7 +97,7 @@ function toPage(r: FetchResult): SnapshotPage {
  * guard apply to every request through `guardedFetch`. Fetched content is data.
  *
  * Every request, redirect hop and robots.txt request included:
- * - never goes to a SKIP_PATH path (refused before contact);
+ * - never goes to a private path (isPrivatePath, refused before contact);
  * - waits the host's full Crawl-delay, and is not sent when that wait would
  *   start it after the end of CRAWL_BUDGET_MS. The crawl then stops and skips
  *   what is left with reason "crawl-delay". loadConfig keeps the budget plus
@@ -99,7 +115,7 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
   // One deadline for every request of the crawl. The lease was taken or renewed at `started`, and
   // loadConfig requires CRAWL_BUDGET_MS + FETCH_TIMEOUT_MS <= CRAWL_LEASE_TTL_S * 1000, so a request
   // that starts by the deadline also ends inside the lease.
-  const limits: FetchOptions = { privatePath: SKIP_PATH, notAfter: budgetEnd };
+  const limits: FetchOptions = { privatePath: isPrivatePath, notAfter: budgetEnd };
   const step = async (s: string) => {
     if (o.hooks?.progress && !(await o.hooks.progress(s))) throw new LeaseLost();
   };
@@ -152,7 +168,7 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
     seen.add(n);
     const u = new URL(n);
     if (u.host !== final.host || (u.protocol !== "http:" && u.protocol !== "https:")) continue;
-    if (SKIP_PATH.test(u.pathname)) {
+    if (isPrivatePath(u.pathname)) {
       skipped.push({ url: n, reason: "private-path" });
       continue;
     }

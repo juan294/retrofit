@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "@/lib/config";
-import { crawlSite, LeaseLost, SKIP_PATH } from "@/lib/fetch/crawl";
+import { crawlSite, isPrivatePath, LeaseLost } from "@/lib/fetch/crawl";
 import { createFetchContext } from "@/lib/fetch/context";
 import { CrawlDelayTooLong, PrivatePathRefused } from "@/lib/fetch/errors";
 import { guardedFetch, type FetchContext } from "@/lib/fetch/http";
@@ -46,6 +46,23 @@ async function crawl(sites: Record<string, FixtureSite>, host: string, hooks?: P
   const snapshot = await crawlSite(server.origin(host), { config, fetch, clock: Date.now, hooks });
   return { snapshot: snapshot!, server };
 }
+
+describe("isPrivatePath", () => {
+  // Fails if the private-path rule is checked on the encoded form, or a malformed encoding is let through (F2).
+  it.each([
+    ["/login", true],
+    ["/%6Cogin", true],
+    ["/%6c%6F%67%69%6E", true],
+    ["/shop/%63art/", true],
+    ["/a%2Flogin", true],
+    ["/%E0%A4%A", true],
+    ["/menu", false],
+    ["/blog/catalogue", false],
+    ["/%6Denu", false],
+  ])("%s is private: %s", (path, expected) => {
+    expect(isPrivatePath(path)).toBe(expected);
+  });
+});
 
 describe("crawlSite", () => {
   // Fails if probes, records or navigation pages are dropped from the snapshot.
@@ -175,8 +192,25 @@ describe("crawlSite", () => {
     const { snapshot, server } = await crawl({ "kayak.fixture.test": site }, "kayak.fixture.test");
     const paths = server.requests.map((r) => r.path);
     expect(paths).toContain("/llms.txt");
-    expect(paths.filter((p) => SKIP_PATH.test(p.split("?")[0] as string))).toEqual([]);
+    expect(paths.filter((p) => isPrivatePath(p.split("?")[0] as string))).toEqual([]);
     expect(snapshot.probes.llmsTxt.status).toBeNull();
+  });
+
+  // Fails if percent-encoding a private path (/%6Cogin) gets it past the path rule, in a link or a redirect hop (F2).
+  it("never requests a percent-encoded or malformed private path from a link or a redirect", async () => {
+    const site: FixtureSite = {
+      ...bakery,
+      "/": { headers: { "content-type": "text/html" }, body: `<main><a href="/%6Cogin">a</a> <a href="/%E0%A4%A">b</a> <a href="/members">c</a> <a href="/menu">d</a></main>` },
+      "/members": { status: 302, headers: { location: "/%61ccount/settings" } },
+      "/menu": { headers: { "content-type": "text/html" }, body: "<main>menu</main>" },
+    };
+    const { snapshot, server } = await crawl({ "bakery.fixture.test": site }, "bakery.fixture.test");
+    const paths = server.requests.map((r) => r.path);
+    for (const p of ["/%6Cogin", "/%E0%A4%A", "/%61ccount/settings"]) expect(paths).not.toContain(p);
+    expect(paths).toContain("/members");
+    expect(paths).toContain("/menu");
+    const reasons = Object.fromEntries(snapshot.skipped.map((s) => [new URL(s.url).pathname, s.reason]));
+    expect(reasons).toMatchObject({ "/%6Cogin": "private-path", "/%E0%A4%A": "private-path", "/members": "private-path" });
   });
 
   // Fails if guardedFetch contacts a private path when given the path rule.
@@ -184,7 +218,7 @@ describe("crawlSite", () => {
     const server = await serveSites(() => ({ "bakery.fixture.test": bakery }));
     close = () => server.close();
     const fetch = createFetchContext({ config, store: createMemoryStore(), minIntervalMs: 1 });
-    const err = await guardedFetch(new URL(`${server.origin("bakery.fixture.test")}/cart`), fetch, { privatePath: SKIP_PATH }).catch((e: unknown) => e);
+    const err = await guardedFetch(new URL(`${server.origin("bakery.fixture.test")}/cart`), fetch, { privatePath: isPrivatePath }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(PrivatePathRefused);
     expect(server.requests).toEqual([]);
   });
