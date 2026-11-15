@@ -34,4 +34,47 @@ test.describe("CSP fixture", () => {
     await page.waitForLoadState("networkidle");
     expect(cspViolations).toEqual([]);
   });
+
+  // V12: the fixture watched only its own page. A violation in another tab of the test's context,
+  // or in a context the test creates, must fail the test too (each body passes; only the fixture can fail it).
+  test("fails on a violation in a second tab", async ({ page, context }) => {
+    test.fail();
+    await page.goto("/");
+    const tab = await context.newPage();
+    await tab.goto("/test-fixtures/csp-violation");
+    await expect(tab.getByText("CSP fixture")).toBeVisible();
+    await tab.waitForLoadState("networkidle");
+  });
+
+  test("fails on a violation in a second browser context", async ({ page, browser }) => {
+    test.fail();
+    await page.goto("/");
+    const other = await browser.newContext();
+    const tab = await other.newPage();
+    await tab.goto("/test-fixtures/csp-violation");
+    await expect(tab.getByText("CSP fixture")).toBeVisible();
+    await tab.waitForLoadState("networkidle");
+    await other.close();
+  });
+
+  test("fails on a violation in a page opened with browser.newPage", async ({ browser }) => {
+    test.fail();
+    const tab = await browser.newPage();
+    await tab.goto("/test-fixtures/csp-violation");
+    await expect(tab.getByText("CSP fixture")).toBeVisible();
+    await tab.waitForLoadState("networkidle");
+    await tab.close();
+  });
+
+  // The positive controls: the exact expectation accepts the same violations from those pages.
+  test("passes with the exact expectation for a violation in a second tab and a second context", async ({ context, browser, expectCspViolations }) => {
+    expectCspViolations([VIOLATION]);
+    const tab = await context.newPage();
+    await tab.goto("/test-fixtures/csp-violation");
+    await expect(tab.getByText("CSP fixture")).toBeVisible();
+    const other = await browser.newContext();
+    const otherTab = await other.newPage();
+    await otherTab.goto("/test-fixtures/csp-violation");
+    await expect(otherTab.getByText("CSP fixture")).toBeVisible();
+  });
 });

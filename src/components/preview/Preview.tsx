@@ -41,6 +41,10 @@ const RUNTIME_URL = "/runtime/index.js";
 /** An error whose message is already a visitor text. */
 class VisitorError extends Error {}
 
+type RuntimeWindow = { __nsweb?: { engine?: unknown } };
+/** The `window.__nsweb` value of the preview that is mounted now (boot sets it for every runtime). */
+let liveHandle: RuntimeWindow["__nsweb"];
+
 /**
  * The only component that calls the vendored runtime's API. It installs the
  * fetch guard before `boot` (the runtime fetches the manifest, network and
@@ -59,6 +63,7 @@ export function Preview({ originUrl, inference, label, onNotice, network }: Prev
     const mount = mountRef.current;
     if (!mount) return;
     let cancelled = false;
+    let detachTrace = () => {};
     const guard = installPageGuard();
     setNotices([]);
     setBootError(null);
@@ -66,7 +71,9 @@ export function Preview({ originUrl, inference, label, onNotice, network }: Prev
     (async () => {
       try {
         guard.clearApprovals();
-        guard.setRouter(inference.router);
+        // This runtime's own base under the router: the guard retires it when the preview unmounts,
+        // so a runtime that outlives its preview cannot reach the router (even a same-origin one).
+        const runtimeRouter = guard.setRouter(inference.router)!;
         guard.revokeProvider();
         const res = await fetch(`${originUrl}/agent-manifest.json`, { cache: "no-store", credentials: "same-origin" });
         if (!res.ok) {
@@ -81,7 +88,9 @@ export function Preview({ originUrl, inference, label, onNotice, network }: Prev
         if (cancelled) return;
         guard.setPolicyPeers(Array.isArray(manifest.allowed_peers) ? manifest.allowed_peers.filter((x): x is string => typeof x === "string") : []);
 
-        mount.replaceChildren();
+        // Each boot renders into its own root: a boot that finishes after its preview was replaced
+        // renders into a detached root and never takes over the next runtime's slots.
+        const root = document.createElement("div");
         const chat = document.createElement("div");
         chat.dataset.nsSlot = "chat";
         const agents = document.createElement("div");
@@ -90,7 +99,8 @@ export function Preview({ originUrl, inference, label, onNotice, network }: Prev
         const settings = document.createElement("details");
         settings.dataset.nsSlot = "settings";
         settings.hidden = true;
-        mount.append(chat, agents, settings);
+        root.append(chat, agents, settings);
+        mount.replaceChildren(root);
 
         const runtime = (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ RUNTIME_URL)) as RuntimeModule;
         if (cancelled) return;
@@ -98,28 +108,37 @@ export function Preview({ originUrl, inference, label, onNotice, network }: Prev
         const release = network ? serveTopManifest(window, `${originUrl}/agent-manifest.json`, top) : () => {};
         let handle: RuntimeHandle;
         try {
-          handle = await runtime.boot(mount, {
+          handle = await runtime.boot(root, {
             originUrl,
             sandboxWorkerUrl: "/runtime/sandbox-worker.js",
             byokKey: inference.key,
-            router: inference.router,
+            router: runtimeRouter,
             model: inference.model,
           });
         } finally {
           release();
         }
+        const w = window as RuntimeWindow;
         if (cancelled) {
-          // A boot that finished after unmount re-exposed its engine (and key) on window.__nsweb.
-          delete (window as { __nsweb?: unknown }).__nsweb;
+          // A boot that finished after unmount re-exposed its engine (and key) on window.__nsweb,
+          // possibly over the live preview's handle: put the live one back, or remove it.
+          if (w.__nsweb?.engine === handle.engine) {
+            if (liveHandle) w.__nsweb = liveHandle;
+            else delete w.__nsweb;
+          }
           return;
         }
+        liveHandle = w.__nsweb;
         handle.engine.requestConsent = guard.wrapRequestConsent(handle.engine.requestConsent);
-        handle.trace.addEventListener("event", (e) => {
+        const onTrace = (e: Event) => {
           const notice = noticeForTrace((e as CustomEvent<Record<string, unknown>>).detail);
           if (!notice) return;
           onNoticeRef.current?.(notice);
           setNotices((list) => (list.some((n) => n.text === notice.text) ? list : [...list, notice]));
-        });
+        };
+        handle.trace.addEventListener("event", onTrace);
+        // A retired runtime's trace (its refused calls) must not reach the next preview's notices.
+        detachTrace = () => handle.trace.removeEventListener("event", onTrace);
       } catch (e) {
         if (!cancelled) setBootError(e instanceof VisitorError ? e.message : `Retrofit could not start this agent: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -127,7 +146,9 @@ export function Preview({ originUrl, inference, label, onNotice, network }: Prev
 
     return () => {
       cancelled = true;
+      detachTrace();
       mount.replaceChildren();
+      liveHandle = undefined;
       closePreviewAccess(guard);
     };
   }, [originUrl, inference.router, inference.key, inference.model, network]);

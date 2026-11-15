@@ -19,7 +19,8 @@
 // Run exit status: 0 tests passed and teardown complete; 1 refused before anything was started
 // (lock held, receipt present, retrofit-gate resources present, Docker inspection failed);
 // 2 usage error; otherwise a bit mask: 4 = run failure (start, reset, status, tests or an
-// interruption), 8 = cleanup failure (identity changed, stop failed or removal not verified).
+// interruption), 8 = cleanup failure (identity changed, another container uses an owned volume
+// or network, stop failed or removal not verified).
 // The first run failure and any cleanup failure are reported separately.
 // Recover exit status: 0 disposed or nothing to recover; 1 refused, everything left in place;
 // 2 usage error; 8 cleanup failure.
@@ -215,6 +216,34 @@ async function inventory(log) {
   inv.unlabelled = [...inv.containers, ...inv.volumes, ...inv.networks].filter((r) => r.labels[LABEL_PROJECT] !== PROJECT);
   inv.count = inv.containers.length + inv.volumes.length + inv.networks.length;
   return inv;
+}
+
+// Containers outside the owned stack that use one of its exact volumes or networks: every
+// container (stopped too) that mounts an owned volume, and every container attached to an owned
+// network (`docker ps --filter network` and the network's own Containers list). Such a consumer
+// makes reset and `supabase stop --no-backup` unsafe, so it blocks both. Throws Refusal on any
+// inspection failure.
+async function consumerProblems(log, inv) {
+  const own = new Set(inv.containers.map((c) => c.id));
+  const users = new Map();
+  const add = (id, what) => {
+    if (own.has(id)) return;
+    users.set(id, [...(users.get(id) ?? []), what]);
+  };
+  for (const v of inv.volumes) {
+    for (const id of await lines(log, ["ps", "-a", "-q", "--no-trunc", "--filter", `volume=${v.name}`])) add(id, `volume ${v.name}`);
+  }
+  for (const n of inv.networks) {
+    for (const id of await lines(log, ["ps", "-a", "-q", "--no-trunc", "--filter", `network=${n.name}`])) add(id, `network ${n.name}`);
+    const [inspected] = await inspectJson(log, ["network", "inspect", n.id]);
+    for (const id of Object.keys(inspected?.Containers ?? {})) add(id, `network ${n.name}`);
+  }
+  if (users.size === 0) return [];
+  const named = await inspectJson(log, ["inspect", "--type", "container", ...users.keys()]);
+  const nameOf = new Map(named.map((c) => [c.Id, c.Name.replace(/^\//, "")]));
+  return [...users].flatMap(([id, uses]) =>
+    [...new Set(uses)].map((what) => `${what} is used by container ${nameOf.get(id) ?? "unknown"} ${id.slice(0, 12)}, which is not part of the gate stack`),
+  );
 }
 
 function describeInventory(inv) {
@@ -533,7 +562,7 @@ async function runGateDb({ root, coordDir }) {
   // 5. verify, record, reset, test
   const verifyAndRecord = async (label) => {
     const inv = await inventory(log);
-    const problems = labelProblems(inv, gateWorkdir);
+    const problems = [...labelProblems(inv, gateWorkdir), ...(await consumerProblems(log, inv))];
     if (problems.length > 0) throw new Refusal(`identity check ${label} failed:\n  - ${problems.join("\n  - ")}`);
     recorded = snapshot(inv);
     amendReceipt(receiptFile, runId, { resources: recorded, recordedAt: new Date().toISOString() });
@@ -598,9 +627,13 @@ async function runGateDb({ root, coordDir }) {
       const nowCtx = await dockerContext(log);
       if (!sameContext(nowCtx, context)) throw new Refusal(`Docker context changed from ${context.name} to ${nowCtx.name}`);
       const inv = await inventory(log);
-      const problems = [...labelProblems(inv, gateWorkdir), ...identityProblems(recorded ?? { containers: [], volumes: [], networks: [] }, inv)];
+      const problems = [
+        ...labelProblems(inv, gateWorkdir),
+        ...identityProblems(recorded ?? { containers: [], volumes: [], networks: [] }, inv),
+        ...(await consumerProblems(log, inv)),
+      ];
       if (problems.length > 0) throw new Refusal(`identity changed since step 5:\n  - ${problems.join("\n  - ")}`);
-      log.step("identity unchanged: same container, volume and network identities as recorded");
+      log.step("identity unchanged: same container, volume and network identities as recorded; no other container uses them");
       cleanupFailure = await dispose(log, gateWorkdir);
       if (!cleanupFailure) {
         fs.rmSync(receiptFile);
@@ -706,6 +739,12 @@ async function recover({ root, coordDir }) {
     for (const r of [...inv.containers, ...inv.volumes, ...inv.networks]) {
       if (!(Date.parse(r.created) >= since)) problems.push(`${r.name} was created before the receipt (${r.created})`);
     }
+  }
+  try {
+    problems.push(...(await consumerProblems(log, inv)));
+  } catch (error) {
+    if (!(error instanceof Refusal)) throw error;
+    return refuse(error.message);
   }
   if (problems.length > 0) {
     return refuse(`the retrofit-gate stack does not match the receipt:\n  - ${problems.join("\n  - ")}\n${describeInventory(inv)}`);

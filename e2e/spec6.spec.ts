@@ -1,20 +1,40 @@
 import { test, expect } from "./fixtures/csp";
 import { fixtureOrigin } from "./support/global-setup";
 import { CALLER_DENIED_ORIGIN } from "@/lib/test-fixtures/origins";
-import { hostsOf, openCaller } from "./support/caller";
+import { SPECIALIST_ANSWER, SPECIALIST_SYSTEM, delegationScript, hostsOf, openCaller } from "./support/caller";
+import { systemText, toolNames } from "./support/mock-router";
 import { OTARI, traceEvents } from "./support/agent";
 
 const PEER_A = "peer-a.fixture.test:3011";
 const PEER_A_FACT = "The Peer A demo harbor ferry leaves at 09:30 every day.";
 
 test.describe("spec §6 locally (organizers' cases L1 to L10, C1 to C8)", () => {
+  // V13: the case used to check only that readiness_specialist was offered. A scripted model now
+  // makes the front agent delegate, so the specialist must run and its answer must come back.
   test("a two-agent network runs in the browser", async ({ page }) => {
-    const s = await openCaller(page);
-    await s.send("hello");
-    await expect(s.chat().getByText("Hello from Retrofit's agent.").filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
-    const front = s.router.bodies[0]!;
-    // The front agent can hand off to the second agent of the network.
-    expect(front.tools?.map((t) => t.function.name)).toContain("readiness_specialist");
+    const request = `How ready is ${fixtureOrigin("bakery.fixture.test")}/ for AI agents?`;
+    const s = await openCaller(page, undefined, delegationScript(request));
+    await s.send("How ready is the bakery site?");
+    await expect(s.chat().getByText(/Front answer: Specialist result:/).filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
+    const [front, ...rest] = s.router.bodies;
+    expect(toolNames(front!)).toContain("readiness_specialist");
+    // The second agent made its own model request, with its own instructions and the delegated request.
+    const specialist = rest.filter((b) => SPECIALIST_SYSTEM.test(systemText(b)));
+    expect(specialist).toHaveLength(1);
+    expect(specialist[0]!.messages.find((m) => m.role === "user")?.content).toBe(request);
+    // Its answer returned to the front agent as the readiness_specialist tool result.
+    const back = rest.find((b) => b.messages.some((m) => m.role === "tool"));
+    const toolMessage = back?.messages.find((m) => m.role === "tool");
+    expect(toolMessage?.name).toBe("readiness_specialist");
+    expect(toolMessage?.content).toContain(SPECIALIST_ANSWER);
+    // The runtime's trace shows the delegation: the specialist agent span ran and ended without an error.
+    const events = await traceEvents(page);
+    const agents = events.filter((e) => e.kind === "agent" && e.agent === "readiness_specialist");
+    expect(agents.map((e) => e.phase)).toEqual(["start", "end"]);
+    expect(agents[1]!.status).not.toBe("error");
+    const results = events.filter((e) => e.kind === "tool_result" && e.tool === "readiness_specialist");
+    expect(results).toHaveLength(1);
+    expect(String(results[0]!.preview)).toContain("Specialist result:");
   });
 
   test("score_site runs as the grounded site capability", async ({ page }) => {

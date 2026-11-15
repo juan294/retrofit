@@ -56,6 +56,9 @@ function matches(resource, filters) {
       return resource.labels?.[key] === value;
     }
     if (f.startsWith("name=")) return resource.name.includes(f.slice(5));
+    // Containers only: the volumes they mount and the networks they are attached to (name or id).
+    if (f.startsWith("volume=")) return (resource.mounts ?? []).includes(f.slice(7));
+    if (f.startsWith("network=")) return (resource.networks ?? []).includes(f.slice(8));
     return false;
   });
 }
@@ -96,7 +99,10 @@ function docker() {
     case "network inspect": {
       const found = args.slice(2).map((id) => state.networks.find((n) => n.id === id));
       if (found.some((n) => !n)) fail(1, "Error: No such network");
-      return out(JSON.stringify(found.map((n) => ({ Id: n.id, Name: n.name, Created: n.created, Labels: n.labels }))));
+      // Like Docker, Containers lists the containers attached to the network (by id or name).
+      const attached = (n) =>
+        Object.fromEntries(state.containers.filter((c) => (c.networks ?? []).some((x) => x === n.id || x === n.name)).map((c) => [c.id, { Name: c.name }]));
+      return out(JSON.stringify(found.map((n) => ({ Id: n.id, Name: n.name, Created: n.created, Labels: n.labels, Containers: attached(n) }))));
     }
     default:
       fail(91, `fake docker: unsupported command ${args.join(" ")}`);
@@ -121,11 +127,15 @@ function supabase() {
       const { project } = configOf(workdir);
       if (state.containers.some((c) => c.labels[LABEL_PROJECT] === project)) fail(1, "supabase start is already running.");
       const labels = { [LABEL_PROJECT]: project, [LABEL_WORKDIR]: workdir, "com.docker.compose.project": project };
+      const volume = `supabase_db_${project}`;
+      const network = `supabase_network_${project}`;
       for (const service of ["db", "rest", "kong"]) {
-        state.containers.push({ id: newId(), name: `supabase_${service}_${project}`, labels: { ...labels }, created: now() });
+        state.containers.push({ id: newId(), name: `supabase_${service}_${project}`, labels: { ...labels }, created: now(), mounts: service === "db" ? [volume] : [], networks: [network] });
       }
-      state.volumes.push({ name: `supabase_db_${project}`, labels: { [LABEL_PROJECT]: project }, created: now() });
-      state.networks.push({ id: newId(), name: `supabase_network_${project}`, labels: { [LABEL_PROJECT]: project }, created: now() });
+      state.volumes.push({ name: volume, labels: { [LABEL_PROJECT]: project }, created: now() });
+      state.networks.push({ id: newId(), name: network, labels: { [LABEL_PROJECT]: project }, created: now() });
+      // Another project's container that starts using the gate stack's volume or network.
+      if (scenario.startAddsConsumer) state.containers.push({ id: newId(), created: now(), labels: {}, ...scenario.startAddsConsumer });
       writeState(state);
       out("Started supabase local development setup.\nservice_role key: eyJhbGciOiJIUzI1NiJ9.e30.fake-signature");
       return process.exit(scenario.startExit ?? 0);
@@ -177,6 +187,10 @@ async function pnpm() {
       if (Date.now() > deadline) fail(95, "fake pnpm: timed out waiting");
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
+  }
+  if (scenario.vitestAddsConsumer) {
+    state.containers.push({ id: newId(), created: now(), labels: {}, ...scenario.vitestAddsConsumer });
+    writeState(state);
   }
   if (scenario.vitestReplaceContainer) {
     const target = state.containers.find((c) => c.name === scenario.vitestReplaceContainer);
