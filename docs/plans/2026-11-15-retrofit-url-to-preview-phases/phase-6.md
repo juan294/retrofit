@@ -4,7 +4,7 @@ Parent plan: [2026-11-15-retrofit-url-to-preview.md](../2026-11-15-retrofit-url-
 
 ## Goal
 
-A visitor or judge without a key can use the preview and Retrofit's own agent. The runtime sends the placeholder key `retrofit-free` to Retrofit's same-origin endpoint `/api/inference/v1` as an explicit router override. The credential is an HttpOnly session cookie. Every forwarded request is bounded, and a provable upper bound on its cost is reserved against a ledger before it reaches Otari. Responses are buffered, so every failure reaches the unchanged runtime as an HTTP error (parent plan, fact 18). Public spend caps protect the judge reserve; a detected overrun holds the public pool until the owner reconciles. The owner is alerted when credit runs low and accepts the reserve guarantee level before this phase is accepted. A visitor's own key never reaches this endpoint.
+A visitor or judge without a key can use the preview and Retrofit's own agent. The runtime sends the placeholder key `retrofit-free` to Retrofit's same-origin endpoint `/api/inference/v1` as an explicit router override. The credential is an HttpOnly session cookie. Every forwarded request is bounded, and a conservative bound on its cost, which depends on the provider assumptions in the parent plan ("Spend control"), is reserved against a ledger before it reaches Otari. Responses are buffered, so every failure reaches the unchanged runtime as an HTTP error (parent plan, fact 18). Public spend caps protect the judge reserve; a detected overrun holds the public pool until the owner reconciles. The owner is alerted when credit runs low and accepts the reserve guarantee level before this phase is accepted. A visitor's own key never reaches this endpoint.
 
 ## Entry conditions
 

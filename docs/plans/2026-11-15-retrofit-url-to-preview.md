@@ -1,6 +1,6 @@
 # Plan: Retrofit, from URL to live preview
 
-> Created 2026-11-15. Revision 5, after four independent assessments. Status: **proposed, awaiting owner acceptance**. This plan does not authorize implementation, deployment, provider accounts, credentials, DNS changes or any push.
+> Created 2026-11-15. Revision 5, after four independent assessments. Status: **accepted by the owner on 2026-11-15 at plan level** ([revision 5 assessment](../research/2026-11-15-url-to-preview-revision-5-assessment.md)), with the qualified spend guarantee. Acceptance does not authorize deployment, provider accounts, credentials, DNS changes or any push; each phase keeps its own gate and each external action its own authorization.
 
 ## Objective
 
@@ -274,7 +274,7 @@ All resolved in revision 2 and kept in this revision: R1 vendored runtime for th
 - **State at writing:** branch `develop`, revision 4 at `09fe016`; `origin/develop` at `44c5325`; worktree `/Users/juan/code/retrofit`. Spec commit `63a956c`. Neuro SAN reference commit `71b9f41`.
 - **Evidence limits:** listed under "Specification read". Next.js 16 behavior, cookie behavior in real browsers, the HOCON reference bodies and Otari's balance and key-budget features were not checked; the phases that depend on them verify them first.
 - **Decisions:** owner decisions and planner decisions above.
-- **Review:** R1 to R44, H1 to H4 and A1 to A2 dispositions above. Revision 5 has not had its own independent review.
+- **Review:** R1 to R44, H1 to H4 and A1 to A2 dispositions above. The revision 5 assessment found no blocking issue; its one wording fix (Phase 6 goal) is applied.
 - **Owner acceptance items inside phases:** the `score/v1` weights (Phase 3), the write-confirmation approach (Phase 5), and the judge-reserve guarantee level (Phase 6).
 - **Overlay:** none present; no override applied.
-- **Next step:** owner acceptance. On acceptance, start Phase 1 in a worktree with `/rpi-implement`.
+- **Next step:** Phase 1 in a new session with `/rpi-implement`, in a worktree from `develop`, after the owner's start instruction. Revalidate the checkout, the plan commit and the spec pin at entry.
