@@ -4152,24 +4152,6 @@
       "rule": "V12 CSP monitoring on every page",
       "suite": "playwright",
       "file": "csp-fixture.spec.ts",
-      "title": "CSP fixture fails on a violation in a page opened with browser.newPage"
-    },
-    {
-      "rule": "V12 CSP monitoring on every page",
-      "suite": "playwright",
-      "file": "csp-fixture.spec.ts",
-      "title": "CSP fixture fails on a violation in a second browser context"
-    },
-    {
-      "rule": "V12 CSP monitoring on every page",
-      "suite": "playwright",
-      "file": "csp-fixture.spec.ts",
-      "title": "CSP fixture fails on a violation in a second tab"
-    },
-    {
-      "rule": "V12 CSP monitoring on every page",
-      "suite": "playwright",
-      "file": "csp-fixture.spec.ts",
       "title": "CSP fixture passes with the exact expectation for a violation in a second tab and a second context"
     },
     {
@@ -4177,12 +4159,6 @@
       "suite": "playwright",
       "file": "provider-switch.spec.ts",
       "title": "connecting a key while a delayed free answer with a tool call is in flight stops the free runtime"
-    },
-    {
-      "rule": "V08 retired runtime stopped",
-      "suite": "playwright",
-      "file": "provider-switch.spec.ts",
-      "title": "connecting a key while the free runtime is still booting leaves only the new runtime on the page"
     },
     {
       "rule": "V16 dispatch store work",
@@ -4303,12 +4279,6 @@
       "suite": "unit",
       "file": "tests/fetch/limits.test.ts",
       "title": "countOnce in-progress decisions decides again once an abandoned pending marker expires"
-    },
-    {
-      "rule": "V04 count-once admission",
-      "suite": "unit",
-      "file": "tests/fetch/limits.test.ts",
-      "title": "countOnce in-progress decisions refuses a duplicate whose first caller never decides, after a bounded wait"
     },
     {
       "rule": "V06 and V07 private paths and crawl delay",
@@ -4999,6 +4969,288 @@
       "suite": "unit",
       "file": "tests/tools/gate-db.test.ts",
       "title": "gate-db foreign consumers of owned resources (V11) gate-db: the gate stack's own mounts and network attachments do not block disposal"
+    },
+    {
+      "rule": "V12 CSP monitoring on every page",
+      "suite": "playwright",
+      "file": "csp-fixture.spec.ts",
+      "title": "CSP fixture passes with the exact expectation for a violation in a page opened with browser.newPage"
+    },
+    {
+      "rule": "V12 CSP monitoring on every page",
+      "suite": "playwright",
+      "file": "csp-fixture.spec.ts",
+      "title": "CSP fixture reports a violation in a page opened with browser.newPage as unexpected"
+    },
+    {
+      "rule": "V12 CSP monitoring on every page",
+      "suite": "playwright",
+      "file": "csp-fixture.spec.ts",
+      "title": "CSP fixture reports a violation in a second browser context as unexpected"
+    },
+    {
+      "rule": "V12 CSP monitoring on every page",
+      "suite": "playwright",
+      "file": "csp-fixture.spec.ts",
+      "title": "CSP fixture reports a violation in a second tab as unexpected"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "playwright",
+      "file": "provider-switch.spec.ts",
+      "title": "a replaced runtime whose boot finishes late does not take over the live runtime's handle"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "playwright",
+      "file": "provider-switch.spec.ts",
+      "title": "connecting a key while the free runtime loads its network aborts that load and leaves only the new runtime"
+    },
+    {
+      "rule": "V16 dispatch store work",
+      "suite": "unit",
+      "file": "tests/analysis/capacity.test.ts",
+      "title": "capacity queues the job when the origin's daily count is still undecided"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/api/score.test.ts",
+      "title": "GET /api/score client limit (contract rule 6) answers 503 with Retry-After 2 when another call's count for the same site is undecided"
+    },
+    {
+      "rule": "V07 crawl deadline fits the lease",
+      "suite": "unit",
+      "file": "tests/config.test.ts",
+      "title": "loadConfig enforces CRAWL_BUDGET_MS + FETCH_TIMEOUT_MS <= CRAWL_LEASE_TTL_S * 1000"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "crawlSite keeps reading the main host after another host's crawl delay refuses a request"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "crawlSite never requests a percent-encoded or malformed private path from a link or a redirect"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /%6Cogin is private: true"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /%6Denu is private: false"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /%6c%6F%67%69%6E is private: true"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /%E0%A4%A is private: false"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /a%2Flogin is private: true"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /blog/catalogue is private: false"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /caf%E9 is private: false"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /login is private: true"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /login%3Bx is private: true"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /login;jsessionid=1 is private: true"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /menu is private: false"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /sale-50%-off is private: false"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /shop/%63art/ is private: true"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "isPrivatePath /x%5Clogin is private: true"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/fetch/limits.test.ts",
+      "title": "countOnce in-progress decisions answers undecided for a duplicate whose first caller never decides, after a bounded wait"
+    },
+    {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/fetch/limits.test.ts",
+      "title": "countOnce in-progress decisions bounds the wait by elapsed time, counting slow store calls"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/pacing.test.ts",
+      "title": "createPacer stores at most MAX_INTERVAL_MS ahead, with a bounded TTL"
+    },
+    {
+      "rule": "V06 and V07 private paths and crawl delay",
+      "suite": "unit",
+      "file": "tests/fetch/pacing.test.ts",
+      "title": "createPacer treats an infinite crawl delay as the longest interval, not as none"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "rule 1: same origin, not an agent artifact closes only the chat path of a same-origin router at the origin root"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "rule 1: same origin, not an agent artifact keeps /models and paths outside the router open while a same-origin runtime is active"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "rule 1: same origin, not an agent artifact refuses an unmarked chat call to the active same-origin router"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "rule 1: same origin, not an agent artifact refuses the unmarked path /api/inference//v1/chat/completions while a same-origin runtime is active"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "rule 1: same origin, not an agent artifact refuses the unmarked path /api/inference/v1 while a same-origin runtime is active"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "rule 1: same origin, not an agent artifact refuses the unmarked path /api/inference/v1/ while a same-origin runtime is active"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "rule 1: same origin, not an agent artifact refuses the unmarked path /api/inference/v1//chat/completions while a same-origin runtime is active"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "rule 1: same origin, not an agent artifact refuses the unmarked path /api/inference/v1/chat//completions while a same-origin runtime is active"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "rule 1: same origin, not an agent artifact refuses the unmarked path /api/inference/v1/embeddings while a same-origin runtime is active"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "rule 1: same origin, not an agent artifact refuses the unmarked path /api/inference/v1/models/extra while a same-origin runtime is active"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "rule 1: same origin, not an agent artifact refuses the unmarked path /api/inference/v1\\chat\\completions while a same-origin runtime is active"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "runtime generations (V08) aborts a retired runtime's pending agent-artifact and peer requests"
+    },
+    {
+      "rule": "V08 retired runtime stopped",
+      "suite": "unit",
+      "file": "tests/preview/fetch-guard.test.ts",
+      "title": "runtime generations (V08) leaves agent-artifact requests without a runtime unchanged"
+    },
+    {
+      "rule": "V10 deployment identity",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs inspection failure detail records the spawn error when the CLI cannot start"
+    },
+    {
+      "rule": "V10 deployment identity",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs inspection failure detail turns off the update notifier and records the CLI's error line"
+    },
+    {
+      "rule": "V10 deployment identity",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs reads vercel inspect from stdout only binds every host when the CLI writes its banner and spinner to stderr"
+    },
+    {
+      "rule": "V10 deployment identity",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs reads vercel inspect from stdout only refuses a deployment record that names another deployment"
+    },
+    {
+      "rule": "V10 deployment identity",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs reads vercel inspect from stdout only refuses to start when vercel inspect exits 0 but its output is not a deployment record"
     }
   ],
   "repairs": {
