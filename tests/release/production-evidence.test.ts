@@ -436,6 +436,40 @@ describe("production-evidence.mjs reads vercel inspect from stdout only", () => 
   });
 });
 
+describe("production-evidence.mjs inspection failure detail", () => {
+  const UPDATE_BOX = "╭──────────────────────────────╮\n│ Update available! 50.23.2 → 51.0.0 │\n╰──────────────────────────────╯\n";
+  const binding = () => JSON.parse(fs.readFileSync(path.join(tmp, DEPLOYMENT_ID, "alias-binding.json"), "utf8"));
+  const runWith = async (prodInspect: () => Record<string, unknown>) => {
+    const envs: Record<string, string | undefined>[] = [];
+    const ok = inspectAnswers({ [DEPLOYMENT_URL]: [DEPLOYMENT_ID], [PEER]: [DEPLOYMENT_ID] });
+    spawnSync.mockImplementation((cmd: string, args: string[], options: { env?: Record<string, string | undefined> }) => {
+      if (cmd === "vercel" && args[0] === "inspect") {
+        envs.push(options.env ?? {});
+        return args[1] === PROD ? prodInspect() : ok(args[1]!);
+      }
+      return { status: 0, stdout: "", stderr: "" };
+    });
+    fetchStub.mockImplementation(async () => new Response(JSON.stringify({ commit: COMMIT, status: "ok" }), { status: 200 }));
+    const { io } = capture();
+    await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright", "--created-at", CREATED_AT()], io);
+    return envs;
+  };
+
+  // Fails if the CLI's update notifier can run, or if the detail is the notifier box or spinner instead of the error.
+  it("turns off the update notifier and records the CLI's error line", async () => {
+    const envs = await runWith(() => ({ status: 1, stdout: "", stderr: `${VERCEL_STDERR(PROD)}Error: Can't find the deployment "retrofit.thecreativetoken.com"\n${UPDATE_BOX}` }));
+    expect(envs.length).toBeGreaterThan(0);
+    expect(envs.every((e) => e.NO_UPDATE_NOTIFIER === "1")).toBe(true);
+    expect(binding().identity.before.deployments[new URL(PROD).host]).toBe(`unavailable (exit 1: Error: Can't find the deployment "retrofit.thecreativetoken.com")`);
+  });
+
+  // Fails if a CLI that could not start is reported by its (empty) stderr instead of the spawn error.
+  it("records the spawn error when the CLI cannot start", async () => {
+    await runWith(() => ({ status: null, stdout: "", stderr: "", error: new Error("spawnSync vercel ENOENT") }));
+    expect(binding().identity.before.deployments[new URL(PROD).host]).toBe("unavailable (exit -1: spawnSync vercel ENOENT)");
+  });
+});
+
 describe("analyzer: alias identity in production evidence (V10)", () => {
   const hosts = (id: string) => ({ [new URL(DEPLOYMENT_URL).host]: id, [new URL(PROD).host]: id, [new URL(PEER).host]: id });
   const CREATED = Date.parse("2026-11-16T09:00:00.000Z");

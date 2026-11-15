@@ -238,12 +238,13 @@ function steps(o, cases, pwCases) {
  * Vercel's record of the deployment that `target` (a deployment URL or an alias) serves:
  * `vercel inspect <target> --format json`. The authoritative alias-to-deployment source.
  * The record is read from stdout only: the CLI writes its banner and, without a TTY, a
- * "Fetching deployment" line to stderr on every call. `detail` is the last stderr line.
+ * "Fetching deployment" line to stderr on every call. `detail` explains a failed call.
  *
  * @returns {{status: number, info: Record<string, unknown> | null, detail: string}}
  */
 export function vercelInspect(target) {
-  const r = run("vercel", ["inspect", target, "--format", "json", "--scope", VERCEL_SCOPE], { timeout: 60_000 });
+  // NO_UPDATE_NOTIFIER: the CLI's update box would otherwise be the last stderr line.
+  const r = run("vercel", ["inspect", target, "--format", "json", "--scope", VERCEL_SCOPE], { timeout: 60_000, env: { ...process.env, NO_UPDATE_NOTIFIER: "1" } });
   let info = null;
   if (r.status === 0) {
     try {
@@ -253,7 +254,9 @@ export function vercelInspect(target) {
       info = null;
     }
   }
-  const detail = r.stderr.split("\n").map((l) => l.trim()).filter(Boolean).at(-1) ?? r.error ?? "";
+  // The spawn error when the CLI could not run, else the CLI's last error line, else its last line.
+  const lines = r.stderr.split("\n").map((l) => l.trim()).filter(Boolean);
+  const detail = r.error ?? lines.filter((l) => /\bError\b/.test(l)).at(-1) ?? lines.at(-1) ?? "";
   return { status: r.status, info, detail };
 }
 
