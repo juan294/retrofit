@@ -10,6 +10,9 @@ export class CountersUnavailable extends Error {
   }
 }
 
+/** The placeholder key the runtime sends on the free path; the credential is the session cookie. Client-safe (no node imports). */
+export const FREE_PLACEHOLDER_KEY = "retrofit-free";
+
 /** Visitor text for the overrun hold (parent plan, stuck state "overrun hold"). */
 export const HOLD_MESSAGE = "Retrofit's free AI is paused. Use your own key.";
 

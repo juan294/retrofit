@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FreeConfig } from "@/lib/config";
+import { utcDay } from "@/lib/fetch/limits";
 import type { Clock, Store } from "@/lib/store/types";
 import { CountersUnavailable, guarded } from "./errors";
 
@@ -25,6 +26,13 @@ export interface LedgerDeps {
   readonly config: FreeConfig;
   readonly clock: Clock;
 }
+
+/** The ledger, hold and quota deps from the server deps. */
+export const counterDepsOf = (deps: { readonly store: Store; readonly config: { readonly free: FreeConfig }; readonly clock: Clock }): LedgerDeps => ({
+  store: deps.store,
+  config: deps.config.free,
+  clock: deps.clock,
+});
 
 export type ReserveResult = { ok: true; reservationId: string } | { ok: false; reason: "public_pool" | "judge_pool" | "ledger" | "hold" };
 
@@ -81,7 +89,6 @@ const MAX_ATTEMPTS = 32;
 const DAY_MS = 86_400_000;
 
 export const toMicro = (usd: number): number => Math.round(usd * 1_000_000);
-export const utcDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 
 /** UTC days from today through the day of `serviceEndMs`, at least 1. */
 export function daysLeft(serviceEndMs: number, now: number): number {

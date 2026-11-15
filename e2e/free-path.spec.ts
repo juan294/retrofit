@@ -2,13 +2,24 @@ import { test, expect } from "./fixtures/csp";
 import { analyzeFixture, traceEvents } from "./support/agent";
 import { PARTIAL_TRIGGER, resetUpstreamLog, upstreamLog } from "./support/mock-upstream";
 
-async function ask(page: import("@playwright/test").Page, text: string) {
+type Page = import("@playwright/test").Page;
+
+async function ask(page: Page, text: string) {
   const input = page.getByTestId("preview-mount").getByRole("textbox").last();
   await input.fill(text);
   await input.press("Enter");
 }
 
-async function status(page: import("@playwright/test").Page): Promise<{ available: boolean; pool: string; sid?: string; calls?: number; publicSpentTodayMicro?: number }> {
+/** Opens Retrofit's own agent and waits for the free-path banner. */
+async function openFree(page: Page) {
+  await page.goto("/");
+  await expect(page.getByText("Using Retrofit's free AI")).toBeVisible();
+}
+
+/** The first visible match for `text` in the preview chat. */
+const chatText = (page: Page, text: string | RegExp) => page.getByTestId("preview-mount").getByText(text).filter({ visible: true }).first();
+
+async function status(page: Page): Promise<{ available: boolean; pool: string; sid?: string; calls?: number; publicSpentTodayMicro?: number }> {
   return page.evaluate(async () => (await fetch("/api/inference/status", { credentials: "same-origin" })).json());
 }
 
@@ -24,7 +35,7 @@ test("a visitor without a key previews bakery on the free path, through a delega
   await analyzeFixture(page, "bakery.fixture.test");
   await expect(page.getByText("Using Retrofit's free AI")).toBeVisible();
   await ask(page, "What are your opening hours?");
-  await expect(page.getByTestId("preview-mount").getByText(/Our opening hours are Monday to Friday 7:00 to 18:00/).filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(chatText(page, /Our opening hours are Monday to Friday 7:00 to 18:00/)).toBeVisible({ timeout: 20_000 });
   const chats = (await upstreamLog()).filter((e) => e.path === "chat");
   // The model call after the website_search_site_content result went through the proxy (no 400).
   expect(chats.some((e) => e.body?.messages.some((m) => m.role === "tool" && m.name === "website_search_site_content"))).toBe(true);
@@ -40,10 +51,9 @@ test("a visitor without a key previews bakery on the free path, through a delega
 });
 
 test("Retrofit's own agent uses its published default router on the free path", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByText("Using Retrofit's free AI")).toBeVisible();
+  await openFree(page);
   await ask(page, "hello");
-  await expect(page.getByTestId("preview-mount").getByText("Hello from Retrofit's agent.").filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(chatText(page, "Hello from Retrofit's agent.")).toBeVisible({ timeout: 20_000 });
   const requests = (await traceEvents(page)).filter((ev) => ev.kind === "model_call" && ev.phase === "start");
   expect(requests.length).toBeGreaterThan(0);
   expect((await upstreamLog()).filter((e) => e.path === "chat").length).toBeGreaterThan(0);
@@ -57,17 +67,15 @@ test("renewal keeps the session and its count; two tabs share it; UTC midnight r
   const offset = nextMidnight - now - 60_000;
   await request.post("/test-fixtures/clock", { data: { offsetMs: offset } });
 
-  await page.goto("/");
-  await expect(page.getByText("Using Retrofit's free AI")).toBeVisible();
+  await openFree(page);
   await ask(page, "hello");
-  await expect(page.getByTestId("preview-mount").getByText("Hello from Retrofit's agent.").filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(chatText(page, "Hello from Retrofit's agent.")).toBeVisible({ timeout: 20_000 });
   const before = await status(page);
   expect(before.calls).toBe(1);
   expect(before.publicSpentTodayMicro).toBeGreaterThan(0);
 
   const tab2 = await context.newPage();
-  await tab2.goto("/");
-  await expect(tab2.getByText("Using Retrofit's free AI")).toBeVisible();
+  await openFree(tab2);
   const shared = await status(tab2);
   expect(shared.sid).toBe(before.sid);
 
@@ -83,8 +91,7 @@ test("renewal keeps the session and its count; two tabs share it; UTC midnight r
 });
 
 test("at the session cap the chat shows the cap text and the banner offers a key", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByText("Using Retrofit's free AI")).toBeVisible();
+  await openFree(page);
   // FREE_CALLS_PER_SESSION is 12 for the e2e server.
   for (let i = 0; i < 13; i++) {
     await ask(page, "hello");
@@ -92,15 +99,14 @@ test("at the session cap the chat shows the cap text and the banner offers a key
   }
   await expect(page.getByTestId("free-banner")).toContainText("Retrofit's free AI is used up for", { timeout: 20_000 });
   // The chat shows the cap text too (the runtime's error bubble carries the proxy's message).
-  await expect(page.getByTestId("preview-mount").getByText(/Retrofit's free AI is used up for/).filter({ visible: true }).first()).toBeVisible();
+  await expect(chatText(page, /Retrofit's free AI is used up for/)).toBeVisible();
   await expect(page.getByTestId("free-banner").getByRole("link", { name: "Use your own key" })).toBeVisible();
 });
 
 test("a partial upstream answer then a failure shows the provider text and no partial answer, with no retry", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByText("Using Retrofit's free AI")).toBeVisible();
+  await openFree(page);
   await ask(page, `hello ${PARTIAL_TRIGGER}`);
-  await expect(page.getByTestId("preview-mount").getByText(/The free AI provider did not answer/).filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(chatText(page, /The free AI provider did not answer/)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("PARTIAL ANSWER THAT MUST NOT SHOW")).toHaveCount(0);
   await page.waitForTimeout(1000);
   expect((await upstreamLog()).filter((e) => e.path === "chat").length).toBe(1);

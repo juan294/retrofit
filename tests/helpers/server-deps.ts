@@ -1,3 +1,4 @@
+import { vi } from "vitest";
 import { loadConfig, type Env } from "@/lib/config";
 import { slotKey } from "@/lib/analysis/capacity";
 import { createFetchContext } from "@/lib/fetch/context";
@@ -174,15 +175,22 @@ export interface RequestOptions {
   ip?: string;
   origin?: string | null;
   fetchSite?: string | null;
+  /** Sets `Authorization` when given. */
+  auth?: string;
+  signal?: AbortSignal;
 }
 
-export function analyzeRequest(body: unknown, o: RequestOptions = {}): Request {
+/** A same-origin JSON POST from a visitor (defaults: `sec-fetch-site: same-origin`, IP 203.0.113.7). `undefined` sends no body; a string is sent as is. */
+export function postRequest(path: string, body: unknown, o: RequestOptions = {}): Request {
   const headers = new Headers({ "content-type": "application/json", "x-forwarded-for": o.ip ?? "203.0.113.7" });
   if (o.fetchSite !== null) headers.set("sec-fetch-site", o.fetchSite ?? "same-origin");
   if (o.origin) headers.set("origin", o.origin);
   if (o.cookie) headers.set("cookie", o.cookie);
-  return new Request(`${PUBLIC_ORIGIN}/api/analyze`, { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) });
+  if (o.auth !== undefined) headers.set("authorization", o.auth);
+  return new Request(`${PUBLIC_ORIGIN}${path}`, { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body), signal: o.signal });
 }
+
+export const analyzeRequest = (body: unknown, o: RequestOptions = {}): Request => postRequest("/api/analyze", body, o);
 
 export function statusRequest(id: string, o: { cookie?: string; include?: string } = {}): Request {
   const headers = new Headers();
@@ -202,6 +210,13 @@ export function cookieFrom(res: Response): string {
   const raw = res.headers.get("set-cookie");
   if (!raw) throw new Error("no Set-Cookie");
   return raw.split(";")[0] as string;
+}
+
+/** Sends every console line to `lines` (Errors with message and stack, objects as JSON), so a test can prove what is never logged. */
+export function captureConsole(lines: string[]): void {
+  for (const level of ["log", "info", "warn", "error", "debug"] as const) {
+    vi.spyOn(console, level).mockImplementation((...args: unknown[]) => void lines.push(args.map((a) => (a instanceof Error ? `${a.message} ${a.stack}` : typeof a === "string" ? a : JSON.stringify(a))).join(" ")));
+  }
 }
 
 /** Every stored value and key, as one string, to prove what is never stored. */

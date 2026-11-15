@@ -2,11 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createLedger } from "@/lib/inference/ledger";
 import { handleCreditCheck } from "@/lib/ops/credit-check";
 import { ledgerViewFor } from "@/lib/ops/ledger-view";
-import { PUBLIC_ORIGIN, testDeps } from "../helpers/server-deps";
-
-const CRON_SECRET = "cron-secret-0123456789abcdef";
-const GITHUB_TOKEN = "ghp_testtoken0123456789ABCDEFGHIJ";
-const ISSUES_URL = "https://api.github.com/repos/juan294/retrofit/issues";
+import { CRON_SECRET, GITHUB_TOKEN, ISSUES_URL, cronRequest } from "../helpers/ops";
+import { testDeps } from "../helpers/server-deps";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -48,7 +45,7 @@ describe("ledgerViewFor", () => {
     const r = await ledger.reserve({ pool: "public", sid: "p", microUsd: 1000 });
     if (!r.ok) throw new Error(`refused ${r.reason}`);
     await ledger.reconcile(r.reservationId, 5_500_000);
-    const res = await handleCreditCheck(new Request(`${PUBLIC_ORIGIN}/api/cron/credit-check`, { headers: { authorization: `Bearer ${CRON_SECRET}` } }), d);
+    const res = await handleCreditCheck(cronRequest(), d);
     expect(res.status).toBe(200);
     expect(((await res.json()) as { alerts: string[] }).alerts).toContain("threshold:50");
     expect(titles).toContain("Free AI credit threshold reached");

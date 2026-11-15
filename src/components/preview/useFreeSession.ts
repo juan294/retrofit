@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FREE_PLACEHOLDER_KEY, UNAVAILABLE_MESSAGE } from "@/lib/inference/errors";
 import type { Inference } from "./Preview";
 
-/** The placeholder key the runtime sends to Retrofit's own endpoint; the credential is the session cookie. */
-export const FREE_KEY = "retrofit-free";
 export const RENEW_EVERY_MS = 30 * 60 * 1000;
 
 export type FreeState =
@@ -17,7 +16,7 @@ async function startSession(): Promise<{ ok: true } | { ok: false; message: stri
   // Always read the body, so the response completes (an unread body keeps the request open).
   const body = (await res.json().catch(() => null)) as { message?: string } | null;
   if (res.ok) return { ok: true };
-  return { ok: false, message: body?.message ?? "Retrofit's free AI is not available right now. Use your own key." };
+  return { ok: false, message: body?.message ?? UNAVAILABLE_MESSAGE };
 }
 
 async function freeModel(): Promise<string | null> {
@@ -45,10 +44,10 @@ export function useFreeSession(active: boolean): FreeState {
         if (!started.ok) return setState({ status: "unavailable", message: started.message });
         const model = await freeModel();
         if (stopped) return;
-        if (!model) return setState({ status: "unavailable", message: "Retrofit's free AI is not available right now. Use your own key." });
-        setState({ status: "ready", inference: { router: `${window.location.origin}/api/inference/v1`, key: FREE_KEY, model } });
+        if (!model) return setState({ status: "unavailable", message: UNAVAILABLE_MESSAGE });
+        setState({ status: "ready", inference: { router: `${window.location.origin}/api/inference/v1`, key: FREE_PLACEHOLDER_KEY, model } });
       } catch {
-        if (!stopped) setState({ status: "unavailable", message: "Retrofit's free AI is not available right now. Use your own key." });
+        if (!stopped) setState({ status: "unavailable", message: UNAVAILABLE_MESSAGE });
       }
     };
     void begin();

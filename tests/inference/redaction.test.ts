@@ -4,7 +4,7 @@ import { REDACTED, redact, redactText } from "@/lib/inference/redact";
 import { handleSession } from "@/lib/inference/session";
 import { signSession } from "@/lib/inference/token";
 import { PROVIDERS } from "@/lib/keys/providers";
-import { fakeClock, PUBLIC_ORIGIN, testDeps } from "../helpers/server-deps";
+import { captureConsole, cookieFrom, fakeClock, postRequest, testDeps } from "../helpers/server-deps";
 import fixture from "../fixtures/runtime-requests/bakery-session.json";
 
 const UPSTREAM = "https://upstream.test/v1";
@@ -62,9 +62,7 @@ describe("proxy logs", () => {
 
   beforeEach(() => {
     lines = [];
-    for (const level of ["log", "info", "warn", "error", "debug"] as const) {
-      vi.spyOn(console, level).mockImplementation((...args: unknown[]) => void lines.push(args.map((a) => (a instanceof Error ? `${a.message} ${a.stack}` : typeof a === "string" ? a : JSON.stringify(a))).join(" ")));
-    }
+    captureConsole(lines);
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -75,8 +73,8 @@ describe("proxy logs", () => {
   it("no part of a key or cookie reaches the logs when the upstream fails with a message that holds them", async () => {
     const clock = fakeClock();
     const d = testDeps({ clock: clock.clock, env: { FREE_UPSTREAM_URL: UPSTREAM, OTARI_API_KEY: SERVER_KEY } });
-    const session = await handleSession(new Request(`${PUBLIC_ORIGIN}/api/inference/session`, { method: "POST", headers: { "sec-fetch-site": "same-origin", "x-forwarded-for": "203.0.113.7" } }), d);
-    const cookie = session.headers.get("set-cookie")!.split(";")[0]!;
+    const session = await handleSession(postRequest("/api/inference/session", undefined), d);
+    const cookie = cookieFrom(session);
     const token = cookie.slice(cookie.indexOf("=") + 1);
 
     vi.stubGlobal(
@@ -86,12 +84,7 @@ describe("proxy logs", () => {
         throw new Error(`connect ECONNREFUSED; sent ${headers.get("authorization")} with ${cookie} to ${String(input)}`);
       }),
     );
-    const chat = (auth: string) =>
-      new Request(`${PUBLIC_ORIGIN}/api/inference/v1/chat/completions`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "sec-fetch-site": "same-origin", authorization: auth, cookie },
-        body: JSON.stringify(fixture.bodies[0]),
-      });
+    const chat = (auth: string) => postRequest("/api/inference/v1/chat/completions", fixture.bodies[0], { auth, cookie });
 
     expect((await handleChat(chat("Bearer retrofit-free"), d)).status).toBe(502);
     expect((await handleChat(chat(`Bearer ${PROVIDER_BEARER}`), d)).status).toBe(401);

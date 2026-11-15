@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { KeyPanel } from "@/components/key-panel/KeyPanel";
 import type { Connection } from "@/lib/keys/connect";
+import { providerForRouter } from "@/lib/keys/providers";
 import { loadKey } from "@/lib/keys/storage";
 import { pageGuard } from "@/lib/preview/page-guard";
 import type { Notice } from "@/lib/preview/notices";
@@ -28,7 +29,9 @@ export function AgentPanel({ basePath, label, title }: AgentPanelProps) {
   // A remembered key restores itself in the key panel; the free path must not start (and count a session) first.
   const [hasStoredKey, setHasStoredKey] = useState(false);
   useEffect(() => {
-    setHasStoredKey(loadKey() !== null);
+    // Same rule as the key panel's restore: only a saved key whose router maps to a known provider counts.
+    const saved = loadKey();
+    setHasStoredKey(saved !== null && providerForRouter(saved.router) !== null);
     setOriginUrl(`${window.location.origin}${basePath}`);
   }, [basePath]);
 

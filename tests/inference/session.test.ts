@@ -1,33 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleJudgeUpgrade, handleSession, readSession, sessionKey } from "@/lib/inference/session";
 import { verifySession } from "@/lib/inference/token";
-import { fakeClock, PUBLIC_ORIGIN, storeDump, testDeps } from "../helpers/server-deps";
+import { captureConsole, cookieFrom, fakeClock, PUBLIC_ORIGIN, postRequest, storeDump, testDeps, type RequestOptions } from "../helpers/server-deps";
 
 const CODE = "judge-code-7f3a91c2";
 
-interface Opts {
-  cookie?: string;
-  ip?: string;
-  origin?: string | null;
-  fetchSite?: string | null;
-}
+const sessionReq = (o: RequestOptions = {}) => postRequest("/api/inference/session", undefined, o);
+const judgeReq = (body: unknown, o: RequestOptions = {}) => postRequest("/api/inference/session/judge", body, o);
 
-function post(path: string, body: unknown, o: Opts = {}): Request {
-  const headers = new Headers({ "content-type": "application/json", "x-forwarded-for": o.ip ?? "203.0.113.7" });
-  if (o.fetchSite !== null) headers.set("sec-fetch-site", o.fetchSite ?? "same-origin");
-  if (o.origin) headers.set("origin", o.origin);
-  if (o.cookie) headers.set("cookie", o.cookie);
-  return new Request(`${PUBLIC_ORIGIN}${path}`, { method: "POST", headers, body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body) });
-}
-const sessionReq = (o: Opts = {}) => post("/api/inference/session", undefined, o);
-const judgeReq = (body: unknown, o: Opts = {}) => post("/api/inference/session/judge", body, o);
-
-function cookieOf(res: Response): string {
-  const raw = res.headers.get("set-cookie");
-  if (!raw) throw new Error("no Set-Cookie");
-  return raw.split(";")[0] as string;
-}
-const tokenOf = (res: Response) => cookieOf(res).replace(/^retrofit_session=/, "");
+const tokenOf = (res: Response) => cookieFrom(res).replace(/^retrofit_session=/, "");
 
 function setup(env: Record<string, string> = {}) {
   const clock = fakeClock();
@@ -69,13 +50,13 @@ describe("POST /api/inference/session", () => {
     const { d, clock, claimsOf } = setup();
     const first = await handleSession(sessionReq(), d);
     const c1 = claimsOf(first)!;
-    const up = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieOf(first) }), d);
+    const up = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(first) }), d);
     expect(up.status).toBe(200);
     // A counter another module keeps under the sid survives renewal.
     await d.store.incrementWindow(`inference:test-counter:${c1.sid}`, 86_400, 5);
 
     clock.advance(90 * 60_000);
-    const renewed = await handleSession(sessionReq({ cookie: cookieOf(up) }), d);
+    const renewed = await handleSession(sessionReq({ cookie: cookieFrom(up) }), d);
     expect(renewed.status).toBe(200);
     const c2 = claimsOf(renewed)!;
     expect(c2.sid).toBe(c1.sid);
@@ -87,7 +68,7 @@ describe("POST /api/inference/session", () => {
 
     // The stored record was renewed: it outlives the original two hours.
     clock.advance(60 * 60_000);
-    expect(await readSession(sessionReq({ cookie: cookieOf(renewed) }), d)).toEqual({ claims: expect.objectContaining({ sid: c1.sid, pool: "judge" }) });
+    expect(await readSession(sessionReq({ cookie: cookieFrom(renewed) }), d)).toEqual({ claims: expect.objectContaining({ sid: c1.sid, pool: "judge" }) });
   });
 
   // Fails if renewals count against the per-client cap, or new sessions are not capped.
@@ -96,7 +77,7 @@ describe("POST /api/inference/session", () => {
     const a = await handleSession(sessionReq(), d);
     const b = await handleSession(sessionReq(), d);
     expect([a.status, b.status]).toEqual([200, 200]);
-    for (let i = 0; i < 5; i++) expect((await handleSession(sessionReq({ cookie: cookieOf(a) }), d)).status).toBe(200);
+    for (let i = 0; i < 5; i++) expect((await handleSession(sessionReq({ cookie: cookieFrom(a) }), d)).status).toBe(200);
     const third = await handleSession(sessionReq(), d);
     expect(third.status).toBe(429);
     const body = (await third.json()) as { error: string; message: string; retryAt: string };
@@ -113,10 +94,10 @@ describe("POST /api/inference/session", () => {
     const first = await handleSession(sessionReq(), d);
     const sid = claimsOf(first)!.sid;
     clock.advance(7200_000);
-    const later = await handleSession(sessionReq({ cookie: cookieOf(first) }), d);
+    const later = await handleSession(sessionReq({ cookie: cookieFrom(first) }), d);
     expect(later.status).toBe(200);
     expect(claimsOf(later)!.sid).not.toBe(sid);
-    const forged = await handleSession(sessionReq({ cookie: `${cookieOf(later)}x` }), d);
+    const forged = await handleSession(sessionReq({ cookie: `${cookieFrom(later)}x` }), d);
     expect(claimsOf(forged)!.sid).not.toBe(claimsOf(later)!.sid);
   });
 
@@ -143,12 +124,12 @@ describe("POST /api/inference/session/judge", () => {
     const { d } = setup();
     const s = await handleSession(sessionReq(), d);
     for (const code of ["wrong", CODE.slice(0, -1), `${CODE}x`, ""]) {
-      const res = await handleJudgeUpgrade(judgeReq({ code }, { cookie: cookieOf(s) }), d);
+      const res = await handleJudgeUpgrade(judgeReq({ code }, { cookie: cookieFrom(s) }), d);
       expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: "invalid_code", message: "That judge code is not valid." });
       expect(res.headers.get("set-cookie")).toBeNull();
     }
-    expect((await readSession(sessionReq({ cookie: cookieOf(s) }), d))?.claims.pool).toBe("public");
+    expect((await readSession(sessionReq({ cookie: cookieFrom(s) }), d))?.claims.pool).toBe("public");
   });
 
   // Fails if the right code does not set pool judge, mints a new sid, or the stored record keeps pool public.
@@ -156,7 +137,7 @@ describe("POST /api/inference/session/judge", () => {
     const { d, claimsOf } = setup();
     const s = await handleSession(sessionReq(), d);
     const sid = claimsOf(s)!.sid;
-    const res = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieOf(s) }), d);
+    const res = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(s) }), d);
     expect(res.status).toBe(200);
     expect(((await res.json()) as { pool: string }).pool).toBe("judge");
     const c = claimsOf(res)!;
@@ -164,22 +145,22 @@ describe("POST /api/inference/session/judge", () => {
     expect(c.pool).toBe("judge");
     expect(((await d.store.get(sessionKey(sid))) as { pool: string }).pool).toBe("judge");
     // The old public cookie now reads as judge too: the stored record is authoritative.
-    expect((await readSession(sessionReq({ cookie: cookieOf(s) }), d))?.claims.pool).toBe("judge");
+    expect((await readSession(sessionReq({ cookie: cookieFrom(s) }), d))?.claims.pool).toBe("judge");
   });
 
   // Fails if the judge cap is not applied per client per day, or a repeat on a judge session counts again.
   it("applies the judge sessions per client per day cap", async () => {
     const { d, clock } = setup({ JUDGE_SESSIONS_PER_CLIENT_DAY: "1" });
     const a = await handleSession(sessionReq(), d);
-    expect((await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieOf(a) }), d)).status).toBe(200);
-    expect((await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieOf(a) }), d)).status).toBe(200);
+    expect((await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(a) }), d)).status).toBe(200);
+    expect((await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(a) }), d)).status).toBe(200);
     const b = await handleSession(sessionReq(), d);
-    const refused = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieOf(b) }), d);
+    const refused = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(b) }), d);
     expect(refused.status).toBe(429);
     expect(((await refused.json()) as { error: string }).error).toBe("judge_limit");
     clock.advance(24 * 3600_000);
     const c = await handleSession(sessionReq(), d);
-    expect((await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieOf(c) }), d)).status).toBe(200);
+    expect((await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(c) }), d)).status).toBe(200);
   });
 
   // Fails if the upgrade works without a valid session cookie.
@@ -194,9 +175,9 @@ describe("POST /api/inference/session/judge", () => {
   it("refuses a cross-origin upgrade", async () => {
     const { d } = setup();
     const s = await handleSession(sessionReq(), d);
-    const res = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieOf(s), fetchSite: "cross-site", origin: "https://evil.example" }), d);
+    const res = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(s), fetchSite: "cross-site", origin: "https://evil.example" }), d);
     expect(res.status).toBe(403);
-    expect((await readSession(sessionReq({ cookie: cookieOf(s) }), d))?.claims.pool).toBe("public");
+    expect((await readSession(sessionReq({ cookie: cookieFrom(s) }), d))?.claims.pool).toBe("public");
   });
 
   // Fails if a null JUDGE_CODE is treated as a code (for example, an empty or "null" code passing).
@@ -205,7 +186,7 @@ describe("POST /api/inference/session/judge", () => {
     expect(d.config.free.judgeCode).toBeNull();
     const s = await handleSession(sessionReq(), d);
     for (const code of ["", "null", CODE]) {
-      const res = await handleJudgeUpgrade(judgeReq({ code }, { cookie: cookieOf(s) }), d);
+      const res = await handleJudgeUpgrade(judgeReq({ code }, { cookie: cookieFrom(s) }), d);
       expect(res.status).toBe(503);
       expect(await res.json()).toEqual({ error: "not_configured", message: "Judge access is not configured." });
     }
@@ -215,20 +196,18 @@ describe("POST /api/inference/session/judge", () => {
   it("never echoes or logs the code", async () => {
     const { d } = setup();
     const lines: string[] = [];
-    for (const m of ["log", "info", "warn", "error", "debug"] as const) {
-      vi.spyOn(console, m).mockImplementation((...args: unknown[]) => void lines.push(args.map(String).join(" ")));
-    }
+    captureConsole(lines);
     const guess = "guess-5d1e0b";
     const s = await handleSession(sessionReq(), d);
     const texts: string[] = [];
     for (const body of [{ code: guess }, { code: CODE }, `{"code": "${CODE}`, `{"code": ${CODE}}`, { code: 42 }]) {
-      const res = await handleJudgeUpgrade(judgeReq(body, { cookie: cookieOf(s) }), d);
+      const res = await handleJudgeUpgrade(judgeReq(body, { cookie: cookieFrom(s) }), d);
       texts.push(await res.text(), JSON.stringify([...res.headers]));
     }
     // A store failure while upgrading is logged without the code.
     const failing = { ...d, store: { ...d.store, compareAndSet: () => Promise.reject(new Error(`store down`)) } };
     const s2 = await handleSession(sessionReq({ ip: "198.51.100.30" }), d);
-    const down = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieOf(s2), ip: "198.51.100.30" }), failing);
+    const down = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(s2), ip: "198.51.100.30" }), failing);
     expect(down.status).toBe(503);
     texts.push(await down.text());
     const all = [...texts, ...lines, storeDump(d.backing)].join("\n");

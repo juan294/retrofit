@@ -2,12 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openAlert, overrunAlert, type Alert } from "@/lib/ops/alert";
 import { handleCreditCheck, runCreditCheck } from "@/lib/ops/credit-check";
 import type { LedgerView } from "@/lib/ops/ledger-view";
-import { PUBLIC_ORIGIN, storeDump, testDeps, type TestDeps } from "../helpers/server-deps";
+import { CRON_SECRET, GITHUB_TOKEN, ISSUES_URL, cronRequest } from "../helpers/ops";
+import { storeDump, testDeps, type TestDeps } from "../helpers/server-deps";
 
-const CRON_SECRET = "cron-secret-0123456789abcdef";
-const GITHUB_TOKEN = "ghp_testtoken0123456789ABCDEFGHIJ";
 const OTARI_KEY = "sk-otari-test-0123456789";
-const ISSUES_URL = "https://api.github.com/repos/juan294/retrofit/issues";
 
 // FREE_CREDIT_USD 10 and JUDGE_RESERVE_USD 3, in micro-USD.
 const CREDIT = 10_000_000;
@@ -45,12 +43,6 @@ function view(usedFraction: number, judgeSpentMicro = 0, outstandingShare = 0.25
   const used = Math.round(CREDIT * usedFraction);
   const outstanding = Math.round(used * outstandingShare);
   return { totalSpentMicro: used - outstanding, totalOutstandingMicro: outstanding, judgeSpentMicro };
-}
-
-function cronRequest(auth: string | null): Request {
-  const headers = new Headers();
-  if (auth !== null) headers.set("authorization", auth);
-  return new Request(`${PUBLIC_ORIGIN}/api/cron/credit-check`, { headers });
 }
 
 beforeEach(stubGitHub);

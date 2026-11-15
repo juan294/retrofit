@@ -1,14 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHold, holdId } from "@/lib/inference/hold";
-import { createLedger } from "@/lib/inference/ledger";
+import { counterDepsOf, createLedger } from "@/lib/inference/ledger";
 import { alertStoreKey, openAlert, overrunAlert } from "@/lib/ops/alert";
 import { handleCreditCheck } from "@/lib/ops/credit-check";
 import { ledgerViewFor } from "@/lib/ops/ledger-view";
-import { fakeClock, PUBLIC_ORIGIN, testDeps } from "../helpers/server-deps";
-
-const CRON_SECRET = "cron-secret-0123456789abcdef";
-const GITHUB_TOKEN = "ghp_testtoken0123456789ABCDEFGHIJ";
-const ISSUES_URL = "https://api.github.com/repos/juan294/retrofit/issues";
+import { CRON_SECRET, GITHUB_TOKEN, ISSUES_URL, cronRequest } from "../helpers/ops";
+import { fakeClock, testDeps } from "../helpers/server-deps";
 
 let titles: string[];
 let respond: (signal: AbortSignal | null) => Promise<Response>;
@@ -36,11 +33,9 @@ afterEach(() => {
 function setup() {
   const clock = fakeClock();
   const d = testDeps({ clock: clock.clock, env: { CRON_SECRET, ALERT_GITHUB_TOKEN: GITHUB_TOKEN } });
-  const counterDeps = { store: d.store, config: d.config.free, clock: d.clock };
+  const counterDeps = counterDepsOf(d);
   return { d, clock, hold: createHold(counterDeps), ledger: createLedger(counterDeps) };
 }
-
-const cron = () => new Request(`${PUBLIC_ORIGIN}/api/cron/credit-check`, { headers: { authorization: `Bearer ${CRON_SECRET}` } });
 
 describe("overrun alert retry by the daily credit check (P6-R2)", () => {
   // Fails if the cron does not open the overrun alert while a hold exists, or opens it twice.
@@ -53,13 +48,13 @@ describe("overrun alert retry by the daily credit check (P6-R2)", () => {
     expect(titles).toEqual([]);
 
     respond = async () => new Response("{}", { status: 201 });
-    const first = await handleCreditCheck(cron(), d);
+    const first = await handleCreditCheck(cronRequest(), d);
     expect(first.status).toBe(200);
     expect(((await first.json()) as { alerts: string[] }).alerts).toEqual([`overrun:${holdId(record)}`]);
     expect(titles).toEqual(["Free AI reservation overrun"]);
     expect(await d.store.get(alertStoreKey(`overrun:${holdId(record)}`))).toEqual({ state: "sent" });
 
-    await handleCreditCheck(cron(), d);
+    await handleCreditCheck(cronRequest(), d);
     expect(titles).toEqual(["Free AI reservation overrun"]);
   });
 
@@ -69,7 +64,7 @@ describe("overrun alert retry by the daily credit check (P6-R2)", () => {
     await ledger.setHeld(true);
     const view = await ledgerViewFor(d);
     expect(view.holdId).toBe("unrecorded-2026-11-15");
-    await handleCreditCheck(cron(), d);
+    await handleCreditCheck(cronRequest(), d);
     expect(titles).toEqual(["Free AI reservation overrun"]);
   });
 
@@ -77,7 +72,7 @@ describe("overrun alert retry by the daily credit check (P6-R2)", () => {
   it("opens no overrun issue without a hold", async () => {
     const { d } = setup();
     expect((await ledgerViewFor(d)).holdId).toBeNull();
-    await handleCreditCheck(cron(), d);
+    await handleCreditCheck(cronRequest(), d);
     expect(titles).toEqual([]);
   });
 });

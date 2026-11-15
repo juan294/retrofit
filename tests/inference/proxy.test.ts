@@ -11,14 +11,13 @@ import { reservationFor, usageCharge } from "@/lib/inference/reservation";
 import { parseChatRequest } from "@/lib/inference/schema";
 import { handleJudgeUpgrade, handleSession, sessionTexts } from "@/lib/inference/session";
 import { alertStoreKey } from "@/lib/ops/alert";
-import { fakeClock, PUBLIC_ORIGIN, testDeps, waitFor, type TestDeps } from "../helpers/server-deps";
+import { GITHUB_TOKEN, ISSUES_URL } from "../helpers/ops";
+import { captureConsole, cookieFrom, fakeClock, PUBLIC_ORIGIN, postRequest, testDeps, waitFor, type RequestOptions, type TestDeps } from "../helpers/server-deps";
 
 const UPSTREAM = "https://upstream.test/v1";
 const CHAT_URL = `${UPSTREAM}/chat/completions`;
-const ISSUES_URL = "https://api.github.com/repos/juan294/retrofit/issues";
 const KEY_PUBLIC = "otk_public0a9e7b3d4c2a8e6f1b0d9c7a5e3f";
 const KEY_JUDGE = "otk_judge7c1d2e3f4a5b6c7d8e9f0a1b2c3d4";
-const GITHUB_TOKEN = "ghp_testtoken0123456789ABCDEFGHIJ";
 const JUDGE_CODE = "judge-code-7f3a91c2";
 const PROVIDER_BEARER = "sk-proj-Visitor0123456789abcdefABCDEF";
 
@@ -96,9 +95,7 @@ beforeEach(() => {
       return script(call);
     }),
   );
-  for (const level of ["log", "info", "warn", "error", "debug"] as const) {
-    vi.spyOn(console, level).mockImplementation((...args: unknown[]) => void logs.push(args.map((a) => (a instanceof Error ? `${a.message} ${a.stack}` : typeof a === "string" ? a : JSON.stringify(a))).join(" ")));
-  }
+  captureConsole(logs);
 });
 
 afterEach(() => {
@@ -127,48 +124,24 @@ function setup(env: Record<string, string> = {}, store?: TestDeps["store"]) {
   return { d, clock, ledger: createLedger({ store: d.store, config: d.config.free, clock: d.clock }) };
 }
 
-function post(p: string, body: unknown, headers: Record<string, string> = {}): Request {
-  return new Request(`${PUBLIC_ORIGIN}${p}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "sec-fetch-site": "same-origin", "x-forwarded-for": "203.0.113.7", ...headers },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-}
-
 async function session(d: TestDeps, judge = false): Promise<string> {
-  const res = await handleSession(post("/api/inference/session", undefined), d);
+  const res = await handleSession(postRequest("/api/inference/session", undefined), d);
   expect(res.status).toBe(200);
-  let cookie = res.headers.get("set-cookie")!.split(";")[0]!;
+  let cookie = cookieFrom(res);
   if (judge) {
-    const up = await handleJudgeUpgrade(post("/api/inference/session/judge", { code: JUDGE_CODE }, { cookie }), d);
+    const up = await handleJudgeUpgrade(postRequest("/api/inference/session/judge", { code: JUDGE_CODE }, { cookie }), d);
     expect(up.status).toBe(200);
-    cookie = up.headers.get("set-cookie")!.split(";")[0]!;
+    cookie = cookieFrom(up);
   }
   tokens.push(cookie.slice(cookie.indexOf("=") + 1));
   return cookie;
 }
 
-interface ChatOpts {
-  cookie?: string;
-  auth?: string | null;
-  fetchSite?: string | null;
-  origin?: string;
-  signal?: AbortSignal;
-}
+/** `auth` defaults to the placeholder Bearer; null sends no Authorization. */
+type ChatOpts = Omit<RequestOptions, "auth"> & { auth?: string | null };
 
-function chat(body: unknown, o: ChatOpts = {}): Request {
-  const headers = new Headers({ "content-type": "application/json", "x-forwarded-for": "203.0.113.7" });
-  if (o.fetchSite !== null) headers.set("sec-fetch-site", o.fetchSite ?? "same-origin");
-  if (o.auth !== null) headers.set("authorization", o.auth ?? "Bearer retrofit-free");
-  if (o.cookie) headers.set("cookie", o.cookie);
-  if (o.origin) headers.set("origin", o.origin);
-  return new Request(`${PUBLIC_ORIGIN}/api/inference/v1/chat/completions`, {
-    method: "POST",
-    headers,
-    body: typeof body === "string" ? body : JSON.stringify(body),
-    signal: o.signal,
-  });
-}
+const chat = (body: unknown, o: ChatOpts = {}): Request =>
+  postRequest("/api/inference/v1/chat/completions", body, { ...o, auth: o.auth === null ? undefined : (o.auth ?? "Bearer retrofit-free") });
 
 /** Reads the body the way the runtime does (`runtime/llm.js` `_readSse`). */
 function readLikeRuntime(text: string) {

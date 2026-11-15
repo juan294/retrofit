@@ -5,7 +5,8 @@ import { sse, toolNames, type ChatBody } from "./mock-router";
 
 /** Path of the mock Otari API on the 3013 test server (host 127.0.0.1). FREE_UPSTREAM_URL points here. */
 export const UPSTREAM_PATH = "/otari/v1";
-export const UPSTREAM_BASE = `http://127.0.0.1:3013${UPSTREAM_PATH}`;
+const UPSTREAM_ORIGIN = "http://127.0.0.1:3013";
+export const UPSTREAM_BASE = `${UPSTREAM_ORIGIN}${UPSTREAM_PATH}`;
 export const UPSTREAM_MODEL = "alibaba/qwen3.8-flash";
 /** A visitor message containing this word makes the mock send part of an answer and then break the stream. */
 export const PARTIAL_TRIGGER = "free-partial";
@@ -57,8 +58,8 @@ export function upstreamRoutes() {
 }
 
 export async function upstreamLog(): Promise<LogEntry[]> {
-  return (await fetch("http://127.0.0.1:3013/otari/_log")).json() as Promise<LogEntry[]>;
+  return (await fetch(`${UPSTREAM_ORIGIN}/otari/_log`)).json() as Promise<LogEntry[]>;
 }
 export async function resetUpstreamLog(): Promise<void> {
-  await fetch("http://127.0.0.1:3013/otari/_reset");
+  await fetch(`${UPSTREAM_ORIGIN}/otari/_reset`);
 }

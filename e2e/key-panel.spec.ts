@@ -155,10 +155,7 @@ test("with a visitor key, no request goes to /api/inference after the key connec
   await analyzeFixture(page, "bakery.fixture.test");
   await connectKey(page);
   const from = seen.length;
-  const input = page.getByTestId("preview-mount").getByRole("textbox").last();
-  await input.fill("What are your opening hours?");
-  await input.press("Enter");
-  await expect(page.getByTestId("preview-mount").getByText(/Our opening hours are/).filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
+  await askHours(page);
   expect(seen.slice(from).filter((u) => u.includes("/api/inference"))).toEqual([]);
   expect(router.bodies.length).toBeGreaterThan(0);
 });

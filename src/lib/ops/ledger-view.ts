@@ -1,5 +1,6 @@
 import { createHold, holdId } from "../inference/hold";
-import { createLedger, utcDay } from "../inference/ledger";
+import { counterDepsOf, createLedger } from "../inference/ledger";
+import { utcDay } from "../fetch/limits";
 import type { ServerDeps } from "../server/runtime";
 
 /** Ledger totals the credit check reads, in micro-USD. Outstanding means reserved and not yet reconciled. */
@@ -17,7 +18,7 @@ export interface LedgerView {
 
 /** Reads the totals from the free-path ledger (`src/lib/inference/ledger.ts`). Throws CountersUnavailable when the store fails (the cron route answers 503). */
 export async function ledgerViewFor(deps: Pick<ServerDeps, "store" | "config" | "clock">): Promise<LedgerView> {
-  const counterDeps = { store: deps.store, config: deps.config.free, clock: deps.clock };
+  const counterDeps = counterDepsOf(deps);
   const b = await createLedger(counterDeps).budgets();
   const record = await createHold(counterDeps).read();
   const id = record ? holdId(record) : b.held ? `unrecorded-${utcDay(deps.clock())}` : null;

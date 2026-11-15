@@ -2,9 +2,9 @@ import { isSameOrigin } from "@/lib/analysis/run";
 import { json } from "@/lib/api/json";
 import { openAlert, overrunAlert } from "@/lib/ops/alert";
 import type { ServerDeps } from "@/lib/server/runtime";
-import { CountersUnavailable, HOLD_MESSAGE, UNAVAILABLE_MESSAGE } from "./errors";
+import { CountersUnavailable, FREE_PLACEHOLDER_KEY, HOLD_MESSAGE, UNAVAILABLE_MESSAGE } from "./errors";
 import { type OverrunAlert, createHold, holdId, recordOverrun } from "./hold";
-import { type Pool, createLedger } from "./ledger";
+import { type Pool, counterDepsOf, createLedger } from "./ledger";
 import { type CapReason, capMessage, createQuota } from "./quota";
 import { redact, redactText } from "./redact";
 import { reservationFor, usageCharge } from "./reservation";
@@ -25,7 +25,6 @@ import { readSession, sessionTexts } from "./session";
  * part of an answer. The proxy never retries.
  */
 
-export const FREE_PLACEHOLDER_KEY = "retrofit-free";
 export const FREE_FAILED_MESSAGE = "The free AI provider did not answer. Try again, or use your own key.";
 export const AUTH_MESSAGE = "Retrofit's free AI accepts only its own placeholder key. Your own key goes to your provider, never to Retrofit.";
 
@@ -130,14 +129,20 @@ const usageFrom = (value: unknown): Usage | null => {
   return isCount(u.prompt_tokens) && isCount(u.completion_tokens) ? { promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens } : null;
 };
 
+/** The trimmed payload of every `data:` line; other lines (comments, keep-alives) are dropped. */
+function* dataPayloads(text: string): Generator<string> {
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("data:")) yield line.slice(5).trim();
+  }
+}
+
 /** The last usage object in a partial or failed stream; malformed lines are skipped. */
 function lastUsage(text: string): Usage | null {
   let usage: Usage | null = null;
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line.startsWith("data:")) continue;
+  for (const payload of dataPayloads(text)) {
     try {
-      usage = usageFrom((JSON.parse(line.slice(5).trim()) as { usage?: unknown }).usage) ?? usage;
+      usage = usageFrom((JSON.parse(payload) as { usage?: unknown }).usage) ?? usage;
     } catch {
       // Partial or malformed line: keep the last usage seen.
     }
@@ -158,10 +163,7 @@ function parseStream(text: string): Completion {
   const events: unknown[] = [];
   let usage: Completion["usage"] = null;
   let finished = false;
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line.startsWith("data:")) continue;
-    const payload = line.slice(5).trim();
+  for (const payload of dataPayloads(text)) {
     if (payload === "[DONE]") continue;
     let event: unknown;
     try {
@@ -242,7 +244,7 @@ export async function handleChat(request: Request, deps: ServerDeps, opts: { sig
   if (!parsed.ok) return apiError(400, parsed.message, "invalid_request_error", "invalid_request");
   const body = parsed.body;
 
-  const counterDeps = { store: deps.store, config: free, clock: deps.clock };
+  const counterDeps = counterDepsOf(deps);
   const quota = createQuota(counterDeps);
   const ledger = createLedger(counterDeps);
   const hold = createHold(counterDeps);
@@ -401,7 +403,7 @@ export async function handleStatus(request: Request, deps: ServerDeps): Promise<
     const session = await readSession(request, deps);
     if (!session) return answer(false, null, "no_session");
     const { sid, pool } = session.claims;
-    const counterDeps = { store: deps.store, config: free, clock: deps.clock };
+    const counterDeps = counterDepsOf(deps);
     const calls = await createQuota(counterDeps).callsUsed(sid);
     const b = await createLedger(counterDeps).budgets();
     const extra = { sid, calls, publicSpentTodayMicro: b.publicSpentTodayMicro };
