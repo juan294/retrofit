@@ -234,4 +234,15 @@ describe("deadline through the production fetch context (validation V07)", () =>
     expect(err).toBeInstanceOf(CrawlDelayTooLong);
     expect(server.requests.filter((r) => r.host === "site.fixture.test")).toEqual([]);
   });
+
+  // Review F2. Fails if createFetchContext ignores its `sleep`, so a fake clock with a real timer would make
+  // pacing wait on a clock that never moves.
+  it("paces on the sleep it is given", async () => {
+    let t = Date.parse("2026-11-15T10:20:00.000Z");
+    const sleeps: number[] = [];
+    const ctx = createFetchContext({ config, store: createMemoryStore({ clock: () => t }), clock: () => t, sleep: async (ms) => void (sleeps.push(ms), (t += ms)), lookup: noRealDns });
+    await guardedFetch(u("site.fixture.test"), ctx);
+    // robots.txt, then the page one interval (1 s) plus the start tolerance later.
+    expect(sleeps).toEqual([1250]);
+  });
 });
