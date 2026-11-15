@@ -23,7 +23,7 @@ export interface Pacer {
   /**
    * Resolves when this caller owns the next request slot for `host`. Every
    * request to a host goes through it. The interval is max(minimum interval,
-   * crawl delay), with no upper cap. When the slot would start after
+   * crawl delay), up to MAX_INTERVAL_MS (one day). When the slot would start after
    * `notAfter` (ms), throws CrawlDelayTooLong at once, without waiting or
    * taking the slot.
    */
@@ -37,6 +37,13 @@ export interface Pacer {
  * is still measured from the host's latest request.
  */
 const SLOT_TTL_MARGIN_S = 3600;
+/**
+ * Longest interval the pacer applies and stores: one day. A crawl never makes
+ * two requests to a host that far apart (its budget is under a minute), so a
+ * longer Crawl-delay (robots-parser returns up to Infinity) only refuses the
+ * next request, and the stored slot and its TTL stay finite and small.
+ */
+export const MAX_INTERVAL_MS = 24 * 3600 * 1000;
 const MAX_ATTEMPTS = 1000;
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -46,7 +53,9 @@ export function createPacer({ store, clock = systemClock, sleep = realSleep, min
     async pace(host, crawlDelaySeconds, notAfter) {
       const key = `nextAllowedAt:${host.toLowerCase()}`;
       const delay = crawlDelaySeconds ?? 0;
-      const intervalMs = Math.max(minIntervalMs, Number.isFinite(delay) && delay > 0 ? delay * 1000 : 0);
+      // NaN or a non-positive delay asks for nothing; Infinity asks for the longest interval.
+      const requestedMs = delay > 0 ? Math.min(delay * 1000, MAX_INTERVAL_MS) : 0;
+      const intervalMs = Math.max(minIntervalMs, requestedMs);
 
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
         const now = clock();

@@ -10,7 +10,7 @@ export const MAX_REDIRECTS = 5;
 
 /**
  * Per-host pacing slot (`createPacer`). `host` is `URL.host`. The crawl delay
- * is honored in full; a slot that would start after `notAfter` (ms) is refused
+ * is honored in full (up to one day); a slot that would start after `notAfter` (ms) is refused
  * with CrawlDelayTooLong before any wait.
  */
 export type Pace = (host: string, crawlDelaySeconds?: number, notAfter?: number) => Promise<void>;
