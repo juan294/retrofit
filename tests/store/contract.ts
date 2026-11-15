@@ -9,6 +9,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { countOnce } from "@/lib/fetch/limits";
 import type { Store, Versioned } from "@/lib/store/types";
 
 export interface ContractClock {
@@ -317,6 +318,39 @@ export function runStoreContract(name: string, makeClients: () => Promise<Contra
         await a.enqueue(k("q1"), "x", LONG_TTL);
         expect(await b.claimNext(k("q2"))).toBeNull();
         expect(await b.claimNext(k("q1"))).toBe("x");
+      });
+    });
+
+    // countOnce (src/lib/fetch/limits.ts) composes putIfAbsent, incrementWindow,
+    // compareAndSet and delete; these cases prove the composition on each adapter.
+    describe("countOnce composition", () => {
+      // Fails if a concurrent duplicate passes on the first caller's marker before that caller knows
+      // whether the counter admitted it (validation V04: an exhausted cap returned [false, true]).
+      it("a concurrent duplicate cannot pass a full window", async () => {
+        await a.incrementWindow(k("c"), LONG_TTL);
+        const results = await Promise.all([countOnce(a, k("m"), k("c"), LONG_TTL, 1), countOnce(b, k("m"), k("c"), LONG_TTL, 1)]);
+        expect(results).toEqual([false, false]);
+        // A later repeat is refused too; it never passes on a marker left behind.
+        expect(await countOnce(b, k("m"), k("c"), LONG_TTL, 1)).toBe(false);
+      });
+
+      // Fails if parallel duplicates of an admitted marker count more than once or are refused.
+      it("parallel duplicates with room are all admitted and count once", async () => {
+        const results = await Promise.all(Array.from({ length: 6 }, (_, i) => countOnce(i % 2 ? a : b, k("m"), k("c"), LONG_TTL, 5)));
+        expect(results).toEqual(Array(6).fill(true));
+        expect(await a.incrementWindow(k("c"), LONG_TTL, 0)).toBe(1);
+      });
+
+      // Fails if distinct markers racing for the last place are both admitted.
+      it("two distinct markers racing for the last place admit exactly one", async () => {
+        await a.incrementWindow(k("c"), LONG_TTL, 4);
+        const results = await Promise.all([countOnce(a, k("m1"), k("c"), LONG_TTL, 5), countOnce(b, k("m2"), k("c"), LONG_TTL, 5)]);
+        expect(results.filter(Boolean)).toHaveLength(1);
+        // The admitted marker keeps passing; the refused one keeps failing.
+        const winner = results[0] ? k("m1") : k("m2");
+        const loser = results[0] ? k("m2") : k("m1");
+        expect(await countOnce(b, winner, k("c"), LONG_TTL, 5)).toBe(true);
+        expect(await countOnce(a, loser, k("c"), LONG_TTL, 5)).toBe(false);
       });
     });
   });
