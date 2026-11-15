@@ -19,18 +19,19 @@ const MARKER = "GATE-DB TEARDOWN COMPLETE";
 const PROJECT_LABEL = "com.supabase.cli.project";
 const WORKDIR_LABEL = "com.supabase.cli.workdir";
 
-// The real repository's evidence must not change while this suite runs (every write belongs under
-// the test's temporary --root).
+// The files gate-db writes must not change in the real repository while this suite runs (every
+// write belongs under the test's temporary --root). Other evidence (for example the coverage
+// report that Vitest writes while this suite runs under the gate) is not gate-db's and is not checked.
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+const GATE_DB_OUTPUTS = [".local/evidence/current/vitest-db.json", ".local/evidence/current/gate-db.log"];
 function evidenceSnapshot(): Record<string, string> {
-  const dir = path.join(repoRoot, ".local", "evidence");
   const out: Record<string, string> = {};
-  if (!fs.existsSync(dir)) return out;
-  for (const entry of fs.readdirSync(dir, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile()) continue;
-    const file = path.join(entry.parentPath, entry.name);
-    out[path.relative(dir, file)] = createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  for (const rel of GATE_DB_OUTPUTS) {
+    const file = path.join(repoRoot, rel);
+    out[rel] = fs.existsSync(file) ? createHash("sha256").update(fs.readFileSync(file)).digest("hex") : "absent";
   }
+  const gateDir = path.join(repoRoot, ".local", "supabase-gate");
+  out[".local/supabase-gate"] = fs.existsSync(gateDir) ? String(fs.statSync(gateDir).mtimeMs) : "absent";
   return out;
 }
 const realEvidenceBefore = evidenceSnapshot();
@@ -447,7 +448,7 @@ describe("gate-db recover", () => {
 });
 
 describe("gate-db test isolation", () => {
-  it("gate-db: the suite leaves the real repository's .local/evidence unchanged", () => {
+  it("gate-db: the suite leaves the real repository's gate-db outputs unchanged", () => {
     expect(evidenceSnapshot()).toEqual(realEvidenceBefore);
   });
 });

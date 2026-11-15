@@ -3882,181 +3882,181 @@
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > a value written by one client is read by the other"
+      "title": "Store contract: supabase (two clients, real clock) get, set, delete a value written by one client is read by the other"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > get returns null after the TTL and the value before it"
+      "title": "Store contract: supabase (two clients, real clock) get, set, delete get returns null after the TTL and the value before it"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > delete removes the value for both clients"
+      "title": "Store contract: supabase (two clients, real clock) get, set, delete delete removes the value for both clients"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > set replaces the value and its TTL"
+      "title": "Store contract: supabase (two clients, real clock) get, set, delete set replaces the value and its TTL"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > callers cannot mutate stored state through written or read values"
+      "title": "Store contract: supabase (two clients, real clock) get, set, delete callers cannot mutate stored state through written or read values"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > get, set, delete > rejects a TTL that is not positive"
+      "title": "Store contract: supabase (two clients, real clock) get, set, delete rejects a TTL that is not positive"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > putIfAbsent > keeps the live value and reports created false"
+      "title": "Store contract: supabase (two clients, real clock) putIfAbsent keeps the live value and reports created false"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > putIfAbsent > writes over an expired value"
+      "title": "Store contract: supabase (two clients, real clock) putIfAbsent writes over an expired value"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > putIfAbsent > creates exactly once under 20 concurrent calls from two clients"
+      "title": "Store contract: supabase (two clients, real clock) putIfAbsent creates exactly once under 20 concurrent calls from two clients"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > replaces the value when the stored version matches"
+      "title": "Store contract: supabase (two clients, real clock) compareAndSet replaces the value when the stored version matches"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > fails for a stale expected version and keeps the newer value"
+      "title": "Store contract: supabase (two clients, real clock) compareAndSet fails for a stale expected version and keeps the newer value"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > rejects a next version that is not expected.version + 1 and leaves the value"
+      "title": "Store contract: supabase (two clients, real clock) compareAndSet rejects a next version that is not expected.version + 1 and leaves the value"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > returns false for a missing key and writes nothing"
+      "title": "Store contract: supabase (two clients, real clock) compareAndSet returns false for a missing key and writes nothing"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > returns false for an expired value"
+      "title": "Store contract: supabase (two clients, real clock) compareAndSet returns false for an expired value"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > compareAndSet > lets exactly one of 10 concurrent writers succeed"
+      "title": "Store contract: supabase (two clients, real clock) compareAndSet lets exactly one of 10 concurrent writers succeed"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > incrementWindow > counts increments from both clients and honors by"
+      "title": "Store contract: supabase (two clients, real clock) incrementWindow counts increments from both clients and honors by"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > incrementWindow > loses no increment under 20 concurrent calls"
+      "title": "Store contract: supabase (two clients, real clock) incrementWindow loses no increment under 20 concurrent calls"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > incrementWindow > starts a new count after the window ends"
+      "title": "Store contract: supabase (two clients, real clock) incrementWindow starts a new count after the window ends"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > leases > is exclusive across clients"
+      "title": "Store contract: supabase (two clients, real clock) leases is exclusive across clients"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > leases > gives exactly one token to 10 concurrent acquirers"
+      "title": "Store contract: supabase (two clients, real clock) leases gives exactly one token to 10 concurrent acquirers"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > leases > renewal keeps the lease past its first TTL"
+      "title": "Store contract: supabase (two clients, real clock) leases renewal keeps the lease past its first TTL"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > leases > can be reacquired after it expires"
+      "title": "Store contract: supabase (two clients, real clock) leases can be reacquired after it expires"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > leases > cannot be renewed after expiry or with a wrong token"
+      "title": "Store contract: supabase (two clients, real clock) leases cannot be renewed after expiry or with a wrong token"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > leases > release by the owner frees it"
+      "title": "Store contract: supabase (two clients, real clock) leases release by the owner frees it"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > leases > a late release or renewal by the old owner does not touch the successor's lease"
+      "title": "Store contract: supabase (two clients, real clock) leases a late release or renewal by the old owner does not touch the successor's lease"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > queues > claims items in enqueue order"
+      "title": "Store contract: supabase (two clients, real clock) queues claims items in enqueue order"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > queues > enqueue is idempotent for a live item"
+      "title": "Store contract: supabase (two clients, real clock) queues enqueue is idempotent for a live item"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > queues > concurrent claims never return the same item twice"
+      "title": "Store contract: supabase (two clients, real clock) queues concurrent claims never return the same item twice"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > queues > skips and removes expired items"
+      "title": "Store contract: supabase (two clients, real clock) queues skips and removes expired items"
     },
     {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
-      "title": "Store contract: supabase (two clients, real clock) > queues > keeps queues separate"
+      "title": "Store contract: supabase (two clients, real clock) queues keeps queues separate"
     },
     {
       "rule": "store contract and database privileges",
