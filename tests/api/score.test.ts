@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { slotKey } from "@/lib/analysis/capacity";
 import { codeForNotPublicReason, handleScore } from "@/lib/api/score";
 import { getJob, originAliasKey, resolveJob, updateJob, type CrawlJob } from "@/lib/crawl/jobs";
+import { clientIdFor, clientOriginMarker, clientWindow } from "@/lib/fetch/limits";
 import { robotsKey } from "@/lib/fetch/robots";
 import { createMemoryStore } from "@/lib/store/memory";
 import type { Store } from "@/lib/store/types";
@@ -273,6 +274,27 @@ describe("GET /api/score client limit (contract rule 6)", () => {
     // Another client is not limited.
     expect((await call(d, q("https://c.example.com"), { ip: "198.51.100.10" })).status).toBe(202);
     expect(storeDump(d.backing)).not.toContain("198.51.100");
+  });
+
+  // F1. Fails if a call whose count is still undecided (another call for the same site and client is
+  // counting it) is reported as client_limit with a retry up to an hour away, or is admitted.
+  it("answers 503 with Retry-After 2 when another call's count for the same site is undecided", async () => {
+    const fc = fakeClock(Date.parse("2026-11-15T10:20:00.000Z"));
+    const d = testDeps({ clock: fc.clock, env: { SCORE_WAIT_MS: "1" } });
+    const origin = "https://a.example.com";
+    const now = fc.now();
+    // A call that put its pending marker and never decided (it crashed or stalled).
+    await d.store.putIfAbsent(clientOriginMarker(clientIdFor("198.51.100.9", d.config, now), clientWindow(now).bucket, origin), { version: 1, state: "pending" }, 10);
+    const res = await call(d, q(origin));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("2");
+    expect(res.json).toEqual({
+      status: "error",
+      error: "unavailable",
+      message: "Retrofit is still counting another call for this site from this client. Call again in 2 seconds with the same URL.",
+      retryAfterSeconds: 2,
+    });
+    expect(await d.store.get(originAliasKey(origin))).toBeNull();
   });
 });
 

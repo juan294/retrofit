@@ -19,6 +19,8 @@ export const MAX_REPORT_BYTES = 16 * 1024;
 const POLL_MS = 250;
 const RUNNING_RETRY_S = 20;
 const BUSY_RETRY_S = 120;
+/** Retry after an undecided client count (agentTexts.counting says 2 seconds). */
+const COUNTING_RETRY_S = 2;
 
 const HTTP: Record<AgentErrorCode, number> = {
   missing_url: 400,
@@ -116,6 +118,8 @@ export async function handleScore(request: Request, deps: ServerDeps): Promise<R
     // Rule 6: client limit, each origin counted once per client per window.
     const now = deps.clock();
     const limit = await countClientOrigin(deps.store, deps.config, clientIdFromRequest(request, deps.config, now), origin, now);
+    // Another call for this origin by this client is still being counted: retry in a moment.
+    if (!limit.ok && "undecided" in limit) return error("unavailable", agentTexts.counting, { retryAfterSeconds: COUNTING_RETRY_S });
     if (!limit.ok) {
       const retryAfterSeconds = secondsUntil(limit.retryAt, now);
       const retryAt = new Date(limit.retryAt);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CrawlDelayTooLong } from "@/lib/fetch/errors";
-import { createPacer } from "@/lib/fetch/pacing";
+import { createPacer, MAX_INTERVAL_MS } from "@/lib/fetch/pacing";
 import { createMemoryBacking, createMemoryStore } from "@/lib/store/memory";
 import type { Store } from "@/lib/store/types";
 
@@ -163,5 +163,25 @@ describe("createPacer", () => {
     // The refused call reserved nothing: a call that fits gets the slot 40 s after the first request.
     await pacer.pace("slow.example", 40, START + 40_000);
     expect(sleeps).toEqual([40_000]);
+  });
+
+  // Fails if an infinite Crawl-delay (robots-parser gives Infinity for a huge number) reads as no delay (F5).
+  it("treats an infinite crawl delay as the longest interval, not as none", async () => {
+    let t = START;
+    const pacer = createPacer({ store: createMemoryStore({ clock: () => t }), clock: () => t, sleep: async (ms) => void (t += ms) });
+    await pacer.pace("huge.example");
+    await expect(pacer.pace("huge.example", Number.POSITIVE_INFINITY, START + 3_600_000)).rejects.toBeInstanceOf(CrawlDelayTooLong);
+    await expect(pacer.pace("huge.example", 1e300, START + 3_600_000)).rejects.toBeInstanceOf(CrawlDelayTooLong);
+  });
+
+  // Fails if a huge delay is written into the slot record (a TTL that overflows the database interval) (F5).
+  it("stores at most MAX_INTERVAL_MS ahead, with a bounded TTL", async () => {
+    let t = START;
+    const backing = createMemoryBacking();
+    const pacer = createPacer({ store: createMemoryStore({ clock: () => t, backing }), clock: () => t, sleep: async (ms) => void (t += ms) });
+    await pacer.pace("huge.example", 1e300);
+    const entry = backing.values.get("nextAllowedAt:huge.example") as { value: { at: number }; expiresAt: number };
+    expect(entry.value.at).toBe(START + MAX_INTERVAL_MS);
+    expect(entry.expiresAt - START).toBeLessThanOrEqual(MAX_INTERVAL_MS + 3600 * 1000);
   });
 });

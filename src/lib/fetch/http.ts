@@ -10,7 +10,7 @@ export const MAX_REDIRECTS = 5;
 
 /**
  * Per-host pacing slot (`createPacer`). `host` is `URL.host`. The crawl delay
- * is honored in full; a slot that would start after `notAfter` (ms) is refused
+ * is honored in full (up to one day); a slot that would start after `notAfter` (ms) is refused
  * with CrawlDelayTooLong before any wait.
  */
 export type Pace = (host: string, crawlDelaySeconds?: number, notAfter?: number) => Promise<void>;
@@ -48,8 +48,8 @@ export interface FetchOptions {
    * CrawlDelayTooLong before contact.
    */
   readonly notAfter?: number;
-  /** Paths that are never requested: a matching URL or redirect target throws PrivatePathRefused before contact. */
-  readonly privatePath?: RegExp;
+  /** Paths that are never requested (given URL.pathname): a matching URL or redirect target throws PrivatePathRefused before contact. */
+  readonly privatePath?: (pathname: string) => boolean;
 }
 
 export interface RawGetOptions extends FetchOptions {
@@ -195,7 +195,7 @@ async function follow(start: URL, ctx: RawFetchContext, robots: RobotsChecker | 
   const redirects: string[] = [];
   let current = start;
   for (;;) {
-    if (opts.privatePath?.test(current.pathname)) throw new PrivatePathRefused(current.href);
+    if (opts.privatePath?.(current.pathname)) throw new PrivatePathRefused(current.href);
     await resolvePublic(current.hostname, ctx.config, resolver);
     let crawlDelay: number | undefined;
     if (robots) {

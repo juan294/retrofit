@@ -6,6 +6,8 @@ import { handleAnalysisStatus } from "@/lib/api/status";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { handleScore } from "@/lib/api/score";
 import { getJob, leaseKey, originAliasKey, resolveJob, startOrJoinCrawl, type CrawlJob } from "@/lib/crawl/jobs";
+import { createMemoryStore } from "@/lib/store/memory";
+import { shortHash } from "@/lib/fetch/limits";
 import { bakery } from "../fixtures/sites";
 import {
   analyzeRequest,
@@ -204,6 +206,19 @@ describe("capacity", () => {
     expect((await analyze("three.example.com", "203.0.113.99")).status).toBe(200);
   });
 
+  // F1. Fails if an undecided daily count (another job of the same origin still being counted) fails the
+  // job as daily_limit, which would tell the visitor the limit was reached when it may not have been.
+  it("queues the job when the origin's daily count is still undecided", async () => {
+    const fc = fakeClock(Date.parse("2026-11-15T10:20:00.000Z"));
+    const d = testDeps({ clock: fc.clock });
+    await holdAllSlots(d);
+    const origin = "https://pending.example.com";
+    await d.store.putIfAbsent(`crawl-origin-day:2026-11-15:${shortHash(origin)}`, { version: 1, state: "pending" }, 10);
+    const r = await startCrawlJob(d, origin);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect((await getJob(d.store, r.jobId))?.status).toBe("queued");
+  });
+
   // Fails if a worker that finds its job lease held ("busy") keeps the capacity slot.
   it("releases the slot when the worker returns busy", async () => {
     const d = testDeps({ env: { CRAWL_MAX_CONCURRENT: "1" } });
@@ -334,17 +349,33 @@ describe("capacity review fixes", () => {
     expect((await jobFor(d, server.origin("second.fixture.test")))?.status).toBe("ready");
   });
 
-  // P3-R5. Fails if the slot lease is not renewed while the worker runs: with a 1 s lease, a crawl held
+  // P3-R5. Fails if the slot lease is not renewed while the worker runs: with a 1 s lease, a worker held
   // for 1.6 s would lose its slot and a second crawl could start beyond CRAWL_MAX_CONCURRENT.
+  // loadConfig keeps every request inside the lease (budget + FETCH_TIMEOUT_MS <= lease), so the worker is
+  // held in a store call instead: its first job-lease renewal waits until the test opens it.
   it("renews the slot lease while the worker runs and frees it in the end", async () => {
-    const server = await serveGatedSites({ "slow.fixture.test": bakery }, ["slow.fixture.test"]);
+    const server = await serveGatedSites({ "slow.fixture.test": bakery }, []);
     close = () => server.close();
-    const d = testDeps({ env: { CRAWL_MAX_CONCURRENT: "1", CRAWL_LEASE_TTL_S: "1", CRAWL_BUDGET_MS: "900" } });
+    const base = createMemoryStore();
+    let held = false;
+    let open: () => void = () => {};
+    const gate = new Promise<void>((r) => (open = r));
+    const store = {
+      ...base,
+      renewLease: async (key: string, token: string, ttl: number) => {
+        if (key.startsWith("crawl-lease:") && !held) {
+          held = true;
+          await gate;
+        }
+        return base.renewLease(key, token, ttl);
+      },
+    };
+    const d = testDeps({ store, env: { CRAWL_MAX_CONCURRENT: "1", CRAWL_LEASE_TTL_S: "1", CRAWL_BUDGET_MS: "600", FETCH_TIMEOUT_MS: "400" } });
     expect((await handleAnalyze(analyzeRequest({ url: server.origin("slow.fixture.test") }), d)).status).toBe(200);
-    await waitFor(() => server.gate("slow.fixture.test").waiting === 1, "home page held");
+    await waitFor(() => held, "worker held in its first lease renewal");
     await new Promise((r) => setTimeout(r, 1600));
     expect(await d.store.acquireLease(slotKey(0), 1)).toBeNull();
-    server.gate("slow.fixture.test").open();
+    open();
     await d.settle();
     expect(await d.store.acquireLease(slotKey(0), 1)).not.toBeNull();
     expect(d.errors).toEqual([]);
