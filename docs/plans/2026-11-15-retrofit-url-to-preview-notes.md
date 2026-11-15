@@ -103,3 +103,12 @@ Implementation notes for the plan `2026-11-15-retrofit-url-to-preview.md` and it
 - Re-review of `a99274b` (same reviewer): P4-R1 to R5 closed with evidence; no S1 to S3 regression. P4-N1 (S4, a boot finishing after Forget re-exposed `window.__nsweb`; requests stayed blocked) fixed in `aee102e`.
 - Simplify pass (Phase 4) in `aee102e`: shared router-probe stub and e2e helpers, one runtime validation helper for score, generator and fixtures, shared fixture snapshots, fewer exports. No behavior change.
 - Final Phase 4 gate on `aee102e`: every check passed except `rpi-installation` (pre-existing); `identity_unchanged: true`. Unit 644, coverage 92.87% statements and 87.28% branches, perf p95 22.2 ms with at most 2 store reads, e2e 43.
+
+## Phase 5 handoff
+
+- Scope: the write-confirmation spike. Commit `83d9aa7` (record) and the correction commit after it. No product code changed (`git diff 69afc85 83d9aa7 --stat` shows only `docs/research/write-confirmation-spike.md`); `spikes/` was deleted before the end; the merchant server (pid 16192, port 3012) was started with a recorded pid and stopped. Evidence stays in ignored `.local/spikes/`, with a copy of the fixture source.
+- Specification HEAD at entry: `63a956c` (unchanged).
+- Recommendation: every state-changing action `irreversible`, so the unchanged runtime confirms it with destination and arguments, binds approval to the executed call, and reports a timed-out write as `unknown` without repeating it. Demo merchants run the bundle on their own origins; no bridge actions.
+- Independent review: no S1 or S2. P5-R1 to R3 (S3, an untested repeat guard presented as a mitigation, an incomplete duplicate-write risk, two INFERRED claims under VERIFIED wording) and P5-R4 (S4, the catalog labels reversible changes `irreversible`) fixed in the correction commit: claims relabelled, the risk section now states the hook's limits and requires site-side idempotency, and the second-plan work adds item 2a.
+- Gate: the spike changed only documentation, so the Phase 4 gate on `aee102e` stands for the product inputs; the whitespace check passes on the new document.
+- Owner acceptance item: the write-confirmation approach for the second plan. Pending.

@@ -59,7 +59,7 @@ return new Promise(() => {});
 
 After 1.5 s the model received `{"status": "unknown", "error": "Action timed out; outcome unknown. Check the site before retrying."}`. The runtime did not call the handler again: one `write-started` entry, one order, no further dialog in the next 3 s. The trace's tool span for this call ended with `status: "ok"`; only the receipt says `unknown`.
 
-Model retry (VERIFIED, `4b-timeout-model-retry.json`, `4b-retry-dialog.png`): when the scripted model called `website_place_order` again with the same arguments, the runtime opened a new dialog identical to the first, with nothing saying the earlier attempt had an unknown outcome. Cancelling stored nothing more. Had the visitor confirmed, the fixture would have stored a second order. The runtime itself does not repeat a write (spec §3.1), but it does not stop the model from asking again.
+Model retry (VERIFIED, `4b-timeout-model-retry.json`, `4b-retry-dialog.png`): when the scripted model called `website_place_order` again with the same arguments, the runtime opened a new dialog identical to the first, with nothing saying the earlier attempt had an unknown outcome. Cancelling stored nothing more. INFERRED (not run; the test cancelled): had the visitor confirmed, the fixture would have stored a second order. The runtime itself does not repeat a write (spec §3.1), but it does not stop the model from asking again.
 
 Costs: every cart change opens a dialog, and the default dialog labels a cart change "irreversible". The status line says "You confirm actions that cannot be undone before they run. Other actions run right away." (`public/runtime/index.js:74-77`), which stays true but is worded for orders. The hook receives no `requestId` (`actions.js:132`), so a custom dialog cannot show it; the id is fixed before the dialog opens and appears in the receipt.
 
@@ -105,7 +105,7 @@ Consequence: each demo merchant must run its bundle on its own origin. A merchan
 | Runtime shows destination and arguments before each write (§3.1) | Yes | No (site code does) | Yes |
 | Confirmation bound to the executed call (§5) | Yes, plan fixed before dialog; hook mutation had no effect | Yes in handler closure, but not runtime-owned | Yes, engine keeps the validated proposal |
 | Model bypass found | None | None in fixture; one unguarded handler would be one | None |
-| Timeout after write start | `unknown`, not repeated by runtime | Naive dialog writes after `unknown` | `unknown` (same `execute`) |
+| Timeout after write start | `unknown`, not repeated by runtime | Naive dialog writes after `unknown` | INFERRED from code, not run: `unknown` (same `execute`) |
 | Agent continues in the same turn | Yes | Yes | No |
 | Dialogs per cart change | 1 | 1 (2 via a proposal) | 1 plus a click |
 
@@ -120,16 +120,22 @@ Consequence: each demo merchant must run its bundle on its own origin. A merchan
 
 - Dialog fatigue: one dialog per cart change. Mitigation: prefer one `set_cart` call over several adds, and keep `read` actions dialog-free.
 - Misleading words: the default dialog says "(irreversible)" for a cart change. A Retrofit `onActionConfirm` hook can show plain wording, but the status line at `index.js:76` is runtime text.
-- Duplicate orders after an unknown outcome if the model asks again and the visitor confirms (4b). Mitigation: grounding rules forbid retry, and the bundle's hook refuses a call whose action and arguments match a call with an `unknown` receipt in this session, telling the visitor to check the page.
+- Duplicate writes after an unknown outcome if the model asks again and the visitor confirms (4b). Grounding rules can forbid a retry, but the model may still ask. Three facts limit the mitigations (VERIFIED from code, not run):
+  - The confirm hook receives only action, description, origin, effect and arguments, with no `requestId` and no receipt status (`actions.js:132`). A hook that refuses a repeat of an `unknown` call needs its own receipt record, for example from trace events or the receipts the runtime returns, and this was not built or tested in the spike (INFERRED design).
+  - When the hook refuses, the runtime tells the model "Customer declined; nothing was submitted." (`runner.js:359`), which gives the model the wrong reason.
+  - Each model call gets a fresh invocation id (`runner.js:358`), so `requestId` cannot serve as a site-side idempotency key across retries.
+  The site must therefore make writes idempotent itself: `place_order` with `expectedVersion` that the handler bumps (the 4a/4b fixture handler did not bump it, so it could not catch the retry), and `book_table` with an idempotency token or version, which the fixture lacked. Duplicate bookings are the larger open risk.
 - Observability: the trace marks an `unknown` receipt's tool span as `ok` (4a). Retrofit's UI and evidence must read receipt status, not span status.
 - The hook gets no `requestId`, so the visitor cannot see it before confirming; it is visible in the receipt only.
 - Steering while a dialog is open (the chat button becomes "Update") was not tested; the plan is fixed in code before the dialog (`runner.js:355-358`), so INFERRED that steering cannot change a pending call.
 - The skill's own guidance keeps cart changes as `write` (`references/site_actions.md:116-120`); Retrofit's bundle will differ from the organizers' examples on purpose, and the bundle README must say why.
+- The published action catalog labels reversible cart changes `irreversible`. Other agents that read `effect` will treat them as final, and Retrofit's own score of a site with the bundle should not count this as a defect. Not examined further in the spike (INFERRED impact).
 
 ## Work added to the second plan
 
 1. Action generation: every state-changing action `irreversible` and listed in `agentTools`; reads stay `read`; refuse by return; `place_order`-style actions take items, total and `expectedVersion`.
-2. Retrofit confirmation hook for the owner bundle: replaces `engine.onActionConfirm` with plain wording that still lists destination origin and every argument; refuses a repeat of an `unknown` call; one state-changing action per dialog.
+2. Retrofit confirmation hook for the owner bundle: replaces `engine.onActionConfirm` with plain wording that still lists destination origin and every argument; one state-changing action per dialog. A repeat guard for `unknown` calls needs its own receipt record (the hook has no `requestId` or status), and its refusal reaches the model as "Customer declined", so the generated grounding rules must cover that wording.
+2a. Site-side idempotency for every state-changing action: `expectedVersion` bumped by each write, and an idempotency token for bookings, so a confirmed repeat cannot create a second order or booking.
 3. Grounding rules in generated networks for `cancelled`, `unknown` and `ok: false` results (the template's text).
 4. Tests: browser cases equivalent to 1a, 1b, 4a and 4b (dialog content, binding, decline, unknown not repeated, retry guard) for each demo merchant, plus handler refusal tests.
 5. Demo merchants on their own `demo-*` origins with the bundle installed there; no bridge actions.
