@@ -34,6 +34,6 @@ export default tseslint.config(
   },
   {
     files: ["**/*.{mjs,js}"],
-    languageOptions: { globals: { process: "readonly", console: "readonly", URL: "readonly", Buffer: "readonly", fetch: "readonly", setTimeout: "readonly", clearTimeout: "readonly", window: "readonly", document: "readonly", location: "readonly" } },
+    languageOptions: { globals: { process: "readonly", console: "readonly", URL: "readonly", AbortController: "readonly", AbortSignal: "readonly", Response: "readonly", Request: "readonly", Buffer: "readonly", fetch: "readonly", setTimeout: "readonly", clearTimeout: "readonly", window: "readonly", document: "readonly", location: "readonly" } },
   },
 );

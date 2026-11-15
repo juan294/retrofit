@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { visitorTexts } from "@/lib/analysis/texts";
+import { AgentPanel } from "@/components/preview/AgentPanel";
 import { localizeRetry } from "./retry-time";
 import { FINAL_STATUSES, pollDelay } from "./poll";
 
@@ -26,6 +27,7 @@ interface Check {
   evidence: string;
 }
 interface Report {
+  host: string;
   score: number | null;
   summary: string;
   webmcp: string;
@@ -165,6 +167,11 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
           </ul>
         </div>
       ))}
+      <AgentPanel
+        basePath={`/p/${id}`}
+        title="Try the agent Retrofit built"
+        label={`Private preview. Unofficial. Built by Retrofit from public pages of ${report.host} on ${report.fetchedAt.slice(0, 10)}. Not affiliated with ${report.host}.`}
+      />
     </section>
   );
 }

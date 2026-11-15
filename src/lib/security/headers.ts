@@ -64,10 +64,25 @@ interface HeaderRule {
   headers: { key: string; value: string }[];
 }
 
+/**
+ * Retrofit's own public agent files (`pnpm agent:build`). Other sites' runtimes and
+ * check_partner.mjs read them from another origin, so each one allows every origin.
+ * The private previews under /p/ never get CORS.
+ */
+export const PUBLIC_AGENT_FILES = [
+  "/agent-manifest.json",
+  "/retrofit_guide.network.json",
+  "/links.json",
+  "/agent-mcp.json",
+  "/.well-known/nsdeploy.json",
+  "/.well-known/nsdeploy-agent.json",
+] as const;
+
 /** Headers applied by next.config.ts to responses that the request hook does not set. */
 export function staticSecurityHeaders(): HeaderRule[] {
   return [
     { source: "/:path*", headers: BASE_HEADERS.map((h) => ({ ...h })) },
+    ...PUBLIC_AGENT_FILES.map((source) => ({ source, headers: [{ key: "Access-Control-Allow-Origin", value: "*" }] })),
     { source: "/bridge/:path*", headers: [{ key: "Content-Security-Policy", value: BRIDGE_CSP }] },
     { source: "/p/:id/bridge/:path*", headers: [{ key: "Content-Security-Policy", value: BRIDGE_CSP }] },
     { source: "/runtime/sandbox-worker.js", headers: [{ key: "Content-Security-Policy", value: SANDBOX_WORKER_CSP }] },

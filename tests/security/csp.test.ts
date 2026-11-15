@@ -84,4 +84,26 @@ describe("static headers", () => {
       expect(value(s, "Content-Security-Policy")).toBe("script-src 'self'; frame-ancestors *");
     }
   });
+
+  // check_partner.mjs refuses a bridge page that sends X-Frame-Options.
+  it("never sends X-Frame-Options", () => {
+    for (const r of rules) expect(r.headers.map((h) => h.key.toLowerCase())).not.toContain("x-frame-options");
+  });
+
+  // Other sites' runtimes and check_partner.mjs read Retrofit's public agent files from
+  // their own origin. Fails if one of them loses its CORS header.
+  it("lets every origin read Retrofit's public agent files", () => {
+    const published = [
+      "/agent-manifest.json",
+      "/retrofit_guide.network.json",
+      "/links.json",
+      "/agent-mcp.json",
+      "/.well-known/nsdeploy.json",
+      "/.well-known/nsdeploy-agent.json",
+    ];
+    for (const s of published) expect(value(s, "Access-Control-Allow-Origin"), s).toBe("*");
+    // No other rule opens CORS, in particular not the private previews under /p/.
+    const open = rules.filter((r) => r.headers.some((h) => h.key === "Access-Control-Allow-Origin")).map((r) => r.source);
+    expect(open.sort()).toEqual([...published].sort());
+  });
 });

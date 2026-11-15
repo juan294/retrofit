@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { UrlForm } from "@/components/UrlForm";
+import { AgentPanel } from "@/components/preview/AgentPanel";
 
 export default async function Home() {
   // Render per request so that each response carries its own CSP nonce.
@@ -16,6 +17,7 @@ export default async function Home() {
         Retrofit reads your public pages, your robots.txt, sitemap, llms.txt and agent manifest. It skips sign-in, account and checkout
         pages and follows your robots rules. <Link href="/bot" className="underline">How RetrofitBot reads your site</Link>.
       </p>
+      <AgentPanel basePath="" title="Ask Retrofit's own agent" />
     </main>
   );
 }

@@ -21,7 +21,9 @@
     "vendor:sync": "node tools/vendor-agentic-web.mjs sync --source .local/vendor/agentic-web --commit 63a956cf4653f610b1c238c70946f4d7647d17a8",
     "vendor:verify": "node tools/vendor-agentic-web.mjs verify",
     "evidence:begin": "node tools/evidence.mjs begin",
-    "evidence:seal": "node tools/evidence.mjs seal"
+    "evidence:seal": "node tools/evidence.mjs seal",
+    "agent:build": "node tools/agentic-web/scripts/build_network.mjs agent/retrofit_guide.hocon --manifest public/agent-manifest.json --runtime tools/agentic-web/runtime --out public/retrofit_guide.network.json",
+    "agent:check": "node tools/agentic-web/scripts/build_network.mjs agent/retrofit_guide.hocon --manifest public/agent-manifest.json --runtime tools/agentic-web/runtime --out public/retrofit_guide.network.json --check"
   },
   "dependencies": {
     "cheerio": "1.2.0",

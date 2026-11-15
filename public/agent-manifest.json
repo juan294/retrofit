@@ -1,0 +1,72 @@
+{
+  "brand": "Retrofit assistant",
+  "networks": [
+    {
+      "name": "retrofit_guide",
+      "front_man": "retrofit_guide",
+      "hocon": "./retrofit_guide.network.json",
+      "description": "Ask about Retrofit and the open agentic web, or how ready a public website is for AI agents.",
+      "tags": [
+        "agentified-website"
+      ],
+      "sample_queries": [
+        "What does Retrofit do?",
+        "What is the open agentic web?",
+        "How ready is example.com for AI agents?",
+        "What should I fix first on my site?"
+      ]
+    }
+  ],
+  "llm_router": {
+    "base_url": "https://retrofit.thecreativetoken.com/api/inference/v1",
+    "model": "alibaba/qwen3.8-flash",
+    "mock": false,
+    "byok_router": "https://api.otari.ai/api/v1"
+  },
+  "allowed_peers": [],
+  "peer_policy": {
+    "mode": "closed",
+    "deny_origins": [],
+    "note": "Local agents and page-local actions only."
+  },
+  "agent_mcp": {
+    "protocol": "nsdeploy-agent-mcp/v1",
+    "network": "retrofit_guide",
+    "front_man": "retrofit_guide",
+    "available": false,
+    "reason": "This is a static bundle; a public MCP facade requires an application host."
+  },
+  "linking": {
+    "protocol": "nsdeploy-link/v1",
+    "exports": [
+      {
+        "network": "retrofit_guide",
+        "front_man": "retrofit_guide",
+        "aliases": [
+          "retrofit_guide"
+        ],
+        "url": "retrofit_guide"
+      }
+    ],
+    "imports": [],
+    "link_updates": {
+      "mode": "browser-local"
+    }
+  },
+  "deployment": {
+    "mode": "static",
+    "self_contained_runtime": true,
+    "browser_mock": false,
+    "direct_byok": true,
+    "direct_mcp_requires_cors": true,
+    "public_mcp_facade": false
+  },
+  "actions": {
+    "version": 1,
+    "module": "./site-actions.js",
+    "bridge": "./bridge/action-bridge.html",
+    "agentTools": [
+      "score_site"
+    ]
+  }
+}

@@ -28,6 +28,7 @@ export const visitorTexts = {
   crawlError: "Retrofit could not read this site.",
   expired: (expiresAt: Date) => `This preview expired on ${DATE.format(expiresAt)}. Analyze the site again.`,
   otherBrowser: "This preview belongs to another browser. Analyze the site again to get your own.",
+  generationFailed: "Retrofit could not build a working agent for this site.",
   unavailable: "Retrofit is having trouble. Try again in a few minutes.",
   // Not in the plan table: the same-origin precondition of POST /api/analyze.
   crossOrigin: "Open Retrofit at its own address and paste the website address there.",
