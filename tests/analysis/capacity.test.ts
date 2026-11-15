@@ -228,6 +228,51 @@ describe("capacity", () => {
   });
 });
 
+describe("dispatch store work (validation V16)", () => {
+  // Fails if dispatch tries one lease per slot (eight sequential RPCs on Supabase at full capacity)
+  // instead of one atomic claim.
+  it("makes one store call when every slot is held and a job is queued", async () => {
+    const ops: string[] = [];
+    const d = testDeps({ instrument: (op) => void ops.push(op) });
+    await holdAllSlots(d);
+    await d.store.enqueue(CRAWL_QUEUE, "waiting-job", 120);
+    ops.length = 0;
+    expect(await dispatchQueued(d, { startedAt: d.clock() })).toBe(0);
+    expect(ops).toEqual(["claimWithLease"]);
+    expect(await d.store.claimNext(CRAWL_QUEUE)).toBe("waiting-job");
+  });
+
+  // Fails if dispatch acquires, claims and releases a slot when nothing is queued.
+  it("makes one store call and takes no slot when the queue is empty", async () => {
+    const ops: string[] = [];
+    const d = testDeps({ instrument: (op) => void ops.push(op), env: { CRAWL_MAX_CONCURRENT: "2" } });
+    expect(await dispatchQueued(d, { startedAt: d.clock() })).toBe(0);
+    expect(ops).toEqual(["claimWithLease"]);
+  });
+
+  // Fails if a status request without the owner's cookie or with an invalid id starts dispatch work.
+  it("does no dispatch work for status requests that are not the owner's", async () => {
+    const ops: string[] = [];
+    const d = testDeps({ instrument: (op) => void ops.push(op) });
+    const slots = await holdAllSlots(d);
+    const owner = await handleAnalyze(analyzeRequest({ url: "https://owned.example.com" }), d);
+    const stranger = await handleAnalyze(analyzeRequest({ url: "https://other.example.com" }), d);
+    const { id } = (await owner.json()) as { id: string };
+    for (const [n, t] of slots.entries()) await d.store.releaseLease(slotKey(n), t);
+    await d.settle();
+    ops.length = 0;
+    await handleAnalysisStatus(statusRequest(id), d, id);
+    await handleAnalysisStatus(statusRequest("not-an-id", { cookie: cookieFrom(owner) }), d, "not-an-id");
+    await handleAnalysisStatus(statusRequest(id, { cookie: cookieFrom(stranger) }), d, id);
+    await d.settle();
+    expect(ops).toEqual(["get"]);
+    // The owner's request dispatches the queued jobs.
+    await handleAnalysisStatus(statusRequest(id, { cookie: cookieFrom(owner) }), d, id);
+    await d.settle();
+    expect(ops).toContain("claimWithLease");
+  });
+});
+
 describe("capacity review fixes", () => {
   // P3-R1. Fails if a finishing worker starts the next queued job when its own invocation has too
   // little of MAX_DURATION_S left for a full crawl (the job would be killed mid-crawl), or if the

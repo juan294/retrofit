@@ -181,5 +181,24 @@ export function createMemoryStore(options: MemoryStoreOptions = {}): Store {
         return claimed;
       });
     },
+
+    claimWithLease(queue, leaseKeys, ttlSeconds) {
+      return op("claimWithLease", queue, (now) => {
+        requirePositive(ttlSeconds, "ttlSeconds");
+        const items = (queues.get(queue) ?? []).filter((item) => item.expiresAt > now);
+        if (items.length === 0) {
+          queues.delete(queue);
+          return null;
+        }
+        queues.set(queue, items);
+        const leaseKey = leaseKeys.find((key) => !liveLease(key, now));
+        if (leaseKey === undefined) return null;
+        const token = randomUUID();
+        leases.set(leaseKey, { token, expiresAt: now + ttlSeconds * 1000 });
+        const head = items.shift() as QueueEntry;
+        if (items.length === 0) queues.delete(queue);
+        return { itemId: head.itemId, leaseKey, token };
+      });
+    },
   };
 }
