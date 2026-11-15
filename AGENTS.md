@@ -28,7 +28,7 @@ The declared suite in `.rpi/policy.json` checks whitespace and the RPI installat
 
 ## Git and publication
 
-- `origin`: `juan294/retrofit`, private at bootstrap.
+- `origin`: `juan294/retrofit`, public since 2026-11-15 (private at bootstrap).
 - Integration branch: `develop`. Production branch: `main`.
 - Work in isolated worktrees or local temporary branches, then integrate reviewed changes locally into `develop`.
 - Use a merge commit when promoting `develop` to `main`.
