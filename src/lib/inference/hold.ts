@@ -20,10 +20,13 @@ export type { HoldRecord } from "./ledger";
  * can settle while the owner resumes. Every overrun and every hold write counts
  * a hold event, and resumption clears the flag and the record in one
  * compare-and-set that requires the hold-event count it inspected, so a hold
- * event at any point after inspection keeps the hold and the newest record.
+ * event at any point after inspection keeps the hold. The record is the first
+ * unresolved one: a later hold event while it exists does not replace it.
  *
  * `inference:hold`, the separate record of the earlier layout, is still read:
- * while it exists the pool is held, and a successful resumption deletes it.
+ * while it exists the pool is held, and a successful resumption deletes it
+ * after clearing the ledger (a failed delete is reported, not treated as a
+ * failed resumption; the record keeps the pool closed until a rerun deletes it).
  * Nothing writes it any more.
  */
 
@@ -42,7 +45,9 @@ export const AUDIT_PREFIX = "inference:audit:";
 /** Alert callback for an overrun (src/lib/ops/alert.ts opens the GitHub issue). */
 export type OverrunAlert = (details: { key: "reservation-overrun"; overrunMicroUsd: number; reservationMicroUsd: number }) => Promise<void>;
 
-type RemoveResult = { ok: true; auditKey: string } | { ok: false; auditKey: string; reason: "hold_changed" | "balance_below_ledger" };
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+type RemoveResult = { ok: true; auditKey: string; legacyDeleteError?: string } | { ok: false; auditKey: string; reason: "hold_changed" | "balance_below_ledger" };
 
 export function createHold(deps: HoldDeps) {
   const { store, clock } = deps;
@@ -83,7 +88,9 @@ export function createHold(deps: HoldDeps) {
      * covers its remaining credit, then deletes a legacy record. Every outcome
      * other than success adds an audit record: `resume-free-refused` with the
      * reason, or (best effort) `resume-free-failed` with the error, before the
-     * error is rethrown.
+     * error is rethrown. A failed legacy delete after the ledger was cleared is
+     * outside that failure path: the result is ok with `legacyDeleteError`,
+     * and a `resume-free-legacy-delete-failed` audit record notes the error.
      */
     async removeHold(input: { expectedHoldEvents: number; reconciledBalanceMicro: number; audit: Record<string, unknown> }): Promise<RemoveResult> {
       const auditKey = await writeAudit(input.audit);
@@ -93,11 +100,17 @@ export function createHold(deps: HoldDeps) {
           await writeAudit({ action: "resume-free-refused", attempt: auditKey, reason: cleared.reason });
           return { ok: false, auditKey, reason: cleared.reason };
         }
+      } catch (error) {
+        await writeAudit({ action: "resume-free-failed", attempt: auditKey, error: messageOf(error) }).catch(() => {});
+        throw error;
+      }
+      try {
         await guarded("hold", () => store.delete(LEGACY_HOLD_KEY));
         return { ok: true, auditKey };
       } catch (error) {
-        await writeAudit({ action: "resume-free-failed", attempt: auditKey, error: error instanceof Error ? error.message : String(error) }).catch(() => {});
-        throw error;
+        const legacyDeleteError = messageOf(error);
+        await writeAudit({ action: "resume-free-legacy-delete-failed", attempt: auditKey, error: legacyDeleteError }).catch(() => {});
+        return { ok: true, auditKey, legacyDeleteError };
       }
     },
   };
@@ -180,7 +193,7 @@ export async function describeFreeState(deps: HoldDeps): Promise<FreeState> {
 }
 
 export type ResumeResult =
-  | { ok: true; auditKey: string; state: FreeState }
+  | { ok: true; auditKey: string; state: FreeState; legacyDeleteError?: string }
   | { ok: false; reason: "no_balance" | "no_note" | "not_held" | "balance_below_ledger" | "hold_changed"; message: string; state?: FreeState; auditKey?: string };
 
 const BALANCE_BELOW_LEDGER = "The entered balance is below the ledger's remaining credit. Reconcile the ledger, prices and bound before resuming.";
@@ -223,7 +236,11 @@ export async function resumeFree(deps: HoldDeps, input: { reconciledBalanceUsd?:
       bound: state.bound,
     },
   });
-  if (removed.ok) return { ok: true, auditKey: removed.auditKey, state };
+  if (removed.ok) {
+    return removed.legacyDeleteError === undefined
+      ? { ok: true, auditKey: removed.auditKey, state }
+      : { ok: true, auditKey: removed.auditKey, state, legacyDeleteError: removed.legacyDeleteError };
+  }
   const message = removed.reason === "hold_changed" ? HOLD_CHANGED : BALANCE_BELOW_LEDGER;
   return { ok: false, reason: removed.reason, message, state, auditKey: removed.auditKey };
 }

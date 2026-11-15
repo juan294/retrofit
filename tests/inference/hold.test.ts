@@ -430,6 +430,39 @@ describe("resumeFree with a concurrent hold event", () => {
     expect((await i.ledger.budgets()).held).toBe(true);
   });
 
+  // Fails if a failed delete of the legacy record after the ledger was cleared is reported as a store failure (nothing resumed).
+  it("reports the clear and the legacy delete error when only the legacy delete fails", async () => {
+    const i = instance(createMemoryBacking(), fakeClock(START));
+    await overrun(i);
+    const legacy = { reason: "reservation_overrun", at: new Date(START).toISOString(), overrunMicroUsd: 1, reservationMicroUsd: 1 };
+    await i.store.set(LEGACY_HOLD_KEY, legacy, HOLD_TTL_S);
+    const failingDelete: Store = {
+      ...i.store,
+      async delete(key) {
+        if (key === LEGACY_HOLD_KEY) throw new Error("store unavailable");
+        return i.store.delete(key);
+      },
+    };
+    const r = await resumeFree({ ...i.deps, store: failingDelete }, { reconciledBalanceUsd: 10, note: "legacy delete fails" });
+    expect(r).toMatchObject({ ok: true, legacyDeleteError: expect.stringContaining("inference counters unavailable") });
+    const b = await i.ledger.budgets();
+    expect(b.held).toBe(false);
+    expect(b.hold).toBeNull();
+    // The legacy record still holds the public pool until it is deleted.
+    expect(await i.store.get(LEGACY_HOLD_KEY)).toEqual(legacy);
+    expect(await i.hold.isHeld()).toBe(true);
+    const stamp = new Date(START).toISOString();
+    expect(await i.store.get(`${AUDIT_PREFIX}${stamp}-1`)).toMatchObject({
+      action: "resume-free-legacy-delete-failed",
+      attempt: `${AUDIT_PREFIX}${stamp}`,
+      error: expect.stringContaining("inference counters unavailable"),
+    });
+    // A rerun with a working store finds the legacy record and deletes it.
+    expect(await resumeFree(i.deps, { reconciledBalanceUsd: 10, note: "rerun" })).toMatchObject({ ok: true });
+    expect(await i.store.get(LEGACY_HOLD_KEY)).toBeNull();
+    expect(await i.hold.isHeld()).toBe(false);
+  });
+
   // Fails if a resumed pool cannot be held again, or a second hold cannot be resumed with its own audit record.
   it("supports repeated holds and resumptions", async () => {
     const clock = fakeClock(START);

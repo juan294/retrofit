@@ -20,7 +20,8 @@
 //
 // Exit status: 0 resumed; 1 refused (arguments, balance, no hold, or a concurrent hold event);
 // 2 no target (store or ledger configuration missing); 3 store error (nothing is reported as
-// resumed; rerun after the store recovers).
+// resumed; rerun after the store recovers); 4 the ledger hold was cleared but a legacy
+// `inference:hold` record could not be deleted (it still closes the public pool; rerun).
 import { pathToFileURL } from "node:url";
 
 /**
@@ -72,7 +73,8 @@ const messageOf = (error) => (error instanceof Error ? error.message : String(er
  * @param {string[]} argv
  * @param {ResumeHooks | (() => Promise<ResumeHooks>)} target the hooks, or a function that builds them
  *   (called only after the arguments are valid)
- * @returns {Promise<number>} exit code: 0 resumed, 1 refused, 2 no target, 3 store error
+ * @returns {Promise<number>} exit code: 0 resumed, 1 refused, 2 no target, 3 store error,
+ *   4 cleared but the legacy record remains
  */
 export async function main(argv, target) {
   const out = (typeof target === "object" && target?.out) || ((line) => console.log(line));
@@ -113,6 +115,13 @@ export async function main(argv, target) {
   if (!result.ok) {
     err(`Refused: ${result.message}`);
     return 1;
+  }
+  if (result.legacyDeleteError !== undefined) {
+    out(`Ledger hold cleared. Audit record: ${result.auditKey}`);
+    err(
+      `The legacy hold record inference:hold could not be deleted (${result.legacyDeleteError}). It still closes the public pool; rerun the command when the store is reachable.`,
+    );
+    return 4;
   }
   out(`Hold removed. Audit record: ${result.auditKey}`);
   return 0;

@@ -105,6 +105,16 @@ describe("resume-free CLI", () => {
     expect(printed.indexOf("FREE_MAX_TOKENS")).toBeLessThan(printed.indexOf("Ledger spent"));
   });
 
+  // Fails if a cleared ledger hold whose legacy record could not be deleted is reported as a plain success or as nothing resumed.
+  it("exits 4 when the hold was cleared but the legacy record could not be deleted", async () => {
+    const h = await heldHooks();
+    const partial = { ...h.hooks, resume: async () => ({ ok: true, auditKey: "inference:audit:t", legacyDeleteError: "store unavailable" }) };
+    expect(await run(["--reconciled-balance", "9.2", "--note", "x"], partial)).toBe(4);
+    expect(h.out.join("\n")).toMatch(/Ledger hold cleared\. Audit record: inference:audit:t/);
+    expect(h.err.join("\n")).toMatch(/legacy hold record inference:hold could not be deleted \(store unavailable\)/);
+    expect(h.err.join("\n")).toMatch(/still closes the public pool; rerun/);
+  });
+
   // Fails if the CLI reports success for a hold_changed refusal.
   it("exits 1 with the refusal text when a hold event races the resumption", async () => {
     const h = await heldHooks();
