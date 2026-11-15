@@ -3576,7 +3576,7 @@
       "rule": "production evidence tooling",
       "suite": "unit",
       "file": "tests/release/production-evidence.test.ts",
-      "title": "writeCase report shape refuses to write without the deployment id and URL"
+      "title": "writeCase report shape refuses to write without the deployment id and URL, or without the run id"
     },
     {
       "rule": "production evidence tooling",
