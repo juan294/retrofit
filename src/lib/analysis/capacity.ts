@@ -41,8 +41,11 @@ export async function startCrawlJob(deps: JobDeps, inputOrigin: string): Promise
   const midnight = nextUtcMidnight(now);
   const ttl = ttlUntil(midnight, now);
   const day = utcDay(now);
-  const allowed = await countOnce(deps.store, `crawl-origin-day:${day}:${shortHash(inputOrigin)}`, `crawl-origins:${day}`, ttl, deps.config.crawlMaxHostsPerDay);
-  if (!allowed) {
+  const decision = await countOnce(deps.store, `crawl-origin-day:${day}:${shortHash(inputOrigin)}`, `crawl-origins:${day}`, ttl, deps.config.crawlMaxHostsPerDay);
+  // `undecided` (another job of this origin is still being counted today) starts the crawl: that
+  // other decision counts the origin, so at worst one origin passes a full cap. Refusing would
+  // tell the visitor the daily limit was reached when it may not have been.
+  if (decision === "refused") {
     const job = await getJob(deps.store, jobId);
     if (job) await updateJob(deps, job, { status: "failed", step: "failed", failure: { code: "daily_limit", message: visitorTexts.dailyLimit } });
     return { ok: false, code: "daily_limit", retryAt: midnight };

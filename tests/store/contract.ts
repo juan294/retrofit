@@ -388,15 +388,15 @@ export function runStoreContract(name: string, makeClients: () => Promise<Contra
       it("a concurrent duplicate cannot pass a full window", async () => {
         await a.incrementWindow(k("c"), LONG_TTL);
         const results = await Promise.all([countOnce(a, k("m"), k("c"), LONG_TTL, 1), countOnce(b, k("m"), k("c"), LONG_TTL, 1)]);
-        expect(results).toEqual([false, false]);
+        expect(results).toEqual(["refused", "refused"]);
         // A later repeat is refused too; it never passes on a marker left behind.
-        expect(await countOnce(b, k("m"), k("c"), LONG_TTL, 1)).toBe(false);
+        expect(await countOnce(b, k("m"), k("c"), LONG_TTL, 1)).toBe("refused");
       });
 
       // Fails if parallel duplicates of an admitted marker count more than once or are refused.
       it("parallel duplicates with room are all admitted and count once", async () => {
         const results = await Promise.all(Array.from({ length: 6 }, (_, i) => countOnce(i % 2 ? a : b, k("m"), k("c"), LONG_TTL, 5)));
-        expect(results).toEqual(Array(6).fill(true));
+        expect(results).toEqual(Array(6).fill("admitted"));
         expect(await a.incrementWindow(k("c"), LONG_TTL, 0)).toBe(1);
       });
 
@@ -404,12 +404,12 @@ export function runStoreContract(name: string, makeClients: () => Promise<Contra
       it("two distinct markers racing for the last place admit exactly one", async () => {
         await a.incrementWindow(k("c"), LONG_TTL, 4);
         const results = await Promise.all([countOnce(a, k("m1"), k("c"), LONG_TTL, 5), countOnce(b, k("m2"), k("c"), LONG_TTL, 5)]);
-        expect(results.filter(Boolean)).toHaveLength(1);
+        expect([...results].sort()).toEqual(["admitted", "refused"]);
         // The admitted marker keeps passing; the refused one keeps failing.
-        const winner = results[0] ? k("m1") : k("m2");
-        const loser = results[0] ? k("m2") : k("m1");
-        expect(await countOnce(b, winner, k("c"), LONG_TTL, 5)).toBe(true);
-        expect(await countOnce(a, loser, k("c"), LONG_TTL, 5)).toBe(false);
+        const winner = results[0] === "admitted" ? k("m1") : k("m2");
+        const loser = results[0] === "admitted" ? k("m2") : k("m1");
+        expect(await countOnce(b, winner, k("c"), LONG_TTL, 5)).toBe("admitted");
+        expect(await countOnce(a, loser, k("c"), LONG_TTL, 5)).toBe("refused");
       });
     });
   });

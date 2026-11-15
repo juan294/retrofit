@@ -7,6 +7,7 @@ import { handleAnalyze } from "@/lib/api/analyze";
 import { handleScore } from "@/lib/api/score";
 import { getJob, leaseKey, originAliasKey, resolveJob, startOrJoinCrawl, type CrawlJob } from "@/lib/crawl/jobs";
 import { createMemoryStore } from "@/lib/store/memory";
+import { shortHash } from "@/lib/fetch/limits";
 import { bakery } from "../fixtures/sites";
 import {
   analyzeRequest,
@@ -203,6 +204,19 @@ describe("capacity", () => {
 
     fc.set(Date.parse("2026-11-16T00:00:01.000Z"));
     expect((await analyze("three.example.com", "203.0.113.99")).status).toBe(200);
+  });
+
+  // F1. Fails if an undecided daily count (another job of the same origin still being counted) fails the
+  // job as daily_limit, which would tell the visitor the limit was reached when it may not have been.
+  it("queues the job when the origin's daily count is still undecided", async () => {
+    const fc = fakeClock(Date.parse("2026-11-15T10:20:00.000Z"));
+    const d = testDeps({ clock: fc.clock });
+    await holdAllSlots(d);
+    const origin = "https://pending.example.com";
+    await d.store.putIfAbsent(`crawl-origin-day:2026-11-15:${shortHash(origin)}`, { version: 1, state: "pending" }, 10);
+    const r = await startCrawlJob(d, origin);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect((await getJob(d.store, r.jobId))?.status).toBe("queued");
   });
 
   // Fails if a worker that finds its job lease held ("busy") keeps the capacity slot.
