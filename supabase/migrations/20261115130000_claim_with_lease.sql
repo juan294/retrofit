@@ -36,6 +36,8 @@ begin
     -- queued job could wait for the next request while a slot is free. A row this transaction
     -- locks here is not skipped on the next round.
     exit when not exists (select 1 from public.queue q where q.queue = p_queue and q.expires_at > pg_catalog.now());
+    -- No blocking wait after the last round: its result could not be used.
+    exit when i = 3;
     perform 1 from public.queue q
       where q.queue = p_queue and q.expires_at > pg_catalog.now()
       order by q.seq
