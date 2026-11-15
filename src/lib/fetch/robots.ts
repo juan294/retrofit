@@ -46,6 +46,12 @@ export function createRobots(deps: RobotsDeps): Robots {
     if (!pending) {
       pending = fetchRecord(url).then(async (record) => {
         await deps.store.set(key, record, ROBOTS_TTL_S);
+        // The robots.txt request itself was paced without the crawl delay. Reserve
+        // the host's next slot with it, so the request after robots.txt waits too.
+        if (record.kind === "rules") {
+          const delay = robotsParser(`${url.origin}/robots.txt`, record.text).getCrawlDelay(ROBOTS_AGENT);
+          if (delay && delay > 1) await deps.pace(url.host, Math.min(delay, 60));
+        }
         return record;
       });
       pending.finally(() => inflight.delete(key)).catch(() => {});

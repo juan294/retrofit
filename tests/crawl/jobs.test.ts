@@ -10,6 +10,7 @@ import {
   type JobDeps,
 } from "@/lib/crawl/jobs";
 import { createMemoryBacking, createMemoryStore } from "@/lib/store/memory";
+import { jitter } from "../helpers/jitter-store";
 
 function setup() {
   let now = Date.UTC(2026, 10, 15, 12);
@@ -29,6 +30,17 @@ describe("startOrJoinCrawl", () => {
     const ids = new Set(results.map((r) => r.jobId));
     expect(ids.size).toBe(1);
     expect(results.filter((r) => r.created)).toHaveLength(1);
+  });
+
+  // Fails if the alias can point at a job that is not written yet (a second caller would replace it).
+  it("creates one job when store operations interleave at random", async () => {
+    for (let trial = 0; trial < 20; trial++) {
+      const { a, b } = setup();
+      const ja = { ...a, store: jitter(a.store) };
+      const jb = { ...b, store: jitter(b.store) };
+      const results = await Promise.all(Array.from({ length: 10 }, (_, i) => startOrJoinCrawl(i % 2 ? ja : jb, "https://bakery.example")));
+      expect(new Set(results.map((r) => r.jobId)).size).toBe(1);
+    }
   });
 
   // Fails if a failed job is reused instead of replaced.

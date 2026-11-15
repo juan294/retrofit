@@ -164,8 +164,10 @@ describe("crawl delay", () => {
     const robots = robotsFor(store);
     await guardedFetch(u("delay.fixture.test"), { config, store, robots, pace, lookup: noRealDns });
     await expect(robots.crawlDelay(hostOf("delay.fixture.test"))).resolves.toBe(5);
+    // robots.txt request, then the slot reservation with the delay, then the page request.
     expect(paced).toEqual([
       [hostOf("delay.fixture.test"), undefined],
+      [hostOf("delay.fixture.test"), 5],
       [hostOf("delay.fixture.test"), 5],
     ]);
   });

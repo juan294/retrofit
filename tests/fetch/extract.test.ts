@@ -313,3 +313,28 @@ describe("scrubEmails on hostile input", () => {
   });
 });
 
+describe("extractor output always validates", () => {
+  // Fails if the extractor emits a value the snapshot validator refuses (the whole crawl would fail).
+  it("accepts a long href, deep JSON-LD, a long @type and an encoded email", async () => {
+    const { validateSnapshot, SNAPSHOT_VERSION } = await import("@/lib/snapshot/types");
+    let deep: unknown = { "@type": "Thing", name: "leaf" };
+    for (let i = 0; i < 40; i++) deep = { "@type": "Thing", child: deep };
+    const html = `<html><head><title>t</title>
+      <script type="application/ld+json">${JSON.stringify(deep)}</script>
+      <script type="application/ld+json">${JSON.stringify({ "@type": `${"X".repeat(190)}Event`, name: "Long type" })}</script>
+      </head><body><main>
+      <a href="/a?${"q".repeat(4800)}">long</a>
+      <a href="/subscribe?email=jane%40example.com">sub</a>
+      <form action="/f?${"r".repeat(5000)}"><input name="x" aria-label="x"></form>
+      </main></body></html>`;
+    const page = { ...extractPage({ url: "https://shop.example/", html, headers: {} }), status: 200, truncated: false };
+    const empty = { url: "https://shop.example/x", status: null, contentType: null, body: null, accessControlAllowOrigin: null };
+    const snapshot = validateSnapshot({
+      version: SNAPSHOT_VERSION, source: page.url, inputUrl: page.url, finalUrl: page.url, host: "shop.example",
+      fetchedAt: new Date(0).toISOString(), pages: [page], probes: { agentManifest: empty, llmsTxt: empty, sitemap: empty, robots: empty },
+      skipped: [], records: page.records, excludedNoindex: [],
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("jane%40example.com");
+    expect(snapshot.pages[0]!.links.every((l) => l.href.length <= 4096)).toBe(true);
+  });
+});

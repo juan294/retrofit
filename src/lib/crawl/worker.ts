@@ -29,9 +29,11 @@ export function failureFor(e: unknown): CrawlFailure {
 export async function runCrawl<R>(jobId: string, deps: WorkerDeps<R>): Promise<WorkerOutcome> {
   const ttl = deps.config.crawlLeaseTtlS;
   const key = leaseKey(jobId);
-  const token = await deps.store.acquireLease(key, ttl);
-  if (!token) return "busy";
+  let token: string | null = null;
   try {
+    token = await deps.store.acquireLease(key, ttl);
+    if (!token) return "busy";
+    const owned = token;
     const initial = await getJob<Snapshot, R>(deps.store, jobId);
     if (!initial || (initial.status !== "queued" && initial.status !== "crawling")) return "skipped";
     let job: CrawlJob<Snapshot, R> | null = await updateJob(deps, initial, { status: "crawling", step: "home", leaseExpiresAt: deps.clock() + ttl * 1000 });
@@ -39,7 +41,7 @@ export async function runCrawl<R>(jobId: string, deps: WorkerDeps<R>): Promise<W
 
     /** Renews the lease and records progress; false when this worker no longer owns the job. */
     const write = async (patch: Partial<CrawlJob<Snapshot, R>>): Promise<boolean> => {
-      if (!job || !(await deps.store.renewLease(key, token, ttl))) return false;
+      if (!job || !(await deps.store.renewLease(key, owned, ttl))) return false;
       job = await updateJob(deps, job, { leaseExpiresAt: deps.clock() + ttl * 1000, ...patch });
       return job !== null;
     };
@@ -52,6 +54,8 @@ export async function runCrawl<R>(jobId: string, deps: WorkerDeps<R>): Promise<W
         clock: deps.clock,
         hooks: {
           afterHome: async (host) => {
+            // Prove the lease is still ours before touching the shared destination alias.
+            if (!(await write({ step: "claim" }))) throw new LeaseLost();
             joinedTo = await claimDestination(deps, jobId, host);
             if (joinedTo) return false;
             if (!(await write({ destinationHost: host, step: "probes" }))) throw new LeaseLost();
@@ -70,7 +74,7 @@ export async function runCrawl<R>(jobId: string, deps: WorkerDeps<R>): Promise<W
       return (await write({ status: "failed", step: "failed", failure: failureFor(e), leaseExpiresAt: undefined })) ? "failed" : "lease-lost";
     }
   } finally {
-    await deps.store.releaseLease(key, token);
+    if (token) await deps.store.releaseLease(key, token);
     await deps.onFinish?.();
   }
 }

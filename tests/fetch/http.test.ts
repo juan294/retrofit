@@ -168,7 +168,8 @@ describe("guardedFetch refusals", () => {
     const lookup: Resolver = async (h) => {
       if (h !== "rebind.example.com") return noRealDns(h);
       calls += 1;
-      return [{ address: calls === 1 ? "93.184.216.34" : "169.254.169.254", family: 4 }];
+      // The first answer is loopback (allowed only in fixtures mode), so a regression cannot reach a real host.
+      return [{ address: calls === 1 ? "127.0.0.1" : "169.254.169.254", family: 4 }];
     };
     await expect(rawGuardedGet(validateUrl("http://rebind.example.com/", config), context({ lookup }))).rejects.toBeInstanceOf(NotPublicError);
     expect(calls).toBe(2);

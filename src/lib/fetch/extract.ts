@@ -41,7 +41,7 @@ interface DomNode {
 }
 
 // Bounded repetitions keep matching linear on hostile input (a long run of word characters).
-const EMAIL = /[A-Z0-9._%+-]{1,64}@[A-Z0-9-]{1,63}(?:\.[A-Z0-9-]{1,63}){0,8}\.[A-Z]{2,24}/gi;
+const EMAIL = /[A-Z0-9._%+-]{1,64}(?:@|%40)[A-Z0-9-]{1,63}(?:\.[A-Z0-9-]{1,63}){0,8}\.[A-Z]{2,24}/gi;
 const NON_CONTENT = ["script", "style", "noscript", "template", "textarea"];
 const PAGE_CHROME = ["nav", "header", "footer", "aside"];
 const LABEL_SKIP = [...NON_CONTENT, "select", "option", "datalist"];
@@ -65,7 +65,7 @@ const MAX_JSON_DEPTH = 32;
 
 /** Replace every email address with the placeholder. */
 export function scrubEmails(text: string): string {
-  if (!text.includes("@")) return text;
+  if (!text.includes("@") && !/%40/i.test(text)) return text;
   return text.replace(EMAIL, EMAIL_PLACEHOLDER);
 }
 
@@ -158,9 +158,12 @@ function httpUrl(href: string, base: string): URL | null {
 }
 
 /** Remove emails from a URL and return it normalized, or null if it no longer parses. */
+const MAX_URL_CHARS = 4096;
+
 function scrubUrl(url: URL): string | null {
   try {
-    return new URL(scrubEmails(url.href)).href;
+    const href = new URL(scrubEmails(url.href)).href;
+    return href.length <= MAX_URL_CHARS ? href : null;
   } catch {
     return null;
   }
@@ -240,6 +243,8 @@ function scrubUrlOrNull(url: URL | null): string | null {
 
 function sanitizeJson(value: unknown, depth: number): JsonValue {
   if (depth > MAX_JSON_DEPTH) return null;
+  // A container at the depth limit becomes null, so no value lies deeper than the validator allows.
+  if (depth >= MAX_JSON_DEPTH - 1 && typeof value === "object" && value !== null) return null;
   if (typeof value === "string") return scrubEmails(value);
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "boolean" || value === null) return value;
@@ -414,14 +419,14 @@ class RecordBuilder {
         .update(JSON.stringify([type, name, this.url, name ? "" : content]))
         .digest("hex")
         .slice(0, 16);
-      id = `${type.toLowerCase()}-${hash}`;
+      id = `${type.toLowerCase().slice(0, 100)}-${hash}`;
       for (let n = 2; this.contents.has(`${collection}\n${id}`); n += 1) {
         if (this.contents.get(`${collection}\n${id}`) === content) return;
-        id = `${type.toLowerCase()}-${hash}-${n}`;
+        id = `${type.toLowerCase().slice(0, 100)}-${hash}-${n}`;
       }
     }
     this.contents.set(`${collection}\n${id}`, content);
-    bucket.push({ id, type, url: this.url, ...clean } as SiteRecord);
+    bucket.push({ id, type: type.slice(0, 200), url: this.url, ...clean } as SiteRecord);
   }
 }
 

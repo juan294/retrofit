@@ -10,11 +10,14 @@ import {
   type Snapshot,
   type SnapshotPage,
 } from "../snapshot/types";
-import { extractPage } from "./extract";
+import { extractPage, scrubEmails } from "./extract";
 import { guardedFetch, rawGuardedGet, type FetchContext, type FetchResult } from "./http";
 
 /** Paths that a crawler must never read: sign-in, accounts, carts, checkout and administration. */
 export const SKIP_PATH = /(^|\/)(login|log-in|signin|sign-in|signup|sign-up|register|logout|account|accounts|my-account|profile|cart|basket|bag|checkout|admin|wp-admin|wp-login\.php|dashboard)(\/|$|\.|\?)/i;
+
+/** Sites that ask for more than this many seconds between requests get only their home page and robots.txt read. */
+export const MAX_CRAWL_DELAY_S = 10;
 
 export class LeaseLost extends Error {
   constructor() {
@@ -46,7 +49,7 @@ function toProbe(r: FetchResult): Probe {
     url: r.url,
     status: r.status,
     contentType: r.headers["content-type"] ?? null,
-    body: r.body === null ? null : r.body.slice(0, PROBE_BODY_MAX_CHARS),
+    body: r.body === null ? null : scrubEmails(r.body.slice(0, PROBE_BODY_MAX_CHARS)),
     accessControlAllowOrigin: r.headers["access-control-allow-origin"] ?? null,
   };
 }
@@ -107,12 +110,20 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
   if (home.body !== null && isHtml(home)) add(toPage(home));
   else skipped.push({ url: home.url, reason: "not-html" });
 
-  await step("probes");
+  // Every request below is preceded by a progress step, which renews the lease.
+  const delay = (await o.fetch.robots.crawlDelay(final.host)) ?? 0;
+  const slow = delay > MAX_CRAWL_DELAY_S;
+  const probeAt = async (path: string, raw = false): Promise<Probe> => {
+    const url = new URL(path, origin);
+    if (slow || overBudget()) return emptyProbe(url.href);
+    await step(`probe ${path}`);
+    return probe(url, o.fetch, raw);
+  };
   const probes = {
-    robots: await probe(new URL("/robots.txt", origin), o.fetch, true),
-    agentManifest: await probe(new URL("/agent-manifest.json", origin), o.fetch),
-    llmsTxt: await probe(new URL("/llms.txt", origin), o.fetch),
-    sitemap: await probe(new URL("/sitemap.xml", origin), o.fetch),
+    robots: await probeAt("/robots.txt", true),
+    agentManifest: await probeAt("/agent-manifest.json"),
+    llmsTxt: await probeAt("/llms.txt"),
+    sitemap: await probeAt("/sitemap.xml"),
   };
 
   const seen = new Set<string>([normalize(inputUrl)!, normalize(home.url)!]);
@@ -135,6 +146,10 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
       skipped.push({ url: next, reason: "page-budget" });
       continue;
     }
+    if (slow) {
+      skipped.push({ url: next, reason: "crawl-delay" });
+      continue;
+    }
     if (overBudget()) {
       skipped.push({ url: next, reason: "time-budget" });
       continue;
@@ -142,7 +157,9 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
     await step(`page ${pages.length + 1}`);
     try {
       const r = await guardedFetch(new URL(next), o.fetch);
-      if (new URL(r.url).host !== final.host) skipped.push({ url: next, reason: "other-host" });
+      const landed = new URL(r.url);
+      if (landed.host !== final.host) skipped.push({ url: next, reason: "other-host" });
+      else if (SKIP_PATH.test(landed.pathname)) skipped.push({ url: next, reason: "private-path" });
       else if (r.body === null || !isHtml(r)) skipped.push({ url: next, reason: "not-html" });
       else if (r.status >= 400) skipped.push({ url: next, reason: `status-${r.status}` });
       else add(toPage(r));

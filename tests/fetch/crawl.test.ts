@@ -73,9 +73,20 @@ describe("crawlSite", () => {
     const big = snapshot.pages.find((p) => p.url.endsWith("/big"))!;
     expect(big.truncated).toBe(true);
     for (const p of ["/login", "/cart", "/checkout", "/admin"]) expect(server.requests.map((r) => r.path)).not.toContain(p);
-    // The injection phrase appears only in page text, titles and record names: data fields.
+    // The injection phrase appears only in page data fields and records, never in a control field.
     const home = snapshot.pages[0]!;
     expect(home.title).toContain(INJECTION);
+    const hits: string[] = [];
+    const walk = (v: unknown, path: string) => {
+      if (typeof v === "string") {
+        if (v.includes(INJECTION)) hits.push(path);
+      } else if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${path}[${i}]`));
+      else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, `${path}.${k}`);
+    };
+    walk(snapshot, "$");
+    expect(hits.length).toBeGreaterThan(0);
+    const dataField = /^\$\.(pages\[\d+\]\.(title|text|description|jsonLd.*|records\..*|links\[\d+\]\.text)|records\..*)$/;
+    expect(hits.filter((h) => !dataField.test(h))).toEqual([]);
     expect(Object.keys(snapshot)).toEqual(["version", "source", "inputUrl", "finalUrl", "host", "fetchedAt", "pages", "probes", "skipped", "records", "excludedNoindex"]);
   });
 
@@ -100,8 +111,45 @@ describe("crawlSite", () => {
     expect(paced.filter((h) => h.startsWith("bakery.fixture.test"))).toHaveLength(requests.length);
   });
 
+  // Fails if a page that redirects to a sign-in path is extracted.
+  it("skips a page whose redirect lands on a private path", async () => {
+    const site: FixtureSite = {
+      ...bakery,
+      "/": { headers: { "content-type": "text/html" }, body: `<main>home <a href="/members">Members</a></main>` },
+      "/members": { status: 302, headers: { location: "/login" } },
+    };
+    const { snapshot } = await crawl({ "bakery.fixture.test": site }, "bakery.fixture.test");
+    expect(snapshot.pages.map((p) => new URL(p.url).pathname)).toEqual(["/"]);
+    expect(snapshot.skipped.find((s) => s.url.endsWith("/members"))?.reason).toBe("private-path");
+  });
+
+  // Fails if a large Crawl-delay makes the worker sleep (losing its lease) instead of stopping early.
+  it("reads only the home page when Crawl-delay is above the limit", async () => {
+    const site: FixtureSite = { ...bakery, "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nCrawl-delay: 30\nAllow: /\n" } };
+    const server = await serveSites(() => ({ "slow.fixture.test": site }));
+    close = () => server.close();
+    const store = createMemoryStore();
+    const base = createFetchContext({ config, store, minIntervalMs: 1 });
+    const waits: (number | undefined)[] = [];
+    const fetch = { ...base, pace: async (h: string, d?: number) => void waits.push(d) };
+    const { createRobots } = await import("@/lib/fetch/robots");
+    const snapshot = (await crawlSite(server.origin("slow.fixture.test"), { config, fetch: { ...fetch, robots: createRobots({ config, store, pace: fetch.pace }) }, clock: Date.now }))!;
+    expect(snapshot.pages).toHaveLength(1);
+    expect(snapshot.probes.sitemap.status).toBeNull();
+    expect(snapshot.skipped.filter((s) => s.reason === "crawl-delay").length).toBeGreaterThan(0);
+    expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt", "/"]);
+  });
+
+  // Fails if probe bodies keep email addresses.
+  it("scrubs email addresses from probe bodies", async () => {
+    const site: FixtureSite = { ...bakery, "/llms.txt": { headers: { "content-type": "text/plain" }, body: "# Bakery\nContact owner@crumb.example\n" } };
+    const { snapshot } = await crawl({ "bakery.fixture.test": site }, "bakery.fixture.test");
+    expect(snapshot.probes.llmsTxt.body).toContain("[email removed]");
+    expect(snapshot.probes.llmsTxt.body).not.toContain("owner@crumb.example");
+  });
+
   // Fails if the crawl ignores a lost lease reported between pages.
   it("stops with LeaseLost when the progress hook reports the lease lost", async () => {
-    await expect(crawl({ "bakery.fixture.test": bakery }, "bakery.fixture.test", { progress: async (s) => s === "probes" })).rejects.toBeInstanceOf(LeaseLost);
+    await expect(crawl({ "bakery.fixture.test": bakery }, "bakery.fixture.test", { progress: async (s) => !s.startsWith("probe ") })).rejects.toBeInstanceOf(LeaseLost);
   });
 });

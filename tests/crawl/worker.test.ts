@@ -85,7 +85,7 @@ describe("runCrawl", () => {
       ...a.fetch,
       pace: async (host, delay) => {
         await a.fetch.pace(host, delay);
-        if (!takenOver && host.startsWith("bakery.fixture.test") && (await getJob(a.store, jobId))?.step === "probes") {
+        if (!takenOver && host.startsWith("bakery.fixture.test") && (await getJob(a.store, jobId))?.step?.startsWith("probe ")) {
           takenOver = true;
           offset += (config.crawlLeaseTtlS + 1) * 1000;
           // Another instance acquires the expired lease, as a retry would.
@@ -99,11 +99,14 @@ describe("runCrawl", () => {
     expect((await getJob(a.store, jobId))?.status).toBe("crawling");
   });
 
-  // Fails if a second worker can run the same job while the first holds its lease.
-  it("returns busy when the lease is held", async () => {
+  // Fails if a second worker can run the same job while the first holds its lease,
+  // or if a busy worker skips onFinish (Phase 3 frees its capacity slot there).
+  it("returns busy when the lease is held and still runs onFinish", async () => {
     const w = instance(createMemoryBacking(), Date.now);
     const { jobId } = await startOrJoinCrawl(w as JobDeps & WorkerDeps, "https://bakery.example");
     await w.store.acquireLease(`crawl-lease:${jobId}`, 60);
-    expect(await runCrawl(jobId, w)).toBe("busy");
+    let finished = 0;
+    expect(await runCrawl(jobId, { ...w, onFinish: async () => void finished++ })).toBe("busy");
+    expect(finished).toBe(1);
   });
 });

@@ -135,20 +135,21 @@ export async function startOrJoinCrawl(deps: JobDeps, inputOrigin: string): Prom
     if (alias) {
       const job = await resolveJob(deps.store, alias.jobId);
       if (job && reusable(job, deps.config, now)) return { jobId: job.id, created: false };
-      // Replace a failed, stale, expired or missing job atomically.
+      // Replace a failed, stale or expired job atomically. The new job is
+      // written before the alias points at it, so no reader sees a missing job.
       const id = newJobId();
+      await createJob(deps, id, inputOrigin);
       if (await deps.store.compareAndSet(key, alias, { version: alias.version + 1, jobId: id }, deps.config.crawlCacheTtlS)) {
-        await createJob(deps, id, inputOrigin);
         return { jobId: id, created: true };
       }
+      await deps.store.delete(jobKey(id));
       continue;
     }
     const id = newJobId();
+    await createJob(deps, id, inputOrigin);
     const put = await deps.store.putIfAbsent<Alias>(key, { version: 1, jobId: id }, deps.config.crawlCacheTtlS);
-    if (put.created) {
-      await createJob(deps, id, inputOrigin);
-      return { jobId: id, created: true };
-    }
+    if (put.created) return { jobId: id, created: true };
+    await deps.store.delete(jobKey(id));
   }
   throw new Error("startOrJoinCrawl: too much contention");
 }

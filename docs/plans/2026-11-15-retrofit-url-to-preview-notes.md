@@ -31,3 +31,21 @@ Implementation notes for the plan `2026-11-15-retrofit-url-to-preview.md` and it
 - Archy port rows: worktree `/Users/juan/code/retrofit-worktrees/archy-retrofit-ports`, branch `chore/retrofit-ports`, commit `00e43fc`, local only, not pushed.
 - CI handoff for Sutura: `docs/development/ci-handoff.md` at source commit `170cdd9`.
 - Owner acceptance items: the decision record. Pending; the run continued under the all-phases instruction.
+| 2 | Pacing interval `max(1 s, crawl delay)` with no upper bound | A large `Crawl-delay` would make the worker sleep past its 60 s lease | Above `MAX_CRAWL_DELAY_S` (10 s) Retrofit reads only robots.txt and the home page; skipped pages carry reason `crawl-delay` | Honours the site's request without losing the lease; the visitor still gets a score from the home page. |
+
+## Phase 2 handoff
+
+- Scope: all Phase 2 changes. Commits `49f9f1e` (implementation) and the repair commit after it.
+- Gate on `49f9f1e`: every check passed except `whitespace` (one blank line at the end of `tests/fetch/extract.test.ts`, fixed in the repair commit) and `rpi-installation` (pre-existing, see Phase 1). Unit tests 295, coverage 93.27% statements and 85.33% branches, e2e 5.
+- Independent review (fresh context) found no S1 or S2 defect. Dispositions:
+  - P2-R1 (S3, alias written before its job, so a slow store could start two crawls): fixed; the job is written first and an orphan is deleted. `tests/crawl/jobs.test.ts` interleaves store operations at random (`tests/helpers/jitter-store.ts`); the test fails on `49f9f1e` and passes now.
+  - P2-R2 (S3, probes without lease renewal; unbounded crawl delay): fixed; a progress step (lease renewal) precedes every probe and page; budget checked before each probe; crawl delay above 10 s limits the crawl (deviation row above).
+  - P2-R3 (S3, extractor output the validator refused): fixed; URLs over 4096 characters dropped, JSON-LD cut one level above the validator limit, record ids and types clipped. Test builds and validates a snapshot from hostile markup.
+  - P2-R4 (S3, emails in probe bodies and percent-encoded emails): fixed; probe bodies scrubbed; the pattern accepts `%40`.
+  - P2-R5 (S4, destination claim before the lease check): fixed; the worker renews first.
+  - P2-R6 (S4, request after robots.txt ignored the crawl delay): fixed; robots reserves the next slot with the delay.
+  - P2-R7 (S4, redirect to a private path extracted): fixed; the landing path is checked.
+  - P2-R8 (S4, `busy` skipped `onFinish`): fixed; `onFinish` runs on every outcome.
+  - P2-R9 (S4, tests): the rebinding test's first answer is loopback; the hostile test now walks the snapshot and requires every injection hit to be a data field.
+- Plan items moved: `src/lib/fetch/limits.ts` (listed as a Phase 2 Store consumer) arrives in Phase 3 with the client limits that use it. "Robots and probe requests are paced" is tested in `tests/fetch/crawl.test.ts`, `tests/fetch/http.test.ts` and `tests/fetch/robots.test.ts`, not `tests/fetch/pacing.test.ts`. The `spaOnly` and `agentified` fixtures are first used by the Phase 3 golden scores.
+- Plan gap for Phase 7: the SQL function list omits the queue operations (`enqueue`, `claimNext`) that the shared contract suite requires; Phase 7 adds them.
