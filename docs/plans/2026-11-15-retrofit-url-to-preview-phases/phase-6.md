@@ -1,124 +1,126 @@
-# Phase 6: Supabase store, evidence analyzer, Vercel hosting, DNS and first production release
+# Phase 6: Free inference with spend control, judge reserve and credit alert
 
 Parent plan: [2026-11-15-retrofit-url-to-preview.md](../2026-11-15-retrofit-url-to-preview.md).
 
 ## Goal
 
-Retrofit runs at `https://retrofit.thecreativetoken.com` with a Supabase store. The release follows `docs/release/release-playbook.md` with a tested evidence analyzer. The organizers' partner check passes in production. Local work comes first; every external action has its own authorization.
+A visitor or judge without a key can use the preview and Retrofit's own agent. The runtime sends the placeholder key `retrofit-free` to Retrofit's same-origin endpoint `/api/inference/v1` as an explicit router override. The credential is an HttpOnly session cookie. Every forwarded request is bounded and its cost is reserved against a ledger before it reaches Otari. Public use can never spend the judge reserve. The owner is alerted when credit runs low. A visitor's own key never reaches this endpoint.
 
 ## Entry conditions
 
 - Phase 5 accepted.
-- Re-read `cognizant-ai-labs/agentic-web` and record the commit (as in Phase 4).
-- Read `.rpi/rules/resource-lifecycle.md`, `.rpi/rules/supabase.md`, `.rpi/rules/deployment-safety.md` and `docs/release/release-playbook.md` again.
+- Owner authorization to use the Otari account and its credits. The owner creates an Otari API key in the dashboard (no CLI exists for it) and places it in the ignored `.env` as `OTARI_API_KEY`.
+- Check, with that key, whether Otari offers a per-key spending limit or a balance or usage API. If a per-key limit exists, the owner sets it to the credit amount; record the result. If none exists, the ledger below is the only cap, and the handoff says so.
+- Read the price per million input and output tokens for `alibaba/qwen3.8-flash` from `GET https://api.otari.ai/api/v1/models` and record it.
+- The owner provides the credit balance and the judge reserve, and generates `JUDGE_CODE`.
 
-## Local work
+## Configuration
 
-### Supabase adapter
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `FREE_MODEL` | `alibaba/qwen3.8-flash` | Only model accepted |
+| `FREE_PRICE_IN_PER_M`, `FREE_PRICE_OUT_PER_M` | required | USD per million tokens, from the Otari model list |
+| `FREE_CREDIT_USD` | required | Credit available when the free path goes live, set by the owner from the Otari balance |
+| `JUDGE_RESERVE_USD` | required | Part of the credit that only judge sessions may spend |
+| `FREE_SERVICE_END` | `2027-01-18T23:59:59Z` | End of the free period for the daily budget calculation |
+| `FREE_MAX_TOKENS` | 1024 | Output tokens per request, set by the server |
+| `FREE_MAX_BODY_BYTES` | 98304 | Request body limit |
+| `FREE_MAX_MESSAGES` | 80 | Messages per request |
+| `FREE_MAX_TOOLS` | 16 | Tools per request; each tool definition at most 4096 bytes |
+| `FREE_INFLIGHT_PER_SESSION` | 2 | Concurrent requests per session |
+| `FREE_INFLIGHT_GLOBAL` | 16 | Concurrent requests overall |
+| `FREE_CALLS_PER_SESSION` | 40 | Public session calls |
+| `FREE_SESSIONS_PER_CLIENT_HOUR` | 6 | New sessions per client per hour |
+| `JUDGE_CALLS_PER_SESSION` | 200 | Judge session calls |
+| `JUDGE_SESSIONS_PER_CLIENT_DAY` | 3 | Judge sessions per client per day |
+| `FREE_UPSTREAM_TIMEOUT_MS` | 45000 | Upstream timeout (15 s margin inside `maxDuration` 60 s) |
+| `CREDIT_ALERT_THRESHOLDS` | `0.5,0.8,0.95` | Fractions of the ledger that raise an alert |
+| `ALERT_GITHUB_TOKEN` | required on Vercel | Fine-grained token with Issues write on `juan294/retrofit` only |
 
-- `supabase/config.toml`: `project_id = "retrofit"`, ports in the reusable dev block: shadow DB 54720, API 54721, DB 54722, Studio 54723, Inbucket 54724, analytics 54727, pooler 54729.
-- Migration `supabase/migrations/<timestamp>_store.sql`:
-  - tables `kv (key text primary key, value jsonb not null, expires_at timestamptz not null)`, `counters (key text, window_start timestamptz, count integer not null, primary key (key, window_start))`, `locks (key text primary key, expires_at timestamptz not null)`
-  - functions for atomic window increment and lock acquire
-  - RLS on every table with no policies; `revoke all` from `anon` and `authenticated`; grants to `service_role` only; default privileges checked for future tables
-- `src/lib/store/supabase.ts`: the `Store` contract with `@supabase/supabase-js` and the service role key (server only). Expired rows are ignored and deleted on read.
-- `src/app/api/cron/cleanup/route.ts`: deletes expired rows; accepts only `Authorization: Bearer <CRON_SECRET>` (Vercel Cron); daily schedule in `vercel.json`.
-- Production selects the Supabase adapter; on Vercel, missing Supabase configuration fails at startup (no fallback to memory). A failed read logs `[TABLE_FALLBACK]` at ERROR.
-- `src/app/api/health/route.ts`: writes and reads a `kv` row with a 60 s TTL; returns `ok`, or `degraded` with HTTP 503.
+Add them to `src/lib/config.ts` with tests.
 
-### Disposable gate database
+## Changes
 
-- The gate check `pnpm test:db` uses a separate disposable stack: `project_id = "retrofit-gate"`, ports 54730 to 54739, workdir `.local/supabase-gate/` (a generated copy of `supabase/` with those values).
-- `tools/gate-db.mjs`:
+### Sessions
+
+- `src/lib/inference/token.ts`: HMAC-SHA-256 with `SESSION_SECRET`; `SessionClaims`: `sid`, `iat`, `exp` (2 h), `client`, `pool` (`public` or `judge`).
+- `src/app/api/inference/session/route.ts` (`POST`, same-origin only): with no valid cookie, applies the per-client cap and creates a session; with a valid cookie, renews it with the same `sid`, `pool` and counters. Cookie `retrofit_session`: `HttpOnly`, `Secure` on HTTPS, `SameSite=Strict`, `Path=/api/inference`, `Max-Age` 7200. Renewal lives under `/api/inference` so that the browser sends the cookie to it.
+- `src/app/judges/page.tsx` and `POST /api/inference/session/judge`: a correct code (constant-time compare, never logged) makes the current session a judge session.
+
+### Ledger and quotas
+
+- `src/lib/inference/ledger.ts`: spend in micro-USD per UTC day and pool, plus a running total.
+  - Public daily budget = `max(0, FREE_CREDIT_USD - JUDGE_RESERVE_USD - publicSpentTotal) / daysLeft(FREE_SERVICE_END)`, computed at the start of each UTC day.
+  - Judge budget = `JUDGE_RESERVE_USD - judgeSpentTotal`, available at any time. Public spend never draws on it.
+- `src/lib/inference/quota.ts`: session calls, client sessions, in-flight counters (per session and global, with leases so a crashed request frees its slot after 60 s).
+
+### Proxy
 
 ```
-@ runGateDb() -> exit code
-ctx: supabase CLI, Docker context, .local/supabase-gate/
-pre: owner accepted this plan, which authorizes disposal of exactly this recorded identity
+@ proxyChat(request) -> streamed response
+ctx: token, quota, ledger, Store, Otari (server key), Config
+pre: Authorization is "Bearer retrofit-free"
 do:
-  1. acquire .local/supabase-gate/lock with pid and start time (held lock -> exit 1 with holder)
-  2. write ownership record: Docker context, project_id retrofit-gate, workdir, ports, start time
-  3. start stack; reset; run contract suite and SQL tests
-  4. verify the running containers carry project retrofit-gate and the recorded workdir
-  5. stop with --no-backup (disposal of the verified gate identity only); release lock
-fail: any test failure -> still stop and release; keep the first failure and any cleanup failure separately
-risk: never act on a stack whose identity differs from the record; report it instead
+  1. validate same origin (Sec-Fetch-Site same-origin or Origin equals PUBLIC_ORIGIN) and the retrofit_session cookie
+  2. validate body against the allowlist {model, messages, tools, tool_choice, stream, temperature, top_p} and all size limits
+  3. acquire in-flight slots; reserve cost = estimate(input bytes / 3 tokens) at input price + FREE_MAX_TOKENS at output price
+  4. write upstream body: allowed fields, model FREE_MODEL, n 1, stream true, stream_options.include_usage true, max_tokens FREE_MAX_TOKENS
+  5. stream the response through; on completion reconcile the reservation to the reported usage
+br: unknown field, wrong model or oversize -> 400 with text; any other Bearer -> 401, nothing forwarded
+fx: counters, reservation, ledger; one upstream POST
+fail: counters unavailable -> 503 (never forward without a reservation); upstream error or timeout -> 502; mid-stream failure -> emit an error event and close
+risk: no usage reported -> keep the full reservation; visitor disconnect -> abort upstream and keep the reservation
 ```
 
-- The reusable dev stack `retrofit` is never reset by the gate.
-- Add `pnpm test:db` to `.rpi/policy.json` after `pnpm test`.
+- Error bodies use the OpenAI error shape so the runtime shows them in chat.
+- `src/app/api/inference/v1/models/route.ts`: lists only `FREE_MODEL`.
+- `src/app/api/inference/status/route.ts`: `{available, pool, reason}` without amounts.
+- Logging: one redaction helper removes `authorization`, `cookie`, `set-cookie` and any value with a prefix from `providers.ts`.
 
-### Evidence analyzer
+### Credit alert
 
-- `tools/release/analyze-evidence.mjs <candidate-commit>` reads `.rpi/local/verification.json`, `.local/evidence/vitest.json`, `.local/evidence/playwright.json` and `.local/supabase-gate/` records. It rejects:
-  - a commit or tree identity that differs from the candidate
-  - any required check with a non-zero exit, or missing
-  - zero passing tests in any suite
-  - a skipped test in a required suite
-  - any of the required safety and conformance specs missing or not passed: `e2e/key-panel.spec.ts`, `e2e/origins.spec.ts`, `e2e/analyze-blocked.spec.ts`, `e2e/preview.spec.ts` (unofficial label), `e2e/spec6.spec.ts` (consent before contact), `e2e/conformance.spec.ts`, `e2e/free-path.spec.ts`, `tests/fetch/robots.test.ts`, `tests/fetch/limits.test.ts`
-  - a gate database record without a completed teardown
-- `tests/release/analyze-evidence.test.ts`: one fixture set per rejection above, and one accepted set.
+- `src/app/api/cron/credit-check/route.ts`: daily (Vercel Cron in Phase 7), `Authorization: Bearer <CRON_SECRET>`. Compares the ledger total with `FREE_CREDIT_USD`. When a threshold is first crossed, or the judge reserve is below 25%, it opens one GitHub issue in `juan294/retrofit` titled "Free AI credit threshold reached" with the percentage and pool only (no amounts per visitor, no keys). It records the threshold so it does not repeat.
 
-### Hosting configuration
+### Client
 
-- `vercel.json`: `"git": {"deploymentEnabled": {"develop": false, "sutura/*": false}}`, `"ignoreCommand": "test \"$VERCEL_ENV\" != \"production\""`, `functions` with `maxDuration` 60 for the analyze, score and inference routes, and the cleanup cron.
-- `docs/release/release-playbook.md`: artifact, state, rollback and Wave A commands for this stack. Rollback: `vercel rollback` to the previous production deployment, with owner authorization.
-- `docs/development/resource-lifecycle.md`: the dev stack (reusable, start `supabase start`, stop `supabase stop` keeps data, no reset outside an authorized lifecycle) and the gate stack (disposable, managed only by `tools/gate-db.mjs`).
+- `Preview.tsx` and the landing assistant: with no visitor key, `POST /api/inference/session`, then boot with `router` `${location.origin}/api/inference/v1`, `byokKey` `retrofit-free`, `model` `FREE_MODEL`. Renew every 30 min and on `visibilitychange`. The fetch guard allows the router origin (same origin). When the visitor connects a key, reboot with the provider router. The key panel shows "Using Retrofit's free AI" and "Use your own key".
 
 ## Tests (write first)
 
-- `tests/store/supabase.test.ts`: the shared contract suite against the gate stack (run by `pnpm test:db`; a missing stack is a failure, never a skip).
-- `supabase/tests/store_access.sql`: as `anon` and `authenticated`, select, insert and update on each table are denied; as `service_role` they work; a table created later is not readable by `anon`.
-- `tests/store/supabase-failure.test.ts`: an adapter pointed at a closed port makes `/api/health` return `degraded` and analyze return the "having trouble" text; the log has `[TABLE_FALLBACK]`.
-- `tests/tools/gate-db-lock.test.ts`: a held lock gives exit 1 naming the holder; a lock with a dead pid is reported and left in place.
-- `tests/api/cleanup.test.ts`: wrong or missing `CRON_SECRET` gives 401; expired rows are deleted, live rows kept.
-- `tests/release/analyze-evidence.test.ts`: as above.
+- `tests/inference/token.test.ts`: valid, tampered, expired, wrong secret.
+- `tests/inference/session.test.ts`: renewal with a valid cookie keeps `sid`, `pool` and counters; the per-client cap applies only to new sessions; judge upgrade with a wrong code fails.
+- `tests/inference/ledger.test.ts`: public daily budget formula across days (fake clock); public spend cannot reduce the judge budget; reconciliation lowers a reservation to the reported usage; missing usage keeps it.
+- `tests/inference/quota.test.ts`: each cap returns 429 with its text at N+1; in-flight slots freed on completion and after the lease on crash.
+- `tests/inference/proxy.test.ts` (upstream mocked at the network boundary): server key upstream, no cookie upstream; unknown field `n` or `logprobs` refused; oversize body, too many messages, too many or too large tools refused; upstream body has `n` 1, `max_tokens` and `include_usage`; two parallel requests when only one reservation fits give one 429; counters unavailable gives 503 and no upstream call; upstream 500, timeout and mid-stream failure give their texts; visitor disconnect aborts upstream; no retry after failure; cross-origin refused; provider-looking Bearer refused and not forwarded.
+- `tests/inference/redaction.test.ts`: no part of a key or cookie in logs.
+- `tests/ops/credit-check.test.ts`: GitHub API mocked at the network boundary; one issue per threshold; none when below; wrong `CRON_SECRET` gives 401.
+- `e2e/free-path.spec.ts` (mock upstream): a new visitor chats with no key; Retrofit's own agent uses its published default router (completes the Phase 4 §6 case); renewal in a real browser keeps `sid` and the spent count (read through a test-only status field when `fixturesEnabled`); two tabs share one session; a renewal across UTC midnight keeps the session count and resets the daily pool (fake server clock in fixtures mode); at the session cap the chat shows the cap text and the banner offers "Use your own key".
+- `e2e/key-panel.spec.ts` (extended): with a visitor key, no request goes to `/api/inference/*`.
 
-## External actions (each needs the owner's authorization for that exact action)
+## Contract probe
 
-Do them in this order. Inspect the target before each and record the result.
-
-1. **Confirm Vercel's function region** for team `thecreativetoken` and choose the Supabase region next to it (`us-east-1` if the region is `iad1`).
-2. **Create the Supabase project** `retrofit` in that region.
-3. **Apply the migration** with `supabase db push`, after `supabase migration list` against the linked project.
-4. **Create the Vercel project** `retrofit` in team `thecreativetoken` without a Git connection.
-5. **Set production environment variables**: `SESSION_SECRET` and `CRON_SECRET` (generated locally, never printed), `PUBLIC_ORIGIN` `https://retrofit.thecreativetoken.com`, `OTARI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JUDGE_CODE`, cap variables. Production environment only.
-6. **Add the domain** `retrofit.thecreativetoken.com` to the project and read the DNS target it asks for.
-7. **Create the Route 53 record**: an `UPSERT` change batch in zone `Z05609513HH99AFEUOPD3` with the target from step 6. Show the change batch file to the owner before `aws route53 change-resource-record-sets`, then wait for `aws route53 get-change` to report `INSYNC`.
-8. **Release** (playbook steps 1 to 8): merge `develop` into `main` locally with a merge commit; run the full gate on the merge commit; run the evidence analyzer for that commit; present the evidence to the owner; push `main` once (no deployment follows, because Git is not connected); run `vercel deploy --prod` from a clean checkout of that commit.
-9. **Connect Git** to the Vercel project so later merges to `main` deploy. Confirm that the production branch is `main`. If the connection starts a deployment, confirm that it is a production deployment of the same commit.
-
-## Post-release verification
-
-- `node tools/agentic-web/scripts/check_partner.mjs https://retrofit.thecreativetoken.com/retrofit_guide` exits 0 with no errors.
-- `curl -s https://retrofit.thecreativetoken.com/api/health` returns `ok`.
-- Analyze `https://retrofit.thecreativetoken.com/` (Retrofit reads itself, so the smoke test uses no third-party site): score ready, `aw.manifest`, `aw.network-valid` and `aw.cors` pass, and the preview answers one question on the free path.
-- `vercel list` for the project shows no deployment with the preview target.
-- Inspect every deployment for the pushed commit. On failure, do not rerun or redeploy; report it, reproduce locally and roll back under the playbook if production is affected.
+Once, with the owner's key, through the local proxy to `https://api.otari.ai/api/v1`: one streamed completion with one tool. Record the date, model, status, that a `tool_calls` delta arrived, that a `usage` object arrived with `include_usage`, and that the mock fixture's stream format matches. Never record the key. This proves the protocol shape, not cost or sustained availability.
 
 ## Automated success criteria
 
-- The full gate passes on the merge commit, including `pnpm test:db`.
-- The evidence analyzer accepts the candidate.
+- The full gate passes.
 
 ## Manual success criteria
 
-- Each external action recorded with its authorization and result.
-- Post-release checks recorded.
-- `.rpi/release-profile.json`: `hosting-and-domain-decision`, `executable-application-tests`, `candidate-bound-evidence-analyzer`, `third-party-fetch-safety-evidence` and `visitor-key-handling-evidence` move to satisfied with evidence paths. `open-agentic-web-spec-conformance-evidence` records the local §6 evidence and the production partner check, and stays open for the production two-origin demonstration in the second plan.
+- Contract probe recorded; Otari limit and balance findings recorded; caps and reserve confirmed by the owner.
 
 ## Independent work units
 
-- `[batch-eligible]` Unit A: Supabase config, migration, SQL tests, adapter, contract and failure tests.
-- `[batch-eligible]` Unit B: gate database tool and its tests.
-- `[batch-eligible]` Unit C: evidence analyzer and its tests.
-- `[batch-eligible]` Unit D: `vercel.json`, health and cleanup routes, playbook and resource documents.
-- External actions are sequential and owned by the integration owner.
+- `[batch-eligible]` Unit A: token, session routes, judge page and tests.
+- `[batch-eligible]` Unit B: ledger, quota and tests.
+- `[batch-eligible]` Unit C: proxy routes, redaction and tests (stubs ledger and quota until merged).
+- `[batch-eligible]` Unit D: credit check and tests.
+- Unit E (integration owner): client integration and e2e specs.
 
 ## Stuck states in this phase
 
-Store unavailable in production; gate database lock held. See the parent plan table. A failed deploy is handled by the playbook's rollback, never by redeploying to diagnose.
+Free cap reached, session expired, Otari error, counters unavailable, credit threshold. See the parent plan table.
 
 ## Exit
 
-Stop for owner acceptance. The next step is the second plan.
+Stop for owner acceptance.

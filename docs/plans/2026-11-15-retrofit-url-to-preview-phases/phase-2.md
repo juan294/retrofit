@@ -1,10 +1,10 @@
-# Phase 2: Safe fetch service and site snapshot
+# Phase 2: Store contract, safe fetch, crawl jobs and snapshot
 
 Parent plan: [2026-11-15-retrofit-url-to-preview.md](../2026-11-15-retrofit-url-to-preview.md).
 
 ## Goal
 
-Server code that reads a public website safely and turns it into a `Snapshot`, a superset of the organizers' `site-content.json` (`references/live_url_mode.md`, step 2). It follows robots rules on every host it contacts, paces requests per host, limits size and time, refuses non-public addresses, caches results and treats all content as untrusted data.
+Server code that reads a public website safely into a `Snapshot` (a superset of the organizers' `site-content.json`), with one shared crawl job per destination host, leased pacing on every host contacted, robots rules on every host, and a store contract that supports atomic join and fenced writes.
 
 ## Entry conditions
 
@@ -12,112 +12,116 @@ Server code that reads a public website safely and turns it into a `Snapshot`, a
 
 ## Changes
 
-### Files
+### Store contract
 
-- `src/lib/store/types.ts`: the `Store` contract: `get`, `set(key, value, ttlSeconds)`, `delete`, `incrementWindow(key, windowSeconds) -> count`, `acquireLock(key, ttlSeconds) -> boolean`, `releaseLock(key)`.
-- `src/lib/store/memory.ts`: in-memory implementation with an injectable clock.
-- `tests/store/contract.ts`: shared contract suite for every adapter (expiry, window counts, lock exclusivity, lock expiry).
-- `src/lib/fetch/url.ts`: normalize and validate the input URL: `http` or `https`; ports 80 and 443 only; no credentials in the URL; host must be a DNS name with a public suffix (IP literals refused); IDN converted to punycode; at most 2048 characters; fragment removed.
-- `src/lib/fetch/guard.ts`: classify an IP address. Blocked: IPv4 `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.0.2.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `198.51.100.0/24`, `203.0.113.0/24`, `224.0.0.0/4`, `240.0.0.0/4`; IPv6 `::/128`, `::1/128`, `fc00::/7`, `fe80::/10`, `ff00::/8`, `2001:db8::/32`, Teredo `2001::/32`, 6to4 `2002::/16`, `64:ff9b::/96` and `64:ff9b:1::/48` (NAT64), and IPv4-mapped `::ffff:0:0/96` forms of blocked IPv4 ranges. When `fixturesEnabled`, loopback is allowed and nothing else changes.
+`src/lib/store/types.ts`:
+
+- `get(key)`, `set(key, value, ttlSeconds)`, `delete(key)`
+- `putIfAbsent(key, value, ttlSeconds) -> {created: boolean, value}` (atomic)
+- `compareAndSet(key, expected, next, ttlSeconds) -> boolean` (atomic, compares a version field)
+- `incrementWindow(key, windowSeconds, by = 1) -> count` (atomic)
+- `acquireLease(key, ttlSeconds) -> token | null`, `renewLease(key, token, ttlSeconds) -> boolean`, `releaseLease(key, token) -> boolean` (release only when the token still owns the lease)
+
+`src/lib/store/memory.ts` implements it with an injectable clock. Two memory clients can share one backing map, to model two server instances. `tests/store/contract.ts` is the shared suite: expiry; atomic `putIfAbsent` under concurrent calls; `compareAndSet` version conflicts; window counts; lease exclusivity, renewal, expiry, reacquisition and a late release that must not free a successor's lease; all of these with two clients.
+
+### Fetch
+
+- `src/lib/fetch/url.ts`: `http` or `https`; ports 80 and 443; no credentials; DNS name with a public suffix; IDN to punycode; at most 2048 characters; fragment removed. When `fixturesEnabled`, exactly `http://127.0.0.1:<port>` and `http://localhost:<port>` are also accepted. Tests keep the production refusals.
+- `src/lib/fetch/guard.ts`: blocked IPv4 `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.0.2.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `198.51.100.0/24`, `203.0.113.0/24`, `224.0.0.0/4`, `240.0.0.0/4`; blocked IPv6 `::/128`, `::1/128`, `fc00::/7`, `fe80::/10`, `ff00::/8`, `2001:db8::/32`, `2001::/32` (Teredo), `2002::/16` (6to4), `64:ff9b::/96`, `64:ff9b:1::/48` (NAT64), and `::ffff:0:0/96` forms of blocked IPv4 ranges. With `fixturesEnabled`, loopback is allowed and nothing else changes.
+- `src/lib/fetch/pacing.ts`: per-host pacing through the store (`nextAllowedAt:<host>` with `compareAndSet`), applied to every request, including robots.txt and probes. Interval `max(1 s, crawl delay)`.
+- `src/lib/fetch/robots.ts`: `/robots.txt` per host for `RetrofitBot` with `robots-parser`; cached per host for 1 h.
 - `src/lib/fetch/http.ts`: `guardedFetch`.
-- `src/lib/fetch/robots.ts`: fetch and evaluate `/robots.txt` per host for user agent token `RetrofitBot`, with `robots-parser`. Results cached per host for 1 h.
-- `src/lib/fetch/limits.ts`: host pacing and client quotas on the `Store`.
-- `src/lib/fetch/cache.ts`: index from normalized origin to the latest ready record id, TTL `SNAPSHOT_CACHE_TTL_S`.
-- `src/lib/fetch/crawl.ts`: `crawlSite`.
-- `src/lib/fetch/extract.ts`: HTML to page text, title, meta description, `lang`, JSON-LD blocks, forms (method, action, inputs and labels), links and structured `records`.
-- `src/lib/snapshot/types.ts`: `Snapshot` type and runtime validator.
-- `tests/helpers/fixture-server.ts`: loopback HTTP server for synthetic sites; can serve two host names (`127.0.0.1` and `localhost`) to model apex and `www`.
-- `tests/fixtures/sites/` (synthetic only):
-  - `bakery`: plain HTML, JSON-LD `Bakery`, menu with prices, opening hours, contact form
-  - `spa-only`: empty HTML shell rendered by JavaScript
-  - `blocked`: robots.txt disallows `RetrofitBot`
-  - `redirect-www`: the first host redirects to a second host whose robots.txt disallows `RetrofitBot`
-  - `agentified`: publishes a valid `agent-manifest.json` and network
-  - `hostile`: prompt-injection phrases in the body, in `<title>` and in the JSON-LD `name`; a 5 MB page; a redirect to a blocked address; a login page; a cart page
-
-### User agent
-
-`RetrofitBot/0.1 (+https://retrofit.thecreativetoken.com/bot)`. Phase 3 adds the `/bot` page.
-
-### Pseudocode
 
 ```
-@ guardedFetch(url, opts) -> Response
-ctx: undici Agent with a custom connect lookup, robots, Config
+@ guardedFetch(url, ctx) -> Response
+ctx: undici Agent with a connect-time lookup, robots, pacing, Config
 pre: url passed validateUrl
 do:
-  1. resolve host through guardedLookup (rejects if any resolved address is blocked)
-  2. connect only to the checked address (the lookup runs at connect time, so DNS rebinding is checked)
-  3. validate robots for this host and path (skipped only for the robots.txt request itself)
-  4. send GET with RetrofitBot UA, no cookies, redirect "manual"
-  5. validate each redirect target with validateUrl, guardedLookup and robots for its host; at most 5 hops
-  6. stream the body up to FETCH_MAX_BYTES; stop at FETCH_TIMEOUT_MS
-br: content type not HTML, text, XML or JSON -> return metadata only
-fail: blocked address -> NotPublicError; robots disallow -> RobotsBlocked; timeout -> FetchTimeoutError; too large -> truncated flag
+  1. resolve host through guardedLookup (any blocked address -> refuse); connect only to the checked address
+  2. validate robots for host and path (not for the robots.txt request itself)
+  3. wait for the host's pacing slot
+  4. send GET with the RetrofitBot UA, no cookies, redirect "manual"
+  5. validate each redirect target (validateUrl, guardedLookup, robots, pacing); at most 5 hops
+  6. stream the body up to FETCH_MAX_BYTES within FETCH_TIMEOUT_MS
+br: content type not HTML, text, XML or JSON -> metadata only
+fail: NotPublicError; RobotsBlocked; FetchTimeoutError; truncated flag on oversize
 risk: global fetch ignores a custom lookup; use undici request with the Agent
 ```
 
+### Crawl jobs
+
+`src/lib/crawl/jobs.ts`: a `CrawlJob` is shared, keyed by destination host, holds status, snapshot, score (Phase 3), a version and the lease key. It is public data about a public site and never holds visitor data.
+
 ```
-@ crawlSite(origin, clientId) -> Snapshot
-ctx: Store, robots, limits, guardedFetch, extract, Config
-pre: origin normalized
+@ startOrJoinCrawl(inputOrigin) -> jobId
+ctx: Store, guardedFetch, Config
 do:
-  1. acquire host lock with HOST_LOCK_TTL_S (one crawl per host at a time)
-  2. fetch the home page; the final host after redirects becomes the crawl host
-  3. fetch the probe paths /agent-manifest.json, /llms.txt, /sitemap.xml on the crawl host
-  4. fetch same-host navigation links in document order; skip login, account, cart, checkout, admin paths
-  5. extract each page; write Snapshot with fetchedAt and partial flag
-  6. release host lock
-br: robots disallows "/" on the crawl host -> RobotsBlocked without fetching pages
-br: CRAWL_MAX_PAGES or CRAWL_BUDGET_MS reached -> stop, mark snapshot partial
-fx: outbound GETs paced at max(1 s, crawl delay) per host
-fail: robots 5xx or timeout -> RobotsUnavailable (cached 1 h); lock held -> CrawlInProgress
+  1. lookup crawl:<inputOrigin> alias and a fresh ready job (hit inside CRAWL_CACHE_TTL_S -> return it)
+  2. putIfAbsent crawl:<inputOrigin> with a new job id (existing running job -> return its id)
+  3. return the job id; the worker resolves the destination host in runCrawl
 ```
 
-Every fetch, including the declared network fetch in Phase 3, goes through `guardedFetch`, so robots rules apply on every host.
+```
+@ runCrawl(jobId) -> void
+ctx: Store, guardedFetch, extract, Config
+do:
+  1. acquire lease crawl-lease:<jobId>; fetch the home page to learn the destination host
+  2. putIfAbsent crawl:<destinationHost> with this job id (another job exists -> mark this job joined to it, stop)
+  3. fetch probes /agent-manifest.json, /llms.txt, /sitemap.xml and same-host navigation links
+  4. skip login, account, cart, checkout and admin paths; extract each page
+  5. write the snapshot with compareAndSet on the job version, only while the lease token is valid; renew the lease between pages
+fail: RobotsBlocked -> job failed with that code; lease lost -> stop and write nothing
+risk: a worker that lost its lease must never overwrite a newer job state
+```
 
-### Extraction rules
+A joined job forwards readers to the job it joined, so analyses that started from different input hosts share one crawl and one result.
 
-- Page text is the main content without navigation, header and footer (prefer `<main>`, then `<article>`, then `<body>` minus `nav`, `header`, `footer`, `aside`). At most 20,000 characters per page.
-- Replace email addresses in stored text with `[email removed]`. Keep business phone numbers and addresses. Do not store form field values, cookies or response headers other than `content-type`, `x-robots-tag` and `access-control-allow-origin`.
-- `records` come from JSON-LD: `Product`, `Offer`, `MenuItem`, `Event`, `Service`, rooms of a `LodgingBusiness`, `OpeningHoursSpecification`. Each record has a stable `id` (slug of the name, deduplicated) and a source `url`.
-- A page with `<meta name="robots" content="noindex">` or `X-Robots-Tag: noindex` has its text excluded, and the exclusion is recorded.
-- Titles, names and descriptions are stored as plain text only. They are data for the UI and tools, never for instructions.
+### Extraction
+
+- `src/lib/fetch/extract.ts`: main text (`<main>`, then `<article>`, then `<body>` minus `nav`, `header`, `footer`, `aside`), at most 20,000 characters per page; title, meta description, `lang`, JSON-LD blocks, forms (method, action, inputs, labels), links, `records` from JSON-LD (`Product`, `Offer`, `MenuItem`, `Event`, `Service`, rooms of a `LodgingBusiness`, `OpeningHoursSpecification`) with stable `id` and source `url`.
+- Email addresses replaced with `[email removed]`. Business phone numbers and addresses kept. No form values, cookies or headers other than `content-type`, `x-robots-tag` and `access-control-allow-origin`.
+- A page with `noindex` (meta or header) has its text excluded and the exclusion recorded.
+- Titles, names and descriptions are plain-text data for the UI and tools, never for instructions.
+- `src/lib/snapshot/types.ts`: `Snapshot` type and runtime validator.
+
+### Fixtures
+
+- `tests/helpers/fixture-server.ts`: loopback HTTP server on ephemeral ports, able to serve `127.0.0.1` and `localhost` as two hosts.
+- `tests/fixtures/sites/` (synthetic): `bakery`, `spa-only`, `blocked`, `redirect-www` (first host redirects to a second host whose robots.txt disallows `RetrofitBot`), `converge-a` and `converge-b` (two hosts that both redirect to one destination), `agentified`, `hostile` (injection phrases in body, `<title>` and JSON-LD `name`; 5 MB page; redirect to a blocked address; login and cart pages).
 
 ## Tests (write first)
 
-- `tests/fetch/url.test.ts`: accepted and refused inputs, including `http://user:pass@host`, `ftp:`, port 8080, IP literals, IDN hosts.
-- `tests/fetch/guard.test.ts`: every row of `tests/fixtures/address-cases.json` (at least 40 rows: each blocked range above, IPv4-mapped forms, NAT64 forms, two public IPv4 and two public IPv6 addresses); loopback refused without `fixturesEnabled` and allowed with it.
-- `tests/fetch/http.test.ts`: redirect to a blocked address refused; rebinding resolver (public at check, blocked at connect) refused; 5 MB body truncated with the flag; timeout raises `FetchTimeoutError`; a sixth redirect refused; a redirect to a host whose robots.txt disallows gives `RobotsBlocked`.
-- `tests/fetch/robots.test.ts`: disallow for `RetrofitBot`; allow; 404 means allowed; 500 and timeout give `RobotsUnavailable`; crawl delay honored; `redirect-www` stops on the second host.
-- `tests/fetch/limits.test.ts`: per-host pacing with a fake clock; per-client window.
-- `tests/fetch/cache.test.ts`: index hit inside the TTL, miss after.
-- `tests/fetch/crawl.test.ts`: bakery gives the expected pages, records and probes; login and cart pages skipped; the page budget stops at 12; a noindex page is excluded; the host lock expires after `HOST_LOCK_TTL_S` with a fake clock; hostile text is stored only as page text.
-- `tests/fetch/extract.test.ts`: main-content selection; email removal; JSON-LD records with ids and URLs.
 - `tests/store/memory.test.ts`: the shared contract suite.
+- `tests/fetch/url.test.ts`: production refusals (credentials, `ftp:`, port 8080, IP literals, no public suffix); fixture acceptance only with `fixturesEnabled`.
+- `tests/fetch/guard.test.ts`: every row of `tests/fixtures/address-cases.json` (at least 40 rows).
+- `tests/fetch/http.test.ts`: redirect to a blocked address refused; rebinding resolver refused; 5 MB body truncated; timeout; sixth redirect refused; redirect to a robots-disallowed host gives `RobotsBlocked`.
+- `tests/fetch/pacing.test.ts`: two clients sharing a store never send two requests to one host inside the interval (fake clock); robots and probe requests are paced.
+- `tests/fetch/robots.test.ts`: disallow; allow; 404 allowed; 500 and timeout give `RobotsUnavailable`; crawl delay honored; `redirect-www` stops on the second host.
+- `tests/crawl/jobs.test.ts`: ten concurrent `startOrJoinCrawl` calls for one origin create one job; `converge-a` and `converge-b` produce one crawl of the destination and both read its result; a worker whose lease expired cannot write (fenced); a late completion after a stale failure is discarded.
+- `tests/fetch/crawl.test.ts`: bakery pages, records and probes; login and cart skipped; page budget 12; noindex excluded; hostile text stored only as page text.
+- `tests/fetch/extract.test.ts`: main-content selection; email removal; JSON-LD records.
 
-Each test names, in a comment above its assertions, the production change that would make it fail.
+Each test names, in a comment, the production change that would make it fail.
 
 ## Automated success criteria
 
-- The full gate passes; the new test count is reported.
-- No test contacts a non-loopback host. The fixture server binds loopback on ephemeral ports.
+- The full gate passes; the new test count is reported. No test contacts a non-loopback host.
 
 ## Manual success criteria
 
-- None. No real third-party site is fetched in this phase.
+- None. No real third-party site is fetched.
 
 ## Independent work units
 
-- `[batch-eligible]` Unit A: `url.ts`, `guard.ts`, `http.ts`, `robots.ts` and their tests.
-- `[batch-eligible]` Unit B: `extract.ts`, `snapshot/types.ts` and their tests (fixture HTML strings).
-- `[batch-eligible]` Unit C: `store/*`, `limits.ts`, `cache.ts` and their tests.
-- Unit D (integration owner, after A, B and C): `crawl.ts`, fixture server, crawl tests.
+- `[batch-eligible]` Unit A: `url.ts`, `guard.ts`, `http.ts`, `robots.ts` and tests.
+- `[batch-eligible]` Unit B: `extract.ts`, `snapshot/types.ts` and tests.
+- `[batch-eligible]` Unit C: store contract, memory adapter, `pacing.ts` and tests.
+- Unit D (integration owner, after A to C): `crawl/jobs.ts`, crawl, fixture server and their tests.
 
 ## Stuck states in this phase
 
-robots blocked, robots unavailable, non-public address, crawl in progress. See the parent plan table. In Phase 3, `CrawlInProgress` returns the running analysis id, so the visitor waits on the same result.
+robots blocked, robots unavailable, non-public address, stale crawl job (fenced). See the parent plan table.
 
 ## Exit
 
-Stop for owner acceptance with the gate output and the test count.
+Stop for owner acceptance with the gate output and test count.
