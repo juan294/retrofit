@@ -606,21 +606,50 @@ describe("runtime generations (V08)", () => {
     expect(calls[0]!.signal?.aborted).toBe(true);
   });
 
-  // Review S4: fails if a replaced runtime's pending site-content or peer request can still complete
-  // (its tool round-trip would continue after the switch).
+  // Review S4: fails if a replaced runtime's pending per-boot artifact (manifest, network, links) or
+  // peer request can still complete after the switch.
   it("aborts a retired runtime's pending agent-artifact and peer requests", async () => {
     const { guard, calls } = holding();
     guard.setRouter(FREE);
     guard.setPolicyPeers([PEER_A]);
     guard.approveFromConsent("peer-a.fixture.test:3011");
-    const artifact = guard.fetch(`${PAGE}/p/abc123/site-content.json`);
+    const artifacts = ["/p/abc123/agent-manifest.json", "/p/abc123/site_bakery_example.network.json", "/p/abc123/links.json"].map((path) =>
+      guard.fetch(`${PAGE}${path}`),
+    );
     const peer = guard.fetch(`${PEER_A}/peer_demo.network.json`);
     await Promise.resolve();
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(4);
     guard.setRouter(ROUTER_A);
-    await expect(artifact).rejects.toThrow(RETIRED_TEXT);
+    for (const artifact of artifacts) await expect(artifact).rejects.toThrow(RETIRED_TEXT);
     await expect(peer).rejects.toThrow(RETIRED_TEXT);
     expect(calls.every((c) => c.signal?.aborted)).toBe(true);
+  });
+
+  // V08 boot race: fails if retiring a runtime aborts the snapshot load. The vendored content module
+  // caches that one promise for the page (content-actions.js:38-43) and the next runtime reuses it, so
+  // an abort would leave every later runtime unable to boot until a reload.
+  it("keeps a retired runtime's pending site snapshot load, which the next runtime shares", async () => {
+    const { guard, calls } = holding();
+    guard.setRouter(FREE);
+    const snapshot = guard.fetch(`${PAGE}/p/abc123/site-content.json`, { cache: "no-store" });
+    await Promise.resolve();
+    expect(calls).toHaveLength(1);
+    guard.setRouter(ROUTER_A);
+    expect(calls[0]!.signal?.aborted ?? false).toBe(false);
+    calls[0]!.release();
+    await expect(snapshot).resolves.toBeInstanceOf(Response);
+  });
+
+  // Fails if a caller's own abort no longer reaches the shared snapshot load.
+  it("keeps the caller's abort signal on the site snapshot load", async () => {
+    const { guard, calls } = holding();
+    guard.setRouter(FREE);
+    const caller = new AbortController();
+    const snapshot = guard.fetch(`${PAGE}/p/abc123/site-content.json`, { signal: caller.signal });
+    await Promise.resolve();
+    caller.abort(new Error("caller stopped"));
+    await expect(snapshot).rejects.toThrow("caller stopped");
+    expect(calls[0]!.signal?.aborted).toBe(true);
   });
 
   // Fails if artifact requests made while no runtime is active get an abort signal they never had.
