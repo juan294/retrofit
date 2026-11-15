@@ -58,7 +58,11 @@ export interface Budgets {
   /** Credit minus total spend and outstanding reservations. */
   readonly remainingCreditMicro: number;
   readonly held: boolean;
+  /** Count of hold events (overruns and hold writes). Resumption clears the hold only while it is unchanged. */
+  readonly holdEvents: number;
 }
+
+export type ClearHoldResult = { ok: true } | { ok: false; reason: "hold_changed" | "balance_below_ledger" };
 
 interface StoredReservation {
   pool: Pool;
@@ -78,6 +82,8 @@ interface LedgerState {
   spent: Record<Pool, number>;
   reservations: Record<string, StoredReservation>;
   held: boolean;
+  /** Incremented by every overrun and every raiseHold. Absent in documents written before it existed. */
+  holdEvents?: number;
 }
 
 export const LEDGER_KEY = "inference:ledger:state";
@@ -104,6 +110,7 @@ const emptyState = (): LedgerState => ({
   spent: { public: 0, judge: 0 },
   reservations: {},
   held: false,
+  holdEvents: 0,
 });
 
 function outstanding(state: LedgerState, pool?: Pool, day?: string): number {
@@ -214,7 +221,10 @@ export function createLedger(deps: LedgerDeps) {
         const charged = reportedMicroUsd ?? r.microUsd;
         const overrunMicroUsd = Math.max(0, charged - r.microUsd);
         settle(s, reservationId, charged);
-        if (overrunMicroUsd > 0) s.held = true;
+        if (overrunMicroUsd > 0) {
+          s.held = true;
+          s.holdEvents = (s.holdEvents ?? 0) + 1;
+        }
         return {
           result: { found: true, overrun: overrunMicroUsd > 0, chargedMicroUsd: charged, reservationMicroUsd: r.microUsd, overrunMicroUsd },
           write: true,
@@ -238,16 +248,36 @@ export function createLedger(deps: LedgerDeps) {
           totalOutstandingMicro: totalOutstanding,
           remainingCreditMicro: remainingCredit,
           held: s.held,
+          holdEvents: s.holdEvents ?? 0,
         };
       });
     },
 
-    /** Sets or clears the hold flag that closes the public pool. Used by hold.ts only. */
-    setHeld(held: boolean): Promise<void> {
+    /**
+     * Sets the hold flag that closes the public pool and counts a hold event,
+     * even when the flag is already set, so a resumption that inspected the
+     * ledger before this call cannot clear it. Used by hold.ts only.
+     */
+    raiseHold(): Promise<void> {
       return update<void>("hold", (s) => {
-        const write = s.held !== held;
-        s.held = held;
-        return { result: undefined, write };
+        s.held = true;
+        s.holdEvents = (s.holdEvents ?? 0) + 1;
+        return { result: undefined, write: true };
+      });
+    },
+
+    /**
+     * Clears the hold flag in one compare-and-set, only while no hold event has
+     * happened since `expectedHoldEvents` was read and the owner's reconciled
+     * balance still covers the ledger's remaining credit. Used by hold.ts only.
+     */
+    clearHold(expectedHoldEvents: number, reconciledBalanceMicro: number): Promise<ClearHoldResult> {
+      return update<ClearHoldResult>("hold", (s) => {
+        const refuse = (reason: "hold_changed" | "balance_below_ledger") => ({ result: { ok: false as const, reason }, write: false });
+        if ((s.holdEvents ?? 0) !== expectedHoldEvents) return refuse("hold_changed");
+        if (reconciledBalanceMicro < totals(s).remainingCredit) return refuse("balance_below_ledger");
+        s.held = false;
+        return { result: { ok: true }, write: true };
       });
     },
   };
