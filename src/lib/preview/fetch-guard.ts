@@ -93,6 +93,19 @@ function isArtifactPath(pathname: string): boolean {
   );
 }
 
+/**
+ * An unmarked request to a same-origin router: its path, with repeated slashes collapsed (the
+ * server redirects "//" to the cleaned path) and the URL parser's backslash and dot handling, is
+ * the router path or under it. Only `<router>/models` stays open: the free session's model check.
+ */
+function underSameOriginRouter(r: Router, pathname: string): boolean {
+  const path = pathname.replace(/\/{2,}/g, "/");
+  if (path === `${r.path}/models`) return false;
+  // A router at the origin root shares its paths with the site: only its chat path is closed.
+  if (r.path === "") return path.replace(/\/$/, "") === "/chat/completions";
+  return path === r.path || path.startsWith(`${r.path}/`);
+}
+
 function rawUrl(input: FetchInput): string {
   if (input instanceof URL) return input.href;
   return typeof input === "string" ? input : input.url;
@@ -171,8 +184,8 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
     if (marker) {
       [input, init] = fromRuntime(input, init, url, marker);
       url = new URL(rawUrl(input), pageOrigin);
-    } else if (run !== null && router?.origin === pageOrigin && url.origin === pageOrigin && url.pathname.replace(/\/$/, "") === `${router.path}/chat/completions`) {
-      // While a runtime is active, only its marked base reaches a same-origin router's model calls.
+    } else if (run !== null && router?.origin === pageOrigin && url.origin === pageOrigin && underSameOriginRouter(router, url.pathname)) {
+      // While a runtime is active, only its marked base reaches a same-origin router.
       throw new TypeError(BLOCKED_TEXT(url.origin));
     }
 

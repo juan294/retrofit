@@ -83,8 +83,8 @@ describe("rule 1: same origin, not an agent artifact", () => {
     expect(chat.redirect).toBe("follow");
   });
 
-  // Review S4: fails if any page script can reach the active same-origin router's chat path without
-  // the runtime's marked base (a replaced runtime or other code would bypass the retirement).
+  // Review S4: fails if a fetch() call outside the runtime's marked base can reach the active
+  // same-origin router's chat path (it would bypass the run retirement). The guard covers fetch only.
   it("refuses an unmarked chat call to the active same-origin router", async () => {
     const { guard, calls } = setup();
     guard.setRouter(`${PAGE}/api/inference/v1`);
@@ -95,6 +95,43 @@ describe("rule 1: same origin, not an agent artifact", () => {
     guard.setRouter(null);
     await guard.fetch(`${PAGE}/api/inference/v1/chat/completions`, { method: "POST", body: "{}" });
     expect(calls).toHaveLength(1);
+  });
+
+  // Review S4: fails if a spelling of the router path that the server cleans up (Next answers "//"
+  // with a 308 to the cleaned path) reaches it, or if anything but the free-session /models check passes.
+  it.each([
+    "/api/inference/v1//chat/completions",
+    "/api/inference//v1/chat/completions",
+    "/api/inference/v1/chat//completions",
+    "/api/inference/v1\\chat\\completions",
+    "/api/inference/v1",
+    "/api/inference/v1/",
+    "/api/inference/v1/embeddings",
+    "/api/inference/v1/models/extra",
+  ])("refuses the unmarked path %s while a same-origin runtime is active", async (pathname) => {
+    const { guard, calls } = setup();
+    guard.setRouter(`${PAGE}/api/inference/v1`);
+    await expectBlocked(guard.fetch(`${PAGE}${pathname}`, { method: "POST", body: "{}" }), PAGE);
+    expect(calls).toHaveLength(0);
+  });
+
+  // Fails if a same-origin router at the origin root closes the whole site instead of its chat path.
+  it("closes only the chat path of a same-origin router at the origin root", async () => {
+    const { guard, calls } = setup();
+    guard.setRouter(PAGE);
+    await expectBlocked(guard.fetch(`${PAGE}//chat/completions`, { method: "POST" }), PAGE);
+    await guard.fetch(`${PAGE}/api/score?url=x`);
+    expect(calls).toHaveLength(1);
+  });
+
+  // The free session's model check (useFreeSession) and other API paths stay open.
+  it("keeps /models and paths outside the router open while a same-origin runtime is active", async () => {
+    const { guard, calls } = setup();
+    guard.setRouter(`${PAGE}/api/inference/v1`);
+    await guard.fetch(`${PAGE}/api/inference/v1/models`, { cache: "no-store" });
+    await guard.fetch(`${PAGE}/api/inference/session`, { method: "POST" });
+    await guard.fetch(`${PAGE}/api/inference/v1x/chat/completions`, { method: "POST" });
+    expect(calls).toHaveLength(3);
   });
 });
 
