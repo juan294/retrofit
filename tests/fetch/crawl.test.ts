@@ -48,14 +48,19 @@ async function crawl(sites: Record<string, FixtureSite>, host: string, hooks?: P
 }
 
 describe("isPrivatePath", () => {
-  // Fails if the private-path rule is checked on the encoded form, or a malformed encoding is let through (F2).
+  // Fails if the private-path rule is checked on the encoded form, or a `;` parameter or `\\` separator hides a keyword, or a malformed or non-UTF-8 encoding marks an ordinary page private (F2).
   it.each([
     ["/login", true],
     ["/%6Cogin", true],
     ["/%6c%6F%67%69%6E", true],
     ["/shop/%63art/", true],
     ["/a%2Flogin", true],
-    ["/%E0%A4%A", true],
+    ["/login;jsessionid=1", true],
+    ["/login%3Bx", true],
+    ["/x%5Clogin", true],
+    ["/%E0%A4%A", false],
+    ["/sale-50%-off", false],
+    ["/caf%E9", false],
     ["/menu", false],
     ["/blog/catalogue", false],
     ["/%6Denu", false],
@@ -200,17 +205,20 @@ describe("crawlSite", () => {
   it("never requests a percent-encoded or malformed private path from a link or a redirect", async () => {
     const site: FixtureSite = {
       ...bakery,
-      "/": { headers: { "content-type": "text/html" }, body: `<main><a href="/%6Cogin">a</a> <a href="/%E0%A4%A">b</a> <a href="/members">c</a> <a href="/menu">d</a></main>` },
+      "/": { headers: { "content-type": "text/html" }, body: `<main><a href="/%6Cogin">a</a> <a href="/%E0%A4%A/%6Cogin">b</a> <a href="/login;jsessionid=1">e</a> <a href="/caf%E9">f</a> <a href="/members">c</a> <a href="/menu">d</a></main>` },
       "/members": { status: 302, headers: { location: "/%61ccount/settings" } },
       "/menu": { headers: { "content-type": "text/html" }, body: "<main>menu</main>" },
     };
     const { snapshot, server } = await crawl({ "bakery.fixture.test": site }, "bakery.fixture.test");
     const paths = server.requests.map((r) => r.path);
-    for (const p of ["/%6Cogin", "/%E0%A4%A", "/%61ccount/settings"]) expect(paths).not.toContain(p);
+    for (const p of ["/%6Cogin", "/%E0%A4%A/%6Cogin", "/login;jsessionid=1", "/%61ccount/settings"]) expect(paths).not.toContain(p);
+    // A non-UTF-8 escape in an ordinary path is not private.
+    expect(paths).toContain("/caf%E9");
     expect(paths).toContain("/members");
     expect(paths).toContain("/menu");
     const reasons = Object.fromEntries(snapshot.skipped.map((s) => [new URL(s.url).pathname, s.reason]));
-    expect(reasons).toMatchObject({ "/%6Cogin": "private-path", "/%E0%A4%A": "private-path", "/members": "private-path" });
+    expect(reasons).toMatchObject({ "/%6Cogin": "private-path", "/%E0%A4%A/%6Cogin": "private-path", "/login;jsessionid=1": "private-path", "/members": "private-path" });
+    expect(reasons["/caf%E9"]).not.toBe("private-path");
   });
 
   // Fails if guardedFetch contacts a private path when given the path rule.

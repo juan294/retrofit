@@ -17,21 +17,19 @@ import { extractPage, scrubEmails } from "./extract";
 import { guardedFetch, type FetchContext, type FetchOptions, type FetchResult } from "./http";
 
 /** Paths that a crawler must never read: sign-in, accounts, carts, checkout and administration. */
-export const SKIP_PATH = /(^|\/)(login|log-in|signin|sign-in|signup|sign-up|register|logout|account|accounts|my-account|profile|cart|basket|bag|checkout|admin|wp-admin|wp-login\.php|dashboard)(\/|$|\.|\?)/i;
+export const SKIP_PATH = /(^|[/\\])(login|log-in|signin|sign-in|signup|sign-up|register|logout|account|accounts|my-account|profile|cart|basket|bag|checkout|admin|wp-admin|wp-login\.php|dashboard)([/\\;?.]|$)/i;
 
 /**
  * True when `pathname` (as in URL.pathname, still percent-encoded) is a path
- * the crawler never reads. Each segment is decoded first, so /%6Cogin counts
- * as /login; an encoded "/" inside a segment then splits it, which only adds
- * matches. A segment with malformed encoding counts as private.
+ * the crawler never reads. Every `%XX` escape is decoded to its byte first, so
+ * /%6Cogin counts as /login and an encoded "/", backslash or ";" separates as it
+ * would on a server. Decoding byte by byte never fails: every keyword is ASCII,
+ * so a malformed or non-UTF-8 escape elsewhere cannot hide one and does not
+ * make an ordinary page private. `;` path parameters and backslash separators end
+ * or start a keyword, as on servlet containers and IIS.
  */
 export function isPrivatePath(pathname: string): boolean {
-  let decoded: string;
-  try {
-    decoded = pathname.split("/").map(decodeURIComponent).join("/");
-  } catch {
-    return true;
-  }
+  const decoded = pathname.replace(/%([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
   return SKIP_PATH.test(decoded);
 }
 

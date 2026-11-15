@@ -42,9 +42,10 @@ export async function startCrawlJob(deps: JobDeps, inputOrigin: string): Promise
   const ttl = ttlUntil(midnight, now);
   const day = utcDay(now);
   const decision = await countOnce(deps.store, `crawl-origin-day:${day}:${shortHash(inputOrigin)}`, `crawl-origins:${day}`, ttl, deps.config.crawlMaxHostsPerDay);
-  // `undecided` (another job of this origin is still being counted today) starts the crawl: that
-  // other decision counts the origin, so at worst one origin passes a full cap. Refusing would
-  // tell the visitor the daily limit was reached when it may not have been.
+  // `undecided` (another job of this origin is still being counted today) starts the crawl. That
+  // other decision usually counts the origin; when its caller was refused or stopped before
+  // counting, this crawl runs uncounted, so at most one extra crawl per pending marker passes a
+  // full cap. Refusing would tell the visitor the daily limit was reached when it may not have been.
   if (decision === "refused") {
     const job = await getJob(deps.store, jobId);
     if (job) await updateJob(deps, job, { status: "failed", step: "failed", failure: { code: "daily_limit", message: visitorTexts.dailyLimit } });
