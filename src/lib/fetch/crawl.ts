@@ -117,7 +117,7 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
   else skipped.push({ url: home.url, reason: "not-html" });
 
   // Every request below is preceded by a progress step, which renews the lease.
-  const delay = (await o.fetch.robots.crawlDelay(final.host)) ?? 0;
+  const delay = (await o.fetch.robots.crawlDelay(final.origin)) ?? 0;
   const slow = delay > MAX_CRAWL_DELAY_S;
   const probeAt = async (path: string): Promise<Probe> => {
     const url = new URL(path, origin);

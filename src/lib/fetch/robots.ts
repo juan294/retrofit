@@ -14,13 +14,20 @@ export type RobotsDeps = RawFetchContext & { readonly clock?: Clock };
 
 export type Robots = RobotsChecker;
 
-const keyFor = (host: string) => `robots:${host}`;
+/**
+ * Store key of one origin's robots record. Robots rules apply to one scheme
+ * and authority (RFC 9309 section 2.3), so http://example.test and
+ * https://example.test have separate records. `origin` is `URL.origin`.
+ */
+export const robotsKey = (origin: string) => `robots:${origin}`;
 
 /**
- * robots.txt per host for RetrofitBot. Results (rules, allow-all, or
- * unavailable with a retry time) are cached in the Store under robots:<host>
- * for one hour, so every server instance shares them. The robots.txt request
- * goes through the same guarded, paced path without a robots check of its own.
+ * robots.txt per origin for RetrofitBot. Results (rules, allow-all, or
+ * unavailable with a retry time) are cached in the Store under
+ * robots:<origin> for one hour, so every server instance shares them. The
+ * robots.txt request goes through the same guarded, paced path without a
+ * robots check of its own. Pacing stays per host (see pacing.ts), the stricter
+ * choice when two schemes of one host both ask for a delay.
  */
 export function createRobots(deps: RobotsDeps): Robots {
   const clock = deps.clock ?? systemClock;
@@ -28,16 +35,16 @@ export function createRobots(deps: RobotsDeps): Robots {
   // Every hop calls check() and then crawlDelay() on the same text; keep the last parse.
   let last: { readonly robotsUrl: string; readonly text: string; readonly rules: ReturnType<typeof robotsParser> } | undefined;
 
-  /** Parsed rules for `text`. isAllowed answers only for the robots URL's own origin; getCrawlDelay accepts a parse for any origin. */
-  function rulesFor(text: string, robotsUrl: string, anyOrigin = false): ReturnType<typeof robotsParser> {
-    if (last && last.text === text && (anyOrigin || last.robotsUrl === robotsUrl)) return last.rules;
+  /** Parsed rules for `text` at `robotsUrl` (robots-parser answers only for that URL's own origin). */
+  function rulesFor(text: string, robotsUrl: string): ReturnType<typeof robotsParser> {
+    if (last && last.text === text && last.robotsUrl === robotsUrl) return last.rules;
     last = { robotsUrl, text, rules: robotsParser(robotsUrl, text) };
     return last.rules;
   }
 
   async function fetchRecord(url: URL): Promise<RobotsRecord> {
     try {
-      const res = await rawGuardedGet(new URL(`${url.protocol}//${url.host}/robots.txt`), deps, { anyContentType: true });
+      const res = await rawGuardedGet(new URL("/robots.txt", url.origin), deps, { anyContentType: true });
       if (res.status >= 200 && res.status < 300) return { kind: "rules", text: (res.body ?? "").slice(0, MAX_ROBOTS_CHARS) };
       if (res.status >= 400 && res.status < 500) return { kind: "allow" };
       return { kind: "unavailable", retryAt: clock() + ROBOTS_TTL_S * 1000 };
@@ -48,7 +55,7 @@ export function createRobots(deps: RobotsDeps): Robots {
   }
 
   async function load(url: URL): Promise<RobotsRecord> {
-    const key = keyFor(url.host);
+    const key = robotsKey(url.origin);
     const cached = await deps.store.get<RobotsRecord>(key);
     if (cached && !(cached.kind === "unavailable" && clock() >= cached.retryAt)) return cached;
     let pending = inflight.get(key);
@@ -77,10 +84,10 @@ export function createRobots(deps: RobotsDeps): Robots {
         throw new RobotsBlocked(url.host);
       }
     },
-    async crawlDelay(host) {
-      const record = await deps.store.get<RobotsRecord>(keyFor(host));
+    async crawlDelay(origin) {
+      const record = await deps.store.get<RobotsRecord>(robotsKey(origin));
       if (record?.kind !== "rules") return undefined;
-      return rulesFor(record.text, `http://${host}/robots.txt`, true).getCrawlDelay(ROBOTS_AGENT);
+      return rulesFor(record.text, `${origin}/robots.txt`).getCrawlDelay(ROBOTS_AGENT);
     },
   };
 }

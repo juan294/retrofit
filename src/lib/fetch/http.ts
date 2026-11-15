@@ -21,7 +21,8 @@ export const MAX_CRAWL_DELAY_S = 10;
 /** The robots surface `guardedFetch` needs; `createRobots` returns one. */
 export interface RobotsChecker {
   check(url: URL): Promise<void>;
-  crawlDelay(host: string): Promise<number | undefined>;
+  /** The Crawl-delay (seconds) of `origin` (`URL.origin`), from its cached robots record. */
+  crawlDelay(origin: string): Promise<number | undefined>;
 }
 
 export interface FetchContext {
@@ -184,7 +185,7 @@ async function follow(start: URL, ctx: RawFetchContext, robots: RobotsChecker | 
     let crawlDelay: number | undefined;
     if (robots) {
       await robots.check(current);
-      crawlDelay = await robots.crawlDelay(current.host);
+      crawlDelay = await robots.crawlDelay(current.origin);
     }
     await ctx.pace(current.host, crawlDelay === undefined ? undefined : Math.min(crawlDelay, MAX_CRAWL_DELAY_S));
     const hop = await sendOnce(current, ctx, resolver, opts);
