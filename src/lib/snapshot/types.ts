@@ -15,7 +15,7 @@ export const MAX_LINKS = 500;
 export const MAX_FORMS = 50;
 export const MAX_FORM_INPUTS = 100;
 export const MAX_JSON_LD_ITEMS = 100;
-const MAX_JSON_DEPTH = 32;
+export const MAX_JSON_DEPTH = 32;
 
 export const KEPT_HEADERS = ["content-type", "x-robots-tag", "access-control-allow-origin"] as const;
 export type KeptHeader = (typeof KEPT_HEADERS)[number];

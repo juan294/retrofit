@@ -7,6 +7,7 @@ import { createRobots } from "@/lib/fetch/robots";
 import { validateUrl } from "@/lib/fetch/url";
 import { createMemoryStore } from "@/lib/store/memory";
 import { startFixtureServer, type FixtureRoutes, type FixtureServer } from "../helpers/fixture-server";
+import { noRealDns } from "../helpers/server-deps";
 
 const config: Config = loadConfig({
   RETROFIT_TEST_FIXTURES: "1",
@@ -19,11 +20,6 @@ const FIVE_MB = 5 * 1024 * 1024;
 const routes: FixtureRoutes = {};
 let server: FixtureServer;
 let paced: string[];
-
-/** No test may contact a non-loopback host: unknown names fail instead of reaching the system resolver. */
-const noRealDns: Resolver = async (hostname) => {
-  throw Object.assign(new Error(`test resolver: ${hostname} is not stubbed`), { code: "ENOTFOUND" });
-};
 
 function context(overrides: Partial<FetchContext> = {}): FetchContext {
   const store = createMemoryStore();

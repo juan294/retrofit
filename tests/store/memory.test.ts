@@ -1,19 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryBacking, createMemoryStore } from "@/lib/store/memory";
+import { fakeClock } from "../helpers/server-deps";
 import { runStoreContract } from "./contract";
 
-function fakeClock(start = 1_700_000_000_000) {
-  let t = start;
-  return {
-    now: () => t,
-    advance: (ms: number) => {
-      t += ms;
-    },
-  };
-}
-
 runStoreContract("memory (two clients, one backing)", async () => {
-  const clock = fakeClock();
+  const clock = fakeClock(1_700_000_000_000);
   const backing = createMemoryBacking();
   return {
     a: createMemoryStore({ clock: clock.now, backing }),
@@ -50,7 +41,7 @@ describe("memory store specifics", () => {
 
   // Fails if claimNext skips expired entries but leaves them in the backing (unbounded growth).
   it("claimNext removes expired entries from the backing", async () => {
-    const clock = fakeClock();
+    const clock = fakeClock(1_700_000_000_000);
     const backing = createMemoryBacking();
     const store = createMemoryStore({ clock: clock.now, backing });
     await store.enqueue("q", "x", 1);

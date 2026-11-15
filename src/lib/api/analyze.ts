@@ -4,14 +4,9 @@ import { visitorTexts } from "@/lib/analysis/texts";
 import { resolveVisitor } from "@/lib/analysis/visitor";
 import { clientIdFromRequest } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
+import { json } from "./json";
 
 export const MAX_BODY_BYTES = 8192;
-
-function json(status: number, body: unknown, setCookie: string | null = null): Response {
-  const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
-  if (setCookie) headers.set("set-cookie", setCookie);
-  return new Response(JSON.stringify(body), { status, headers });
-}
 
 const tooLarge = () => json(413, { error: "too_large", message: visitorTexts.tooLarge });
 

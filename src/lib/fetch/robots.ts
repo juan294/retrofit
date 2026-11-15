@@ -25,6 +25,15 @@ const keyFor = (host: string) => `robots:${host}`;
 export function createRobots(deps: RobotsDeps): Robots {
   const clock = deps.clock ?? systemClock;
   const inflight = new Map<string, Promise<RobotsRecord>>();
+  // Every hop calls check() and then crawlDelay() on the same text; keep the last parse.
+  let last: { readonly robotsUrl: string; readonly text: string; readonly rules: ReturnType<typeof robotsParser> } | undefined;
+
+  /** Parsed rules for `text`. isAllowed answers only for the robots URL's own origin; getCrawlDelay accepts a parse for any origin. */
+  function rulesFor(text: string, robotsUrl: string, anyOrigin = false): ReturnType<typeof robotsParser> {
+    if (last && last.text === text && (anyOrigin || last.robotsUrl === robotsUrl)) return last.rules;
+    last = { robotsUrl, text, rules: robotsParser(robotsUrl, text) };
+    return last.rules;
+  }
 
   async function fetchRecord(url: URL): Promise<RobotsRecord> {
     try {
@@ -49,7 +58,7 @@ export function createRobots(deps: RobotsDeps): Robots {
         // The robots.txt request itself was paced without the crawl delay. Reserve
         // the host's next slot with it, so the request after robots.txt waits too.
         if (record.kind === "rules") {
-          const delay = robotsParser(`${url.origin}/robots.txt`, record.text).getCrawlDelay(ROBOTS_AGENT);
+          const delay = rulesFor(record.text, `${url.origin}/robots.txt`).getCrawlDelay(ROBOTS_AGENT);
           if (delay && delay > 1) await deps.pace(url.host, Math.min(delay, MAX_CRAWL_DELAY_S));
         }
         return record;
@@ -64,14 +73,14 @@ export function createRobots(deps: RobotsDeps): Robots {
     async check(url) {
       const record = await load(url);
       if (record.kind === "unavailable") throw new RobotsUnavailable(url.host, new Date(record.retryAt));
-      if (record.kind === "rules" && robotsParser(`${url.origin}/robots.txt`, record.text).isAllowed(url.href, ROBOTS_AGENT) === false) {
+      if (record.kind === "rules" && rulesFor(record.text, `${url.origin}/robots.txt`).isAllowed(url.href, ROBOTS_AGENT) === false) {
         throw new RobotsBlocked(url.host);
       }
     },
     async crawlDelay(host) {
       const record = await deps.store.get<RobotsRecord>(keyFor(host));
       if (record?.kind !== "rules") return undefined;
-      return robotsParser(`http://${host}/robots.txt`, record.text).getCrawlDelay(ROBOTS_AGENT);
+      return rulesFor(record.text, `http://${host}/robots.txt`, true).getCrawlDelay(ROBOTS_AGENT);
     },
   };
 }

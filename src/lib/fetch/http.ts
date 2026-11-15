@@ -1,13 +1,12 @@
 import { Agent, request } from "undici";
 import type { Config } from "@/lib/config";
+import { KEPT_HEADERS, type KeptHeaders } from "@/lib/snapshot/types";
 import type { Store } from "@/lib/store/types";
 import { FetchTimeoutError, NotPublicError, TooManyRedirects } from "./errors";
 import { guardedLookup, resolvePublic, systemResolver, type Resolver } from "./guard";
 import { validateUrl } from "./url";
 
 export const MAX_REDIRECTS = 5;
-export const KEPT_HEADERS = ["content-type", "x-robots-tag", "access-control-allow-origin"] as const;
-export type KeptHeader = (typeof KEPT_HEADERS)[number];
 
 /** Per-host pacing slot. `host` is `URL.host`. */
 export type Pace = (host: string, crawlDelaySeconds?: number) => Promise<void>;
@@ -49,7 +48,7 @@ export interface FetchResult {
   readonly url: string;
   readonly status: number;
   /** Only content-type, x-robots-tag and access-control-allow-origin. */
-  readonly headers: Partial<Record<KeptHeader, string>>;
+  readonly headers: KeptHeaders;
   /** Null when the content type is not HTML, text, XML or JSON. */
   readonly body: string | null;
   /** True when the body was cut at FETCH_MAX_BYTES. */
@@ -115,7 +114,7 @@ function notPublicCause(e: unknown): NotPublicError | undefined {
 interface HopResult {
   status: number;
   location: string | undefined;
-  headers: Partial<Record<KeptHeader, string>>;
+  headers: KeptHeaders;
   body: string | null;
   truncated: boolean;
 }
@@ -138,7 +137,7 @@ async function sendOnce(url: URL, ctx: RawFetchContext, resolver: Resolver, opts
     });
     // Destroying the body (redirect, metadata only, truncation) emits an abort error; it is expected.
     res.body.on("error", () => {});
-    const headers: Partial<Record<KeptHeader, string>> = {};
+    const headers: KeptHeaders = {};
     for (const name of KEPT_HEADERS) {
       const v = headerValue(res.headers[name]);
       if (v !== undefined) headers[name] = v;

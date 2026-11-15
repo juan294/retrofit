@@ -161,7 +161,7 @@ function respondFor(job: CrawlJob | null, deps: ServerDeps): Response {
       return readyReport(job, deps);
     case "queued":
       if (isQueueExpired(job, deps.config, now)) return error("queue_expired", agentTexts.queue_expired, { retryAfterSeconds: BUSY_RETRY_S });
-      return json(202, { status: "running", retryAfterSeconds: RUNNING_RETRY_S, message: agentTexts.running });
+    // falls through: a live queued job answers like a crawling one.
     case "crawling":
       return json(202, { status: "running", retryAfterSeconds: RUNNING_RETRY_S, message: agentTexts.running });
     case "failed":
@@ -199,7 +199,7 @@ function failureResponse(job: CrawlJob, now: number): Response {
 
 /** Rule 10: the report is at most 16 KB and names no analysis, preview path or cookie. */
 function readyReport(job: CrawlJob, deps: ServerDeps): Response {
-  if (job.score === undefined || job.score === null || typeof job.score !== "object") return unavailable();
+  if (typeof job.score !== "object" || job.score === null) return unavailable();
   const text = JSON.stringify(reportBody(job.score, job.updatedAt, deps.config));
   const origin = deps.config.publicOrigin;
   const leaks = [`${origin}/r/`, `${origin}/p/`, `"analysisId"`, VISITOR_COOKIE];

@@ -17,7 +17,7 @@ export function hashVisitor(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-/** Constant-time comparison of two hex hashes. */
+/** Constant-time comparison of two strings (hashes, tokens). */
 export function sameHash(a: string, b: string): boolean {
   const x = Buffer.from(a, "utf8");
   const y = Buffer.from(b, "utf8");

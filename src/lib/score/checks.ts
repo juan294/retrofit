@@ -89,18 +89,20 @@ const DEFINITIONS = new Map(CHECK_DEFINITIONS.map((d) => [d.id, d]));
 
 function result(id: CheckId, outcome: CheckOutcome, evidence: string): CheckResult {
   const d = DEFINITIONS.get(id)!;
-  const text = evidence.length > MAX_EVIDENCE_CHARS ? `${evidence.slice(0, MAX_EVIDENCE_CHARS - 1)}…` : evidence;
-  return { id, group: d.group, weight: d.weight, result: outcome, rule: d.rule, evidence: text };
+  return { id, group: d.group, weight: d.weight, result: outcome, rule: d.rule, evidence: clip(evidence, MAX_EVIDENCE_CHARS) };
 }
 
-function clipUrl(url: string): string {
-  return url.length > MAX_URL_CHARS ? `${url.slice(0, MAX_URL_CHARS - 1)}…` : url;
+/** `text` cut to at most `max` characters, the last one an ellipsis when cut. */
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
+
+const clipUrl = (url: string) => clip(url, MAX_URL_CHARS);
 
 const okStatus = (status: number | null): status is number => status !== null && status >= 200 && status < 300;
 const mime = (p: Probe) => (p.contentType ?? "").split(";")[0]!.trim().toLowerCase();
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-const list = (items: string[]) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+const list = (items: readonly string[]) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
 
 function homePage(s: Snapshot): SnapshotPage | undefined {
   return s.pages.find((p) => p.url === s.finalUrl);
@@ -212,7 +214,7 @@ export function checkRobotsAgents(s: Snapshot): CheckResult {
   const rules = robotsRules(s);
   const home = new URL("/", s.finalUrl).href;
   const blocked = AI_AGENTS.filter((agent) => rules.isDisallowed(home, agent) === true);
-  if (blocked.length) return result("disc.robots-agents", "fail", `robots.txt disallows / for ${list([...blocked])}.`);
+  if (blocked.length) return result("disc.robots-agents", "fail", `robots.txt disallows / for ${list(blocked)}.`);
   return result("disc.robots-agents", "pass", `None of the ${AI_AGENTS.length} agents is disallowed from /.`);
 }
 
@@ -314,7 +316,7 @@ export function checkOffers(s: Snapshot): CheckResult {
     }
   }
   const names = OFFER_TYPES.filter((t) => found.has(t));
-  if (names.length) return result("data.offers", "pass", `Found ${list([...names])}.`);
+  if (names.length) return result("data.offers", "pass", `Found ${list(names)}.`);
   return result("data.offers", "fail", `None of these types found on ${plural(s.pages.length, "page", "pages")}.`);
 }
 

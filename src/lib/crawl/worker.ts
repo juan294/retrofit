@@ -1,3 +1,4 @@
+import { visitorTexts } from "../analysis/texts";
 import { NotPublicError, RobotsBlocked, RobotsUnavailable } from "../fetch/errors";
 import { crawlSite, LeaseLost } from "../fetch/crawl";
 import type { FetchContext } from "../fetch/http";
@@ -15,10 +16,10 @@ export interface WorkerDeps<R = unknown> extends JobDeps {
 export type WorkerOutcome = "ready" | "failed" | "joined" | "lease-lost" | "busy" | "skipped";
 
 export function failureFor(e: unknown): CrawlFailure {
-  if (e instanceof RobotsBlocked) return { code: "robots_blocked", message: "This site asks automated tools not to read it. Retrofit stopped and read nothing else." };
+  if (e instanceof RobotsBlocked) return { code: "robots_blocked", message: visitorTexts.robotsBlocked };
   if (e instanceof RobotsUnavailable) return { code: "robots_unavailable", message: "Retrofit could not read this site's robots rules, so it stopped.", retryAt: e.retryAt.toISOString() };
-  if (e instanceof NotPublicError) return { code: "not_public", message: "This address is not a public website." };
-  return { code: "crawl_error", message: "Retrofit could not read this site." };
+  if (e instanceof NotPublicError) return { code: "not_public", message: visitorTexts.notPublic };
+  return { code: "crawl_error", message: visitorTexts.crawlError };
 }
 
 /**

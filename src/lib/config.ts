@@ -120,8 +120,3 @@ export function getConfig(): Config {
   cached ??= loadConfig(process.env);
   return cached;
 }
-
-/** Test hook: replace or clear the cached configuration. */
-export function setConfigForTests(config: Config | undefined): void {
-  cached = config;
-}

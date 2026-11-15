@@ -61,23 +61,17 @@ export function createMemoryStore(options: MemoryStoreOptions = {}): Store {
     return body(clock());
   }
 
-  function live(key: string, now: number): Entry<unknown> | undefined {
-    const entry = values.get(key);
+  /** The unexpired entry for `key`; an expired one is deleted. */
+  function liveIn<E extends { readonly expiresAt: number }>(map: Map<string, E>, key: string, now: number): E | undefined {
+    const entry = map.get(key);
     if (entry && entry.expiresAt <= now) {
-      values.delete(key);
+      map.delete(key);
       return undefined;
     }
     return entry;
   }
-
-  function liveLease(key: string, now: number): LeaseEntry | undefined {
-    const lease = leases.get(key);
-    if (lease && lease.expiresAt <= now) {
-      leases.delete(key);
-      return undefined;
-    }
-    return lease;
-  }
+  const live = (key: string, now: number) => liveIn(values, key, now);
+  const liveLease = (key: string, now: number) => liveIn(leases, key, now);
 
   function write(key: string, value: unknown, ttlSeconds: number, now: number): void {
     values.set(key, { value: structuredClone(value), expiresAt: now + ttlSeconds * 1000 });

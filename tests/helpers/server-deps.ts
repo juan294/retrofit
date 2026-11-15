@@ -1,4 +1,5 @@
 import { loadConfig, type Env } from "@/lib/config";
+import { slotKey } from "@/lib/analysis/capacity";
 import { createFetchContext } from "@/lib/fetch/context";
 import type { Resolver } from "@/lib/fetch/guard";
 import type { ServerDeps } from "@/lib/server/runtime";
@@ -12,6 +13,11 @@ export const PUBLIC_ORIGIN = "https://retrofit.test";
 
 /** Every non-fixture name "resolves" to a private address, so a test can never reach the network. */
 export const privateResolver: Resolver = async () => [{ address: "10.0.0.5", family: 4 }];
+
+/** No test may contact a non-loopback host: unknown names fail instead of reaching the system resolver. */
+export const noRealDns: Resolver = async (hostname) => {
+  throw Object.assign(new Error(`test resolver: ${hostname} is not stubbed`), { code: "ENOTFOUND" });
+};
 
 export interface FakeClock {
   readonly clock: Clock;
@@ -80,7 +86,7 @@ export function testDeps(o: TestDepsOptions = {}): TestDeps {
 export async function holdAllSlots(d: ServerDeps, ttlSeconds = 100_000): Promise<string[]> {
   const tokens: string[] = [];
   for (let n = 0; n < d.config.crawlMaxConcurrent; n++) {
-    const t = await d.store.acquireLease(`crawl-slot:${n}`, ttlSeconds);
+    const t = await d.store.acquireLease(slotKey(n), ttlSeconds);
     if (!t) throw new Error(`slot ${n} already held`);
     tokens.push(t);
   }

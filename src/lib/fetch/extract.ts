@@ -7,6 +7,7 @@ import {
   KEPT_HEADERS,
   MAX_FORMS,
   MAX_FORM_INPUTS,
+  MAX_JSON_DEPTH,
   MAX_JSON_LD_ITEMS,
   MAX_LINKS,
   MAX_RECORD_ID_CHARS,
@@ -22,7 +23,6 @@ import {
 } from "@/lib/snapshot/types";
 
 export { MAX_TEXT_CHARS };
-export type { PageExtract };
 
 export const EMAIL_PLACEHOLDER = "[email removed]";
 
@@ -42,9 +42,10 @@ interface DomNode {
 
 // Bounded repetitions keep matching linear on hostile input (a long run of word characters).
 const EMAIL = /[A-Z0-9._%+-]{1,64}(?:@|%40)[A-Z0-9-]{1,63}(?:\.[A-Z0-9-]{1,63}){0,8}\.[A-Z]{2,24}/gi;
-const NON_CONTENT = ["script", "style", "noscript", "template", "textarea"];
-const PAGE_CHROME = ["nav", "header", "footer", "aside"];
-const LABEL_SKIP = [...NON_CONTENT, "select", "option", "datalist"];
+const NON_CONTENT_TAGS = ["script", "style", "noscript", "template", "textarea"];
+const NON_CONTENT = new Set(NON_CONTENT_TAGS);
+const NON_CONTENT_OR_CHROME = new Set([...NON_CONTENT_TAGS, "nav", "header", "footer", "aside"]);
+const LABEL_SKIP = new Set([...NON_CONTENT_TAGS, "select", "option", "datalist"]);
 const BLOCK = new Set(
   "address article aside blockquote br dd details dialog div dl dt fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hr li main nav ol p pre section summary table tbody td tfoot th thead tr ul".split(
     " ",
@@ -61,7 +62,6 @@ const COLLECTIONS: Record<string, string> = {
 };
 const LODGING = new Set(["LodgingBusiness", "Hotel", "Motel", "Hostel", "BedAndBreakfast", "Resort", "Campground"]);
 const ROOMS = new Set(["HotelRoom", "Room", "Suite"]);
-const MAX_JSON_DEPTH = 32;
 
 /** Replace every email address with the placeholder. */
 export function scrubEmails(text: string): string {
@@ -105,7 +105,7 @@ function nodeText(node: DomNode | undefined, skip: ReadonlySet<string>): string 
 
 /** Convert a possibly-HTML string to plain text without emails. */
 function plain(value: string, max = 4096): string {
-  const text = /[<&]/.test(value) ? nodeText(load(value, null, false).root().get(0) as unknown as DomNode, new Set(NON_CONTENT)) : value;
+  const text = /[<&]/.test(value) ? nodeText(load(value, null, false).root().get(0) as unknown as DomNode, NON_CONTENT) : value;
   return cleanText(text, max);
 }
 
@@ -190,17 +190,23 @@ function extractLinks($: CheerioAPI, base: string, host: string): LinkExtract[] 
     }
     if (!href || seen.has(href)) continue;
     seen.add(href);
-    links.push({ href, text: cleanText(nodeText($(el).get(0) as unknown as DomNode, new Set(NON_CONTENT)), 2048), sameHost });
+    links.push({ href, text: cleanText(nodeText($(el).get(0) as unknown as DomNode, NON_CONTENT), 2048), sameHost });
   }
   return links;
 }
 
 function extractForms($: CheerioAPI, pageUrl: string, base: string): FormExtract[] {
-  const labelSkip = new Set(LABEL_SKIP);
   const labelText = (el: unknown): string | null => {
-    const text = cleanText(nodeText(el as DomNode, labelSkip), 2048);
+    const text = cleanText(nodeText(el as DomNode, LABEL_SKIP), 2048);
     return text || null;
   };
+  // The first <label for=id> in document order, built once per page instead of once per input.
+  const labels = $("label").toArray();
+  const labelFor = new Map<string, (typeof labels)[number]>();
+  for (const l of labels) {
+    const target = $(l).attr("for");
+    if (target !== undefined && !labelFor.has(target)) labelFor.set(target, l);
+  }
   return $("form")
     .toArray()
     .slice(0, MAX_FORMS)
@@ -222,7 +228,7 @@ function extractForms($: CheerioAPI, pageUrl: string, base: string): FormExtract
           let label: string | null = null;
           if (!hidden) {
             const id = $field.attr("id");
-            const forLabel = id ? $("label").filter((_, l) => $(l).attr("for") === id).get(0) : undefined;
+            const forLabel = id ? labelFor.get(id) : undefined;
             const wrapping = $field.closest("label").get(0);
             const aria = $field.attr("aria-label");
             label =
@@ -506,7 +512,7 @@ export function extractPage(input: ExtractInput): PageExtract {
   if (!noindex) {
     const main = $("main").get(0) ?? $("article").get(0);
     const root = (main ?? $("body").get(0)) as unknown as DomNode | undefined;
-    const skip = new Set(main ? NON_CONTENT : [...NON_CONTENT, ...PAGE_CHROME]);
+    const skip = main ? NON_CONTENT : NON_CONTENT_OR_CHROME;
     const full = scrubEmails(normalize(nodeText(root, skip)));
     text = clip(full, MAX_TEXT_CHARS);
     textTruncated = text.length < full.length;

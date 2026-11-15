@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { visitorTexts } from "@/lib/analysis/texts";
 import { localizeRetry } from "./analysis/retry-time";
 
 export function UrlForm() {
@@ -30,9 +31,9 @@ export function UrlForm() {
         router.push(`/r/${body.id}`);
         return;
       }
-      setError(body?.message ? localizeRetry(body.message, body.retryAt) : "Retrofit is having trouble. Try again in a few minutes.");
+      setError(body?.message ? localizeRetry(body.message, body.retryAt) : visitorTexts.unavailable);
     } catch {
-      setError("Retrofit is having trouble. Try again in a few minutes.");
+      setError(visitorTexts.unavailable);
     }
     setBusy(false);
   }

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { visitorTexts } from "@/lib/analysis/texts";
 import { localizeRetry } from "./retry-time";
 import { FINAL_STATUSES, pollDelay } from "./poll";
 
@@ -74,7 +75,7 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
         const res = await fetch(`/api/analyze/${id}`, { credentials: "same-origin", cache: "no-store" });
         const body = await res.json();
         if (!res.ok) {
-          setError({ code: body.error ?? "unavailable", message: body.message ?? "Retrofit is having trouble. Try again in a few minutes.", retryAt: body.retryAt });
+          setError({ code: body.error ?? "unavailable", message: body.message ?? visitorTexts.unavailable, retryAt: body.retryAt });
           finish();
           return;
         }
@@ -115,12 +116,12 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
   if (error) return <Notice failure={error} inputOrigin={inputOrigin} />;
   if (!status) return <p className="mt-8">Loading…</p>;
   if (status.status === "failed" || status.status === "expired") {
-    return <Notice failure={status.failure ?? { code: "crawl_error", message: "Retrofit could not read this site." }} inputOrigin={inputOrigin} />;
+    return <Notice failure={status.failure ?? { code: "crawl_error", message: visitorTexts.crawlError }} inputOrigin={inputOrigin} />;
   }
   if (status.status !== "ready" || !report) {
     return (
       <div className="mt-8" data-testid="analysis-progress" role="status" aria-live="polite">
-        <p className="font-medium">{status.status === "queued" ? "Retrofit is busy. Your analysis starts in a moment." : "Reading the site…"}</p>
+        <p className="font-medium">{status.status === "queued" ? visitorTexts.queued : "Reading the site…"}</p>
         <p className="mt-1" style={{ color: "var(--color-muted)" }}>
           {stepText(status)}
         </p>
@@ -189,9 +190,9 @@ function Notice({ failure, inputOrigin }: { failure: Failure; inputOrigin: strin
         router.push(`/r/${body.id}`);
         return;
       }
-      setRetryError({ code: body?.error ?? "unavailable", message: body?.message ?? "Retrofit is having trouble. Try again in a few minutes.", retryAt: body?.retryAt });
+      setRetryError({ code: body?.error ?? "unavailable", message: body?.message ?? visitorTexts.unavailable, retryAt: body?.retryAt });
     } catch {
-      setRetryError({ code: "unavailable", message: "Retrofit is having trouble. Try again in a few minutes." });
+      setRetryError({ code: "unavailable", message: visitorTexts.unavailable });
     }
     setBusy(false);
   }

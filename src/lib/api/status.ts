@@ -3,10 +3,7 @@ import { getAnalysis, isAnalysisId, readAnalysisView, reportBody, type AnalysisV
 import { visitorTexts } from "@/lib/analysis/texts";
 import { hashVisitor, readVisitorToken, sameHash } from "@/lib/analysis/visitor";
 import type { ServerDeps } from "@/lib/server/runtime";
-
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
-}
+import { json } from "./json";
 
 const notFound = () => json(404, { error: "not_found", message: visitorTexts.otherBrowser });
 

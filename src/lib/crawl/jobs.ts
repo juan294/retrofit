@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { visitorTexts } from "../analysis/texts";
 import type { Config } from "../config";
 import type { Clock, Store } from "../store/types";
 
@@ -108,7 +109,7 @@ export async function readJobMarkingStale<S, R>(deps: JobDeps, id: string, o: { 
     const patch = {
       status: "failed",
       step: "failed",
-      failure: { code: "stale", message: "This analysis took too long. Try again." },
+      failure: { code: "stale", message: visitorTexts.stale },
       leaseExpiresAt: undefined,
     } as const;
     const failed = await updateJob(deps, job, patch);

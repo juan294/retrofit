@@ -8,6 +8,7 @@ import { validateUrl } from "@/lib/fetch/url";
 import { createMemoryBacking, createMemoryStore } from "@/lib/store/memory";
 import type { Store } from "@/lib/store/types";
 import { startFixtureServer, type FixtureRoutes, type FixtureServer } from "../helpers/fixture-server";
+import { noRealDns } from "../helpers/server-deps";
 
 const config: Config = loadConfig({ RETROFIT_TEST_FIXTURES: "1", SESSION_SECRET: "x".repeat(32), FETCH_TIMEOUT_MS: "300" });
 const HOUR_MS = 3600 * 1000;
@@ -21,9 +22,6 @@ let robotsStatus: number;
 const clock = () => now;
 const pace = async (host: string, delay?: number) => {
   paced.push([host, delay]);
-};
-const noRealDns: Resolver = async (hostname) => {
-  throw Object.assign(new Error(`test resolver: ${hostname} is not stubbed`), { code: "ENOTFOUND" });
 };
 const text = (body: string) => ({ headers: { "content-type": "text/plain" }, body });
 const page = { headers: { "content-type": "text/html" }, body: "<p>ok</p>" };
