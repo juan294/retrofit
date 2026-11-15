@@ -12,6 +12,13 @@ export type KeptHeader = (typeof KEPT_HEADERS)[number];
 /** Per-host pacing slot. `host` is `URL.host`. */
 export type Pace = (host: string, crawlDelaySeconds?: number) => Promise<void>;
 
+/**
+ * Longest wait Retrofit makes between two requests to one host. A site that asks
+ * for more gets robots.txt and its home page only (see crawl.ts), so the wait
+ * never outlasts the worker's lease.
+ */
+export const MAX_CRAWL_DELAY_S = 10;
+
 /** The robots surface `guardedFetch` needs; `createRobots` returns one. */
 export interface RobotsChecker {
   check(url: URL): Promise<void>;
@@ -180,7 +187,7 @@ async function follow(start: URL, ctx: RawFetchContext, robots: RobotsChecker | 
       await robots.check(current);
       crawlDelay = await robots.crawlDelay(current.host);
     }
-    await ctx.pace(current.host, crawlDelay);
+    await ctx.pace(current.host, crawlDelay === undefined ? undefined : Math.min(crawlDelay, MAX_CRAWL_DELAY_S));
     const hop = await sendOnce(current, ctx, resolver, opts);
     if (REDIRECT_STATUS.has(hop.status) && hop.location) {
       if (redirects.length >= MAX_REDIRECTS) throw new TooManyRedirects(start.href);

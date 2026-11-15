@@ -19,6 +19,7 @@ Implementation notes for the plan `2026-11-15-retrofit-url-to-preview.md` and it
 | 2 | Email scrubbing (no limit stated) | An unbounded email pattern took quadratic time on the hostile 5 MB page and blocked the worker | Bounded repetitions in the pattern, plus an `@` pre-check; timing test in `tests/fetch/extract.test.ts` | A hostile page must not stall a crawl. |
 | 2 | Store keys `crawl:<inputOrigin>` and `crawl:<destinationHost>` | Origins and hosts share one key space | `crawl:origin:<origin>` and `crawl:dest:<host>` | Avoids a collision between an origin and a host string. |
 | 2 | Stale rule reads the lease | The Store contract has no lease read | The worker records `leaseExpiresAt` on the job at each renewal; the stale check reads it | Same rule, one store read. |
+| 2 | Pacing interval `max(1 s, crawl delay)` with no upper bound | A large `Crawl-delay` would make the worker sleep past its 60 s lease | Waits are capped at `MAX_CRAWL_DELAY_S` (10 s). Above it Retrofit reads only robots.txt and the home page, 10 s apart; skipped pages carry reason `crawl-delay` | Honours the site's request without losing the lease; the visitor still gets a score from the home page. |
 
 ## Phase 1 handoff
 
@@ -31,7 +32,6 @@ Implementation notes for the plan `2026-11-15-retrofit-url-to-preview.md` and it
 - Archy port rows: worktree `/Users/juan/code/retrofit-worktrees/archy-retrofit-ports`, branch `chore/retrofit-ports`, commit `00e43fc`, local only, not pushed.
 - CI handoff for Sutura: `docs/development/ci-handoff.md` at source commit `170cdd9`.
 - Owner acceptance items: the decision record. Pending; the run continued under the all-phases instruction.
-| 2 | Pacing interval `max(1 s, crawl delay)` with no upper bound | A large `Crawl-delay` would make the worker sleep past its 60 s lease | Above `MAX_CRAWL_DELAY_S` (10 s) Retrofit reads only robots.txt and the home page; skipped pages carry reason `crawl-delay` | Honours the site's request without losing the lease; the visitor still gets a score from the home page. |
 
 ## Phase 2 handoff
 
@@ -49,3 +49,4 @@ Implementation notes for the plan `2026-11-15-retrofit-url-to-preview.md` and it
   - P2-R9 (S4, tests): the rebinding test's first answer is loopback; the hostile test now walks the snapshot and requires every injection hit to be a data field.
 - Plan items moved: `src/lib/fetch/limits.ts` (listed as a Phase 2 Store consumer) arrives in Phase 3 with the client limits that use it. "Robots and probe requests are paced" is tested in `tests/fetch/crawl.test.ts`, `tests/fetch/http.test.ts` and `tests/fetch/robots.test.ts`, not `tests/fetch/pacing.test.ts`. The `spaOnly` and `agentified` fixtures are first used by the Phase 3 golden scores.
 - Plan gap for Phase 7: the SQL function list omits the queue operations (`enqueue`, `claimNext`) that the shared contract suite requires; Phase 7 adds them.
+- Re-review of `7f84253` (same reviewer): R1, R3, R4, R5, R7, R8, R9 closed with evidence. R2 and R6 partly closed, plus P2-N1 (S3, the robots slot reservation made the home request wait the full crawl delay, up to 60 s, before the lease was renewed), P2-N2 (S4, kept header values not clipped) and P2-N3 (S4, a deviation row outside the table). Fixed in the next commit: every wait is capped at `MAX_CRAWL_DELAY_S` (10 s) in `http.ts` and `robots.ts`; the robots.txt probe goes through `guardedFetch`, so it waits the delay too; header values are clipped to 1024 characters; the row is in the table. Residual risk (S4, accepted for owner review): a redirect chain across several hosts that each set a long crawl delay can still take up to five capped waits before the next lease renewal; the 60 s lease covers four.

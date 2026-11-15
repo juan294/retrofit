@@ -138,6 +138,17 @@ describe("crawlSite", () => {
     expect(snapshot.probes.sitemap.status).toBeNull();
     expect(snapshot.skipped.filter((s) => s.reason === "crawl-delay").length).toBeGreaterThan(0);
     expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt", "/"]);
+    // Fails if a wait longer than the cap is requested (it would outlast the lease).
+    expect(Math.max(...waits.map((w) => w ?? 0))).toBe(10);
+  });
+
+  // Fails if kept header values are not clipped (an oversized header would fail validation and the crawl).
+  it("clips oversized kept headers", async () => {
+    const long = `text/html; x=${"a".repeat(5000)}`;
+    const site: FixtureSite = { ...bakery, "/menu": { headers: { "content-type": long }, body: "<main>menu</main>" }, "/llms.txt": { headers: { "content-type": `text/plain; y=${"b".repeat(5000)}` }, body: "x" } };
+    const { snapshot } = await crawl({ "bakery.fixture.test": site }, "bakery.fixture.test");
+    expect(snapshot.pages.find((p) => p.url.endsWith("/menu"))?.headers["content-type"]?.length).toBe(1024);
+    expect(snapshot.probes.llmsTxt.contentType?.length).toBe(1024);
   });
 
   // Fails if probe bodies keep email addresses.

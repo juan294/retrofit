@@ -11,13 +11,12 @@ import {
   type SnapshotPage,
 } from "../snapshot/types";
 import { extractPage, scrubEmails } from "./extract";
-import { guardedFetch, rawGuardedGet, type FetchContext, type FetchResult } from "./http";
+import { MAX_CRAWL_DELAY_S, guardedFetch, type FetchContext, type FetchResult } from "./http";
+
+export { MAX_CRAWL_DELAY_S };
 
 /** Paths that a crawler must never read: sign-in, accounts, carts, checkout and administration. */
 export const SKIP_PATH = /(^|\/)(login|log-in|signin|sign-in|signup|sign-up|register|logout|account|accounts|my-account|profile|cart|basket|bag|checkout|admin|wp-admin|wp-login\.php|dashboard)(\/|$|\.|\?)/i;
-
-/** Sites that ask for more than this many seconds between requests get only their home page and robots.txt read. */
-export const MAX_CRAWL_DELAY_S = 10;
 
 export class LeaseLost extends Error {
   constructor() {
@@ -48,15 +47,16 @@ function toProbe(r: FetchResult): Probe {
   return {
     url: r.url,
     status: r.status,
-    contentType: r.headers["content-type"] ?? null,
+    contentType: r.headers["content-type"]?.slice(0, 1024) ?? null,
     body: r.body === null ? null : scrubEmails(r.body.slice(0, PROBE_BODY_MAX_CHARS)),
-    accessControlAllowOrigin: r.headers["access-control-allow-origin"] ?? null,
+    accessControlAllowOrigin: r.headers["access-control-allow-origin"]?.slice(0, 1024) ?? null,
   };
 }
 
-async function probe(url: URL, ctx: FetchContext, raw = false): Promise<Probe> {
+async function probe(url: URL, ctx: FetchContext): Promise<Probe> {
   try {
-    return toProbe(raw ? await rawGuardedGet(url, ctx, { anyContentType: true }) : await guardedFetch(url, ctx));
+    // Through guardedFetch, so each probe (robots.txt included) waits the host's crawl delay.
+    return toProbe(await guardedFetch(url, ctx));
   } catch {
     return emptyProbe(url.href);
   }
@@ -76,7 +76,11 @@ function normalize(href: string): string | null {
 }
 
 function toPage(r: FetchResult): SnapshotPage {
-  const headers = Object.fromEntries(Object.entries(r.headers).filter(([, v]) => v !== undefined)) as Record<string, string>;
+  const headers = Object.fromEntries(
+    Object.entries(r.headers)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => [k, (v as string).slice(0, 1024)]),
+  ) as Record<string, string>;
   return { ...extractPage({ url: r.url, html: r.body ?? "", headers }), status: r.status, truncated: r.truncated };
 }
 
@@ -113,14 +117,14 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
   // Every request below is preceded by a progress step, which renews the lease.
   const delay = (await o.fetch.robots.crawlDelay(final.host)) ?? 0;
   const slow = delay > MAX_CRAWL_DELAY_S;
-  const probeAt = async (path: string, raw = false): Promise<Probe> => {
+  const probeAt = async (path: string): Promise<Probe> => {
     const url = new URL(path, origin);
     if (slow || overBudget()) return emptyProbe(url.href);
     await step(`probe ${path}`);
-    return probe(url, o.fetch, raw);
+    return probe(url, o.fetch);
   };
   const probes = {
-    robots: await probeAt("/robots.txt", true),
+    robots: await probeAt("/robots.txt"),
     agentManifest: await probeAt("/agent-manifest.json"),
     llmsTxt: await probeAt("/llms.txt"),
     sitemap: await probeAt("/sitemap.xml"),

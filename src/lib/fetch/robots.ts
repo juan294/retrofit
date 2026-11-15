@@ -1,7 +1,7 @@
 import robotsParser from "robots-parser";
 import { type Clock, systemClock } from "@/lib/store/types";
 import { NotPublicError, RobotsBlocked, RobotsUnavailable } from "./errors";
-import { rawGuardedGet, type RawFetchContext, type RobotsChecker } from "./http";
+import { MAX_CRAWL_DELAY_S, rawGuardedGet, type RawFetchContext, type RobotsChecker } from "./http";
 
 export const ROBOTS_AGENT = "RetrofitBot";
 export const ROBOTS_TTL_S = 3600;
@@ -50,7 +50,7 @@ export function createRobots(deps: RobotsDeps): Robots {
         // the host's next slot with it, so the request after robots.txt waits too.
         if (record.kind === "rules") {
           const delay = robotsParser(`${url.origin}/robots.txt`, record.text).getCrawlDelay(ROBOTS_AGENT);
-          if (delay && delay > 1) await deps.pace(url.host, Math.min(delay, 60));
+          if (delay && delay > 1) await deps.pace(url.host, Math.min(delay, MAX_CRAWL_DELAY_S));
         }
         return record;
       });
