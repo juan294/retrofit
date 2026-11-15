@@ -26,6 +26,8 @@ export interface PreviewProps {
   readonly inference: Inference;
   /** Shown above the chat; cannot be hidden by the runtime. */
   readonly label?: ReactNode;
+  /** Called for each new notice (the agent panel shows free-path notices as a banner). */
+  readonly onNotice?: (notice: Notice) => void;
 }
 
 const RUNTIME_URL = "/runtime/index.js";
@@ -40,7 +42,9 @@ class VisitorError extends Error {}
  * the engine's consent hook so approvals reach the guard, and shows trace
  * outcomes that the runtime reports only as tool results.
  */
-export function Preview({ originUrl, inference, label }: PreviewProps) {
+export function Preview({ originUrl, inference, label, onNotice }: PreviewProps) {
+  const onNoticeRef = useRef(onNotice);
+  onNoticeRef.current = onNotice;
   const mountRef = useRef<HTMLDivElement>(null);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -97,7 +101,9 @@ export function Preview({ originUrl, inference, label }: PreviewProps) {
         handle.engine.requestConsent = guard.wrapRequestConsent(handle.engine.requestConsent);
         handle.trace.addEventListener("event", (e) => {
           const notice = noticeForTrace((e as CustomEvent<Record<string, unknown>>).detail);
-          if (notice) setNotices((list) => (list.some((n) => n.text === notice.text) ? list : [...list, notice]));
+          if (!notice) return;
+          onNoticeRef.current?.(notice);
+          setNotices((list) => (list.some((n) => n.text === notice.text) ? list : [...list, notice]));
         });
       } catch (e) {
         if (!cancelled) setBootError(e instanceof VisitorError ? e.message : `Retrofit could not start this agent: ${e instanceof Error ? e.message : String(e)}`);

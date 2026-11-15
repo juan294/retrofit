@@ -219,3 +219,15 @@ describe("fixture routes with fixturesEnabled true", () => {
     expect(CALLER_HOSTS).toEqual([CALLER_E2E_HOST, CALLER_DENIED_HOST]);
   });
 });
+
+describe("fixture clock route", () => {
+  // Fails if the server clock could be moved outside fixtures mode.
+  it("answers 404 when fixtures are disabled", async () => {
+    vi.resetModules();
+    process.env.RETROFIT_TEST_FIXTURES = "";
+    process.env.SESSION_SECRET = "x".repeat(32);
+    const { POST } = await import("@/app/test-fixtures/clock/route");
+    const res = await POST(new Request("http://127.0.0.1:3010/test-fixtures/clock", { method: "POST", body: JSON.stringify({ offsetMs: 1 }) }));
+    expect(res.status).toBe(404);
+  });
+});

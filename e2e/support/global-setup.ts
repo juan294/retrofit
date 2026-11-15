@@ -2,6 +2,7 @@ import { bakery, blocked, hostile, agentified } from "../../tests/fixtures/sites
 import { serveSites } from "../../tests/helpers/sites";
 import { peerSites, thirdSites } from "../../tests/peer-fixture";
 import { OTARI_ROUTER_ORIGIN } from "./router-origin";
+import { upstreamRoutes } from "./mock-upstream";
 
 /** Port of the second loopback test origin (Archy port list). */
 const FIXTURE_PORT = 3011;
@@ -25,7 +26,8 @@ export default async function globalSetup() {
     }),
     { port: FIXTURE_PORT },
   );
-  const third = await serveSites(() => thirdSites(), { port: THIRD_PORT });
+  // The third origin also hosts the mock Otari API on 127.0.0.1 (the free path's upstream, called by the server).
+  const third = await serveSites(() => thirdSites(), { port: THIRD_PORT, extraRoutes: { "127.0.0.1": upstreamRoutes() } });
   return async () => {
     await server.close();
     await third.close();

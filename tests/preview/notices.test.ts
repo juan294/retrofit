@@ -39,3 +39,13 @@ describe("noticeForTrace", () => {
     expect(noticeForTrace(null)).toBeNull();
   });
 });
+
+describe("free-path notices", () => {
+  // Fails if a free-path cap reached in a model call does not become a visible notice for the banner.
+  it("turns a free cap in a failed model call into a free notice", () => {
+    const text = "Retrofit's free AI is used up for this session. Paste your own key in AI settings to continue.";
+    expect(noticeForTrace({ phase: "end", kind: "model_call", status: "error", error: `LLM HTTP 429: {"error":{"message":"${text}"}}` })).toEqual({ kind: "free", text });
+    expect(noticeForTrace({ phase: "end", kind: "model_call", status: "error", error: "LLM HTTP 502: The free AI provider did not answer. Try again, or use your own key." })?.kind).toBe("free");
+    expect(noticeForTrace({ phase: "end", kind: "model_call", status: "error", error: "LLM HTTP 401: invalid key" })).toBeNull();
+  });
+});

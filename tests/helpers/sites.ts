@@ -4,7 +4,7 @@ import { materialize, type FixtureSite } from "../fixtures/sites";
 /** Serves fixture sites on one loopback server, one host name per site. */
 export async function serveSites(
   sites: (origins: (host: string) => string) => Record<string, FixtureSite>,
-  options: { port?: number } = {},
+  options: { port?: number; extraRoutes?: FixtureRoutes } = {},
 ): Promise<FixtureServer & { origin(host: string): string }> {
   const routes: FixtureRoutes = {};
   const holder: { server?: FixtureServer } = {};
@@ -17,5 +17,6 @@ export async function serveSites(
       routes[host][path] = { status: r.status, headers: r.headers, body: r.body };
     }
   }
+  for (const [host, paths] of Object.entries(options.extraRoutes ?? {})) routes[host] = { ...routes[host], ...paths };
   return Object.assign(server, { origin });
 }

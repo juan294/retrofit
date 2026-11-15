@@ -23,7 +23,8 @@
     "evidence:begin": "node tools/evidence.mjs begin",
     "evidence:seal": "node tools/evidence.mjs seal",
     "agent:build": "node tools/agentic-web/scripts/build_network.mjs agent/retrofit_guide.hocon --manifest public/agent-manifest.json --runtime tools/agentic-web/runtime --out public/retrofit_guide.network.json",
-    "agent:check": "node tools/agentic-web/scripts/build_network.mjs agent/retrofit_guide.hocon --manifest public/agent-manifest.json --runtime tools/agentic-web/runtime --out public/retrofit_guide.network.json --check"
+    "agent:check": "node tools/agentic-web/scripts/build_network.mjs agent/retrofit_guide.hocon --manifest public/agent-manifest.json --runtime tools/agentic-web/runtime --out public/retrofit_guide.network.json --check",
+    "ops:resume-free": "node tools/ops/resume-free.mjs"
   },
   "dependencies": {
     "cheerio": "1.2.0",

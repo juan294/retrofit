@@ -91,10 +91,10 @@ test("the runtime writes no nsweb-byok item during a chat, and Forget my key cle
   expect(seeded.cookies).toContain(RUNTIME_COOKIE);
 
   await page.getByRole("button", { name: "Forget my key" }).click();
-  // Back to the key prompt (no free path before Phase 6), and the runtime is gone.
+  // Back to the free path (Phase 6), with the key prompt offered again.
   await expect(page.getByLabel("Paste your key")).toBeVisible();
   await expect(page.getByText(/Connected to Otari/)).toHaveCount(0);
-  await expect(page.getByTestId("preview-mount")).toHaveCount(0);
+  await expect(page.getByText(/Using Retrofit's free AI/)).toBeVisible();
 
   const after = await storageNames(page);
   expect(after.local.filter((n) => n.startsWith(KEY_ITEM) || n.startsWith(RUNTIME_PREFIX)), "localStorage key items after Forget").toEqual([]);
@@ -117,7 +117,8 @@ test("with Remember on this device unticked, a new tab does not get the key", as
   await expect(second.getByTestId("score-total")).toBeVisible({ timeout: 30_000 });
   await expect(second.getByLabel("Paste your key")).toBeVisible();
   await expect(second.getByText(/Connected to Otari/)).toHaveCount(0);
-  await expect(second.getByTestId("preview-mount")).toHaveCount(0);
+  // Without a remembered key the new tab runs on the free path.
+  await expect(second.getByText(/Using Retrofit's free AI/)).toBeVisible();
   const names = await storageNames(second);
   expect([...names.local, ...names.session].filter((n) => n.startsWith(KEY_ITEM))).toEqual([]);
   expect(router2.authorizations).toEqual([]);
@@ -145,4 +146,19 @@ test("with Remember on this device ticked, a new tab restores the key", async ({
   expect(router2.authorizations).toContain(`Bearer ${OTARI.key}`);
   expect(router2.authorizations.filter((a) => a !== "" && a !== `Bearer ${OTARI.key}`)).toEqual([]);
   await second.close();
+});
+
+test("with a visitor key, no request goes to /api/inference after the key connects", async ({ page, context }) => {
+  const seen: string[] = [];
+  context.on("request", (r) => seen.push(r.url()));
+  const router = await mockOtari(page);
+  await analyzeFixture(page, "bakery.fixture.test");
+  await connectKey(page);
+  const from = seen.length;
+  const input = page.getByTestId("preview-mount").getByRole("textbox").last();
+  await input.fill("What are your opening hours?");
+  await input.press("Enter");
+  await expect(page.getByTestId("preview-mount").getByText(/Our opening hours are/).filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
+  expect(seen.slice(from).filter((u) => u.includes("/api/inference"))).toEqual([]);
+  expect(router.bodies.length).toBeGreaterThan(0);
 });

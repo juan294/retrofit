@@ -47,6 +47,14 @@ Implementation notes for the plan `2026-11-15-retrofit-url-to-preview.md` and it
 | 4 | Tests contact loopback hosts only | The runtime probes `<router origin>/agent-manifest.json` once per boot, which reached the real provider host in early runs | The shared mock router answers the probe; the CSP fixture now aborts and fails any request to a non-loopback, non-fixture host that no mock answered | Makes the rule enforceable. |
 | 4 | Research §6: "each visitor message first sends `/models` with the key" | VERIFIED in e2e: the runtime's own `/models` check sends no `Authorization` header (it reads the hidden settings field, `ui.js:1085-1091`) | `e2e/key-panel.spec.ts` asserts the observed behavior | Correction of the research note. |
 | 4 | Client analysis limit 20 per hour | One client IP runs the whole e2e suite | `ANALYSES_PER_CLIENT_HOUR=1000` for the Playwright server only | Test configuration; production keeps 20. |
+| 6 | Entry: Otari key, balance, reserve, judge code, price listing and contract probe before the work | None of these exist yet; they are owner actions | All local work built and tested against a mock upstream; off Vercel the amounts use placeholders (`LOCAL_FREE_DEFAULTS` in `src/lib/config.ts`); on Vercel every amount, key and secret is required | The code is ready; the probe and the owner's numbers come before production. |
+| 6 | Judge code checked with a constant-time compare | Nothing limited guessing | At most 10 wrong codes per client per hour (`JUDGE_FAILURES_PER_CLIENT_HOUR`), then 429 before the compare | Planner decision; the plan set no limit. |
+| 6 | Hold refusal status | Not fixed by the plan | 429 with the hold text, like the other caps | One status for "free AI is closed for you now". |
+| 6 | `/api/inference/v1/models` behind the session | The runtime calls `/models` before each send without an `Authorization` header (Phase 4 finding) | `/models` answers without auth and lists only `FREE_MODEL` | It reveals nothing; requiring auth would block every send. |
+| 6 | Status route | Not fixed when the store fails | 200 with `available: false` and a reason; in fixtures mode it also returns `sid` and `calls` for the renewal test | The banner can always render. |
+| 6 | Stream parsing | Not fixed for malformed `data:` lines | A data line that is not JSON counts as a broken stream (502) | Fail closed; the contract probe must confirm Otari never sends one. |
+| 6 | Reservations of a crashed request | Not fixed | A reservation still open after 10 minutes is charged in full | Keeps the budget conservative without holding it forever. |
+| 6 | e2e server clock and caps | UTC midnight renewal needs a server clock change; the session cap needs a short limit | Fixtures-only clock offset (`POST /test-fixtures/clock`, 404 otherwise) and `FREE_CALLS_PER_SESSION=12` for the Playwright server | Test configuration only. |
 
 ## Phase 1 handoff
 

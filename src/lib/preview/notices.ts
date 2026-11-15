@@ -7,7 +7,7 @@ import { BLOCKED_TEXT, REDIRECT_BLOCKED_TEXT } from "./fetch-guard";
  * refusal and a request the fetch guard blocked.
  */
 export interface Notice {
-  readonly kind: "loop" | "limit" | "error" | "denied" | "blocked";
+  readonly kind: "loop" | "limit" | "error" | "denied" | "blocked" | "free";
   readonly text: string;
 }
 
@@ -30,6 +30,9 @@ export function noticeForTrace(ev: TraceEvent): Notice | null {
   if (blocked) return { kind: "blocked", text: BLOCKED_TEXT(blocked[1]!) };
   const redirect = /^Retrofit blocked a redirect from (\S+) to an address that was not approved\./.exec(error);
   if (redirect) return { kind: "blocked", text: REDIRECT_BLOCKED_TEXT(redirect[1]!) };
+  // A free-path refusal or failure (cap, hold, expired session, provider error) carried in a model call error.
+  const free = /(Retrofit's free AI is [^.]*\.(?: Paste your own key in AI settings to continue\.| Use your own key\.)?|Your free session expired\. Reload the page\.|The free AI provider did not answer\. Try again, or use your own key\.)/.exec(error);
+  if (kind === "model_call" && free) return { kind: "free", text: free[1]! };
   if (kind === "remote_fetch") return { kind: "error", text: `Retrofit could not load the network from ${str(ev.peerOrigin)}: ${error}` };
   const policy = /^Policy: (\S+) is not in .+ allowed_peers/.exec(error);
   if (kind === "tool" && policy) return { kind: "denied", text: `Retrofit refused to contact ${policy[1]} because this agent does not allow it.` };

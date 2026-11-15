@@ -32,7 +32,7 @@ export const systemText = (b: ChatBody) => b.messages.find((m) => m.role === "sy
 export const last = (b: ChatBody) => b.messages[b.messages.length - 1]!;
 export const lastToolResult = (b: ChatBody) => (last(b).role === "tool" ? (last(b).content ?? "") : null);
 
-function sse(turn: Turn, model: string): string {
+export function sse(turn: Turn, model: string): string {
   const chunks: unknown[] = [];
   if ("text" in turn) {
     chunks.push({ model, choices: [{ index: 0, delta: { role: "assistant", content: turn.text } }] });

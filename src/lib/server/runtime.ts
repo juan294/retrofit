@@ -6,6 +6,7 @@ import type { FetchContext } from "@/lib/fetch/http";
 import { scoreSnapshot } from "@/lib/score/score";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { createMemoryStore } from "@/lib/store/memory";
+import { fixtureClock } from "@/lib/test-fixtures/clock";
 import { systemClock, type Clock, type Store } from "@/lib/store/types";
 
 /**
@@ -91,7 +92,8 @@ export function getServerDeps(): ServerDeps {
     singletons.deps = {
       config,
       store: getStore(config),
-      clock: systemClock,
+      // Fixtures mode only: e2e tests may offset the server clock (src/lib/test-fixtures/clock.ts).
+      clock: config.fixturesEnabled ? fixtureClock : systemClock,
       fetch: getFetchContext(config),
       waitUntil: runtimeWaitUntil,
       score: scoreSnapshot,

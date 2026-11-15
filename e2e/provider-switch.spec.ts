@@ -111,29 +111,28 @@ test("a failed validation of provider B leaves provider A active and B without a
   expect(b.bodies).toEqual([]);
 });
 
-test("Forget my key returns to the key prompt and no provider gets another request", async ({ page, context }) => {
+test("Forget my key returns to the free path and no provider gets another request", async ({ page, context }) => {
   const log = recordRequests(context);
   const { a, b } = await routers(page);
   await analyzeFixture(page, "bakery.fixture.test");
-  await expect(page.getByText(/Using Retrofit's free AI/)).toHaveCount(0);
+  await expect(page.getByText(/Using Retrofit's free AI/)).toBeVisible();
   await connectKey(page);
   await ask(page, a);
 
   const beforeForget = (await log.all()).length;
   const aCount = a.authorizations.length;
   await page.getByRole("button", { name: "Forget my key" }).click();
-  // Before Phase 6 there is no free path: the key prompt comes back and the runtime is gone.
+  // Phase 6: the free path comes back (the runtime reboots with Retrofit's own router).
   await expect(page.getByLabel("Paste your key")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Connect your AI key" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Use your own key" })).toBeVisible();
   await expect(page.getByText(/Connected to/)).toHaveCount(0);
-  await expect(page.getByTestId("preview-mount")).toHaveCount(0);
-  await expect(page.getByText(/Using Retrofit's free AI/)).toHaveCount(0);
+  await expect(page.getByText(/Using Retrofit's free AI/)).toBeVisible();
+  await expect(page.getByTestId("preview-mount").locator('[data-ns-slot="chat"]')).toBeVisible();
   await page.waitForTimeout(1_000);
 
   const after = (await log.all()).slice(beforeForget);
   expect(onOrigin(after, OTARI.routerBase).map((r) => r.url)).toEqual([]);
   expect(onOrigin(after, GROQ.routerBase).map((r) => r.url)).toEqual([]);
-  expect(after.filter((r) => r.url.includes("/api/inference")).map((r) => r.url)).toEqual([]);
   expect(a.authorizations.length).toBe(aCount);
   expect(b.authorizations).toEqual([]);
 
@@ -147,5 +146,6 @@ test("Forget my key returns to the key prompt and no provider gets another reque
     }
   }, `${OTARI.routerBase}/chat/completions`);
   expect(blocked).toBe("Retrofit blocked a request to https://api.otari.ai that was not approved.");
-  expect(await page.evaluate(() => "__nsweb" in window)).toBe(false);
+  // The free runtime that replaced it holds the placeholder key, never the forgotten one.
+  expect(await page.evaluate(() => JSON.stringify((window as unknown as { __nsweb?: { engine?: { byokKey?: string } } }).__nsweb?.engine?.byokKey ?? null))).not.toContain(OTARI.key);
 });
