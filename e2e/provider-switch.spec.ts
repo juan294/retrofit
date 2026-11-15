@@ -4,6 +4,8 @@ import { installMockRouter, sse, type MockRouter } from "./support/mock-router";
 import { UPSTREAM_MODEL } from "./support/mock-upstream";
 import { RETROFIT_ORIGIN, recordRequests, type Page, type RecordedRequest } from "./support/extra-requests";
 
+type PwRequest = import("@playwright/test").Request;
+
 const GROQ = { routerBase: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-120b", key: "gsk_test_e2e_0123456789abcdef" };
 const BLOCKED = /Retrofit blocked a request to https:\/\/api\.groq\.com that was not approved\./;
 
@@ -209,17 +211,23 @@ test("connecting a key while a delayed free answer with a tool call is in flight
   await expect(page.getByTestId("preview-mount").getByText("Free answer after the switch.")).toHaveCount(0);
 });
 
-test("connecting a key while the free runtime is still booting leaves only the new runtime on the page", async ({ page }) => {
+test("connecting a key while the free runtime loads its network aborts that load and leaves only the new runtime", async ({ page }) => {
   const a = await mockOtari(page);
-  // Hold the free runtime's network load, so its boot finishes only after the switch.
+  // Hold the free runtime's network load: an agent artifact, which the guard ties to the active runtime.
   let networkLoads = 0;
   let release!: () => void;
   const released = new Promise<void>((resolve) => (release = resolve));
+  let held: PwRequest | null = null;
+  const failed: PwRequest[] = [];
+  page.on("requestfailed", (r) => failed.push(r));
   await page.route(
     (url) => url.pathname.startsWith("/p/") && url.pathname.endsWith(".network.json"),
     async (route) => {
       networkLoads += 1;
-      if (networkLoads === 1) await released;
+      if (networkLoads === 1) {
+        held = route.request();
+        await released;
+      }
       await route.continue().catch(() => undefined);
     },
   );
@@ -229,10 +237,42 @@ test("connecting a key while the free runtime is still booting leaves only the n
   await connectKey(page);
   await expect.poll(() => networkLoads, { timeout: 20_000 }).toBe(2);
   await runtimeHolds(page, OTARI.key);
-  // The retired boot completes now; it must not take over the page or its runtime handle.
+  // Retiring the free runtime aborted its held load, so its boot never completes.
+  await expect.poll(() => held !== null && failed.includes(held)).toBe(true);
   release();
-  await page.waitForTimeout(1_500);
+  await page.waitForTimeout(1_000);
   expect(await page.evaluate(() => (window as unknown as { __nsweb?: { engine?: { byokKey?: string } } }).__nsweb?.engine?.byokKey ?? null)).toBe(OTARI.key);
   await expect(page.getByTestId("preview-mount").locator('[data-ns-slot="chat"]')).toHaveCount(1);
   await ask(page, a);
+});
+
+test("a replaced runtime whose boot finishes late does not take over the live runtime's handle", async ({ page }) => {
+  const { a, b } = await routers(page);
+  await analyzeFixture(page, "bakery.fixture.test");
+  await expect(page.getByText(/Using Retrofit's free AI/)).toBeVisible();
+  await expect(page.getByTestId("preview-mount").locator('[data-ns-slot="chat"]')).toBeVisible();
+  // Hold provider A's router probe (engine.js:160-162). The guard passes this request without tying
+  // it to the runtime, so A's boot finishes after the switch to B (registered last, so it answers first).
+  let probes = 0;
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route(`${new URL(OTARI.routerBase).origin}/agent-manifest.json`, async (route) => {
+    probes += 1;
+    if (probes === 1) await released;
+    await route.fallback();
+  });
+  await connectKey(page);
+  await expect.poll(() => probes, { timeout: 20_000 }).toBe(1);
+  await page.getByLabel("Paste a different key").fill(GROQ.key);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.getByText(/Connected to Groq/)).toBeVisible();
+  await runtimeHolds(page, GROQ.key);
+  // A's boot completes now and writes its handle over B's; Preview must put B's back.
+  release();
+  await expect.poll(() => a.probes.length, { timeout: 20_000 }).toBe(1);
+  await page.waitForTimeout(1_000);
+  expect(await page.evaluate(() => (window as unknown as { __nsweb?: { engine?: { byokKey?: string } } }).__nsweb?.engine?.byokKey ?? null)).toBe(GROQ.key);
+  await expect(page.getByTestId("preview-mount").locator('[data-ns-slot="chat"]')).toHaveCount(1);
+  await ask(page, b);
+  expect(a.bodies).toEqual([]);
 });

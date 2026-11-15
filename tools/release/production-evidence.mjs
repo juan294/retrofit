@@ -118,6 +118,8 @@ function run(cmd, args, options = {}) {
   const result = spawnSync(cmd, args, { cwd: ROOT, encoding: "utf8", timeout: 180_000, ...options });
   return {
     status: typeof result?.status === "number" ? result.status : -1,
+    stdout: result?.stdout ?? "",
+    stderr: result?.stderr ?? "",
     output: `${result?.stdout ?? ""}${result?.stderr ?? ""}`,
     signal: result?.signal ?? null,
     error: result?.error ? result.error.message : null,
@@ -235,20 +237,27 @@ function steps(o, cases, pwCases) {
 /**
  * Vercel's record of the deployment that `target` (a deployment URL or an alias) serves:
  * `vercel inspect <target> --format json`. The authoritative alias-to-deployment source.
+ * The record is read from stdout only: the CLI writes its banner and, without a TTY, a
+ * "Fetching deployment" line to stderr on every call. `detail` explains a failed call.
  *
- * @returns {{status: number, info: Record<string, unknown> | null, output: string}}
+ * @returns {{status: number, info: Record<string, unknown> | null, detail: string}}
  */
 export function vercelInspect(target) {
-  const r = run("vercel", ["inspect", target, "--format", "json", "--scope", VERCEL_SCOPE], { timeout: 60_000 });
+  // NO_UPDATE_NOTIFIER: the CLI's update box would otherwise be the last stderr line.
+  const r = run("vercel", ["inspect", target, "--format", "json", "--scope", VERCEL_SCOPE], { timeout: 60_000, env: { ...process.env, NO_UPDATE_NOTIFIER: "1" } });
   let info = null;
   if (r.status === 0) {
     try {
-      info = JSON.parse(r.output.slice(r.output.indexOf("{")));
+      const parsed = JSON.parse(r.stdout);
+      info = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
     } catch {
       info = null;
     }
   }
-  return { status: r.status, info, output: r.output };
+  // The spawn error when the CLI could not run, else the CLI's last error line, else its last line.
+  const lines = r.stderr.split("\n").map((l) => l.trim()).filter(Boolean);
+  const detail = r.error ?? lines.filter((l) => /\bError\b/.test(l)).at(-1) ?? lines.at(-1) ?? "";
+  return { status: r.status, info, detail };
 }
 
 /** The targets whose deployment the identity checks: the deployment URL, the production host and the binding case's aliases. */
@@ -264,8 +273,8 @@ function inspectIdentity(ctx) {
   for (const target of identityTargets(ctx.o, ctx.cases)) {
     const r = ctx.inspect(target);
     const id = typeof r.info?.id === "string" && r.info.id ? r.info.id : null;
-    const firstLine = r.output.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
-    deployments[new URL(target).host] = id ?? `unavailable (exit ${r.status}${firstLine ? `: ${firstLine.slice(0, 120)}` : ""})`;
+    const why = r.status === 0 ? "no deployment record on stdout" : (r.detail ?? "");
+    deployments[new URL(target).host] = id ?? `unavailable (exit ${r.status}${why ? `: ${why.slice(0, 120)}` : ""})`;
   }
   return { checkedAt: new Date().toISOString(), deployments };
 }
@@ -318,7 +327,9 @@ function recordDeployment(ctx) {
   let source = null;
   if (inspect.status === 0) {
     const info = inspect.info;
-    if (info?.id && info.id !== o.deploymentId) throw new UsageError(`vercel inspect reports deployment ${info.id}, not ${o.deploymentId}`);
+    // Fail closed: a successful inspection must give a record whose id and target can be checked.
+    if (typeof info?.id !== "string" || !info.id) throw new UsageError(`vercel inspect exited 0 but gave no deployment record for ${o.deploymentUrl}`);
+    if (info.id !== o.deploymentId) throw new UsageError(`vercel inspect reports deployment ${info.id}, not ${o.deploymentId}`);
     if (info?.target && info.target !== "production") throw new UsageError(`vercel inspect reports target ${info.target}, not production`);
     const raw = info?.createdAt ?? info?.created;
     const t = typeof raw === "number" ? raw : Date.parse(raw);

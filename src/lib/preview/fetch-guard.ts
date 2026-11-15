@@ -93,6 +93,19 @@ function isArtifactPath(pathname: string): boolean {
   );
 }
 
+/**
+ * An unmarked request to a same-origin router: its path, with repeated slashes collapsed (the
+ * server redirects "//" to the cleaned path) and the URL parser's backslash and dot handling, is
+ * the router path or under it. Only `<router>/models` stays open: the free session's model check.
+ */
+function underSameOriginRouter(r: Router, pathname: string): boolean {
+  const path = pathname.replace(/\/{2,}/g, "/");
+  if (path === `${r.path}/models`) return false;
+  // A router at the origin root shares its paths with the site: only its chat path is closed.
+  if (r.path === "") return path.replace(/\/$/, "") === "/chat/completions";
+  return path === r.path || path.startsWith(`${r.path}/`);
+}
+
 function rawUrl(input: FetchInput): string {
   if (input instanceof URL) return input.href;
   return typeof input === "string" ? input : input.url;
@@ -138,18 +151,24 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
     return res;
   };
 
+  // Adds the active runtime's abort signal to the caller's own, so retiring the runtime aborts the
+  // request. Without an active runtime, init is returned unchanged.
+  const tiedToRun = (input: FetchInput, init: RequestInit | undefined): RequestInit | undefined => {
+    if (run === null) return init;
+    const callerSignal = init?.signal ?? (typeof input === "object" && !(input instanceof URL) ? input.signal : undefined);
+    return { ...init, signal: callerSignal ? AbortSignal.any([callerSignal, run.controller.signal]) : run.controller.signal };
+  };
+
   // A runtime's model call: only the active runtime's marker under the active router is mapped
-  // to the router path, with that runtime's abort signal added to the caller's own.
-  const fromRuntime = (input: FetchInput, init: RequestInit | undefined, url: URL, marker: RegExpExecArray): [FetchInput, RequestInit] => {
+  // to the router path, tied to that runtime's abort signal.
+  const fromRuntime = (input: FetchInput, init: RequestInit | undefined, url: URL, marker: RegExpExecArray): [FetchInput, RequestInit | undefined] => {
     const prefix = url.pathname.slice(0, marker.index);
     if (router === null || run === null || marker[1] !== String(run.id) || `${url.origin}${prefix}` !== router.base) {
       throw new TypeError(RETIRED_TEXT);
     }
     const target = `${url.origin}${prefix}${url.pathname.slice(marker.index + marker[0].length)}${url.search}`;
-    const request = typeof input === "object" && !(input instanceof URL) ? input : null;
-    const callerSignal = init?.signal ?? request?.signal;
-    const signal = callerSignal ? AbortSignal.any([callerSignal, run.controller.signal]) : run.controller.signal;
-    return [request ? new Request(target, request) : target, { ...init, signal }];
+    const mapped = typeof input === "object" && !(input instanceof URL) ? new Request(target, input) : target;
+    return [mapped, tiedToRun(input, init)];
   };
 
   // async: a refusal rejects (as the platform fetch does) and never reaches originalFetch.
@@ -165,11 +184,15 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
     if (marker) {
       [input, init] = fromRuntime(input, init, url, marker);
       url = new URL(rawUrl(input), pageOrigin);
+    } else if (run !== null && router?.origin === pageOrigin && url.origin === pageOrigin && underSameOriginRouter(router, url.pathname)) {
+      // While a runtime is active, only its marked base reaches a same-origin router.
+      throw new TypeError(BLOCKED_TEXT(url.origin));
     }
 
     // 1 and 2: same origin; agent artifacts must not follow redirects.
     if (url.origin === pageOrigin) {
-      return isArtifactPath(url.pathname) ? withRedirectError(input, init) : originalFetch(input, init);
+      // Agent artifacts (network, content, action modules) belong to the active runtime and end with it.
+      return isArtifactPath(url.pathname) ? withRedirectError(input, tiedToRun(input, init)) : originalFetch(input, init);
     }
 
     const method = requestMethod(input, init);
@@ -187,7 +210,7 @@ export function createFetchGuard(options: FetchGuardOptions): FetchGuard {
     }
 
     // 5: any other origin needs the manifest policy and the visitor's approval.
-    if (policyPeers.has(url.origin) && approvedPeers.has(url.origin)) return withRedirectError(input, init);
+    if (policyPeers.has(url.origin) && approvedPeers.has(url.origin)) return withRedirectError(input, tiedToRun(input, init));
     throw new TypeError(BLOCKED_TEXT(url.origin !== "null" ? url.origin : url.protocol));
   }
 
