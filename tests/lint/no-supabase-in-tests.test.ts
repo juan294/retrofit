@@ -1,0 +1,21 @@
+import { RuleTester } from "eslint";
+import { describe, it } from "vitest";
+import rule from "../../eslint-rules/no-supabase-in-tests.mjs";
+
+RuleTester.describe = describe;
+RuleTester.it = it;
+const tester = new RuleTester({ languageOptions: { ecmaVersion: 2024, sourceType: "module" } });
+
+// Fails if the rule stops reporting, or if the listed exception is removed.
+tester.run("no-supabase-in-tests", rule, {
+  valid: [
+    { code: 'import { x } from "@/lib/store/supabase";', filename: "/repo/tests/db/store.test.ts" },
+    { code: 'import { x } from "@/lib/store/supabase";', filename: "/repo/tests/store/supabase-failure.test.ts" },
+    { code: 'import { x } from "@/lib/store/memory";', filename: "/repo/tests/store/memory.test.ts" },
+    { code: 'import { x } from "@/lib/store/supabase";', filename: "/repo/src/lib/store/index.ts" },
+  ],
+  invalid: [
+    { code: 'import { x } from "@/lib/store/supabase";', filename: "/repo/tests/store/memory.test.ts", errors: [{ messageId: "forbidden" }] },
+    { code: 'const m = await import("../../src/lib/store/supabase.ts");', filename: "/repo/tests/api/x.test.ts", errors: [{ messageId: "forbidden" }] },
+  ],
+});

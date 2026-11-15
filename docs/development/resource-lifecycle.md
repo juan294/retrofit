@@ -2,9 +2,21 @@
 
 ## Current footprint
 
-Retrofit has no application code at bootstrap. It has no Docker stack, database, server port, remote development service or cleanup daemon. Do not allocate these to run the repository checks.
+Retrofit is a Next.js application. Its local services are loopback processes on reserved ports (Archy `docs/local-development-ports.md`). It has no Docker stack until Phase 7 adds the Supabase blocks below.
 
-The canonical workspace is `/Users/juan/code/retrofit`. Parallel code tasks use isolated worktrees. A worktree does not isolate a database, a local port, browser storage or a provider account.
+The canonical workspace is `/Users/juan/code/retrofit`. Parallel code tasks use isolated worktrees. A worktree does not isolate a database, a local port, browser storage or a provider account. Two worktrees cannot run the Playwright gate at the same time, because both use port 3010.
+
+| Port | Process | Start | Stop | Owner |
+| ---: | --- | --- | --- | --- |
+| 3009 | `next dev` | `pnpm dev` | Ctrl-C, or stop the recorded pid | The developer task that started it |
+| 3010 | `next start` for Playwright | Started and stopped by `pnpm test:e2e` (`playwright.config.ts` `webServer`, `reuseExistingServer: false`) | Playwright stops it at the end of the run | The gate run |
+| 3011, 3013 | Loopback fixture servers (test peer origins) | Started inside the test that needs them | Closed by the same test | The test |
+| 3012 | Phase 5 merchant spike server | Record the pid before start | Stop that pid at the end of the spike | The spike task |
+| 3014 | `next start` for `pnpm test:perf` | Vitest `perf` global setup, from the existing build | The same setup stops its recorded pid at teardown | The gate run |
+
+If a port is busy before a run, find its pid (`lsof -nP -iTCP:<port> -sTCP:LISTEN`) and verify the owner before you stop anything. Do not stop a process that another task started.
+
+Supabase (Phase 7): reusable dev stack `retrofit` on 54720 to 54729, kept between tasks; disposable gate stack `retrofit-gate` on 54730 to 54739, created and removed by `pnpm test:db` with a receipt. The gate never touches the dev stack.
 
 ## Resource classes
 
@@ -16,15 +28,6 @@ The canonical workspace is `/Users/juan/code/retrofit`. Parallel code tasks use 
 | Fetched copies of third-party sites | Sensitive task data | Keep in an ignored task directory. Never commit, index or publish them. |
 | Visitor LLM keys and test keys | Secret | Never written to the repository, logs or evidence. Use test keys from an ignored `.env` file only. |
 | Archy Graphify service and indexes | Fleet owned | Archy. Not a Retrofit task service. |
-
-## Before the first service
-
-The product plan must decide the stack, the local port and any database. When it does:
-
-1. Reserve the port in Archy's `docs/local-development-ports.md` and fix it in the development command. Port 3000 stays unassigned.
-2. Give each concurrent mutable task its own project identity.
-3. Document the start, stop and reset commands here, with the data that each command keeps and removes.
-4. Record exact process IDs, ports and directories before a task starts a service, and stop only the verified task-owned process.
 
 ## Task completion
 

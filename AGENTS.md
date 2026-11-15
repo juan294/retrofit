@@ -6,13 +6,15 @@ Start with [the briefing](docs/briefing.md) and [the accepted design brief](docs
 
 ## Current state and authority
 
-The repository holds workspace setup only. There is no application code, stack decision, test suite, deployment target or domain configuration. Scoring, the preview agent, the bundle, accounts and payment are proposed work, not implemented features.
+The application is being built under `docs/plans/2026-11-15-retrofit-url-to-preview.md`. See that plan's notes file for the phase status. There is no deployment target or domain configuration yet. The bundle, accounts and payment are proposed work, not implemented features.
 
 Shared instructions live here; `CLAUDE.md` imports this file. Do not introduce an import cycle. Use the installed native RPI skill for the requested phase and read its full instructions and references. Claude invokes `/rpi-plan`, `/rpi-implement` and other `/rpi-*` skills; Codex invokes `$rpi-plan`, `$rpi-implement` and other `$rpi-*` skills. Native `/plan` and `/status` are not RPI workflows. Planning and implementation belong in this workspace, with the normal phase acceptance boundaries.
 
 ## Stack and agent surface
 
-- Stack, package manager and test tools: not decided. The product plan decides them. Record the decision in `docs/decisions/` and update this section, `.rpi/policy.json` and `.rpi/release-profile.json` in the same change.
+- Stack ([decision](docs/decisions/2026-11-15-stack-and-hosting.md)): Next.js 16 App Router, React 19, TypeScript 6, Tailwind 4, Node 24, pnpm 12 (`packageManager`). Tests: Vitest 4 (projects `unit`, `perf`, `db`) and Playwright (Chromium). The request hook is `src/proxy.ts`.
+- Ports: dev 3009 (`pnpm dev`), Playwright server 3010 (`pnpm start`), loopback test origins 3011 and 3013, merchant spike 3012, performance server 3014. See [the resource contract](docs/development/resource-lifecycle.md).
+- The organizers' runtime is vendored unchanged in `public/runtime/`, `public/preview-assets/` and `tools/agentic-web/` (`pnpm vendor:verify`; `pnpm vendor:sync` from a clone in `.local/vendor/agentic-web`). Never edit vendored files. Only `src/components/preview/Preview.tsx` calls the runtime API.
 - The product exposes tools to agents. It must conform to the open agentic web specification in `cognizant-ai-labs/agentic-web`: a published `agent-manifest.json`, a runtime that runs the agent network in the browser, and an interface for users or agents. Read `.rpi/rules/webmcp.md` and use `rpi-tool-design` before defining agent-facing tools.
 - The specification repository changes often. Record the commit that was read whenever a plan or a check depends on it.
 
@@ -24,7 +26,7 @@ Run checks sequentially and keep the first failure evidence.
 python3 .rpi/scripts/rpi-verify.py
 ```
 
-The declared suite in `.rpi/policy.json` checks whitespace and the RPI installation only. There is no application test suite; coverage is unavailable, not zero-failure evidence. Add real tests with the first behavioral code and add them to the declared suite. The authoritative release procedure is [docs/release/release-playbook.md](docs/release/release-playbook.md).
+The declared suite in `.rpi/policy.json` runs, in order: whitespace, RPI installation, `pnpm evidence:begin` (refuses a dirty tree), `vendor:verify`, `typecheck`, `lint`, `test`, `test:coverage` (statements 80%, branches 70% for `src/lib/**`), `build`, `test:e2e` and `evidence:seal`. Commit before running the gate. Reports land in ignored `.local/evidence/current/`. The authoritative release procedure is [docs/release/release-playbook.md](docs/release/release-playbook.md).
 
 ## Git and publication
 

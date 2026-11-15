@@ -2,7 +2,7 @@
   "schema_version": 1,
   "project": "retrofit",
   "release_ready": false,
-  "stage": "workspace-bootstrap",
+  "stage": "build",
   "integration_branch": "develop",
   "production_branch": "main",
   "release_procedure": "docs/release/release-playbook.md",
@@ -28,7 +28,6 @@
   ],
   "current_gaps": [
     "no-application-code",
-    "no-stack-decision",
     "no-test-suite",
     "no-release-evidence-analyzer",
     "no-hosting-or-deployment-target"

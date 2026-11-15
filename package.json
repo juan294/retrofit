@@ -1,0 +1,47 @@
+{
+  "name": "retrofit",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": "24.x"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3009",
+    "build": "next build",
+    "start": "next start --port 3010",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --project unit --reporter=default --reporter=json --outputFile.json=.local/evidence/current/vitest-unit.json",
+    "test:coverage": "vitest run --project unit --coverage --reporter=default",
+    "test:perf": "vitest run --project perf --reporter=default --reporter=json --outputFile.json=.local/evidence/current/vitest-perf.json",
+    "test:e2e": "playwright test",
+    "vendor:sync": "node tools/vendor-agentic-web.mjs sync --source .local/vendor/agentic-web --commit 63a956cf4653f610b1c238c70946f4d7647d17a8",
+    "vendor:verify": "node tools/vendor-agentic-web.mjs verify",
+    "evidence:begin": "node tools/evidence.mjs begin",
+    "evidence:seal": "node tools/evidence.mjs seal"
+  },
+  "dependencies": {
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@playwright/test": "1.65.1",
+    "@tailwindcss/postcss": "4.3.5",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitest/coverage-v8": "4.1.12",
+    "eslint": "9.39.5",
+    "eslint-plugin-react": "7.37.5",
+    "eslint-plugin-react-hooks": "7.0.1",
+    "tailwindcss": "4.3.5",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "4.1.12"
+  }
+}
