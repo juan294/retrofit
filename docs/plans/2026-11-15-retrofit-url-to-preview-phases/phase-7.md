@@ -4,7 +4,7 @@ Parent plan: [2026-11-15-retrofit-url-to-preview.md](../2026-11-15-retrofit-url-
 
 ## Goal
 
-Retrofit runs at `https://retrofit.thecreativetoken.com` with a Supabase store and links, with consent, to the synthetic peer `https://demo-harbor.thecreativetoken.com`. The release follows `docs/release/release-playbook.md` with a tested evidence analyzer, and every spec §6 check passes in production. Local work comes first; every external action has its own authorization.
+Retrofit runs at `https://retrofit.thecreativetoken.com` with a Supabase store and links, with consent, to the synthetic peer `https://demo-harbor.thecreativetoken.com`. The release follows `docs/release/release-playbook.md`: an authorized candidate deployment, production evidence bound to that deployment and commit, analysis, then the owner's final acceptance and the tag. Every spec §6 check, including the negative cases, passes in production. Local work comes first; every external action has its own authorization.
 
 ## Entry conditions
 
@@ -55,11 +55,16 @@ risk: a replaced container with the same name is not the recorded resource; comp
 - `peers/demo-harbor/`: a synthetic "Harbor tours demo" site (fictional tours, no third-party names or trademarks) with network `harbor_tours` (two agents, answers from its own static content), `agent-manifest.json` with a closed `peer_policy`, built with `build_network.mjs`.
 - The deployment serves `peers/demo-harbor/` only for requests with host `demo-harbor.thecreativetoken.com` (host check in the request hook; the main host returns 404 for those paths), with CORS `*` on its public artifacts and a page CSP of its own.
 - Retrofit's network adds the tool `https://demo-harbor.thecreativetoken.com/harbor_tours` with a link label, and `allowed_peers` `["https://demo-harbor.thecreativetoken.com"]`. `buildConnectSrc` adds that origin.
-- `e2e/spec6.spec.ts` gains a case that runs the production-shaped caller (same manifest, peer served by the fixture server under the peer host name mapped to loopback).
+- Published conformance fixtures, permanent and documented on a `/conformance` page (no test switch, nothing enabled only for tests):
+  - on the peer host: `harbor_invalid` (an invalid network) and `harbor_loop` (a network whose front agent calls `https://retrofit.thecreativetoken.com/retrofit_conformance`, with that origin in its own `allowed_peers`, to form a cycle)
+  - on Retrofit: `retrofit_conformance`, a separate small network (not the main assistant) with tools to `harbor_tours`, `harbor_invalid`, `harbor_loop`, and `https://demo-denied.thecreativetoken.com/none` (not in its `allowed_peers`, so the runtime refuses it before any contact; the host needs no DNS record), and `allowed_peers` with only the peer host
+  - `/conformance` boots `retrofit_conformance` through `Preview.tsx`, so the production guard and CSP apply
+- `e2e/spec6.spec.ts` gains a case that runs the production-shaped caller (same manifests, peer host mapped to loopback in fixtures mode).
+- `src/app/api/version/route.ts`: returns `BUILD_COMMIT`, set at build time.
 
 ### Evidence analyzer
 
-`tools/release/analyze-evidence.mjs <candidate-commit>` reads `.rpi/local/verification.json` and `.local/evidence/current/`. It rejects:
+`tools/release/analyze-evidence.mjs <candidate-commit> [--production <evidence-dir>]` reads `.rpi/local/verification.json` and `.local/evidence/current/`. In production mode it also reads the production evidence directory and rejects a report whose deployment id, deployment URL or `/api/version` commit differs from the candidate, a report recorded before the deployment was created, any required production case missing, failed or skipped, and any partner check with a non-zero exit. Local mode rejects:
 
 - `attempt.json` commit or tree different from the candidate, or from `verification.json` identity
 - `attempt.json` start earlier than `verification.json` `started_at`, or a report not listed in the seal, or a report whose hash differs from the seal
@@ -68,7 +73,7 @@ risk: a replaced container with the same name is not the recorded resource; comp
 - coverage below the bar
 - a gate database run without a completed teardown in its log
 
-`tools/release/required-tests.json` lists the full test titles that prove the safety and conformance rules: fetch guard and robots, pacing, client limits, crawl job fencing, privacy (both parts), key panel, origins, redirects, hostile output, unofficial label, §6 (all cases), conformance, free path, proxy budget and reservation tests, redaction, credit check.
+`tools/release/required-tests.json` lists the full test titles that prove the safety and conformance rules: fetch guard and robots, pacing, client limits, crawl job fencing, queue dispatch, privacy (both parts), key panel, provider switch, origins, redirects (including configured-but-unapproved and router-as-artifact cases), hostile output, unofficial label, §6 (all cases), conformance, free path (including partial-stream failure), schema, reservation and ledger tests, redaction, credit check. `tools/release/required-production-cases.json` lists the production cases below.
 
 ### Hosting configuration
 
@@ -82,7 +87,7 @@ risk: a replaced container with the same name is not the recorded resource; comp
 - `supabase/tests/store_access.sql`: as `anon` and `authenticated`, table select, insert, update and every function `rpc` call are denied; as `service_role` they work; a later table and a later function are not usable by `anon`.
 - `tests/store/supabase-failure.test.ts`: adapter on a closed port gives `degraded` health, the "having trouble" text, and `[TABLE_FALLBACK]` in logs.
 - `tests/tools/gate-db.test.ts` (CLI shims for `docker` and `supabase` at the process boundary): two concurrent runs (second exits 1); inherited stack without a receipt (refused, nothing reset); receipt from another run (refused); replaced container id between steps 5 and 6 (no disposal); interruption leaves a receipt that `gate-db:recover` handles; a cleanup failure is reported separately from a test failure.
-- `tests/release/analyze-evidence.test.ts`: one fixture per rejection and one accepted set.
+- `tests/release/analyze-evidence.test.ts`: one fixture per rejection in both modes (including a production report bound to another deployment, one recorded before the deployment, and a missing production case) and one accepted set per mode.
 - `tests/api/cleanup.test.ts`, `tests/routes/peer-host.test.ts` (peer paths 404 on the main host; served with CORS on the peer host).
 - One real `pnpm test:db` run on the developer machine is part of acceptance, with the receipt and teardown log kept.
 
@@ -98,19 +103,35 @@ In order. Inspect the target before each and record the result.
 6. **Set production environment variables**: `SESSION_SECRET`, `CRON_SECRET` (generated locally, never printed), `PUBLIC_ORIGIN`, `OTARI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JUDGE_CODE`, `ALERT_GITHUB_TOKEN`, ledger and cap variables. Production only.
 7. **Add the domains** `retrofit.thecreativetoken.com` and `demo-harbor.thecreativetoken.com` and read the DNS targets.
 8. **Create the Route 53 records**: one `UPSERT` change batch in zone `Z05609513HH99AFEUOPD3` for both names. Show the batch file to the owner before `aws route53 change-resource-record-sets`; wait for `INSYNC`.
-9. **Release** (playbook steps 1 to 8): merge `develop` into `main` locally with a merge commit; run the full gate on it; run the evidence analyzer; present the evidence; push `main` once (nothing deploys, Git is not connected); `vercel deploy --prod` from a clean checkout of that commit.
-10. **Connect Git** so later merges to `main` deploy; confirm the production branch is `main`; if the connection starts a deployment, confirm it is a production deployment of the same commit.
+9. **Prepare the candidate** (local, playbook steps 1 to 6): merge `develop` into `main` locally with a merge commit; run the full gate on it; run the analyzer in local mode; present the evidence to the owner.
+10. **Push `main` once** (nothing deploys; Git is not connected).
+11. **Candidate deployment**: `vercel deploy --prod --build-env BUILD_COMMIT=<merge commit>` from a clean checkout of that commit. Record the deployment id and URL. The release is not accepted yet.
+12. **Production evidence** (below), written to `.local/evidence/production/<deployment id>/`.
+13. **Analyze** with `analyze-evidence.mjs <merge commit> --production .local/evidence/production/<deployment id>`. On rejection: for the first release, remove the production aliases with the owner's authorization, fix locally and start again at step 9; later releases roll back under the playbook.
+14. **Final acceptance**: present the production evidence to the owner; on acceptance, create the release tag last through `rpi-release`.
+15. **Connect Git** so later merges to `main` deploy; confirm the production branch is `main`; if the connection starts a deployment, confirm it is a production deployment of the same commit.
 
-## Post-release verification
+## Production evidence (step 12)
 
-- `check_partner.mjs` exits 0 for `https://retrofit.thecreativetoken.com/retrofit_guide` and `https://demo-harbor.thecreativetoken.com/harbor_tours`.
-- `/api/health` returns `ok`.
-- `e2e-prod/spec6.spec.ts`, run once against production with the free path: consent card for `demo-harbor.thecreativetoken.com`, decline sends nothing, approval runs the peer in the browser, no peer request carries the session cookie or a key, the router stays Retrofit's, private context absent, denied origin and invalid network show errors (the cycle and over-budget cases stay local, because they need hostile peers).
-- Analyze `https://retrofit.thecreativetoken.com/` (Retrofit reads itself): score ready, the three agentic-web checks pass, the preview answers one question on the free path.
+Every case records the deployment id, the deployment URL and the commit from `/api/version` in its report.
+
+- `check_partner.mjs` exits 0 for `https://retrofit.thecreativetoken.com/retrofit_guide`, `/retrofit_conformance` and `https://demo-harbor.thecreativetoken.com/harbor_tours`.
+- `/api/health` returns `ok`; `/api/version` returns the merge commit.
+- `e2e-prod/spec6.spec.ts`, against production, on `/conformance` and the landing assistant. The model is scripted inside the test browser: Playwright intercepts the BYOK router requests in the browser with a test key, so the production pages, peers and guard run unchanged and no server switch exists. Cases:
+  - the two-agent network runs with the published default router (free path, one real model call)
+  - `score_site` runs as the grounded capability
+  - a consent card names `demo-harbor.thecreativetoken.com`; declining sends nothing; approving runs `harbor_tours` in the browser
+  - no request to the peer carries the session cookie or a key; the router stays the caller's
+  - the caller's unallowed `sly_data` field is absent from the peer invocation
+  - `harbor_invalid` shows the invalid-network error
+  - `harbor_loop` shows the cycle error
+  - a scripted turn that calls peer networks more often than the runtime's per-message limits allow (4 remote calls in total and 1 per partner, `runtime/engine.js:529-533`) shows the over-budget error
+  - the `demo-denied` tool shows the denied-origin error, and no request reaches that host
+- Analyze `https://retrofit.thecreativetoken.com/`: score ready, the three agentic-web checks pass, the preview answers one question on the free path.
 - Five concurrent analyses of Retrofit's own pages: record timings and status latency.
 - `vercel list` shows no deployment with the preview target.
-- Judge path: open `/judges`, enter the code, confirm the session reports `pool: judge`.
-- Inspect every deployment for the pushed commit. On failure, no rerun or redeploy; report, reproduce locally, roll back under the playbook if production is affected.
+- Judge path: `/judges` with the code gives `pool: judge`.
+- Inspect every deployment for the pushed commit. On failure, no rerun or redeploy; report and follow step 13.
 
 ## Automated success criteria
 
@@ -118,8 +139,9 @@ In order. Inspect the target before each and record the result.
 
 ## Manual success criteria
 
-- Each external action recorded with its authorization and result; post-release checks recorded.
-- `.rpi/release-profile.json`: every `required_before_first_release` item satisfied with evidence paths, including `open-agentic-web-spec-conformance-evidence` (local §6, production §6 spec, both partner checks).
+- Each external action recorded with its authorization and result.
+- The production analyzer accepts the candidate before the tag is created.
+- `.rpi/release-profile.json`: every `required_before_first_release` item satisfied with evidence paths, including `open-agentic-web-spec-conformance-evidence` (local §6 and every production case above, all partner checks).
 - Judge-access delivery recorded as a submission acceptance item: where the code will be given (judges-only Devpost field if it exists, else public text), and the reserve amount.
 
 ## Independent work units
@@ -133,7 +155,7 @@ In order. Inspect the target before each and record the result.
 
 ## Stuck states in this phase
 
-Store unavailable; gate database held, inherited or interrupted; evidence stale. See the parent plan table. A failed deploy is handled by rollback, never by redeploying to diagnose.
+Store unavailable; gate database held, inherited or interrupted; evidence stale; production evidence fails. See the parent plan table. A failed deploy is handled by rollback, never by redeploying to diagnose.
 
 ## Exit
 

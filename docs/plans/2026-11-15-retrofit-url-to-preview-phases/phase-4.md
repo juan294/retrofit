@@ -40,18 +40,37 @@ risk: titles and names never enter instructions; they reach the model only as to
 
 - `src/components/preview/Preview.tsx` is the only file that calls the runtime API.
 
+`src/lib/preview/fetch-guard.ts` holds the guard state; `Preview.tsx` installs it.
+
+```
+@ guardedWindowFetch(input, init) -> Response
+ctx: guard state {router, provisionalProvider, policyPeers, approvedPeers}, original fetch
+pre: installed once per page while a preview or the landing assistant is mounted
+do:
+  1. parse the URL; same origin and not an agent artifact path -> call original fetch unchanged
+  2. same-origin agent artifact (/p/*, /agent-manifest.json, *.network.json, /links.json) -> call with redirect "error"
+  3. router origin -> allow only POST .../chat/completions, GET .../models, GET <router base>/agent-manifest.json, with redirect "error"
+  4. provisionalProvider origin -> allow only GET <provider router>/models, with redirect "error"
+  5. other origin -> allow only when in policyPeers and in approvedPeers, with redirect "error"
+fail: anything else -> throw TypeError "Retrofit blocked a request to <origin> that was not approved." before any network contact
+risk: approvals come from the engine hook below; a runtime update that renames requestConsent breaks the hook (tests catch it)
+```
+
 ```
 @ startPreview(mount, analysis, inference) -> handle
-ctx: vendored runtime, window.fetch, Config
-pre: manifest fetched from <origin>/p/<id>/agent-manifest.json
+ctx: vendored runtime, fetch guard, Config
+pre: manifest fetched from <origin>/p/<id>/agent-manifest.json (or <origin>/agent-manifest.json for the landing assistant)
 do:
-  1. compute allowedOrigins = {location.origin, inference.routerOrigin} plus manifest.allowed_peers
-  2. wrap window.fetch: same-origin -> unchanged; cross-origin -> refuse unless in allowedOrigins, then force redirect "error"
-  3. import /runtime/index.js and boot(mount, {originUrl: location.origin + "/p/" + id, sandboxWorkerUrl, byokKey, router, model})
+  1. set guard.policyPeers from manifest.allowed_peers; clear approvedPeers; set guard.router from inference
+  2. import /runtime/index.js; boot(mount, {originUrl, sandboxWorkerUrl, byokKey, router, model})
+  3. wrap engine.requestConsent: call the original; on "allow", add the normalized info.peerOrigin to approvedPeers
   4. register content actions with the snapshot
-fail: refused origin -> TypeError "Retrofit blocked a request to <origin> that was not approved." (shown in chat by the runtime)
-risk: the wrapper must be installed before the runtime module loads; restore it on unmount
+fx: guard state changes; runtime mounted
+risk: approvals last for the page session only, matching spec §5 ("scoped to the destination origin for the current session")
 ```
+
+- Reboot (key change) keeps the installed guard and replaces its state; unmount restores the original `fetch` when no other preview is mounted.
+- The key panel calls `guard.authorizeProvider(origin)` for a provider in `providers.ts` right before its validation request, and `guard.revokeProvider()` on failure or on "Forget my key". On success the preview reboots with that router, and `guard.router` becomes the new provider; the previous router (Retrofit's free path or provider A) loses access.
 
 - The runtime's `settings` slot is mounted but hidden; the runtime never stores a profile.
 - The label "Private preview. Unofficial. Built by Retrofit from public pages of `<host>` on `<date>`. Not affiliated with `<host>`." sits above the chat and cannot be hidden.
@@ -74,16 +93,20 @@ risk: the wrapper must be installed before the runtime module loads; restore it 
 
 ### Local spec §6 harness (test only)
 
-- `tests/peer-fixture/`: synthetic peer site `peer_demo` on `http://localhost:3011`, with a manifest that names a different router (to prove it cannot change the caller's router), and variants: manifest that redirects (302) to a third origin `http://localhost:3013`; network URL (`hocon`) that is absolute on the third origin; network fetch that redirects to the third origin; a peer that links back to the caller (cycle); a peer not in `allowed_peers`; an invalid network.
-- `src/app/test-fixtures/` routes, served only when `fixturesEnabled` (404 otherwise): caller network `retrofit_guide_e2e` (Retrofit's network plus `http://localhost:3011/peer_demo`, `allowed_peers` `["http://localhost:3011"]`) and the variants above. A `sly_data` field without an `allow` rule is set on the caller side.
-- In fixtures mode, `buildConnectSrc` adds exactly `http://localhost:3011`. The third origin is never added.
+- `tests/peer-fixture/`: synthetic peer sites served by the fixture server:
+  - `peer-a.fixture.test:3011` network `peer_demo`, with a manifest that names a different router (it must not change the caller's router)
+  - `peer-b.fixture.test:3011`, a second configured peer that the visitor has not approved
+  - `third.fixture.test:3013`, never configured
+  - variants of `peer_demo`: manifest redirects (302) to the third origin; `hocon` absolute on the third origin; `hocon` absolute on `peer-b` (configured, not approved); `hocon` absolute on the active router origin; network fetch redirects to the third origin; a peer that links back to the caller (cycle); an invalid network
+- `src/app/test-fixtures/` routes, served only when `fixturesEnabled` (404 otherwise): caller network `retrofit_guide_e2e` (Retrofit's network plus `http://peer-a.fixture.test:3011/peer_demo` and a tool on `peer-b`), `allowed_peers` both peers, and a denied-origin variant whose peer is not in `allowed_peers`. A `sly_data` field without an `allow` rule is set on the caller side.
+- In fixtures mode, `buildConnectSrc` adds exactly the two peer origins. The third origin is never added, so a guard failure would still be caught by CSP and reported as an unexpected violation.
 
 ## Tests (write first)
 
 - `tests/generate/network.test.ts`: every fixture snapshot validates; names sanitized; no `instructions` text contains any phrase from the `hostile` body, title or JSON-LD name; `sample_queries` match; `llm_router` values as specified.
 - `tests/generate/oracle.test.ts`: outputs in a temporary directory, `build_network.mjs` without `--check` with `--runtime tools/agentic-web/runtime`, exit 0; invalid fixture non-zero.
 - `tests/generate/validate.test.ts`: forced validator failure gives `GenerationFailed`, visitor text, and the preview route returns 404.
-- `tests/preview/fetch-guard.test.ts`: same-origin passes unchanged; an allowed cross-origin request gets `redirect: "error"`; a non-allowed origin is refused before any network call.
+- `tests/preview/fetch-guard.test.ts` (original fetch replaced by a recorder at the boundary): same-origin non-artifact passes unchanged; same-origin artifact gets `redirect: "error"`; router origin allows only its three requests; provisional provider allows only `/models`; a policy peer without approval is refused; with approval it is allowed with `redirect: "error"`; revoking the provider removes access; every refusal happens before the recorder sees a call.
 - `tests/keys/providers.test.ts`, `tests/keys/detect.test.ts`, `tests/keys/test-key.test.ts`: rows match `ui.js`; prefix order; 401, CORS failure and unknown model messages.
 - `tests/agent/score-action.test.ts`: non-URL refused with a recovery message; report; 202 text.
 - `tests/routes/test-fixtures.test.ts`: every fixture route returns 404 with `fixturesEnabled` false.
@@ -91,11 +114,12 @@ risk: the wrapper must be installed before the runtime module loads; restore it 
 - `e2e/privacy.spec.ts` (part 2): context B gets the 404 text for context A's `/p/<id>/agent-manifest.json`, `site-content.json` and network file.
 - `e2e/key-panel.spec.ts`: no request to Retrofit's origin carries the test key in URL, headers, body or cookies; the mock router receives it; after "Forget my key" no Retrofit or `nsweb-byok-*` item and no runtime cookie remain; "Remember" unticked gives no key in a new tab; the runtime writes no `nsweb-byok-*` item.
 - `e2e/origins.spec.ts`: a preview session contacts only Retrofit's origin and the selected router origin.
-- `e2e/hostile-output.spec.ts`: the scripted model returns, and the content tools return, `<img src=x onerror=...>`, `<script>`, `javascript:` links and CSS with `url(...)` to another origin, for each renderer path found in the audit; nothing executes, no request leaves the allowed origins, no CSP violation is needed to stop it except where the audit shows the runtime relies on CSP (then the violation is expected and named).
-- `e2e/bridge.spec.ts`: a page on `http://localhost:3011` frames `http://127.0.0.1:3010/bridge/action-bridge.html`; the bridge script runs without a CSP violation and answers a postMessage handshake.
+- `e2e/hostile-output.spec.ts`: the scripted model returns, and the content tools return, `<img src=x onerror=...>`, `<script>`, `javascript:` links and CSS with `url(...)` to another origin, for each renderer path found in the audit; nothing executes and no request leaves the allowed origins. Where the audit shows that the runtime relies on CSP to stop a payload, that case declares the exact violation with `expectCspViolations`; every other case expects none.
+- `e2e/provider-switch.spec.ts` (guard installed, scripted provider routers at the boundary): free path to BYOK (validation reaches the new provider's `/models`, then chat goes there and no longer to `/api/inference`); provider A to provider B (A loses access after the switch); failed validation of B leaves A or the free path active and B without access; "Forget my key" returns to the free path (Phase 6) or to the key prompt (before Phase 6).
+- `e2e/bridge.spec.ts`: a page on `http://peer-a.fixture.test:3011` frames `http://127.0.0.1:3010/bridge/action-bridge.html`; the bridge script runs without a CSP violation and answers a postMessage handshake.
 - `e2e/conformance.spec.ts`: `check_partner.mjs http://127.0.0.1:3010/retrofit_guide` exits 0 with no errors.
-- `e2e/spec6.spec.ts` (modeled on the organizers' L1 to L10 and C1 to C8): two-agent network runs; `score_site` runs as the grounded capability; a consent card names `localhost:3011` before any request to it; declining sends nothing; approving loads `peer_demo` and runs it in the caller's browser; no request to `localhost:3011` carries the key; the router stays the caller's; the unallowed `sly_data` field is absent from the peer invocation (runtime trace); invalid network, cycle, over-budget and denied origin each show a visible error. The published-default-router case is completed in Phase 6.
-- `e2e/redirects.spec.ts`: for the redirecting manifest, the absolute third-origin network URL and the redirecting network fetch, zero requests reach `localhost:3013` and the chat shows the blocked-request text.
+- `e2e/spec6.spec.ts` (modeled on the organizers' L1 to L10 and C1 to C8): two-agent network runs; `score_site` runs as the grounded capability; a consent card names `peer-a.fixture.test:3011` before any request to it; declining sends nothing; approving loads `peer_demo` and runs it in the caller's browser; no request to the peer carries the key; the router stays the caller's; the unallowed `sly_data` field is absent from the peer invocation (runtime trace); invalid network, cycle, over-budget and denied origin each show a visible error. The published-default-router case is completed in Phase 6.
+- `e2e/redirects.spec.ts`, with only `peer-a` approved: the redirecting manifest, the `hocon` on the third origin and the redirecting network fetch send zero requests to `third.fixture.test`; the `hocon` on `peer-b` sends zero requests to `peer-b` (configured but not approved); the `hocon` on the router origin sends no request to that path; each shows the blocked-request text in chat. Then approving `peer-b` through its own consent card allows its own tool call.
 
 ## Automated success criteria
 
@@ -113,7 +137,8 @@ risk: the wrapper must be installed before the runtime module loads; restore it 
 - `[batch-eligible]` Unit B: key panel with tests.
 - `[batch-eligible]` Unit C: Retrofit's own agent (`agent/`, `public/agent-manifest.json`, `public/site-actions.js`, generated files, headers, `tests/agent/`).
 - `[batch-eligible]` Unit D: §6 harness fixtures (`tests/peer-fixture/`, `src/app/test-fixtures/`, `tests/routes/`).
-- Unit E (integration owner, after A to D): `Preview.tsx` with the fetch guard, results page, landing assistant, e2e specs, gate update.
+- `[batch-eligible]` Unit F: fetch guard (`src/lib/preview/fetch-guard.ts`, `tests/preview/`).
+- Unit E (integration owner, after A to D and F): `Preview.tsx`, key panel and guard wiring, results page, landing assistant, e2e specs, gate update.
 
 ## Stuck states in this phase
 

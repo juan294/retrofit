@@ -64,7 +64,21 @@ fx: Store writes
 
 - Every analysis is new and owned by its visitor; only the crawl work is shared.
 - `clientId` is a SHA-256 of the client IP and a daily salt from `SESSION_SECRET`; the raw IP is never stored or logged.
-- Capacity: a running-crawl counter with leases (at most `CRAWL_MAX_CONCURRENT`); extra jobs wait in `queued` and start when a slot frees (checked by the status route, which schedules the next job with `waitUntil`); a daily destination-host counter (`CRAWL_MAX_HOSTS_PER_DAY`).
+- Capacity: `CRAWL_MAX_CONCURRENT` slots held as leases; a daily destination-host counter (`CRAWL_MAX_HOSTS_PER_DAY`). A job that finds no free slot is put on the store queue `crawl-queue` with TTL `QUEUE_MAX_WAIT_S` and status `queued`.
+
+```
+@ dispatchQueued() -> started count
+ctx: Store (leases, queue), runCrawl, waitUntil
+pre: called at the end of every runCrawl (in finally) and on every analyze, status and score request
+do:
+  1. acquire a free slot lease (none -> return 0)
+  2. claimNext crawl-queue (empty -> release the slot, return 0)
+  3. emit runCrawl(job) via waitUntil with the slot lease
+  4. repeat while slots and queued jobs remain
+fail: claimed job already expired or joined -> release the slot, continue
+```
+
+- Liveness: a finishing worker always dispatches the next job, and any request also dispatches, so a crashed worker's slot (lease 60 s) is reused on the next request. A job still queued after `QUEUE_MAX_WAIT_S` expires; readers see the "too busy" text (agents: 503 with `retryAfterSeconds` 120), and a new request queues it again.
 
 ### Routes
 
@@ -84,19 +98,24 @@ fx: Store writes
 - `tests/score/score.test.ts`: every fixture site against `tests/fixtures/expected-scores.json` (exact total and every check).
 - `tests/score/checks.test.ts`: a passing and a failing input per check.
 - `tests/analysis/run.test.ts`: two visitors analyzing one URL get different analysis ids and one shared job; client limit returns 429 with the retry time; failure codes map to visitor text.
-- `tests/analysis/capacity.test.ts`: the ninth concurrent job waits in `queued` and starts when a slot frees; the daily host cap returns its text.
+- `tests/analysis/capacity.test.ts`:
+  - the ninth concurrent job waits in `queued` and starts when a slot frees
+  - 12 API-only score requests for distinct hosts with 8 slots and no status polling: all 12 complete through worker-completion dispatch
+  - a crashed worker (lease expires, no completion): the next score retry dispatches the queued job
+  - a job queued for 121 s reads as expired with the "too busy" text; the score API returns 503 with `retryAfterSeconds` 120
+  - the daily host cap returns its text
 - `tests/analysis/stale.test.ts`: a job with an expired lease and `updatedAt` 91 s old is marked failed on read; at 89 s it is not; Retry starts a new job; the old worker's late write is discarded.
 - `tests/analysis/expiry.test.ts`: at `expiresAt` + 1 s the analysis reads as `expired`; its preview data remains readable until then even after the 24 h crawl cache expires.
 - `tests/api/analyze.test.ts`: cross-origin `POST` refused with 403; status for another visitor's id returns the 404 text; status response under 2 KB.
 - `tests/api/score.test.ts`: report; 202 body; CORS header; no `Set-Cookie`; no analysis id in any response.
-- `tests/perf/analyze-load.test.ts` (against `next start` with the fixture server): 10 concurrent analyses of distinct fixture hosts and 20 viewers polling one analysis; the job for the shared host crawls once; each status request makes at most 2 store reads (instrumented memory store); p95 status latency under 250 ms locally. The measured numbers go in the phase handoff.
+- `tests/perf/analyze-load.test.ts` (Vitest `perf` project, run by `pnpm test:perf` after `pnpm build`, against the project's own `next start` on port 3014 and the fixture server): 10 concurrent analyses of distinct hosts `site1.fixture.test` to `site10.fixture.test` and 20 viewers polling one analysis; the job for the shared host crawls once; each status request makes at most 2 store reads (instrumented memory store); p95 status latency under 250 ms locally. The measured numbers go in the phase handoff.
 - `e2e/analyze.spec.ts`: paste the bakery fixture URL, see progress, then the score and evidence.
 - `e2e/analyze-blocked.spec.ts`: robots message, no score.
 - `e2e/privacy.spec.ts` (part 1): two browser contexts analyze the same URL; each sees only its own `/r/<id>`; context B opening context A's `/r/<id>` gets the "belongs to another browser" page.
 
 ## Automated success criteria
 
-- The full gate passes; the golden score file matches exactly; the load test passes its budgets.
+- The full gate passes with `pnpm test:perf` added after `pnpm build`; the golden score file matches exactly; the load test passes its budgets.
 
 ## Manual success criteria
 
@@ -111,7 +130,7 @@ fx: Store writes
 
 ## Stuck states in this phase
 
-Stale job, robots blocked, client limit, capacity full, expired analysis, visitor mismatch, score still running. See the parent plan table.
+Stale job, robots blocked, client limit, capacity full, queued job expired, expired analysis, visitor mismatch, score still running. See the parent plan table.
 
 ## Exit
 

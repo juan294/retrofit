@@ -1,6 +1,6 @@
 # Plan: Retrofit, from URL to live preview
 
-> Created 2026-11-15. Revision 3, after two independent assessments. Status: **proposed, awaiting owner acceptance**. This plan does not authorize implementation, deployment, provider accounts, credentials, DNS changes or any push.
+> Created 2026-11-15. Revision 4, after three independent assessments. Status: **proposed, awaiting owner acceptance**. This plan does not authorize implementation, deployment, provider accounts, credentials, DNS changes or any push.
 
 ## Objective
 
@@ -14,7 +14,7 @@ The plan file and phase files are the contract. Each phase stops at its acceptan
 
 - Repository `juan294/retrofit`, branch `develop`, base commit `4161197` (plan revision 1). `origin/develop` at `44c5325`.
 - Accepted design: [design brief](../research/2026-11-14-retrofit-brief.md), [briefing](../briefing.md), [open source and key panel decisions](../decisions/2026-11-15-open-source-and-key-panel-style.md).
-- Assessments of this plan: the in-session review (R1 to R24, below) and the [second assessment](../research/2026-11-15-url-to-preview-plan-second-assessment.md) (R25 to R40).
+- Assessments of this plan: the in-session review (R1 to R24, below), the [second assessment](../research/2026-11-15-url-to-preview-plan-second-assessment.md) (R25 to R40) and the [revision 3 assessment](../research/2026-11-15-url-to-preview-revision-3-assessment.md) (R29, R30 and R39 follow-ups, R41 to R43, four harness items).
 - Controlling rules read in full: `AGENTS.md`, `.rpi/rules/webmcp.md`, `.rpi/rules/testing.md`, `.rpi/rules/deployment-safety.md`, `.rpi/rules/resource-lifecycle.md`, `.rpi/rules/supabase.md`, `docs/development/resource-lifecycle.md`, `docs/release/release-playbook.md`, `.rpi/policy.json`, `.rpi/release-profile.json`. Verifier source read in part: `.rpi/scripts/rpi-verify.py:163-210`.
 - No project overlay exists (`.rpi/project/rpi-plan.md` is absent). No declared override is applied.
 
@@ -48,6 +48,8 @@ VERIFIED from the files named.
 14. DNS for `thecreativetoken.com` is in Route 53 zone `Z05609513HH99AFEUOPD3`, reachable with the `aws` CLI. The Vercel team `thecreativetoken` exists.
 15. `git.deploymentEnabled` maps branches to booleans, and unspecified branches default to `true` (Vercel docs). The fleet pattern (`clarity/vercel.json`) disables `develop` and `sutura/*` and adds `"ignoreCommand": "test \"$VERCEL_ENV\" != \"production\""`.
 16. Ports 3001 to 3008 are assigned in Archy's port list. Fleet local Supabase API ports: 54321, 54331, 54421, 54521, 54621, 55321, 56321, 56621.
+17. The runtime keeps peer consent per origin: `engine.requestConsent(info)` returns `"allow"` or a decline for `info.peerOrigin`, and the runner calls it through the engine instance (`runtime/engine.js:109-139`, `:365`). After approval, the runtime resolves the peer manifest's `hocon` value, which may be an absolute URL on any origin, and fetches it (`runtime/engine.js:193-195`).
+18. The runtime's stream reader skips JSON without `choices`, skips non-`data:` lines, and returns the accumulated content when the stream ends normally (`runtime/llm.js:174-178`, `:209`, `:223`). It throws only on a non-OK HTTP status (`runtime/llm.js:128-131`) or a transport error.
 
 ## Owner decisions (2026-11-15)
 
@@ -71,14 +73,22 @@ Phase 1 writes them to `docs/decisions/2026-11-15-stack-and-hosting.md`.
 - **Deterministic network generation** from the snapshot with fixed templates. No LLM builds it.
 - **Vendor the runtime unchanged** at the recorded commit, with a checksum manifest. Containment lives in Retrofit's adapter (`src/components/preview/Preview.tsx`), never in vendored files.
 - **CSP:** `script-src 'self' 'nonce-<n>'` without `'strict-dynamic'`, so trust does not propagate to scripts loaded by other scripts; `style-src 'self' 'unsafe-inline'` because of fact 9 (styles only; scripts stay strict); exact `connect-src` lists.
-- **Destination containment (fact 10):** the adapter wraps `fetch` before boot. Cross-origin requests are allowed only to the active router origin and the top manifest's `allowed_peers`, always with `redirect: "error"`. CSP `connect-src` repeats the same list. The runtime's own consent card still governs each peer contact.
+- **Destination containment (facts 10 and 17):** the adapter wraps `fetch` while a preview is mounted. It keeps policy and consent apart:
+  - a peer origin is allowed only when it is in the top manifest's `allowed_peers` **and** the visitor approved it in this page session (the adapter wraps the engine instance's `requestConsent` and records each approved origin)
+  - the router origin is allowed only for `POST <router>/chat/completions`, `GET <router>/models` and the runtime's own `GET <router>/agent-manifest.json` check
+  - a provider origin the visitor is setting up is allowed only for `GET <router>/models`, through an explicit `authorizeProvider` call from the key panel, and is revoked if validation fails or the key is forgotten
+  - every cross-origin request, and every same-origin request for agent artifacts (`/p/*`, `/agent-manifest.json`, `*.network.json`, `/links.json`), uses `redirect: "error"`
+  - CSP `connect-src` lists the same origins as the outer bound. The runtime's own consent card still governs each peer call.
+- **Free path responses are buffered (fact 18):** the endpoint reads the whole upstream completion before it answers, then returns it as one SSE body. An upstream failure at any point becomes an HTTP 502 with recovery text, which the unchanged runtime shows as an error. The free path gives up token streaming for this.
 - **Private previews:** shared crawl and score data are separate from visitor-owned analyses. A visitor cookie authorizes every result, status and preview route.
 - **Free path authentication:** fixed placeholder key `retrofit-free` with an explicit router override to `<origin>/api/inference/v1`; the credential is an HttpOnly, `SameSite=Strict` cookie scoped to `/api/inference`, created and renewed at `/api/inference/session`. Manifests publish `<origin>/api/inference/v1` as `llm_router.base_url` and hosted Otari as `byok_router`, so a visitor's real key used without an override goes to Otari, never to Retrofit.
-- **Spend control:** a strict request allowlist, input and output bounds, in-flight caps, cost reservation before forwarding and reconciliation from reported usage, against a credit ledger.
+- **Spend control:** a strict request schema (text-only content, fixed roles, bounded tools), input and output bounds, in-flight caps, and a reservation equal to a provable upper bound on the request's charge, taken before forwarding. The bound assumes a byte-level tokenizer (every billed input token covers at least one byte of the serialized request) plus a fixed framing allowance per message. Phase 6 checks the assumption against Otari with high-density input. If reported usage ever exceeds the reservation, the public pool is suspended for the day and the owner is alerted. Reconciliation only lowers a reservation to the reported usage; it never treats spend as undone.
+- **Queued crawl liveness:** queued jobs are dispatched when any worker finishes and on every analyze, status or score request; a queued job that is not started within 120 s is dropped with a truthful message.
+- **Release ordering:** an authorized candidate production deployment, then production evidence bound to that deployment and commit, then analysis, then the owner's final acceptance and the tag.
 - **Evidence binding (fact 12):** the gate starts with `pnpm evidence:begin` and ends with `pnpm evidence:seal`; the analyzer accepts only reports sealed in the same attempt for the same tree.
 - **CD:** first production deploy with `vercel deploy --prod` from the verified merge commit before Git is connected; afterwards Git deploys only `main`, with `develop` and `sutura/*` disabled and the fleet `ignoreCommand`.
 - **CI:** the local gate is the source of truth. Phase 1 hands a proposed workflow to Sutura; this plan adds no `.github/`.
-- **Ports:** dev 3009, Playwright server 3010, second loopback test origin 3011, merchant spike origin 3012. Supabase: reusable dev stack 54720 to 54729, disposable gate stack 54730 to 54739.
+- **Ports:** dev 3009, Playwright server 3010, second loopback test origin 3011, merchant spike origin 3012, third test origin 3013, performance test server 3014. Fixture host names use the reserved `.fixture.test` domain, mapped to loopback only in fixtures mode. Supabase: reusable dev stack 54720 to 54729, disposable gate stack 54730 to 54739.
 - **Supabase region** next to Vercel's function region (confirmed in Phase 7 before the project is created).
 
 ## Architecture
@@ -88,7 +98,7 @@ visitor browser (origin retrofit.thecreativetoken.com, first-party code only)
   /                URL form, Retrofit's own agent
   /r/<id>          visitor-owned analysis: progress, score, preview         (visitor cookie required)
   preview          vendored runtime boot(), originUrl <origin>/p/<id>,
-                   fetch guard: router + allowed_peers only, redirect "error"
+                   fetch guard: router API paths, consented allowed peers, authorized provider check, redirect "error"
   key panel        BYOK straight to the provider router (key never sent to Retrofit)
   free path        key "retrofit-free" + router <origin>/api/inference/v1, session cookie
 
@@ -113,18 +123,18 @@ Fetched content is untrusted data. It reaches the model only as tool results. In
 | 1 | [phase-1.md](2026-11-15-retrofit-url-to-preview-phases/phase-1.md) | Scaffold, configuration, CSP, vendored runtime, gate with evidence binding, decision record, CI handoff | 2 days |
 | 2 | [phase-2.md](2026-11-15-retrofit-url-to-preview-phases/phase-2.md) | Store contract with leases, safe fetch, crawl jobs per destination, snapshot | 3 days |
 | 3 | [phase-3.md](2026-11-15-retrofit-url-to-preview-phases/phase-3.md) | Score tool contract, deterministic score, visitor-owned analyses, pages, performance budgets | 3 days |
-| 4 | [phase-4.md](2026-11-15-retrofit-url-to-preview-phases/phase-4.md) | Generator, private preview, fetch guard, key panel, Retrofit's own agent, local §6 harness | 6 to 7 days |
+| 4 | [phase-4.md](2026-11-15-retrofit-url-to-preview-phases/phase-4.md) | Generator, private preview, consent-aware fetch guard, key panel, Retrofit's own agent, local §6 harness | 7 days |
 | 5 | [phase-5.md](2026-11-15-retrofit-url-to-preview-phases/phase-5.md) | Write-confirmation spike (time-boxed, 1 day) | 1 day |
 | 6 | [phase-6.md](2026-11-15-retrofit-url-to-preview-phases/phase-6.md) | Free inference with spend control, judge reserve and credit alert | 3 days |
-| 7 | [phase-7.md](2026-11-15-retrofit-url-to-preview-phases/phase-7.md) | Supabase store, gate database, evidence analyzer, production peer, hosting, DNS, first release | 4 days plus authorization time |
+| 7 | [phase-7.md](2026-11-15-retrofit-url-to-preview-phases/phase-7.md) | Supabase store, gate database, evidence analyzer, production peers, hosting, DNS, candidate deployment, production evidence, release | 5 days plus authorization time |
 
-The estimates total about 22 to 23 working days. Starting on 2026-11-16, Phase 7 ends near 2026-12-16. That leaves about 3.5 weeks before 2027-01-11, including the holidays, for the second plan. This is an estimate, not proven contingency.
+The estimates total about 24 working days. Starting on 2026-11-16, Phase 7 ends near 2026-12-18. That leaves about 3 weeks before 2027-01-11, including the holidays, for the second plan. This is an estimate, not proven contingency.
 
 ## Second plan: critical path (outline, not accepted scope)
 
 Ordered by dependency. Dates are targets for planning, not commitments.
 
-1. **Write-confirmation design**, from the Phase 5 spike. Blocks every acting demo. Target 2026-12-17.
+1. **Write-confirmation design**, from the Phase 5 spike (about 2026-12-04). Blocks every acting demo. Its design work can start in a separate session while Phases 6 and 7 run, once the owner accepts the spike.
 2. **Owner bundle in source mode**: the generated network, manifest, content and site actions that an owner installs on their own origin. Depends on 1.
 3. **Demo merchant sites** on `demo-*` hosts with installed bundles: cart and booking with confirmation, receipts and unknown-outcome handling. Depends on 1 and 2. This is the strongest judging proof (acting agent, two sites calling each other).
 4. **Ownership claim** by meta tag or DNS record, gating the official bundle and badge. Depends on 2.
@@ -152,22 +162,26 @@ Ordered by dependency. Dates are targets for planning, not commitments.
 | robots.txt disallows Retrofit on a host | Visitor: "This site asks automated tools not to read it. Retrofit stopped and read nothing else." | Another URL; the owner can allow `RetrofitBot` | `tests/fetch/robots.test.ts`, `e2e/analyze-blocked.spec.ts` |
 | robots.txt 5xx or timeout | Visitor: "Retrofit could not read this site's robots rules, so it stopped. Try again after HH:MM." | Cached 1 h, then retry allowed | `tests/fetch/robots.test.ts` |
 | Per-client analysis limit (20 per hour) | Visitor: "You reached the limit of 20 analyses per hour. Try again at HH:MM." | Window expires | `tests/api/analyze.test.ts` |
-| Global crawl capacity full (8 running or 1000 hosts per day) | Visitor: "Retrofit is busy. Your analysis starts in a moment." (queued), or "Retrofit reached today's analysis limit. Try again tomorrow." | A slot frees, or the UTC day resets | `tests/analysis/capacity.test.ts` |
+| Global crawl capacity full (8 running or 1000 hosts per day) | Visitor: "Retrofit is busy. Your analysis starts in a moment." (queued), or "Retrofit reached today's analysis limit. Try again tomorrow." Agents get a 202 with the same text | A finishing worker or any analyze, status or score request dispatches the next queued job; the UTC day resets the daily cap | `tests/analysis/capacity.test.ts` |
+| Queued job not started within 120 s | Visitor: "Retrofit is too busy right now. Try again in a few minutes." Agents get 503 with the same text and `retryAfterSeconds` 120 | A new request queues it again | `tests/analysis/capacity.test.ts` |
 | Address is not a public website | Visitor: "This address is not a public website." | Another URL | `tests/fetch/guard.test.ts` |
 | Generated network fails validation | Visitor: score, then "Retrofit could not build a working agent for this site." | Generator fix; reason kept in the job | `tests/generate/validate.test.ts` |
 | Preview expired (analysis older than 7 days) | Visitor: "This preview expired on <date>. Analyze the site again." | New analysis | `tests/analysis/expiry.test.ts` |
 | Visitor cookie missing or different (other device, cleared cookies) | Visitor: "This preview belongs to another browser. Analyze the site again to get your own." (same text for a nonexistent id) | New analysis; the shared crawl makes it fast | `e2e/privacy.spec.ts` |
 | Key test fails (401, CORS, model not listed) | Key panel: provider-specific message | Visitor fixes the key or uses Advanced | `tests/keys/test-key.test.ts`, `e2e/key-panel.spec.ts` |
-| Peer redirect or unapproved destination | Chat: "Retrofit blocked a request to <origin> that was not approved." | The visitor continues; the peer call fails closed | `e2e/redirects.spec.ts` |
+| Peer redirect, unapproved destination or artifact on another origin | Chat: "Retrofit blocked a request to <origin> that was not approved." | The visitor continues; the peer call fails closed | `e2e/redirects.spec.ts` |
+| New provider key fails validation | Key panel: the provider message; the previous router (free path or provider A) stays active | Visitor fixes the key | `e2e/provider-switch.spec.ts` |
 | `score_site` called while the score runs | Agent: "The score is still running. Call score_site again in 20 seconds with the same URL." | Agent calls again | `tests/agent/score-action.test.ts` |
 | Free cap reached (session, client, public pool or ledger) | Chat and banner: "Retrofit's free AI is used up for <reason>. Paste your own key in AI settings to continue." | A key, or the window resets; judges use the reserve | `tests/inference/quota.test.ts`, `e2e/free-path.spec.ts` |
 | Session cookie expired | Renewal every 30 min and on tab focus at `/api/inference/session` keeps the same session; if a call still fails: "Your free session expired. Reload the page." | Automatic renewal, or reload | `e2e/free-path.spec.ts` |
-| Otari error, timeout or mid-stream failure | Chat: "The free AI provider did not answer. Try again, or use your own key." | Retry by the visitor; the proxy never retries | `tests/inference/proxy.test.ts` |
+| Otari error, timeout or mid-stream failure | Chat: "The free AI provider did not answer. Try again, or use your own key." (HTTP 502, because the free path buffers the whole completion) | Retry by the visitor; the proxy never retries | `tests/inference/proxy.test.ts`, `e2e/free-path.spec.ts` |
+| Reported usage above the reservation | Visitors: "Retrofit's free AI is paused for today. Use your own key." Owner: a GitHub issue "Free AI reservation overrun" | Owner reviews the bound; the pool reopens the next UTC day or when the owner raises the framing allowance | `tests/inference/ledger.test.ts` |
 | Inference counters unavailable | Chat: "Retrofit's free AI is not available right now. Use your own key." | Store recovers; no forwarding without a reservation | `tests/inference/proxy.test.ts` |
 | Credit threshold crossed | Owner: a GitHub issue "Free AI credit threshold reached" in `juan294/retrofit` | Owner adds credit, lowers caps or accepts | `tests/ops/credit-check.test.ts` |
 | Store unavailable in production | Visitor: "Retrofit is having trouble. Try again in a few minutes." `/api/health` `degraded` | Supabase recovers; no fallback to memory in production | `tests/store/supabase-failure.test.ts` |
 | Gate database held, inherited or left by an interrupted run | Developer: the holder, or "Found a retrofit-gate stack this run did not create" with `pnpm gate-db:recover` | Holder finishes; recovery disposes only a stack that matches its own receipt and whose run is dead | `tests/tools/gate-db.test.ts` |
 | Evidence stale or incomplete | Releaser: the analyzer names each missing, stale or failed item | Re-run the gate | `tests/release/analyze-evidence.test.ts` |
+| Production evidence fails for the candidate deployment | Owner: the analyzer report; the release is not accepted or tagged | Remove the production alias (first release) or roll back (later releases) under the playbook, fix locally, new candidate | `tests/release/analyze-evidence.test.ts` (production mode) |
 | Vendored runtime changed | Developer: `pnpm vendor:verify` names each file | `pnpm vendor:sync` from the recorded commit | `tests/vendor/verify.test.ts` |
 
 ## Consumer sweep
@@ -190,6 +204,9 @@ No application code exists. This plan defines five shared formats. Before each p
 - **Judge code exposure.** If Devpost has no judges-only field, the code is public and the judge reserve can be spent by others within its own caps.
 - **Inline styles allowed.** `'unsafe-inline'` for styles permits CSS injection if markup injection exists. Mitigation: hostile content and model-output rendering tests; scripts stay strict.
 - **Fetch guard scope.** The guard covers `fetch`; CSP covers other request types (`img-src`, `frame-src`, `connect-src`).
+- **Adapter depends on runtime internals.** The consent hook wraps `engine.requestConsent`, an internal method of the pinned runtime. A runtime update can break it; `e2e/redirects.spec.ts` and `e2e/spec6.spec.ts` fail in that case, and the vendor checksum blocks silent updates.
+- **Tokenizer assumption.** The reservation bound assumes byte-level tokenization. Phase 6 measures it against Otari; an overrun suspends the public pool rather than spending the judge reserve.
+- **No streaming on the free path.** Visitors on the free path see the answer at once when it is complete, not word by word. BYOK keeps streaming.
 - **Serverless time limits.** Crawl budget 45 s, upstream timeout 45 s, `maxDuration` 60 s.
 
 ## Review record
@@ -219,12 +236,27 @@ All resolved in revision 2 and kept in this revision: R1 vendored runtime for th
 | R39 | S3 | Release scope conflicted with the profile | Owner decision: production peer `demo-harbor` and production §6 before release (Phase 7) |
 | R40 | S3 | Second plan risks deferred | Owner decision: Phase 5 spike and the critical path above |
 
+### Revision 3 assessment (revision 4 dispositions)
+
+| ID | Sev | Finding | Disposition in revision 4 |
+| --- | --- | --- | --- |
+| R29 follow-up | S2 | Guard allowed every configured peer, not only approved ones | Guard records approvals from the engine's `requestConsent`; a peer origin needs policy and consent; router origin limited to its API paths; same-origin artifact fetches use `redirect: "error"`; A-to-B and router-as-artifact-host tests (Phase 4) |
+| R30 follow-up | S2 | Byte/3 estimate is not a bound | Reservation is a byte-level upper bound plus framing; strict nested schema; overrun suspends the public pool and alerts; high-density probe; tests for usage above reservation, missing usage, disconnect and concurrency (Phase 6) |
+| R39 follow-up | S2 | Cycle and over-budget left local; production evidence after "release" | All §6 cases in production with published conformance peers and a scripted model inside the test browser; candidate deployment, production evidence bound to deployment and commit, analyzer production mode, then acceptance and tag (Phase 7) |
+| R41 | S2 | Guard blocked provider validation | Explicit `authorizeProvider` from the key panel; real-browser tests for free to BYOK, provider A to B and failed validation (Phase 4) |
+| R42 | S2 | Runtime ignores an SSE error event | Free path buffers the completion and fails with HTTP 502; browser test with a partial upstream answer then failure (Phase 6) |
+| R43 | S2 | Queued API-only jobs had no dispatcher | Store queue primitive; dispatch on worker completion and on every request; 120 s queue expiry; API-only test with no polling (Phases 2 and 3) |
+| H1 | S3 | Lint rule forbade the Supabase failure test's location | Explicit allowlist entry for `tests/store/supabase-failure.test.ts` (Phase 1) |
+| H2 | S3 | Load test needed a server but sat in the unit suite | Vitest `perf` project with its own server lifecycle on port 3014, gate position after `pnpm build` (Phases 1 and 3) |
+| H3 | S3 | Load test needed ten hosts but fixtures allowed two | `<label>.fixture.test` host names, mapped to loopback in fixtures mode for Node and for Chromium (Phases 1 and 2) |
+| H4 | S3 | Universal CSP fixture conflicted with expected violations | Per-test `expectCspViolations` with an exact list; anything unexpected or missing fails (Phases 1 and 4) |
+
 ## Handoff
 
 - **Objective and scope:** this plan, Phases 1 to 7. Approved scope so far: planning only. No implementation, push, deployment, provider account, credential or DNS action is authorized.
-- **State at writing:** branch `develop`, revision 1 at `4161197`; `origin/develop` at `44c5325`; worktree `/Users/juan/code/retrofit`. Spec commit `63a956c`. Neuro SAN reference commit `71b9f41`.
+- **State at writing:** branch `develop`, revision 3 at `f5cbb6f`; `origin/develop` at `44c5325`; worktree `/Users/juan/code/retrofit`. Spec commit `63a956c`. Neuro SAN reference commit `71b9f41`.
 - **Evidence limits:** listed under "Specification read". Next.js 16 behavior, cookie behavior in real browsers, the HOCON reference bodies and Otari's balance and key-budget features were not checked; the phases that depend on them verify them first.
 - **Decisions:** owner decisions and planner decisions above.
-- **Review:** R1 to R40 dispositions above. Revision 3 has not had its own independent review.
+- **Review:** R1 to R43 and H1 to H4 dispositions above. Revision 4 has not had its own independent review.
 - **Overlay:** none present; no override applied.
 - **Next step:** owner acceptance. On acceptance, start Phase 1 in a worktree with `/rpi-implement`.

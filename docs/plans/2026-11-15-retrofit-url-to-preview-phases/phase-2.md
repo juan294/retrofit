@@ -21,13 +21,14 @@ Server code that reads a public website safely into a `Snapshot` (a superset of 
 - `compareAndSet(key, expected, next, ttlSeconds) -> boolean` (atomic, compares a version field)
 - `incrementWindow(key, windowSeconds, by = 1) -> count` (atomic)
 - `acquireLease(key, ttlSeconds) -> token | null`, `renewLease(key, token, ttlSeconds) -> boolean`, `releaseLease(key, token) -> boolean` (release only when the token still owns the lease)
+- `enqueue(queue, itemId, ttlSeconds)` and `claimNext(queue) -> itemId | null` (atomic: two concurrent claims never return the same item; expired items are skipped and removed)
 
-`src/lib/store/memory.ts` implements it with an injectable clock. Two memory clients can share one backing map, to model two server instances. `tests/store/contract.ts` is the shared suite: expiry; atomic `putIfAbsent` under concurrent calls; `compareAndSet` version conflicts; window counts; lease exclusivity, renewal, expiry, reacquisition and a late release that must not free a successor's lease; all of these with two clients.
+`src/lib/store/memory.ts` implements it with an injectable clock. Two memory clients can share one backing map, to model two server instances. `tests/store/contract.ts` is the shared suite: expiry; atomic `putIfAbsent` under concurrent calls; `compareAndSet` version conflicts; window counts; lease exclusivity, renewal, expiry, reacquisition and a late release that must not free a successor's lease; queue order, concurrent claims and expiry; all of these with two clients.
 
 ### Fetch
 
-- `src/lib/fetch/url.ts`: `http` or `https`; ports 80 and 443; no credentials; DNS name with a public suffix; IDN to punycode; at most 2048 characters; fragment removed. When `fixturesEnabled`, exactly `http://127.0.0.1:<port>` and `http://localhost:<port>` are also accepted. Tests keep the production refusals.
-- `src/lib/fetch/guard.ts`: blocked IPv4 `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.0.2.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `198.51.100.0/24`, `203.0.113.0/24`, `224.0.0.0/4`, `240.0.0.0/4`; blocked IPv6 `::/128`, `::1/128`, `fc00::/7`, `fe80::/10`, `ff00::/8`, `2001:db8::/32`, `2001::/32` (Teredo), `2002::/16` (6to4), `64:ff9b::/96`, `64:ff9b:1::/48` (NAT64), and `::ffff:0:0/96` forms of blocked IPv4 ranges. With `fixturesEnabled`, loopback is allowed and nothing else changes.
+- `src/lib/fetch/url.ts`: `http` or `https`; ports 80 and 443; no credentials; DNS name with a public suffix; IDN to punycode; at most 2048 characters; fragment removed. When `fixturesEnabled`, exactly `http://127.0.0.1:<port>`, `http://localhost:<port>` and `http://<label>.fixture.test:<port>` (one DNS label, `.test` is a reserved domain) are also accepted. Tests keep the production refusals.
+- `src/lib/fetch/guard.ts`: blocked IPv4 `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.0.2.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `198.51.100.0/24`, `203.0.113.0/24`, `224.0.0.0/4`, `240.0.0.0/4`; blocked IPv6 `::/128`, `::1/128`, `fc00::/7`, `fe80::/10`, `ff00::/8`, `2001:db8::/32`, `2001::/32` (Teredo), `2002::/16` (6to4), `64:ff9b::/96`, `64:ff9b:1::/48` (NAT64), and `::ffff:0:0/96` forms of blocked IPv4 ranges. With `fixturesEnabled`, loopback is allowed, `guardedLookup` resolves `*.fixture.test` to `127.0.0.1`, and nothing else changes.
 - `src/lib/fetch/pacing.ts`: per-host pacing through the store (`nextAllowedAt:<host>` with `compareAndSet`), applied to every request, including robots.txt and probes. Interval `max(1 s, crawl delay)`.
 - `src/lib/fetch/robots.ts`: `/robots.txt` per host for `RetrofitBot` with `robots-parser`; cached per host for 1 h.
 - `src/lib/fetch/http.ts`: `guardedFetch`.
@@ -86,13 +87,13 @@ A joined job forwards readers to the job it joined, so analyses that started fro
 
 ### Fixtures
 
-- `tests/helpers/fixture-server.ts`: loopback HTTP server on ephemeral ports, able to serve `127.0.0.1` and `localhost` as two hosts.
+- `tests/helpers/fixture-server.ts`: loopback HTTP server on ephemeral ports that routes by `Host` header, so `127.0.0.1`, `localhost` and any number of `<label>.fixture.test` names act as separate hosts.
 - `tests/fixtures/sites/` (synthetic): `bakery`, `spa-only`, `blocked`, `redirect-www` (first host redirects to a second host whose robots.txt disallows `RetrofitBot`), `converge-a` and `converge-b` (two hosts that both redirect to one destination), `agentified`, `hostile` (injection phrases in body, `<title>` and JSON-LD `name`; 5 MB page; redirect to a blocked address; login and cart pages).
 
 ## Tests (write first)
 
 - `tests/store/memory.test.ts`: the shared contract suite.
-- `tests/fetch/url.test.ts`: production refusals (credentials, `ftp:`, port 8080, IP literals, no public suffix); fixture acceptance only with `fixturesEnabled`.
+- `tests/fetch/url.test.ts`: production refusals (credentials, `ftp:`, port 8080, IP literals, no public suffix, `*.fixture.test`); fixture acceptance only with `fixturesEnabled`; two-label names such as `a.b.fixture.test` refused.
 - `tests/fetch/guard.test.ts`: every row of `tests/fixtures/address-cases.json` (at least 40 rows).
 - `tests/fetch/http.test.ts`: redirect to a blocked address refused; rebinding resolver refused; 5 MB body truncated; timeout; sixth redirect refused; redirect to a robots-disallowed host gives `RobotsBlocked`.
 - `tests/fetch/pacing.test.ts`: two clients sharing a store never send two requests to one host inside the interval (fake clock); robots and probe requests are paced.
