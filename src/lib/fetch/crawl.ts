@@ -136,16 +136,23 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
   if (home.body !== null && isHtml(home)) add(toPage(home));
   else skipped.push({ url: home.url, reason: "not-html" });
 
-  // Set once a request would start after the deadline: the delay only grows relative to the time left.
-  let delayStop = false;
+  // Hosts whose next request would start after the deadline. Per host: a long delay on the
+  // declared network's host or an off-host redirect target does not stop the main host. Once
+  // refused, a host stays refused, because the time left only shrinks.
+  const delayStopped = new Set<string>();
+  const refused = (e: unknown): boolean => {
+    if (!(e instanceof CrawlDelayTooLong)) return false;
+    delayStopped.add(e.host);
+    return true;
+  };
   // Every request below is preceded by a progress step, which renews the lease.
   const probe = async (url: URL, stepName: string): Promise<Probe> => {
-    if (delayStop || overBudget()) return emptyProbe(url.href);
+    if (delayStopped.has(url.host) || overBudget()) return emptyProbe(url.href);
     await step(stepName);
     try {
       return toProbe(await guardedFetch(url, o.fetch, limits));
     } catch (e) {
-      if (e instanceof CrawlDelayTooLong) delayStop = true;
+      refused(e);
       return emptyProbe(url.href);
     }
   };
@@ -158,7 +165,7 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
   };
   // The network the manifest declares (networks[0].hocon), for the aw.network-valid check.
   const networkUrl = declaredNetworkUrl(probes.agentManifest);
-  if (networkUrl && !delayStop && !overBudget()) probes.network = await probe(networkUrl, "probe network");
+  if (networkUrl) probes.network = await probe(networkUrl, "probe network");
 
   const seen = new Set<string>([normalize(inputUrl)!, normalize(home.url)!]);
   const queue: string[] = [];
@@ -180,7 +187,7 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
       skipped.push({ url: next, reason: "page-budget" });
       continue;
     }
-    if (delayStop) {
+    if (delayStopped.has(final.host)) {
       skipped.push({ url: next, reason: "crawl-delay" });
       continue;
     }
@@ -197,8 +204,7 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
       else if (r.status >= 400) skipped.push({ url: next, reason: `status-${r.status}` });
       else add(toPage(r));
     } catch (e) {
-      if (e instanceof CrawlDelayTooLong) delayStop = true;
-      const reason = e instanceof PrivatePathRefused ? "private-path" : e instanceof CrawlDelayTooLong ? "crawl-delay" : ((e as { code?: string }).code ?? "fetch-error");
+      const reason = e instanceof PrivatePathRefused ? "private-path" : refused(e) ? "crawl-delay" : ((e as { code?: string }).code ?? "fetch-error");
       skipped.push({ url: next, reason });
     }
   }

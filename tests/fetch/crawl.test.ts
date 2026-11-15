@@ -286,6 +286,35 @@ describe("crawlSite", () => {
     expect(server.requests.map((r) => r.path)).toEqual(["/robots.txt"]);
   });
 
+  // Fails if a crawl delay refusal on another host (the declared network's host, or an off-host
+  // redirect) stops the main host's remaining pages (F4).
+  it("keeps reading the main host after another host's crawl delay refuses a request", async () => {
+    const slowRobots = { headers: { "content-type": "text/plain" }, body: "User-agent: *\nCrawl-delay: 50\nAllow: /\n" };
+    const server = await serveSites((o) => ({
+      "main.fixture.test": {
+        ...bakery,
+        "/": { headers: { "content-type": "text/html" }, body: `<main><a href="/away">away</a> <a href="/menu">menu</a> <a href="/order">order</a></main>` },
+        "/away": { status: 302, headers: { location: `${o("far.fixture.test")}/page` } },
+        "/agent-manifest.json": {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ networks: [{ name: "n", front_man: "n", hocon: `${o("net.fixture.test")}/n.json` }] }),
+        },
+      },
+      "net.fixture.test": { "/robots.txt": slowRobots, "/n.json": { headers: { "content-type": "application/json" }, body: "{}" } },
+      "far.fixture.test": { "/robots.txt": slowRobots, "/page": { headers: { "content-type": "text/html" }, body: "<main>far</main>" } },
+    }));
+    close = () => server.close();
+    const t = fakeTimeContext();
+    // The other hosts' robots.txt was read just now, so their next request must wait 50 s.
+    await t.fetch.robots.check(new URL(`${server.origin("net.fixture.test")}/`));
+    await t.fetch.robots.check(new URL(`${server.origin("far.fixture.test")}/`));
+    const snapshot = (await crawlSite(server.origin("main.fixture.test"), { config, fetch: t.fetch, clock: t.clock }))!;
+    expect(snapshot.probes.network?.status ?? null).toBeNull();
+    expect(snapshot.skipped.find((x) => x.url.endsWith("/away"))?.reason).toBe("crawl-delay");
+    expect(snapshot.pages.map((p) => new URL(p.url).pathname).sort()).toEqual(["/", "/menu", "/order"]);
+    expect(server.requests.filter((r) => r.host !== "main.fixture.test").map((r) => r.path)).toEqual(["/robots.txt", "/robots.txt"]);
+  });
+
   // Fails if a redirect chain is not bounded as a whole: a hop to a host with a long delay must be
   // refused before contact when its wait would pass the deadline (plan notes, delayed redirect chains).
   it("refuses a redirect hop whose host delay would pass the deadline", async () => {
