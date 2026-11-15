@@ -137,8 +137,15 @@ const requiredCases = {
   cases: [
     { id: "partner-harbor-tours", kind: "partner" },
     { id: "health-ok", kind: "probe" },
-    { id: "alias-binding", kind: "binding" },
+    { id: "alias-binding", kind: "binding", aliases: ["retrofit.thecreativetoken.com", "demo-harbor.thecreativetoken.com"] },
   ],
+};
+/** Vercel's identity of every host, before (09:02) and after (09:10) the cases recorded at 09:05. */
+const IDENTITY_HOSTS = { "retrofit-abc123.vercel.app": "dpl_candidate", "retrofit.thecreativetoken.com": "dpl_candidate", "demo-harbor.thecreativetoken.com": "dpl_candidate" };
+const IDENTITY = {
+  source: "vercel inspect",
+  before: { checkedAt: "2026-11-16T09:02:00.000Z", deployments: IDENTITY_HOSTS },
+  after: { checkedAt: "2026-11-16T09:10:00.000Z", deployments: IDENTITY_HOSTS },
 };
 const RUN_ID = "run_0123456789abcdef";
 
@@ -204,7 +211,7 @@ function writeProduction() {
   });
   write(path.join(production(), "partner-harbor-tours.json"), caseReport("partner-harbor-tours", { exitCode: 0 }));
   write(path.join(production(), "health-ok.json"), caseReport("health-ok"));
-  write(path.join(production(), "alias-binding.json"), caseReport("alias-binding", { deploymentCommit: candidate, aliasCommit: candidate }));
+  write(path.join(production(), "alias-binding.json"), caseReport("alias-binding", { deploymentCommit: candidate, aliasCommit: candidate, identity: IDENTITY }));
   write(path.join(production(), "run.json"), { runId: RUN_ID, startedAt: "2026-11-16T09:01:00.000Z", deploymentId: "dpl_candidate" });
 }
 
@@ -680,14 +687,23 @@ describe("analyze-evidence production mode", () => {
   });
 
   it("rejects an alias that serves another commit than the deployment", () => {
-    write(path.join(production(), "alias-binding.json"), caseReport("alias-binding", { deploymentCommit: candidate, aliasCommit: "d".repeat(40) }));
+    write(path.join(production(), "alias-binding.json"), caseReport("alias-binding", { deploymentCommit: candidate, aliasCommit: "d".repeat(40), identity: IDENTITY }));
     const result = run();
     expect(result.status).toBe(1);
     expect(result.out).toContain(`binding check alias-binding aliasCommit ${"d".repeat(40)} differs from the candidate`);
   });
 
+  // Fails if a binding case without declared aliases checks only the deployment URL (V10: the alias and peer host).
+  it("rejects a required binding case that lists no aliases", () => {
+    write(path.join(root, "tools/release/required-production-cases.json"), { cases: requiredCases.cases.map((c) => (c.kind === "binding" ? { id: c.id, kind: c.kind } : c)) });
+    git("add", ".");
+    git("commit", "-q", "-m", "no aliases");
+    const result = analyze(git("rev-parse", "HEAD"), "--production", production());
+    expect(result.out).toContain("required-production-cases.json binding case alias-binding lists no aliases");
+  });
+
   it("rejects a binding check that recorded no deployment commit", () => {
-    write(path.join(production(), "alias-binding.json"), caseReport("alias-binding", { aliasCommit: candidate }));
+    write(path.join(production(), "alias-binding.json"), caseReport("alias-binding", { aliasCommit: candidate, identity: IDENTITY }));
     const result = run();
     expect(result.status).toBe(1);
     expect(result.out).toContain("binding check alias-binding deploymentCommit undefined differs from the candidate");

@@ -326,8 +326,9 @@ function checkProduction(ctx, dir, requiredCases) {
   const kinds = new Map(requiredCases.map((c) => [c.id, c.kind]));
   const seen = new Map();
   const files = fs.readdirSync(dir).filter((name) => name.endsWith(".json") && name !== "deployment.json" && name !== "run.json").sort();
-  for (const name of files) {
-    const report = readJson(path.join(dir, name), name, reject);
+  const reports = files.map((name) => [name, readJson(path.join(dir, name), name, reject)]);
+  const identityWindow = checkIdentity(ctx, deployment, requiredCases, reports, reject);
+  for (const [name, report] of reports) {
     if (!report) continue;
     if (typeof report.case !== "string" || !report.case) {
       reject(`${name} names no case`);
@@ -363,6 +364,8 @@ function checkProduction(ctx, dir, requiredCases) {
     if (!Number.isFinite(recordedAt)) reject(`${name} recordedAt ${report.recordedAt} is not a time`);
     else if (Number.isFinite(createdAt) && recordedAt < createdAt) {
       reject(`${name} was recorded at ${report.recordedAt}, before the deployment was created at ${deployment.createdAt}`);
+    } else if (identityWindow && kinds.get(report.case) !== "binding" && (recordedAt < identityWindow.from || recordedAt > identityWindow.to)) {
+      reject(`${name} was recorded at ${report.recordedAt}, outside the alias identity checks (${identityWindow.before} to ${identityWindow.after})`);
     }
   }
   let passedCases = 0;
@@ -371,6 +374,52 @@ function checkProduction(ctx, dir, requiredCases) {
     else if (seen.get(id)) passedCases += 1;
   }
   return passedCases;
+}
+
+/**
+ * The binding case's alias identity: Vercel's deployment for the deployment URL host and each
+ * alias of the required binding case, before the first and after the last other case. Every host
+ * must name deployment.json's deployment both times. Returns the window between the two checks,
+ * or null when it cannot be established (the reason is already rejected).
+ */
+function checkIdentity(ctx, deployment, requiredCases, reports, reject) {
+  const bindings = requiredCases.filter((c) => c.kind === "binding");
+  let window = null;
+  for (const required of bindings) {
+    const aliases = Array.isArray(required.aliases) ? required.aliases.filter((a) => typeof a === "string" && a) : [];
+    if (aliases.length === 0) {
+      ctx.reject("input", `required-production-cases.json binding case ${required.id} lists no aliases`);
+      continue;
+    }
+    const report = reports.find(([, r]) => r?.case === required.id)?.[1];
+    if (!report || !deployment || typeof deployment.deploymentUrl !== "string") continue;
+    const identity = report.identity;
+    if (!identity?.before || !identity?.after) {
+      reject(`binding check ${required.id} has no alias identity before and after the suites`);
+      continue;
+    }
+    let deploymentHost = null;
+    try {
+      deploymentHost = new URL(deployment.deploymentUrl).host;
+    } catch {
+      reject(`deployment.json deploymentUrl ${deployment.deploymentUrl} is not a URL`);
+      continue;
+    }
+    for (const phase of ["before", "after"]) {
+      for (const host of [deploymentHost, ...aliases]) {
+        const bound = identity[phase].deployments?.[host];
+        if (bound !== deployment.deploymentId) reject(`binding check ${required.id} ${phase}: ${host} is bound to ${bound}, not ${deployment.deploymentId}`);
+      }
+    }
+    const from = Date.parse(identity.before.checkedAt);
+    const to = Date.parse(identity.after.checkedAt);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) {
+      reject(`binding check ${required.id} identity times ${identity.before.checkedAt} and ${identity.after.checkedAt} are not an ordered pair`);
+      continue;
+    }
+    window = { from, to, before: identity.before.checkedAt, after: identity.after.checkedAt };
+  }
+  return window;
 }
 
 function readList(root, file, key, reject) {

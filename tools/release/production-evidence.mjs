@@ -11,7 +11,12 @@
 // already holds files; --fresh first moves them to <dir>.previous-<time>.
 //
 // It contacts production: Vercel (inspect, list), the deployment's API, the organizers'
-// partner check and a Playwright run against the live pages. Run it only as the integration
+// partner check and a Playwright run against the live pages.
+//
+// Identity: `vercel inspect` names the deployment that the deployment URL and each alias of the
+// binding case (the production host and the peer host) serve, before the first case and again
+// after the last. A host bound to another deployment, or one Vercel cannot inspect, fails the
+// alias-binding case; when that happens before the suites, no suite runs (fail closed). Run it only as the integration
 // owner, after an authorized candidate deployment (phase-7.md, External actions, step 12).
 // --dry-run prints every command and URL and contacts nothing.
 //
@@ -156,6 +161,7 @@ async function oneAnalysis(o, pagePath) {
 /** The ordered steps: what each produces and every command and URL it uses. */
 function steps(o, cases, pwCases) {
   const partners = cases.filter((c) => c.kind === "partner");
+  const inspectShow = identityTargets(o, cases).map((t) => `$ vercel inspect ${t} --format json --scope ${VERCEL_SCOPE}`);
   const env = [
     `RETROFIT_PROD_URL=${o.prod}`,
     `RETROFIT_DEPLOYMENT_ID=${o.deploymentId}`,
@@ -171,13 +177,13 @@ function steps(o, cases, pwCases) {
       show: [`$ vercel inspect ${o.deploymentUrl} --format json --scope ${VERCEL_SCOPE}`, `  fallback for createdAt: --created-at ${o.createdAt ?? "<required when vercel inspect gives no creation time>"}`],
       run: recordDeployment,
     },
-    { name: "version", produces: ["version-commit"], show: [`GET ${o.prod}/api/version`], run: checkVersion },
     {
-      name: "alias-binding",
-      produces: ["alias-binding"],
-      show: [`GET ${o.deploymentUrl}/api/version`, `GET ${o.prod}/api/version`, "  both must return the candidate commit: the alias serves this deployment"],
-      run: checkAliasBinding,
+      name: "alias-identity",
+      produces: [],
+      show: [...inspectShow, `  each must name ${o.deploymentId}; otherwise alias-binding fails and no suite runs`],
+      run: aliasIdentityBefore,
     },
+    { name: "version", produces: ["version-commit"], show: [`GET ${o.prod}/api/version`], run: checkVersion },
     { name: "health", produces: ["health-ok"], show: [`GET ${o.prod}/api/health`], run: checkHealth },
     {
       name: "partners",
@@ -211,7 +217,78 @@ function steps(o, cases, pwCases) {
       ],
       run: (ctx) => runPlaywright(ctx, pwCases),
     },
+    {
+      name: "alias-binding",
+      produces: ["alias-binding"],
+      show: [
+        `GET ${o.deploymentUrl}/api/version`,
+        `GET ${o.prod}/api/version`,
+        "  both must return the candidate commit",
+        ...inspectShow,
+        `  again after the suites: each must still name ${o.deploymentId}`,
+      ],
+      run: checkAliasBinding,
+    },
   ];
+}
+
+/**
+ * Vercel's record of the deployment that `target` (a deployment URL or an alias) serves:
+ * `vercel inspect <target> --format json`. The authoritative alias-to-deployment source.
+ *
+ * @returns {{status: number, info: Record<string, unknown> | null, output: string}}
+ */
+export function vercelInspect(target) {
+  const r = run("vercel", ["inspect", target, "--format", "json", "--scope", VERCEL_SCOPE], { timeout: 60_000 });
+  let info = null;
+  if (r.status === 0) {
+    try {
+      info = JSON.parse(r.output.slice(r.output.indexOf("{")));
+    } catch {
+      info = null;
+    }
+  }
+  return { status: r.status, info, output: r.output };
+}
+
+/** The targets whose deployment the identity checks: the deployment URL, the production host and the binding case's aliases. */
+function identityTargets(o, cases) {
+  const aliases = cases.find((c) => c.kind === "binding")?.aliases ?? [];
+  const hosts = [new URL(o.prod).host, ...aliases].filter((h, i, all) => all.indexOf(h) === i);
+  return [o.deploymentUrl, ...hosts.map((h) => `https://${h}`)];
+}
+
+/** One identity check: {checkedAt, deployments: {host: deployment id or "unavailable (...)"}}. */
+function inspectIdentity(ctx) {
+  const deployments = {};
+  for (const target of identityTargets(ctx.o, ctx.cases)) {
+    const r = ctx.inspect(target);
+    const id = typeof r.info?.id === "string" && r.info.id ? r.info.id : null;
+    const firstLine = r.output.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+    deployments[new URL(target).host] = id ?? `unavailable (exit ${r.status}${firstLine ? `: ${firstLine.slice(0, 120)}` : ""})`;
+  }
+  return { checkedAt: new Date().toISOString(), deployments };
+}
+
+/** What is wrong with one identity check, as visitor-readable lines; empty when every host serves the candidate. */
+function identityProblems(o, check) {
+  return Object.entries(check.deployments).flatMap(([host, id]) => {
+    if (id.startsWith("unavailable")) return [`alias identity could not be inspected: ${host} ${id}`];
+    return id === o.deploymentId ? [] : [`${host} is bound to ${id}, not ${o.deploymentId}`];
+  });
+}
+
+function aliasIdentityBefore(ctx) {
+  ctx.identityBefore = inspectIdentity(ctx);
+  const problems = identityProblems(ctx.o, ctx.identityBefore);
+  if (problems.length === 0) {
+    ctx.say(`  every host serves ${ctx.o.deploymentId}`);
+    return;
+  }
+  for (const p of problems) ctx.say(`  ${p}`);
+  record(ctx, "alias-binding", false, { alias: ctx.o.prod, identity: { source: "vercel inspect", before: ctx.identityBefore, after: null }, problems });
+  ctx.say("  stopping: no suite runs against hosts that do not serve the candidate deployment");
+  ctx.stop = true;
 }
 
 function record(ctx, caseId, passed, extra = {}) {
@@ -236,16 +313,11 @@ function writeLog(ctx, name, text) {
 
 function recordDeployment(ctx) {
   const { o } = ctx;
-  const inspect = run("vercel", ["inspect", o.deploymentUrl, "--format", "json", "--scope", VERCEL_SCOPE], { timeout: 60_000 });
+  const inspect = ctx.inspect(o.deploymentUrl);
   let createdAt = null;
   let source = null;
   if (inspect.status === 0) {
-    let info = null;
-    try {
-      info = JSON.parse(inspect.output.slice(inspect.output.indexOf("{")));
-    } catch {
-      info = null;
-    }
+    const info = inspect.info;
     if (info?.id && info.id !== o.deploymentId) throw new UsageError(`vercel inspect reports deployment ${info.id}, not ${o.deploymentId}`);
     if (info?.target && info.target !== "production") throw new UsageError(`vercel inspect reports target ${info.target}, not production`);
     const raw = info?.createdAt ?? info?.created;
@@ -287,13 +359,18 @@ async function checkAliasBinding(ctx) {
   const [deployment, alias] = await Promise.all([http("GET", `${ctx.o.deploymentUrl}/api/version`), http("GET", `${ctx.o.prod}/api/version`)]);
   const deploymentCommit = commitOf(deployment);
   const aliasCommit = commitOf(alias);
-  record(ctx, "alias-binding", deploymentCommit === ctx.o.commit && aliasCommit === ctx.o.commit, {
+  const after = inspectIdentity(ctx);
+  const problems = [...identityProblems(ctx.o, ctx.identityBefore).map((p) => `before: ${p}`), ...identityProblems(ctx.o, after).map((p) => `after: ${p}`)];
+  for (const p of problems) ctx.say(`  ${p}`);
+  record(ctx, "alias-binding", deploymentCommit === ctx.o.commit && aliasCommit === ctx.o.commit && problems.length === 0, {
     alias: ctx.o.prod,
     deploymentCommit,
     aliasCommit,
     expected: ctx.o.commit,
     deploymentStatus: deployment.status,
     aliasStatus: alias.status,
+    identity: { source: "vercel inspect", before: ctx.identityBefore, after },
+    problems,
   });
 }
 
@@ -359,7 +436,12 @@ function runPlaywright(ctx, pwCases) {
   }
 }
 
-export async function main(argv, io = { stdout: (s) => console.log(s), stderr: (s) => console.error(s) }) {
+/**
+ * @param {string[]} argv
+ * @param {{stdout: (s: string) => void, stderr: (s: string) => void}} [io]
+ * @param {{inspect?: typeof vercelInspect}} [deps] the alias inspector (Vercel's CLI by default)
+ */
+export async function main(argv, io = { stdout: (s) => console.log(s), stderr: (s) => console.error(s) }, deps = {}) {
   let o;
   try {
     o = parseArgs(argv);
@@ -389,7 +471,7 @@ export async function main(argv, io = { stdout: (s) => console.log(s), stderr: (
     if (earlier) say(o.fresh ? `would move the earlier evidence to ${aside}` : `would refuse: ${o.dir} already holds evidence; pass --fresh to move it aside`);
     say("writes run.json with a new run id; every case report carries it");
     plan.forEach((s, i) => {
-      say(`step ${i + 1} ${s.name} -> ${s.produces.join(", ")}`);
+      say(`step ${i + 1} ${s.name} -> ${s.produces.join(", ") || "nothing yet"}`);
       for (const line of s.show) say(`  ${line}`);
     });
     say(`then: node tools/release/analyze-evidence.mjs ${o.commit} --production ${path.relative(ROOT, o.dir) || o.dir}`);
@@ -412,9 +494,14 @@ export async function main(argv, io = { stdout: (s) => console.log(s), stderr: (
     served: "unavailable (not read)",
     results: new Map(),
     playwrightExit: null,
+    cases,
+    inspect: deps.inspect ?? vercelInspect,
+    identityBefore: null,
+    stop: false,
   };
   for (const [i, s] of plan.entries()) {
-    say(`step ${i + 1} ${s.name} -> ${s.produces.join(", ")}`);
+    if (ctx.stop) break;
+    say(`step ${i + 1} ${s.name} -> ${s.produces.join(", ") || "nothing yet"}`);
     try {
       await s.run(ctx);
     } catch (error) {

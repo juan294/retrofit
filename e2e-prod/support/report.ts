@@ -1,6 +1,9 @@
 // Writes one production case report for a Playwright case (phase-7.md, "Production evidence
 // (step 12)"). The deployment id and URL come from the release script's environment; the
-// commit comes from the deployment's own /api/version, so a report binds to what actually served it.
+// commit comes from the deployment's own /api/version. A commit cannot tell two deployments of
+// one commit apart, so the deployment id is proven elsewhere: the release script's alias-binding
+// case records Vercel's alias-to-deployment identity for every host before and after the suites,
+// and the analyzer rejects a report recorded outside those two checks.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { caseReport, prodUrl, writeCaseFile } from "./case-report.mjs";
