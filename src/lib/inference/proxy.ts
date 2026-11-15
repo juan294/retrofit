@@ -3,7 +3,7 @@ import { json } from "@/lib/api/json";
 import { openAlert, overrunAlert } from "@/lib/ops/alert";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { CountersUnavailable, HOLD_MESSAGE, UNAVAILABLE_MESSAGE } from "./errors";
-import { type OverrunAlert, createHold, recordOverrun } from "./hold";
+import { type OverrunAlert, createHold, holdId, recordOverrun } from "./hold";
 import { type Pool, createLedger } from "./ledger";
 import { type CapReason, capMessage, createQuota } from "./quota";
 import { redact, redactText } from "./redact";
@@ -28,6 +28,9 @@ import { readSession, sessionTexts } from "./session";
 export const FREE_PLACEHOLDER_KEY = "retrofit-free";
 export const FREE_FAILED_MESSAGE = "The free AI provider did not answer. Try again, or use your own key.";
 export const AUTH_MESSAGE = "Retrofit's free AI accepts only its own placeholder key. Your own key goes to your provider, never to Retrofit.";
+
+/** Bound on the overrun GitHub call, so 45 s upstream plus the alert stays inside maxDuration 60 s; the daily credit check retries a failure. */
+export const OVERRUN_ALERT_TIMEOUT_MS = 5000;
 
 /** The upstream answer is a short buffered completion (max_tokens 1024); anything larger is refused. */
 export const MAX_UPSTREAM_BYTES = 2 * 1024 * 1024;
@@ -92,7 +95,7 @@ class UpstreamFailure extends Error {
 }
 
 /** Reads the whole body, failing at once when `signal` aborts (timeout or visitor disconnect). */
-async function readAll(body: ReadableStream<Uint8Array>, signal: AbortSignal): Promise<string> {
+async function readAll(body: ReadableStream<Uint8Array>, signal: AbortSignal, chunks: Uint8Array[]): Promise<string> {
   const reader = body.getReader();
   let onAbort: () => void = () => {};
   const aborted = new Promise<never>((_, reject) => {
@@ -101,7 +104,6 @@ async function readAll(body: ReadableStream<Uint8Array>, signal: AbortSignal): P
     else signal.addEventListener("abort", onAbort, { once: true });
   });
   aborted.catch(() => {});
-  const chunks: Uint8Array[] = [];
   let size = 0;
   try {
     for (;;) {
@@ -120,9 +122,32 @@ async function readAll(body: ReadableStream<Uint8Array>, signal: AbortSignal): P
   return Buffer.concat(chunks).toString("utf8");
 }
 
+type Usage = { promptTokens: number; completionTokens: number };
+
+const usageFrom = (value: unknown): Usage | null => {
+  if (typeof value !== "object" || value === null) return null;
+  const u = value as { prompt_tokens?: unknown; completion_tokens?: unknown };
+  return isCount(u.prompt_tokens) && isCount(u.completion_tokens) ? { promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens } : null;
+};
+
+/** The last usage object in a partial or failed stream; malformed lines are skipped. */
+function lastUsage(text: string): Usage | null {
+  let usage: Usage | null = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line.startsWith("data:")) continue;
+    try {
+      usage = usageFrom((JSON.parse(line.slice(5).trim()) as { usage?: unknown }).usage) ?? usage;
+    } catch {
+      // Partial or malformed line: keep the last usage seen.
+    }
+  }
+  return usage;
+}
+
 interface Completion {
   readonly events: unknown[];
-  readonly usage: { promptTokens: number; completionTokens: number } | null;
+  readonly usage: Usage | null;
   readonly finished: boolean;
 }
 
@@ -150,10 +175,7 @@ function parseStream(text: string): Completion {
     if (Array.isArray(e.choices) && e.choices.some((c) => typeof c === "object" && c !== null && typeof (c as { finish_reason?: unknown }).finish_reason === "string")) {
       finished = true;
     }
-    if (typeof e.usage === "object" && e.usage !== null) {
-      const u = e.usage as { prompt_tokens?: unknown; completion_tokens?: unknown };
-      if (isCount(u.prompt_tokens) && isCount(u.completion_tokens)) usage = { promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens };
-    }
+    usage = usageFrom(e.usage) ?? usage;
     events.push(event);
   }
   return { events, usage, finished };
@@ -229,7 +251,7 @@ export async function handleChat(request: Request, deps: ServerDeps, opts: { sig
   try {
     // Counters, then the reservation: nothing is forwarded without one.
     let reservationId: string;
-    let reservationMicroUsd: number;
+    let reservation: ReturnType<typeof reservationFor>;
     try {
       if (pool === "public" && (await hold.read()) !== null) return held();
       const slot = await quota.acquireInflight(sid);
@@ -237,8 +259,8 @@ export async function handleChat(request: Request, deps: ServerDeps, opts: { sig
       release = slot.release;
       const admitted = await quota.admitCall({ sid, pool });
       if (!admitted.ok) return capped(admitted.reason);
-      reservationMicroUsd = reservationFor(body, free).microUsd;
-      const reserved = await ledger.reserve({ pool, sid, microUsd: reservationMicroUsd });
+      reservation = reservationFor(body, free);
+      const reserved = await ledger.reserve({ pool, sid, microUsd: reservation.microUsd });
       if (!reserved.ok) return reserved.reason === "hold" ? held() : capped(reserved.reason);
       reservationId = reserved.reservationId;
     } catch (e) {
@@ -247,39 +269,55 @@ export async function handleChat(request: Request, deps: ServerDeps, opts: { sig
       return unavailable();
     }
 
+    /**
+     * Records the outcome. A complete answer is charged its reported usage. A
+     * failed one is charged the full reservation, or the reported usage when it
+     * is higher; without usage the reservation is kept (an upper bound under
+     * the stated assumption). Reported usage above the reservation, or prompt
+     * tokens above the input bound, writes the hold and alerts.
+     */
+    const settle = async (usage: Usage | null, complete: boolean): Promise<void> => {
+      try {
+        const reported = usage ? usageCharge(usage, free) : null;
+        const charge = reported === null ? null : complete ? reported : Math.max(reported, reservation.microUsd);
+        const result = await ledger.reconcile(reservationId, charge);
+        const inputBoundExceeded = usage !== null && usage.promptTokens > reservation.inputTokenBound;
+        if (!result.overrun && !inputBoundExceeded) return;
+        log("reported usage above the bound; holding the public pool", {
+          pool,
+          reservationMicroUsd: reservation.microUsd,
+          overrunMicroUsd: result.overrunMicroUsd,
+          inputBoundExceeded,
+        });
+        const alert: OverrunAlert = async () => {
+          const record = await hold.read();
+          const id = record ? holdId(record) : String(deps.clock());
+          await openAlert(overrunAlert(id), { config: deps.config, store: deps.store }, { timeoutMs: OVERRUN_ALERT_TIMEOUT_MS });
+        };
+        await recordOverrun(counterDeps, result, alert, { inputBoundExceeded });
+      } catch (e) {
+        // The reservation stays outstanding and is charged in full when stale; the cron retries a failed alert.
+        log("reconcile or hold failed", { error: describeError(e) });
+      }
+    };
+
     const outcome = await callUpstream(request, deps, serverKey, body, opts.signal);
 
     if (!outcome.ok) {
-      // The provider may already charge for it: keep the full reservation as spend.
-      await ledger.reconcile(reservationId, null).catch((e: unknown) => log("reconcile failed", { error: describeError(e) }));
+      await settle(outcome.usage, false);
       log("upstream failed", { code: outcome.code, detail: outcome.detail, pool });
       return failed(outcome.code);
     }
 
     const { completion } = outcome;
     if (!completion.finished || !completion.usage) {
-      // Missing usage keeps the full reservation, an upper bound under the stated assumption.
-      await ledger.reconcile(reservationId, null).catch((e: unknown) => log("reconcile failed", { error: describeError(e) }));
+      await settle(completion.usage, false);
       const code = completion.finished ? "upstream_no_usage" : "upstream_incomplete";
       log("upstream stream incomplete", { code, pool });
       return failed(code);
     }
 
-    try {
-      const result = await ledger.reconcile(reservationId, usageCharge(completion.usage, free));
-      if (result.overrun) {
-        log("reservation overrun; holding the public pool", { pool, reservationMicroUsd, overrunMicroUsd: result.overrunMicroUsd });
-        const alert: OverrunAlert = async () => {
-          const record = await hold.read();
-          const holdId = String(record ? Date.parse(record.at) : deps.clock());
-          await openAlert(overrunAlert(holdId), { config: deps.config, store: deps.store });
-        };
-        await recordOverrun(counterDeps, result, alert);
-      }
-    } catch (e) {
-      // The answer is complete; the reservation stays outstanding and is charged in full when stale.
-      log("reconcile or hold failed after a complete answer", { error: describeError(e) });
-    }
+    await settle(completion.usage, true);
     return sseBody(completion.events);
   } catch (e) {
     log("unexpected failure", { error: describeError(e) });
@@ -289,7 +327,8 @@ export async function handleChat(request: Request, deps: ServerDeps, opts: { sig
   }
 }
 
-type UpstreamOutcome = { ok: true; completion: Completion } | { ok: false; code: string; detail: string };
+/** A failure carries the last usage the stream reported before it failed, if any. */
+type UpstreamOutcome = { ok: true; completion: Completion } | { ok: false; code: string; detail: string; usage: Usage | null };
 
 /**
  * One upstream POST, no retry. The whole stream is read within
@@ -313,6 +352,7 @@ async function callUpstream(request: Request, deps: ServerDeps, serverKey: strin
     else s.addEventListener("abort", onDisconnect, { once: true });
   }
 
+  const chunks: Uint8Array[] = [];
   try {
     const res = await fetch(`${free.upstreamUrl}/chat/completions`, {
       method: "POST",
@@ -324,15 +364,16 @@ async function callUpstream(request: Request, deps: ServerDeps, serverKey: strin
     });
     if (!res.ok || !res.body) {
       await res.body?.cancel().catch(() => {});
-      return { ok: false, code: "upstream_status", detail: `upstream answered ${res.status}` };
+      return { ok: false, code: "upstream_status", detail: `upstream answered ${res.status}`, usage: null };
     }
-    const text = await readAll(res.body, controller.signal);
+    const text = await readAll(res.body, controller.signal, chunks);
     return { ok: true, completion: parseStream(text) };
   } catch (e) {
-    if (why === "timeout") return { ok: false, code: "upstream_timeout", detail: `no complete answer within ${free.upstreamTimeoutMs} ms` };
-    if (why === "disconnect") return { ok: false, code: "visitor_disconnected", detail: "visitor disconnected; upstream aborted" };
-    if (e instanceof UpstreamFailure) return { ok: false, code: e.code, detail: e.message };
-    return { ok: false, code: "upstream_broken", detail: describeError(e) };
+    const usage = lastUsage(Buffer.concat(chunks).toString("utf8"));
+    if (why === "timeout") return { ok: false, code: "upstream_timeout", detail: `no complete answer within ${free.upstreamTimeoutMs} ms`, usage };
+    if (why === "disconnect") return { ok: false, code: "visitor_disconnected", detail: "visitor disconnected; upstream aborted", usage };
+    if (e instanceof UpstreamFailure) return { ok: false, code: e.code, detail: e.message, usage };
+    return { ok: false, code: "upstream_broken", detail: describeError(e), usage };
   } finally {
     clearTimeout(timer);
     for (const s of visitorSignals) s.removeEventListener("abort", onDisconnect);
@@ -348,8 +389,8 @@ export type StatusReason = "no_session" | "not_configured" | "hold" | "unavailab
 
 /**
  * GET /api/inference/status -> 200 `{available, pool, reason}` with no amounts.
- * `reason` is null when available. In fixtures mode only, also `{sid, calls}`
- * for the e2e renewal test. Advisory: the chat route makes the real decision.
+ * `reason` is null when available. In fixtures mode only, also `{sid, calls,
+ * publicSpentTodayMicro}` for the e2e renewal and UTC-midnight tests. Advisory: the chat route makes the real decision.
  */
 export async function handleStatus(request: Request, deps: ServerDeps): Promise<Response> {
   const log = logger(deps);
@@ -362,9 +403,9 @@ export async function handleStatus(request: Request, deps: ServerDeps): Promise<
     const { sid, pool } = session.claims;
     const counterDeps = { store: deps.store, config: free, clock: deps.clock };
     const calls = await createQuota(counterDeps).callsUsed(sid);
-    const extra = { sid, calls };
-    if (!keyFor(deps, pool)) return answer(false, pool, "not_configured", extra);
     const b = await createLedger(counterDeps).budgets();
+    const extra = { sid, calls, publicSpentTodayMicro: b.publicSpentTodayMicro };
+    if (!keyFor(deps, pool)) return answer(false, pool, "not_configured", extra);
     if (pool === "public" && (b.held || (await createHold(counterDeps).read()) !== null)) return answer(false, pool, "hold", extra);
     const cap = pool === "judge" ? free.judgeCallsPerSession : free.callsPerSession;
     if (calls >= cap) return answer(false, pool, pool === "judge" ? "judge_session_calls" : "session_calls", extra);

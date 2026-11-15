@@ -239,9 +239,9 @@ describe("POST /api/inference/session/judge", () => {
 });
 
 describe("judge code guessing", () => {
-  // Fails if wrong judge codes are not limited per client (the code could be guessed without limit).
-  it("refuses further codes after 10 wrong ones from one client in an hour, even the right one", async () => {
-    const { JUDGE_FAILURES_PER_CLIENT_HOUR, handleJudgeUpgrade, handleSession } = await import("@/lib/inference/session");
+  // Fails if judge code attempts are not limited per client (the code could be guessed without limit).
+  it("refuses further codes after 10 attempts from one client in an hour, even the right one", async () => {
+    const { JUDGE_ATTEMPTS_PER_CLIENT_HOUR, handleJudgeUpgrade, handleSession } = await import("@/lib/inference/session");
     const { testDeps } = await import("../helpers/server-deps");
     const d = testDeps({ env: { JUDGE_CODE: "right-code" } });
     const origin = d.config.publicOrigin;
@@ -249,9 +249,28 @@ describe("judge code guessing", () => {
     const cookie = (created.headers.get("set-cookie") ?? "").split(";")[0]!;
     const attempt = (code: string) =>
       handleJudgeUpgrade(new Request(`${origin}/api/inference/session/judge`, { method: "POST", headers: { origin, cookie, "content-type": "application/json" }, body: JSON.stringify({ code }) }), d);
-    for (let i = 0; i < JUDGE_FAILURES_PER_CLIENT_HOUR; i++) expect((await attempt(`wrong-${i}`)).status).toBe(403);
+    for (let i = 0; i < JUDGE_ATTEMPTS_PER_CLIENT_HOUR; i++) expect((await attempt(`wrong-${i}`)).status).toBe(403);
     const blocked = await attempt("right-code");
     expect(blocked.status).toBe(429);
     expect((await blocked.json()).error).toBe("too_many_codes");
+  });
+});
+
+describe("judge code guessing under concurrency", () => {
+  // Fails if the limit is checked by a read before the increment (parallel guesses would all pass).
+  it("lets at most 10 of 30 parallel attempts reach the compare", async () => {
+    const { JUDGE_ATTEMPTS_PER_CLIENT_HOUR, handleJudgeUpgrade, handleSession } = await import("@/lib/inference/session");
+    const { testDeps } = await import("../helpers/server-deps");
+    const d = testDeps({ env: { JUDGE_CODE: "right-code-long-enough" } });
+    const origin = d.config.publicOrigin;
+    const created = await handleSession(new Request(`${origin}/api/inference/session`, { method: "POST", headers: { origin } }), d);
+    const cookie = (created.headers.get("set-cookie") ?? "").split(";")[0]!;
+    const results = await Promise.all(
+      Array.from({ length: 30 }, (_, i) =>
+        handleJudgeUpgrade(new Request(`${origin}/api/inference/session/judge`, { method: "POST", headers: { origin, cookie, "content-type": "application/json" }, body: JSON.stringify({ code: `guess-${i}` }) }), d),
+      ),
+    );
+    expect(results.filter((r) => r.status === 403)).toHaveLength(JUDGE_ATTEMPTS_PER_CLIENT_HOUR);
+    expect(results.filter((r) => r.status === 429)).toHaveLength(30 - JUDGE_ATTEMPTS_PER_CLIENT_HOUR);
   });
 });

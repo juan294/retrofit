@@ -206,6 +206,9 @@ export function loadFreeConfig(env: Env, onVercel: boolean): FreeConfig {
   const keyJudge = env.OTARI_API_KEY_JUDGE?.trim() || single;
   if (onVercel && (!keyPublic || !keyJudge)) throw new ConfigError("OTARI_API_KEY", "is required on Vercel (or OTARI_API_KEY_PUBLIC and OTARI_API_KEY_JUDGE)");
 
+  const judgeCode = secret("JUDGE_CODE");
+  if (onVercel && judgeCode && judgeCode.length < 16) throw new ConfigError("JUDGE_CODE", "must be at least 16 characters on Vercel");
+
   const n = (name: string, fallback: number) => parsePositive(env, name, fallback);
   return Object.freeze({
     model: env.FREE_MODEL?.trim() || "alibaba/qwen3.8-flash",
@@ -233,7 +236,7 @@ export function loadFreeConfig(env: Env, onVercel: boolean): FreeConfig {
     upstreamUrl,
     keyPublic,
     keyJudge,
-    judgeCode: secret("JUDGE_CODE"),
+    judgeCode,
     cronSecret: secret("CRON_SECRET"),
     alertGithubToken: secret("ALERT_GITHUB_TOKEN"),
     alertRepo: "juan294/retrofit",

@@ -8,7 +8,7 @@ export const VERCEL_ENV: Record<string, string> = {
   FREE_CREDIT_USD: "100",
   JUDGE_RESERVE_USD: "30",
   OTARI_API_KEY: "otk_server_test",
-  JUDGE_CODE: "judge-code-test",
+  JUDGE_CODE: "judge-code-test-0123456789",
   CRON_SECRET: "cron-secret-test",
   ALERT_GITHUB_TOKEN: "github-token-test",
 };

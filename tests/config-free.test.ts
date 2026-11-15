@@ -71,4 +71,9 @@ describe("free inference configuration", () => {
     expect(loadConfig({ SESSION_SECRET: secret, FREE_PER_REQUEST_FEE_USD: "0.0001" }).free.perRequestFeeUsd).toBe(0.0001);
     expect(() => loadConfig({ SESSION_SECRET: secret, FREE_PER_REQUEST_FEE_USD: "-1" })).toThrow(/FREE_PER_REQUEST_FEE_USD/);
   });
+
+  // Fails if a short, guessable judge code is accepted in production.
+  it("requires a judge code of at least 16 characters on Vercel", () => {
+    expect(() => loadConfig({ ...VERCEL_ENV, JUDGE_CODE: "short-code" })).toThrow(/JUDGE_CODE/);
+  });
 });

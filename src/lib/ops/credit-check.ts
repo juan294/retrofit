@@ -1,7 +1,7 @@
 import { sameHash } from "../analysis/visitor";
 import { json } from "../api/json";
 import type { ServerDeps } from "../server/runtime";
-import { openAlert, percent, type Alert, type AlertDeps } from "./alert";
+import { openAlert, overrunAlert, percent, type Alert, type AlertDeps } from "./alert";
 import { ledgerViewFor, type LedgerView } from "./ledger-view";
 
 /** The judge alert opens when less than this fraction of the judge reserve remains. */
@@ -82,13 +82,16 @@ export function judgeReserveAlert(s: Shares): Alert {
 
 /**
  * Opens the threshold alert the first time each threshold is crossed, and the
- * judge alert when less than 25% of the judge reserve remains. Returns the keys
+ * judge alert when less than 25% of the judge reserve remains, and the overrun
+ * alert while a hold exists (so a failed send from the proxy is retried). Returns the keys
  * opened by this run.
  */
 export async function runCreditCheck(deps: AlertDeps, view: LedgerView): Promise<{ alerts: string[] }> {
   const s = shares(deps, view);
   const due: Alert[] = deps.config.free.alertThresholds.filter((t) => s.used >= t).map((t) => thresholdAlert(t, s));
   if (s.judgeRemaining < JUDGE_LOW_FRACTION) due.push(judgeReserveAlert(s));
+  // While a hold exists, retry its overrun alert (one issue per hold: openAlert is idempotent by key).
+  if (view.holdId) due.push(overrunAlert(view.holdId));
   const alerts: string[] = [];
   for (const alert of due) {
     if ((await openAlert(alert, deps)).sent) alerts.push(alert.key);

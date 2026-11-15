@@ -8,7 +8,7 @@ async function ask(page: import("@playwright/test").Page, text: string) {
   await input.press("Enter");
 }
 
-async function status(page: import("@playwright/test").Page): Promise<{ available: boolean; pool: string; sid?: string; calls?: number }> {
+async function status(page: import("@playwright/test").Page): Promise<{ available: boolean; pool: string; sid?: string; calls?: number; publicSpentTodayMicro?: number }> {
   return page.evaluate(async () => (await fetch("/api/inference/status", { credentials: "same-origin" })).json());
 }
 
@@ -63,6 +63,7 @@ test("renewal keeps the session and its count; two tabs share it; UTC midnight r
   await expect(page.getByTestId("preview-mount").getByText("Hello from Retrofit's agent.").filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
   const before = await status(page);
   expect(before.calls).toBe(1);
+  expect(before.publicSpentTodayMicro).toBeGreaterThan(0);
 
   const tab2 = await context.newPage();
   await tab2.goto("/");
@@ -77,6 +78,8 @@ test("renewal keeps the session and its count; two tabs share it; UTC midnight r
   expect(after.sid).toBe(before.sid);
   expect(after.calls).toBe(1);
   expect(after.available).toBe(true);
+  // The daily public pool reset at UTC midnight; the session's own count did not.
+  expect(after.publicSpentTodayMicro).toBe(0);
 });
 
 test("at the session cap the chat shows the cap text and the banner offers a key", async ({ page }) => {
@@ -88,6 +91,8 @@ test("at the session cap the chat shows the cap text and the banner offers a key
     await page.waitForTimeout(150);
   }
   await expect(page.getByTestId("free-banner")).toContainText("Retrofit's free AI is used up for", { timeout: 20_000 });
+  // The chat shows the cap text too (the runtime's error bubble carries the proxy's message).
+  await expect(page.getByTestId("preview-mount").getByText(/Retrofit's free AI is used up for/).filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByTestId("free-banner").getByRole("link", { name: "Use your own key" })).toBeVisible();
 });
 

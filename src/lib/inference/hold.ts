@@ -75,14 +75,20 @@ export function createHold(deps: HoldDeps) {
   };
 }
 
+/** The id of a hold, used in its alert key (`overrun:<id>`): the hold time in ms. */
+export const holdId = (record: Pick<HoldRecord, "at">): string => String(Date.parse(record.at));
+
 /**
- * Called by the proxy after reconcile. On an overrun it writes the hold and
- * alerts once: a repeated overrun while the hold exists does not alert again.
+ * Called by the proxy after reconcile. On an overrun, or when the reported
+ * prompt tokens exceed the reservation's input bound (the byte-tokenizer
+ * assumption failed even if the unused output allowance hides it in the
+ * total), it writes the hold and alerts once: a repeated breach while the hold
+ * exists does not alert again. The daily credit check retries a failed alert.
  */
-export async function recordOverrun(deps: HoldDeps, result: ReconcileResult, alert: OverrunAlert): Promise<void> {
-  if (!result.overrun) return;
+export async function recordOverrun(deps: HoldDeps, result: ReconcileResult, alert: OverrunAlert, options: { inputBoundExceeded?: boolean } = {}): Promise<void> {
+  if (!result.overrun && !options.inputBoundExceeded) return;
   const { created } = await createHold(deps).writeHold({
-    reason: "reservation_overrun",
+    reason: result.overrun ? "reservation_overrun" : "input_tokens_above_bound",
     overrunMicroUsd: result.overrunMicroUsd,
     reservationMicroUsd: result.reservationMicroUsd,
   });

@@ -40,31 +40,6 @@ describe("quota caps", () => {
     expectCap(await quota.admitCall({ sid: "j", pool: "judge" }), "judge_session_calls");
   });
 
-  // Fails if new sessions per client per hour are not capped, or the window never ends.
-  it("refuses new session N+1 per client per hour", async () => {
-    const { clock, quota } = setup();
-    for (let i = 0; i < free.sessionsPerClientHour; i++) expect((await quota.admitSession({ client: "c1" })).ok).toBe(true);
-    expectCap(await quota.admitSession({ client: "c1" }), "client_sessions");
-    expect((await quota.admitSession({ client: "c2" })).ok).toBe(true);
-    clock.advance(3_600_001);
-    expect((await quota.admitSession({ client: "c1" })).ok).toBe(true);
-  });
-
-  // Fails if judge sessions per client per UTC day are not capped, or do not reset at the next UTC day.
-  it("refuses judge session N+1 per client per UTC day", async () => {
-    const { clock, quota } = setup();
-    for (let i = 0; i < free.judgeSessionsPerClientDay; i++) expect((await quota.admitJudgeSession({ client: "c1" })).ok).toBe(true);
-    expectCap(await quota.admitJudgeSession({ client: "c1" }), "judge_client_sessions");
-    clock.set(Date.parse("2026-11-16T00:00:01Z"));
-    expect((await quota.admitJudgeSession({ client: "c1" })).ok).toBe(true);
-  });
-
-  // Fails if client ids with separators can collide with other clients' counters.
-  it("keeps clients with separator characters apart", async () => {
-    const { quota } = setup();
-    for (let i = 0; i < free.sessionsPerClientHour; i++) await quota.admitSession({ client: "a:b" });
-    expect((await quota.admitSession({ client: "a" })).ok).toBe(true);
-  });
 });
 
 describe("in-flight slots", () => {

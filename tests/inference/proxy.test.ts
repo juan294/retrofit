@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HOLD_MESSAGE, UNAVAILABLE_MESSAGE } from "@/lib/inference/errors";
 import { createHold } from "@/lib/inference/hold";
 import { createLedger } from "@/lib/inference/ledger";
-import { FREE_FAILED_MESSAGE, handleChat, handleModels, handleStatus } from "@/lib/inference/proxy";
+import { FREE_FAILED_MESSAGE, OVERRUN_ALERT_TIMEOUT_MS, handleChat, handleModels, handleStatus } from "@/lib/inference/proxy";
 import { capMessage } from "@/lib/inference/quota";
-import { reservationFor } from "@/lib/inference/reservation";
+import { reservationFor, usageCharge } from "@/lib/inference/reservation";
 import { parseChatRequest } from "@/lib/inference/schema";
 import { handleJudgeUpgrade, handleSession, sessionTexts } from "@/lib/inference/session";
 import { alertStoreKey } from "@/lib/ops/alert";
@@ -61,8 +61,11 @@ function streamed(chunks: string[], then: "end" | "break" | "hang" = "end", sign
     start(controller) {
       for (const c of chunks) controller.enqueue(enc.encode(c));
       if (then === "end") controller.close();
-      if (then === "break") controller.error(new Error("socket hang up"));
       if (then === "hang") signal?.addEventListener("abort", () => controller.error(signal.reason), { once: true });
+    },
+    // Errors only after the queued chunks were read (an error in start would discard them).
+    pull(controller) {
+      if (then === "break") controller.error(new Error("socket hang up"));
     },
   });
   return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
@@ -550,12 +553,16 @@ describe("GET /api/inference/v1/models and /api/inference/status", () => {
     const cookie = await session(d);
     await handleChat(chat(BODY, { cookie }), d);
     const body = (await (await handleStatus(statusReq(cookie), d)).json()) as Record<string, unknown>;
-    expect(body).toMatchObject({ available: true, pool: "public", reason: null, calls: 1 });
+    expect(body).toMatchObject({ available: true, pool: "public", reason: null, calls: 1, publicSpentTodayMicro: usageCharge({ promptTokens: 120, completionTokens: 20 }, d.config.free) });
     expect(body.sid).toMatch(/^[0-9a-f]{32}$/);
 
+    // Fails if the fixtures-only fields (sid, calls, publicSpentTodayMicro) leak outside fixtures mode.
     const prod = setup({ RETROFIT_TEST_FIXTURES: "" });
     const prodCookie = await session(prod.d);
-    expect(await (await handleStatus(statusReq(prodCookie), prod.d)).json()).toEqual({ available: true, pool: "public", reason: null });
+    await handleChat(chat(BODY, { cookie: prodCookie }), prod.d);
+    const prodBody = (await (await handleStatus(statusReq(prodCookie), prod.d)).json()) as Record<string, unknown>;
+    expect(prodBody).not.toHaveProperty("publicSpentTodayMicro");
+    expect(prodBody).toEqual({ available: true, pool: "public", reason: null });
   });
 
   // Fails if status says the public pool is available during the overrun hold.
@@ -564,5 +571,68 @@ describe("GET /api/inference/v1/models and /api/inference/status", () => {
     const cookie = await session(d);
     await createHold({ store: d.store, config: d.config.free, clock: d.clock }).writeHold({ reason: "reservation_overrun", overrunMicroUsd: 1, reservationMicroUsd: 1 });
     expect(await (await handleStatus(statusReq(cookie), d)).json()).toMatchObject({ available: false, pool: "public", reason: "hold" });
+  });
+});
+
+describe("chat: reported usage on failure and the input bound", () => {
+  const holdOf = (d: TestDeps) => createHold({ store: d.store, config: d.config.free, clock: d.clock }).read();
+  const big = () => usageEvent(500_000, 10);
+  const bigCharge = (d: TestDeps) => usageCharge({ promptTokens: 500_000, completionTokens: 10 }, d.config.free);
+
+  // P6-R1. Fails if a failed stream that reported usage is charged only the reservation, or skips the hold and alert on an overrun.
+  it.each([
+    ["usage but no finish_reason", () => streamed([sse([contentEvent("Our opening hours"), big()])])],
+    ["usage and then a broken stream", () => streamed([sse([contentEvent("Our opening hours"), finishEvent(), big()], false)], "break")],
+  ] as [string, () => Response][])("%s above the reservation: 502, charges the reported usage, holds and alerts once", async (_name, make) => {
+    const { d, ledger } = setup();
+    const cookie = await session(d);
+    script = async () => make();
+    const res = await handleChat(chat(BODY, { cookie }), d);
+    expect(res.status).toBe(502);
+    expect(await res.text()).not.toContain("opening hours");
+    const b = await ledger.budgets();
+    expect(b.totalOutstandingMicro).toBe(0);
+    expect(b.totalSpentMicro).toBe(bigCharge(d));
+    expect(await holdOf(d)).toMatchObject({ reason: "reservation_overrun", reservationMicroUsd: reservationOf(d, BODY) });
+    expect(issues.map((i) => i.title)).toEqual(["Free AI reservation overrun"]);
+  });
+
+  // P6-R1. Fails if usage below the reservation on a failed stream lowers the charge (the provider may bill more than it reported so far).
+  it("usage below the reservation on a broken stream charges the full reservation and does not hold", async () => {
+    const { d, ledger } = setup();
+    const cookie = await session(d);
+    script = async () => streamed([sse([contentEvent("Our opening hours"), usageEvent(120, 20)], false)], "break");
+    expect((await handleChat(chat(BODY, { cookie }), d)).status).toBe(502);
+    expect((await ledger.budgets()).totalSpentMicro).toBe(reservationOf(d, BODY));
+    expect(await holdOf(d)).toBeNull();
+    expect(issues).toHaveLength(0);
+  });
+
+  // P6-R4. Fails if prompt tokens above the input bound pass unnoticed because the unused output allowance hides them in the total.
+  it("prompt tokens above the input bound hold the pool even when the charge fits the reservation", async () => {
+    const { d, ledger } = setup();
+    const cookie = await session(d);
+    const parsed = parseChatRequest(BODY, d.config.free);
+    if (!parsed.ok) throw new Error(parsed.message);
+    const bound = reservationFor(parsed.body, d.config.free);
+    script = async () => streamed([complete(usageEvent(bound.inputTokenBound + 1, 0))]);
+    const res = await handleChat(chat(BODY, { cookie }), d);
+    expect(res.status).toBe(200);
+    expect((await ledger.budgets()).totalSpentMicro).toBeLessThan(bound.microUsd);
+    expect(await holdOf(d)).toMatchObject({ reason: "input_tokens_above_bound", overrunMicroUsd: 0, reservationMicroUsd: bound.microUsd });
+    expect(issues.map((i) => i.title)).toEqual(["Free AI reservation overrun"]);
+    expect((await handleChat(chat(BODY, { cookie }), d)).status).toBe(429);
+  });
+
+  // P6-R7. Fails if the overrun alert uses the 10 s default GitHub timeout (45 s upstream + 10 s could pass maxDuration 60 s).
+  it("bounds the overrun GitHub call to 5 s", async () => {
+    const { d } = setup();
+    const cookie = await session(d);
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    script = async () => streamed([complete(big())]);
+    expect((await handleChat(chat(BODY, { cookie }), d)).status).toBe(200);
+    expect(OVERRUN_ALERT_TIMEOUT_MS).toBeLessThanOrEqual(5000);
+    expect(timeout).toHaveBeenCalledWith(OVERRUN_ALERT_TIMEOUT_MS);
+    expect(timeout).not.toHaveBeenCalledWith(10_000);
   });
 });

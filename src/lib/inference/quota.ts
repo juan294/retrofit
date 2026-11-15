@@ -1,11 +1,11 @@
 import type { FreeConfig } from "@/lib/config";
 import type { Clock, Store } from "@/lib/store/types";
 import { guarded } from "./errors";
-import { type Pool, utcDay } from "./ledger";
+import type { Pool } from "./ledger";
 
 /**
- * Free-path quotas (phase 6, "Ledger and quotas"): calls per session, new
- * sessions per client, and in-flight slots. Counters use the store's atomic
+ * Free-path quotas (phase 6, "Ledger and quotas"): calls per session and
+ * in-flight slots. New-session caps live in session.ts. Counters use the store's atomic
  * incrementWindow; in-flight slots are 60 s leases, so a crashed request frees
  * its slot when the lease ends.
  */
@@ -53,20 +53,16 @@ export interface QuotaDeps {
 export const INFLIGHT_LEASE_S = 60;
 /** Session call counters outlive any renewed session in the free period. */
 const SESSION_COUNTER_WINDOW_S = 90 * 86_400;
-const HOUR_S = 3600;
-const DAY_S = 86_400;
 
 const id = (s: string) => encodeURIComponent(s);
 const keys = {
   calls: (sid: string) => `inference:quota:calls:${id(sid)}`,
-  clientSessions: (client: string) => `inference:quota:sessions:${id(client)}`,
-  judgeSessions: (client: string, day: string) => `inference:quota:judge-sessions:${id(client)}:${day}`,
   sessionSlot: (sid: string, i: number) => `inference:quota:inflight:session:${id(sid)}:${i}`,
   globalSlot: (i: number) => `inference:quota:inflight:global:${i}`,
 };
 
 export function createQuota(deps: QuotaDeps) {
-  const { store, config: free, clock } = deps;
+  const { store, config: free } = deps;
 
   const count = (what: string, key: string, windowS: number, by = 1) => guarded(what, () => store.incrementWindow(key, windowS, by));
 
@@ -91,18 +87,6 @@ export function createQuota(deps: QuotaDeps) {
     /** Calls counted for the session so far, without counting one (an increment of 0 reads the window). */
     callsUsed(sid: string): Promise<number> {
       return count("calls", keys.calls(sid), SESSION_COUNTER_WINDOW_S, 0);
-    },
-
-    /** Counts one new session for the client in a one-hour window. Renewals must not call it. */
-    async admitSession(input: { client: string }): Promise<QuotaResult> {
-      const n = await count("sessions", keys.clientSessions(input.client), HOUR_S);
-      return n > free.sessionsPerClientHour ? refusal("client_sessions") : { ok: true };
-    },
-
-    /** Counts one judge upgrade for the client in the current UTC day. */
-    async admitJudgeSession(input: { client: string }): Promise<QuotaResult> {
-      const n = await count("judge sessions", keys.judgeSessions(input.client, utcDay(clock())), DAY_S);
-      return n > free.judgeSessionsPerClientDay ? refusal("judge_client_sessions") : { ok: true };
     },
 
     /** Takes one session slot and one global slot (60 s leases). `release` frees both and is safe to call twice. */

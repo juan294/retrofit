@@ -55,6 +55,10 @@ Implementation notes for the plan `2026-11-15-retrofit-url-to-preview.md` and it
 | 6 | Stream parsing | Not fixed for malformed `data:` lines | A data line that is not JSON counts as a broken stream (502) | Fail closed; the contract probe must confirm Otari never sends one. |
 | 6 | Reservations of a crashed request | Not fixed | A reservation still open after 10 minutes is charged in full | Keeps the budget conservative without holding it forever. |
 | 6 | e2e server clock and caps | UTC midnight renewal needs a server clock change; the session cap needs a short limit | Fixtures-only clock offset (`POST /test-fixtures/clock`, 404 otherwise) and `FREE_CALLS_PER_SESSION=12` for the Playwright server | Test configuration only. |
+| 6 | Hold record with no TTL | The Store contract requires a positive TTL | The hold, ledger and audit records use a 10-year TTL | Equivalent for the service's life; only `resume-free` removes the hold. |
+| 6 | `pnpm ops:resume-free` against production | No production store exists until Phase 7 | The command exits 2 with "No production store configured until Phase 7"; its logic is tested on the memory store | Phase 7 connects it to Supabase. |
+| 6 | One alert title "Free AI credit threshold reached" | The judge reserve alert is a different event | Its own title, "Free AI judge reserve low" | The owner can tell the two apart. |
+| 6 | New-session caps in `quota.ts` | `session.ts` already counts new sessions and judge upgrades per client | The unused `quota.ts` copies were removed | One counter per cap. |
 
 ## Phase 1 handoff
 
@@ -120,3 +124,17 @@ Implementation notes for the plan `2026-11-15-retrofit-url-to-preview.md` and it
 - Independent review: no S1 or S2. P5-R1 to R3 (S3, an untested repeat guard presented as a mitigation, an incomplete duplicate-write risk, two INFERRED claims under VERIFIED wording) and P5-R4 (S4, the catalog labels reversible changes `irreversible`) fixed in the correction commit: claims relabelled, the risk section now states the hook's limits and requires site-side idempotency, and the second-plan work adds item 2a.
 - Gate: the spike changed only documentation, so the Phase 4 gate on `aee102e` stands for the product inputs; the whitespace check passes on the new document.
 - Owner acceptance item: the write-confirmation approach for the second plan. Pending.
+
+## Phase 6 handoff
+
+- Scope: all Phase 6 changes. Commits `acdc17a`, `9c3454b` and the repair commit after them.
+- Gate on `9c3454b`: every check passed except `rpi-installation` (pre-existing); `identity_unchanged: true`. Unit 818, coverage 92.97% statements and 87.6% branches, perf p95 19.4 ms, e2e 49 (including `e2e/free-path.spec.ts`: a delegation and a tool result through the proxy, Retrofit's agent on its published default router, renewal across two tabs and UTC midnight, the session cap, a partial answer then a failure with no retry).
+- Independent review found no S1 or S2 defect. Dispositions, fixed in the repair commit: P6-R1 (S3, reported usage on a failed stream was discarded, so an overrun could go unrecorded): a failure that reported usage is charged `max(reservation, reported)` and runs the overrun path; P6-R2 (S3, a failed overrun alert was never retried): the daily credit check opens the overrun issue while a hold exists; P6-R3 (S4, the judge limit was read before the increment): every attempt is counted atomically before the compare, and Vercel requires a judge code of at least 16 characters; P6-R4 (S4): `prompt_tokens` above the input bound also holds the pool; P6-R5 (S4, a remembered key still started a free session): the free path waits for the stored-key check; P6-R6 (S4, tests that could not fail): the midnight test checks the daily spend resets, the cap test checks the chat text, the unused quota session caps were removed; P6-R7: deviation rows added, the overrun GitHub call is bounded to 5 s.
+- After repairs (local run): unit 826, e2e 50.
+- Open for the owner (entry conditions and manual criteria of Phase 6):
+  - Create the Otari API key and place it in the ignored `.env` as `OTARI_API_KEY`; check whether Otari offers per-key spending limits or a balance API and record it. With per-key limits, create `OTARI_API_KEY_PUBLIC` (limited to credit minus the reserve) and `OTARI_API_KEY_JUDGE`.
+  - Read the price per million input and output tokens and any per-request fee for `alibaba/qwen3.8-flash` from `GET https://api.otari.ai/api/v1/models`; set `FREE_PRICE_IN_PER_M`, `FREE_PRICE_OUT_PER_M`, `FREE_PER_REQUEST_FEE_USD`.
+  - Provide `FREE_CREDIT_USD`, `JUDGE_RESERVE_USD` and generate `JUDGE_CODE` (16 characters or more).
+  - Run the contract probe through the local proxy (one streamed tool call; 8 KB of emoji, CJK and base64 against the input bound). Not run: no key exists. Until then the bound and the stream format are tested against the mock only.
+  - Confirm the caps and the reserve, and accept the reserve guarantee level in writing: provider-backed isolation with two capped keys, or the qualified guarantee in the parent plan's words ("the reserve is protected while the bound holds; a detected overrun stops public use; charges already made cannot be undone").
+- Owner acceptance: pending; the run continued under the all-phases instruction.

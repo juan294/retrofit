@@ -162,3 +162,19 @@ test("with a visitor key, no request goes to /api/inference after the key connec
   expect(seen.slice(from).filter((u) => u.includes("/api/inference"))).toEqual([]);
   expect(router.bodies.length).toBeGreaterThan(0);
 });
+
+test("a remembered key starts no free session", async ({ page, context }) => {
+  await mockOtari(page);
+  await analyzeFixture(page, "bakery.fixture.test");
+  await page.getByRole("checkbox", { name: "Remember on this device" }).check();
+  await connectKey(page);
+  const second = await context.newPage();
+  await mockOtari(second);
+  const sessions: string[] = [];
+  second.on("request", (r) => r.url().endsWith("/api/inference/session") && sessions.push(r.url()));
+  await second.goto("/");
+  await expect(second.getByText(/Connected to Otari/)).toBeVisible();
+  await second.waitForTimeout(500);
+  expect(sessions).toEqual([]);
+  await second.close();
+});

@@ -28,7 +28,7 @@ export const sessionTexts = {
   invalidCode: "That judge code is not valid.",
   notConfigured: "Judge access is not configured.",
   judgeLimit: "Judge access is used up for this network today. Paste your own key in AI settings to continue.",
-  tooManyCodes: "Too many wrong judge codes from this network. Try again in an hour.",
+  tooManyCodes: "Too many judge code attempts from this network. Try again in an hour.",
 } as const;
 
 export interface SessionState {
@@ -40,9 +40,9 @@ export interface SessionState {
 export const sessionKey = (sid: string) => `inference:session:${sid}`;
 const clientSessionsKey = (client: string, bucket: number) => `inference:client-sessions:${client}:${bucket}`;
 const judgeSessionsKey = (client: string, day: string) => `inference:judge-sessions:${client}:${day}`;
-const judgeFailuresKey = (client: string, bucket: number) => `inference:judge-failures:${client}:${bucket}`;
-/** Wrong judge codes allowed per client per hour; more answer 429 before the code is compared. */
-export const JUDGE_FAILURES_PER_CLIENT_HOUR = 10;
+const judgeAttemptsKey = (client: string, bucket: number) => `inference:judge-attempts:${client}:${bucket}`;
+/** Judge code attempts (right or wrong) allowed per client per hour; more answer 429 before the code is compared. */
+export const JUDGE_ATTEMPTS_PER_CLIENT_HOUR = 10;
 
 export function sessionSetCookie(token: string, secure: boolean): string {
   const attrs = [`${SESSION_COOKIE}=${token}`, "HttpOnly", "SameSite=Strict", `Path=${SESSION_COOKIE_PATH}`, `Max-Age=${SESSION_TTL_S}`];
@@ -172,17 +172,12 @@ export async function handleJudgeUpgrade(request: Request, deps: ServerDeps): Pr
     if (!session) return json(401, { error: "session_expired", message: sessionTexts.expired });
     const code = await readCode(request);
     if (code === null) return json(400, { error: "bad_request", message: sessionTexts.badRequest });
+    // Every attempt counts, atomically and before the compare, so parallel guesses cannot pass the limit.
     const now0 = deps.clock();
     const requester0 = clientIdFromRequest(request, deps.config, now0);
-    const bucket = Math.floor(now0 / 3_600_000);
-    const failuresKey = judgeFailuresKey(requester0, bucket);
-    // An increment of 0 reads the window count (counters live apart from values).
-    const failures = await deps.store.incrementWindow(failuresKey, 3600, 0);
-    if (failures >= JUDGE_FAILURES_PER_CLIENT_HOUR) return json(429, { error: "too_many_codes", message: sessionTexts.tooManyCodes });
-    if (!sameHash(digest(code), digest(expected))) {
-      await deps.store.incrementWindow(failuresKey, 3600);
-      return json(403, { error: "invalid_code", message: sessionTexts.invalidCode });
-    }
+    const attempts = await deps.store.incrementWindow(judgeAttemptsKey(requester0, Math.floor(now0 / 3_600_000)), 3600);
+    if (attempts > JUDGE_ATTEMPTS_PER_CLIENT_HOUR) return json(429, { error: "too_many_codes", message: sessionTexts.tooManyCodes });
+    if (!sameHash(digest(code), digest(expected))) return json(403, { error: "invalid_code", message: sessionTexts.invalidCode });
 
     const { sid, client } = session.claims;
     if (session.claims.pool !== "judge") {

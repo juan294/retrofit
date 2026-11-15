@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { KeyPanel } from "@/components/key-panel/KeyPanel";
 import type { Connection } from "@/lib/keys/connect";
+import { loadKey } from "@/lib/keys/storage";
 import { pageGuard } from "@/lib/preview/page-guard";
 import type { Notice } from "@/lib/preview/notices";
 import { Preview, type Inference } from "./Preview";
@@ -24,11 +25,19 @@ export function AgentPanel({ basePath, label, title }: AgentPanelProps) {
   const [ownKey, setOwnKey] = useState<Inference | null>(null);
   // The runtime needs an absolute base (research §4); the origin is known only in the browser.
   const [originUrl, setOriginUrl] = useState<string | null>(null);
-  useEffect(() => setOriginUrl(`${window.location.origin}${basePath}`), [basePath]);
+  // A remembered key restores itself in the key panel; the free path must not start (and count a session) first.
+  const [hasStoredKey, setHasStoredKey] = useState(false);
+  useEffect(() => {
+    setHasStoredKey(loadKey() !== null);
+    setOriginUrl(`${window.location.origin}${basePath}`);
+  }, [basePath]);
 
   const onConnect = useCallback((c: Connection) => setOwnKey({ router: c.router, key: c.key, model: c.model }), []);
-  const onForget = useCallback(() => setOwnKey(null), []);
-  const free = useFreeSession(originUrl !== null && ownKey === null);
+  const onForget = useCallback(() => {
+    setHasStoredKey(false);
+    setOwnKey(null);
+  }, []);
+  const free = useFreeSession(originUrl !== null && ownKey === null && !hasStoredKey);
   const inference = ownKey ?? (free.status === "ready" ? free.inference : null);
   // A free-path refusal seen in chat (cap, hold, provider error) also shows as a banner with the key offer.
   const [freeNotice, setFreeNotice] = useState<string | null>(null);

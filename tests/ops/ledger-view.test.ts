@@ -28,7 +28,7 @@ describe("ledgerViewFor", () => {
     if (!p.ok || !j.ok) throw new Error("refused");
     await ledger.reconcile(p.reservationId, 4000);
     await ledger.reconcile(j.reservationId, 2500);
-    expect(await ledgerViewFor(d)).toEqual({ totalSpentMicro: 6500, totalOutstandingMicro: 700, judgeSpentMicro: 2500 });
+    expect(await ledgerViewFor(d)).toEqual({ totalSpentMicro: 6500, totalOutstandingMicro: 700, judgeSpentMicro: 2500, holdId: null });
   });
 
   // Fails if the cron route still answers 503 because the view is not wired to the ledger.

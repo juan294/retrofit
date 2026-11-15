@@ -37,7 +37,7 @@ export function alertStoreKey(key: string): string {
  * is written before the request, so concurrent callers open one issue; a failed
  * request removes it so the next run retries.
  */
-export async function openAlert(alert: Alert, deps: AlertDeps): Promise<AlertResult> {
+export async function openAlert(alert: Alert, deps: AlertDeps, options: { timeoutMs?: number } = {}): Promise<AlertResult> {
   if (!KEY.test(alert.key)) throw new Error(`invalid alert key: ${alert.key}`);
   const token = deps.config.free.alertGithubToken;
   if (!token) {
@@ -59,7 +59,7 @@ export async function openAlert(alert: Alert, deps: AlertDeps): Promise<AlertRes
         "content-type": "application/json",
       },
       body: JSON.stringify({ title: alert.title, body: alert.body }),
-      signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
+      signal: AbortSignal.timeout(options.timeoutMs ?? GITHUB_TIMEOUT_MS),
     });
     if (!res.ok) failure = `GitHub answered ${res.status}: ${await githubMessage(res)}`;
   } catch (e) {
