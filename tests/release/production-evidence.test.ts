@@ -37,10 +37,12 @@ function inspectAnswers(answers: Record<string, (string | null)[]>, extra: Recor
     const n = seen.get(target) ?? 0;
     seen.set(target, n + 1);
     const id = list[Math.min(n, list.length - 1)];
-    if (id === null) return { status: 1, stdout: "", stderr: "Error: The request timed out" };
-    return { status: 0, stdout: JSON.stringify({ id, url: target.slice(8), target: "production", ...extra }), stderr: "" };
+    if (id === null) return { status: 1, stdout: "", stderr: `${VERCEL_STDERR(target)}Error: The request timed out\n` };
+    return { status: 0, stdout: JSON.stringify({ id, url: target.slice(8), target: "production", ...extra }, null, 2), stderr: VERCEL_STDERR(target) };
   };
 }
+/** What Vercel CLI 50.23.2 writes to stderr on every call that is not a TTY: its banner and a spinner line. */
+const VERCEL_STDERR = (target: string) => `Vercel CLI 50.23.2\nFetching deployment "${target.slice(8)}" in thecreativetoken\n`;
 const boundEverywhere = () => inspectAnswers({ [DEPLOYMENT_URL]: [DEPLOYMENT_ID], [PROD]: [DEPLOYMENT_ID], [PEER]: [DEPLOYMENT_ID] }, { createdAt: Date.now() - 60_000 });
 
 let tmp: string;
@@ -395,6 +397,42 @@ describe("production-evidence.mjs alias identity (V10)", () => {
     expect(b.status).toBe("failed");
     expect(b.identity.before.deployments[new URL(PROD).host]).toBe(DEPLOYMENT_ID);
     expect(b.identity.after.deployments[new URL(PROD).host]).toBe("dpl_movedduringrun");
+  });
+});
+
+describe("production-evidence.mjs reads vercel inspect from stdout only", () => {
+  // Review finding: the CLI's banner and spinner on stderr made every inspection "unavailable".
+  it("binds every host when the CLI writes its banner and spinner to stderr", async () => {
+    const inspect = boundEverywhere();
+    spawnSync.mockImplementation((cmd: string, args: string[]) => (cmd === "vercel" && args[0] === "inspect" ? inspect(args[1]!) : { status: 0, stdout: "", stderr: "" }));
+    fetchStub.mockImplementation(async () => new Response(JSON.stringify({ commit: COMMIT, status: "ok" }), { status: 200 }));
+    const { io } = capture();
+    await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright"], io);
+    const dir = path.join(tmp, DEPLOYMENT_ID);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, "deployment.json"), "utf8")).createdAtSource).toBe("vercel inspect");
+    const binding = JSON.parse(fs.readFileSync(path.join(dir, "alias-binding.json"), "utf8"));
+    expect(binding.identity.before.deployments).toEqual({ [new URL(DEPLOYMENT_URL).host]: DEPLOYMENT_ID, [new URL(PROD).host]: DEPLOYMENT_ID, [new URL(PEER).host]: DEPLOYMENT_ID });
+    expect(binding.status).toBe("passed");
+  });
+
+  // Fails if a deployment record that cannot be read is accepted without its id and target checks.
+  it("refuses to start when vercel inspect exits 0 but its output is not a deployment record", async () => {
+    spawnSync.mockImplementation((cmd: string, args: string[]) =>
+      cmd === "vercel" && args[0] === "inspect" ? { status: 0, stdout: "Deployment found\n", stderr: VERCEL_STDERR(args[1]!) } : { status: 0, stdout: "", stderr: "" },
+    );
+    const { lines, io } = capture();
+    expect(await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright", "--created-at", CREATED_AT()], io)).toBe(2);
+    expect(lines.join("\n")).toContain("vercel inspect exited 0 but gave no deployment record");
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  // Fails if the deployment record check accepts a record for another deployment.
+  it("refuses a deployment record that names another deployment", async () => {
+    const inspect = inspectAnswers({ [DEPLOYMENT_URL]: ["dpl_other"] }, { createdAt: Date.now() - 60_000 });
+    spawnSync.mockImplementation((cmd: string, args: string[]) => (cmd === "vercel" && args[0] === "inspect" ? inspect(args[1]!) : { status: 0, stdout: "", stderr: "" }));
+    const { lines, io } = capture();
+    expect(await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--skip-playwright"], io)).toBe(2);
+    expect(lines.join("\n")).toContain(`vercel inspect reports deployment dpl_other, not ${DEPLOYMENT_ID}`);
   });
 });
 
