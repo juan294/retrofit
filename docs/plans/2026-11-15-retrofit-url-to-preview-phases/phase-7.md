@@ -73,7 +73,7 @@ risk: a replaced container with the same name is not the recorded resource; comp
 - coverage below the bar
 - a gate database run without a completed teardown in its log
 
-`tools/release/required-tests.json` lists the full test titles that prove the safety and conformance rules: fetch guard and robots, pacing, client limits, crawl job fencing, queue dispatch, privacy (both parts), key panel, provider switch, origins, redirects (including configured-but-unapproved and router-as-artifact cases), hostile output, unofficial label, §6 (all cases), conformance, free path (including partial-stream failure), schema, reservation and ledger tests, redaction, credit check. `tools/release/required-production-cases.json` lists the production cases below.
+`tools/release/required-tests.json` lists the full test titles that prove the safety and conformance rules: fetch guard and robots, pacing, client limits, crawl job fencing, queue dispatch, privacy (both parts), key panel, provider switch, origins, redirects (including configured-but-unapproved and router-as-artifact cases), hostile output, unofficial label, consent mapping, cycle prevention, §6 (all cases), conformance, runtime request capture, free path (including partial-stream failure and the post-tool-call model request), schema, reservation, ledger and overrun hold tests, redaction, credit check. `tools/release/required-production-cases.json` lists the production cases below.
 
 ### Hosting configuration
 
@@ -100,7 +100,7 @@ In order. Inspect the target before each and record the result.
 3. **Apply the migration** with `supabase db push` after `supabase migration list` on the linked project.
 4. **Create the Vercel project** `retrofit` in team `thecreativetoken` without a Git connection.
 5. **Create the alert token**: a fine-grained GitHub token with Issues write on `juan294/retrofit` only, expiring 2027-01-31. Fine-grained tokens are created in GitHub's settings pages; use browser automation with the owner present, and the owner confirms the scope before it is saved.
-6. **Set production environment variables**: `SESSION_SECRET`, `CRON_SECRET` (generated locally, never printed), `PUBLIC_ORIGIN`, `OTARI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JUDGE_CODE`, `ALERT_GITHUB_TOKEN`, ledger and cap variables. Production only.
+6. **Set production environment variables**: `SESSION_SECRET`, `CRON_SECRET` (generated locally, never printed), `PUBLIC_ORIGIN`, the Otari key or keys chosen in Phase 6 (`OTARI_API_KEY`, or `OTARI_API_KEY_PUBLIC` and `OTARI_API_KEY_JUDGE`), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JUDGE_CODE`, `ALERT_GITHUB_TOKEN`, ledger and cap variables. Production only.
 7. **Add the domains** `retrofit.thecreativetoken.com` and `demo-harbor.thecreativetoken.com` and read the DNS targets.
 8. **Create the Route 53 records**: one `UPSERT` change batch in zone `Z05609513HH99AFEUOPD3` for both names. Show the batch file to the owner before `aws route53 change-resource-record-sets`; wait for `INSYNC`.
 9. **Prepare the candidate** (local, playbook steps 1 to 6): merge `develop` into `main` locally with a merge commit; run the full gate on it; run the analyzer in local mode; present the evidence to the owner.
@@ -124,7 +124,7 @@ Every case records the deployment id, the deployment URL and the commit from `/a
   - no request to the peer carries the session cookie or a key; the router stays the caller's
   - the caller's unallowed `sly_data` field is absent from the peer invocation
   - `harbor_invalid` shows the invalid-network error
-  - `harbor_loop` shows the cycle error
+  - `harbor_loop` proves cycle prevention: the model request inside the peer hop lists no tool for the call back to `retrofit_conformance`, no second fetch of `retrofit_conformance` happens during the hop, and the loop notice "Retrofit skipped a call back to ... to prevent a loop." is visible (an unknown-tool error is not accepted as evidence)
   - a scripted turn that calls peer networks more often than the runtime's per-message limits allow (4 remote calls in total and 1 per partner, `runtime/engine.js:529-533`) shows the over-budget error
   - the `demo-denied` tool shows the denied-origin error, and no request reaches that host
 - Analyze `https://retrofit.thecreativetoken.com/`: score ready, the three agentic-web checks pass, the preview answers one question on the free path.

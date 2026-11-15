@@ -11,6 +11,7 @@ Retrofit builds a two-agent companion network for an analyzed site, serves it pr
 - Phase 3 accepted, including the score tool contract.
 - Re-read `cognizant-ai-labs/agentic-web`; if `HEAD` is not `63a956c`, record the new commit, diff the spec and the runtime, and report the impact first.
 - Read the Neuro SAN HOCON reference sections for the emitted fields and record any rule the generator must follow.
+- Read the vendored `runtime/trace.js` and record the listener API that the adapter uses for `composition_skip` (the `TraceBus` returned by `boot`, `runtime/index.js:88-95`).
 - Audit the vendored renderer before writing tests: read `runtime/ui.js` and `runtime/cruse-render.js` paths that put model output or tool results into `innerHTML`, and record in the phase handoff which values are escaped and how. The hostile-output tests below target each path found.
 
 ## Changes
@@ -49,7 +50,7 @@ pre: installed once per page while a preview or the landing assistant is mounted
 do:
   1. parse the URL; same origin and not an agent artifact path -> call original fetch unchanged
   2. same-origin agent artifact (/p/*, /agent-manifest.json, *.network.json, /links.json) -> call with redirect "error"
-  3. router origin -> allow only POST .../chat/completions, GET .../models, GET <router base>/agent-manifest.json, with redirect "error"
+  3. router origin -> allow only POST <router>/chat/completions, GET <router>/models, GET <router origin>/agent-manifest.json (the runtime probe, engine.js:44), with redirect "error"
   4. provisionalProvider origin -> allow only GET <provider router>/models, with redirect "error"
   5. other origin -> allow only when in policyPeers and in approvedPeers, with redirect "error"
 fail: anything else -> throw TypeError "Retrofit blocked a request to <origin> that was not approved." before any network contact
@@ -63,8 +64,9 @@ pre: manifest fetched from <origin>/p/<id>/agent-manifest.json (or <origin>/agen
 do:
   1. set guard.policyPeers from manifest.allowed_peers; clear approvedPeers; set guard.router from inference
   2. import /runtime/index.js; boot(mount, {originUrl, sandboxWorkerUrl, byokKey, router, model})
-  3. wrap engine.requestConsent: call the original; on "allow", add the normalized info.peerOrigin to approvedPeers
-  4. register content actions with the snapshot
+  3. wrap engine.requestConsent: call the original; on "allow", map info.peerOrigin (host:port, no scheme) to the configured origins whose URL.host equals it; exactly one match -> add that full origin to approvedPeers; zero or several -> add nothing and log the ambiguity
+  4. subscribe to the returned trace; on composition_skip, show the notice "Retrofit skipped a call back to <target> to prevent a loop." in the activity area
+  5. register content actions with the snapshot
 fx: guard state changes; runtime mounted
 risk: approvals last for the page session only, matching spec §5 ("scoped to the destination origin for the current session")
 ```
@@ -106,7 +108,8 @@ risk: approvals last for the page session only, matching spec §5 ("scoped to th
 - `tests/generate/network.test.ts`: every fixture snapshot validates; names sanitized; no `instructions` text contains any phrase from the `hostile` body, title or JSON-LD name; `sample_queries` match; `llm_router` values as specified.
 - `tests/generate/oracle.test.ts`: outputs in a temporary directory, `build_network.mjs` without `--check` with `--runtime tools/agentic-web/runtime`, exit 0; invalid fixture non-zero.
 - `tests/generate/validate.test.ts`: forced validator failure gives `GenerationFailed`, visitor text, and the preview route returns 404.
-- `tests/preview/fetch-guard.test.ts` (original fetch replaced by a recorder at the boundary): same-origin non-artifact passes unchanged; same-origin artifact gets `redirect: "error"`; router origin allows only its three requests; provisional provider allows only `/models`; a policy peer without approval is refused; with approval it is allowed with `redirect: "error"`; revoking the provider removes access; every refusal happens before the recorder sees a call.
+- `tests/preview/consent-map.test.ts`: `peer-a.fixture.test:3011` maps to `http://peer-a.fixture.test:3011`; a host that matches both an `http` and an `https` configured origin, or none, approves nothing; a different port does not match.
+- `tests/preview/fetch-guard.test.ts` (original fetch replaced by a recorder at the boundary): same-origin non-artifact passes unchanged; same-origin artifact gets `redirect: "error"`; router origin allows only its three requests, with the probe at `<router origin>/agent-manifest.json` and any other path on that origin refused; provisional provider allows only `/models`; a policy peer without approval is refused; with approval it is allowed with `redirect: "error"`; revoking the provider removes access; every refusal happens before the recorder sees a call.
 - `tests/keys/providers.test.ts`, `tests/keys/detect.test.ts`, `tests/keys/test-key.test.ts`: rows match `ui.js`; prefix order; 401, CORS failure and unknown model messages.
 - `tests/agent/score-action.test.ts`: non-URL refused with a recovery message; report; 202 text.
 - `tests/routes/test-fixtures.test.ts`: every fixture route returns 404 with `fixturesEnabled` false.
@@ -118,7 +121,8 @@ risk: approvals last for the page session only, matching spec §5 ("scoped to th
 - `e2e/provider-switch.spec.ts` (guard installed, scripted provider routers at the boundary): free path to BYOK (validation reaches the new provider's `/models`, then chat goes there and no longer to `/api/inference`); provider A to provider B (A loses access after the switch); failed validation of B leaves A or the free path active and B without access; "Forget my key" returns to the free path (Phase 6) or to the key prompt (before Phase 6).
 - `e2e/bridge.spec.ts`: a page on `http://peer-a.fixture.test:3011` frames `http://127.0.0.1:3010/bridge/action-bridge.html`; the bridge script runs without a CSP violation and answers a postMessage handshake.
 - `e2e/conformance.spec.ts`: `check_partner.mjs http://127.0.0.1:3010/retrofit_guide` exits 0 with no errors.
-- `e2e/spec6.spec.ts` (modeled on the organizers' L1 to L10 and C1 to C8): two-agent network runs; `score_site` runs as the grounded capability; a consent card names `peer-a.fixture.test:3011` before any request to it; declining sends nothing; approving loads `peer_demo` and runs it in the caller's browser; no request to the peer carries the key; the router stays the caller's; the unallowed `sly_data` field is absent from the peer invocation (runtime trace); invalid network, cycle, over-budget and denied origin each show a visible error. The published-default-router case is completed in Phase 6.
+- `e2e/spec6.spec.ts` (modeled on the organizers' L1 to L10 and C1 to C8): two-agent network runs; `score_site` runs as the grounded capability; a consent card names `peer-a.fixture.test:3011` before any request to it; declining sends nothing; approving loads `peer_demo` and runs it in the caller's browser; no request to the peer carries the key; the router stays the caller's; the unallowed `sly_data` field is absent from the peer invocation (runtime trace); invalid network, over-budget and denied origin each show a visible error. The cycle case proves prevention (fact 20 in the parent plan): when the peer's network refers back to the caller, the model request made inside the peer hop lists no tool for the back edge, no second fetch of the caller's network happens during that hop, the trace has a `composition_skip` event with reason `already visited in this request`, and the adapter's loop notice is visible. A scripted call to the removed tool name gives an unknown-tool error, which this case does not accept as evidence. The published-default-router case is completed in Phase 6.
+- `e2e/runtime-requests.spec.ts`: captures, at the mock router, the exact request bodies the vendored runtime sends during a scripted session with an agent delegation, a `website_search_site_content` result and the next model call, and writes them to `tests/fixtures/runtime-requests/` (each capture records the SHA-256 of `vendor/agentic-web.json`; `tests/fixtures/runtime-requests.test.ts` fails when that hash differs from the current vendor manifest, so a runtime update forces a new capture). Phase 6 replays them through the proxy schema.
 - `e2e/redirects.spec.ts`, with only `peer-a` approved: the redirecting manifest, the `hocon` on the third origin and the redirecting network fetch send zero requests to `third.fixture.test`; the `hocon` on `peer-b` sends zero requests to `peer-b` (configured but not approved); the `hocon` on the router origin sends no request to that path; each shows the blocked-request text in chat. Then approving `peer-b` through its own consent card allows its own tool call.
 
 ## Automated success criteria

@@ -4,13 +4,15 @@ Parent plan: [2026-11-15-retrofit-url-to-preview.md](../2026-11-15-retrofit-url-
 
 ## Goal
 
-A visitor or judge without a key can use the preview and Retrofit's own agent. The runtime sends the placeholder key `retrofit-free` to Retrofit's same-origin endpoint `/api/inference/v1` as an explicit router override. The credential is an HttpOnly session cookie. Every forwarded request is bounded, and a provable upper bound on its cost is reserved against a ledger before it reaches Otari. Responses are buffered, so every failure reaches the unchanged runtime as an HTTP error (parent plan, fact 18). Public use can never spend the judge reserve. The owner is alerted when credit runs low. A visitor's own key never reaches this endpoint.
+A visitor or judge without a key can use the preview and Retrofit's own agent. The runtime sends the placeholder key `retrofit-free` to Retrofit's same-origin endpoint `/api/inference/v1` as an explicit router override. The credential is an HttpOnly session cookie. Every forwarded request is bounded, and a provable upper bound on its cost is reserved against a ledger before it reaches Otari. Responses are buffered, so every failure reaches the unchanged runtime as an HTTP error (parent plan, fact 18). Public spend caps protect the judge reserve; a detected overrun holds the public pool until the owner reconciles. The owner is alerted when credit runs low and accepts the reserve guarantee level before this phase is accepted. A visitor's own key never reaches this endpoint.
 
 ## Entry conditions
 
 - Phase 5 accepted.
 - Owner authorization to use the Otari account and its credits. The owner creates an Otari API key in the dashboard (no CLI exists for it) and places it in the ignored `.env` as `OTARI_API_KEY`.
-- Check, with that key, whether Otari offers a per-key spending limit or a balance or usage API. If a per-key limit exists, the owner sets it to the credit amount; record the result. If none exists, the ledger below is the only cap, and the handoff says so.
+- Check, with that key, whether Otari offers a per-key spending limit or a balance or usage API, and record the result.
+  - If per-key limits exist: the owner creates two keys, `OTARI_API_KEY_PUBLIC` limited to the credit minus the judge reserve and `OTARI_API_KEY_JUDGE`; the proxy uses the key of the session's pool. This is provider-backed isolation.
+  - If not: one key serves both pools, and the guarantee is qualified (parent plan, "Spend control"). The phase handoff states it in those words.
 - Read the price per million input and output tokens for `alibaba/qwen3.8-flash` from `GET https://api.otari.ai/api/v1/models` and record it, together with any per-request fee or minimum charge the listing shows (added to the reservation if present).
 - The owner provides the credit balance and the judge reserve, and generates `JUDGE_CODE`.
 
@@ -51,9 +53,11 @@ Add them to `src/lib/config.ts` with tests.
 
 ### Ledger and quotas
 
-- `src/lib/inference/ledger.ts`: spend in micro-USD per UTC day and pool, plus a running total.
-  - Public daily budget = `max(0, FREE_CREDIT_USD - JUDGE_RESERVE_USD - publicSpentTotal) / daysLeft(FREE_SERVICE_END)`, computed at the start of each UTC day.
-  - Judge budget = `JUDGE_RESERVE_USD - judgeSpentTotal`, available at any time. Public spend never draws on it.
+- `src/lib/inference/ledger.ts`: spend in micro-USD per UTC day and pool, a running total, and the sum of outstanding reservations.
+  - Public daily budget = `max(0, FREE_CREDIT_USD - JUDGE_RESERVE_USD - publicSpentTotal - publicOutstanding) / daysLeft(FREE_SERVICE_END)`, computed at the start of each UTC day.
+  - Judge budget = `min(JUDGE_RESERVE_USD - judgeSpentTotal, FREE_CREDIT_USD - totalSpent - totalOutstanding)`, so it reflects the remaining credit, including any overrun.
+- `src/lib/inference/hold.ts`: a persistent record `inference:hold` (no TTL) with reason, time, the overrun amount and the request's reservation. While it exists, the public pool refuses new requests. Only `pnpm ops:resume-free --reconciled-balance <usd> --note <text>` removes it.
+- `tools/ops/resume-free.mjs`: prints the ledger total, outstanding reservations, the hold record and the bound parameters; requires the owner's entered provider balance; refuses to resume when the entered balance is below the ledger's remaining credit; writes an audit record. Run against production only as an authorized action.
 - `src/lib/inference/quota.ts`: session calls, client sessions, in-flight counters (per session and global, with leases so a crashed request frees its slot after 60 s).
 
 ### Request schema
@@ -61,7 +65,8 @@ Add them to `src/lib/config.ts` with tests.
 `src/lib/inference/schema.ts` accepts only:
 
 - top level `{model, messages, tools?, tool_choice?, stream?, temperature?, top_p?}`; any other field (including `n`, `logprobs`, `response_format`, `stream_options`) is refused
-- `messages[]`: `role` in `system`, `user`, `assistant`, `tool`; `content` a string or `null` (no arrays, so no images, audio or file parts); `assistant` `tool_calls[]` with `id`, `type: "function"`, `function.name`, `function.arguments` (string); `tool` messages with `tool_call_id`; no other keys
+- `messages[]`: `role` in `system`, `user`, `assistant`, `tool`; `content` a string or `null` (no arrays, so no images, audio or file parts); `assistant` `tool_calls[]` with `id`, `type: "function"`, `function.name`, `function.arguments` (string); `tool` messages with `tool_call_id` and `name` (the runtime sends it, `runtime/runner.js:585`; it must match `^[A-Za-z0-9_]{1,64}$` and a tool name from an earlier `tool_calls` entry in the same request); no other keys
+- The schema's acceptance list is tested against the bodies captured from the vendored runtime in Phase 4 (`tests/fixtures/runtime-requests/`), so a runtime field it rejects fails the gate.
 - `tools[]`: `type: "function"` with `function.name`, `function.description`, `function.parameters` (a JSON object); at most `FREE_MAX_TOOLS`, each at most 4096 bytes serialized
 - `tool_choice`: `"auto"` or `"none"`
 
@@ -95,7 +100,7 @@ do:
 br: unknown field, wrong model or oversize -> 400 with text; any other Bearer -> 401, nothing forwarded
 fx: counters, reservation, ledger; one upstream POST
 fail: counters unavailable -> 503 before any upstream call; upstream error, timeout, incomplete stream or missing finish_reason -> 502 with recovery text, nothing of the partial answer returned
-risk: reported usage above the reservation -> record the actual usage, suspend the public pool for the UTC day, open the overrun alert
+risk: reported usage above the reservation -> record the actual usage, write the persistent hold, open the overrun alert
 ```
 
 - Because nothing reaches the browser until the upstream response is complete, a failure at any point is an HTTP 502, which the unchanged runtime shows as an error (`runtime/llm.js:128-131`).
@@ -121,14 +126,15 @@ risk: reported usage above the reservation -> record the actual usage, suspend t
 
 - `tests/inference/token.test.ts`: valid, tampered, expired, wrong secret.
 - `tests/inference/session.test.ts`: renewal with a valid cookie keeps `sid`, `pool` and counters; the per-client cap applies only to new sessions; judge upgrade with a wrong code fails.
-- `tests/inference/schema.test.ts`: array content, image parts, unknown roles, extra keys in messages, tool calls or tools, oversized tools and every refused top-level field are rejected; a valid tool-call conversation is accepted.
+- `tests/inference/schema.test.ts`: array content, image parts, unknown roles, extra keys in messages, tool calls or tools, oversized tools and every refused top-level field are rejected; a tool message `name` that is malformed or matches no earlier tool call is rejected; every body in `tests/fixtures/runtime-requests/` is accepted.
 - `tests/inference/reservation.test.ts`: the bound for a request of 1 KB of 4-byte characters (emoji) and of 1 KB of ASCII equals the formula; the bound grows with messages and tools; a per-request fee is added when configured.
-- `tests/inference/ledger.test.ts`: public daily budget formula across days (fake clock); public spend cannot reduce the judge budget; reconciliation lowers a reservation to the reported usage; missing usage keeps it; reported usage above the reservation records the actual amount, suspends the public pool until the next UTC day (judge pool unaffected) and calls the overrun alert once.
+- `tests/inference/ledger.test.ts`: public daily budget formula across days (fake clock); public spend cannot reduce the judge budget; reconciliation lowers a reservation to the reported usage; missing usage keeps it; outstanding reservations reduce both budgets; after an overrun, the judge budget equals the remaining credit when that is lower than the reserve.
+- `tests/inference/hold.test.ts`: an overrun writes the hold and calls the alert once; the public pool stays closed across a UTC rollover (fake clock) and across a restart (a new store client on the same backing store); the judge pool keeps serving while its budget allows; `resume-free` refuses without a balance, refuses a balance below the ledger's remaining credit, and with a valid balance removes the hold and writes the audit record.
 - `tests/inference/quota.test.ts`: each cap returns 429 with its text at N+1; in-flight slots freed on completion and after the lease on crash.
 - `tests/inference/proxy.test.ts` (upstream mocked at the network boundary): server key upstream, no cookie upstream; unknown field `n` or `logprobs` refused; oversize body, too many messages, too many or too large tools refused; upstream body has `n` 1, `max_tokens` and `include_usage`; two parallel requests when only one reservation fits give one 429; counters unavailable gives 503 and no upstream call; upstream 500 and timeout give 502 with text; an upstream stream that sends partial content and then breaks, or ends without `finish_reason` or `usage`, gives 502 and no partial content in the body; visitor disconnect aborts upstream and keeps the reservation; no retry after failure; cross-origin refused; provider-looking Bearer refused and not forwarded.
 - `tests/inference/redaction.test.ts`: no part of a key or cookie in logs.
 - `tests/ops/credit-check.test.ts`: GitHub API mocked at the network boundary; one issue per threshold; none when below; wrong `CRON_SECRET` gives 401.
-- `e2e/free-path.spec.ts` (mock upstream): a new visitor chats with no key; Retrofit's own agent uses its published default router (completes the Phase 4 §6 case); renewal in a real browser keeps `sid` and the spent count (read through a test-only status field when `fixturesEnabled`); two tabs share one session; a renewal across UTC midnight keeps the session count and resets the daily pool (fake server clock in fixtures mode); at the session cap the chat shows the cap text and the banner offers "Use your own key"; with the mock upstream sending a partial answer and then failing, the chat shows "The free AI provider did not answer" and no partial answer, and the runtime makes no second request.
+- `e2e/free-path.spec.ts` (mock upstream): a new visitor chats with no key; a scripted turn with an agent delegation and a `website_search_site_content` result is followed by a successful next model call through the proxy (no 400); Retrofit's own agent uses its published default router (completes the Phase 4 §6 case); renewal in a real browser keeps `sid` and the spent count (read through a test-only status field when `fixturesEnabled`); two tabs share one session; a renewal across UTC midnight keeps the session count and resets the daily pool (fake server clock in fixtures mode); at the session cap the chat shows the cap text and the banner offers "Use your own key"; with the mock upstream sending a partial answer and then failing, the chat shows "The free AI provider did not answer" and no partial answer, and the runtime makes no second request.
 - `e2e/key-panel.spec.ts` (extended): with a visitor key, no request goes to `/api/inference/*`.
 
 ## Contract probe
@@ -147,6 +153,7 @@ Never record the key. The probe tests the protocol shape and the bound assumptio
 ## Manual success criteria
 
 - Contract probe recorded; Otari limit and balance findings recorded; caps and reserve confirmed by the owner.
+- The owner accepts the reserve guarantee level in writing in the phase handoff: provider-backed isolation (two capped keys), or the qualified guarantee in the parent plan's words.
 
 ## Independent work units
 
@@ -158,7 +165,7 @@ Never record the key. The probe tests the protocol shape and the bound assumptio
 
 ## Stuck states in this phase
 
-Free cap reached, session expired, Otari error or mid-stream failure, counters unavailable, reservation overrun, credit threshold. See the parent plan table.
+Free cap reached, session expired, Otari error or mid-stream failure, counters unavailable, overrun hold, credit threshold. See the parent plan table.
 
 ## Exit
 

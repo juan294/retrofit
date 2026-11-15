@@ -1,6 +1,6 @@
 # Plan: Retrofit, from URL to live preview
 
-> Created 2026-11-15. Revision 4, after three independent assessments. Status: **proposed, awaiting owner acceptance**. This plan does not authorize implementation, deployment, provider accounts, credentials, DNS changes or any push.
+> Created 2026-11-15. Revision 5, after four independent assessments. Status: **proposed, awaiting owner acceptance**. This plan does not authorize implementation, deployment, provider accounts, credentials, DNS changes or any push.
 
 ## Objective
 
@@ -14,7 +14,7 @@ The plan file and phase files are the contract. Each phase stops at its acceptan
 
 - Repository `juan294/retrofit`, branch `develop`, base commit `4161197` (plan revision 1). `origin/develop` at `44c5325`.
 - Accepted design: [design brief](../research/2026-11-14-retrofit-brief.md), [briefing](../briefing.md), [open source and key panel decisions](../decisions/2026-11-15-open-source-and-key-panel-style.md).
-- Assessments of this plan: the in-session review (R1 to R24, below), the [second assessment](../research/2026-11-15-url-to-preview-plan-second-assessment.md) (R25 to R40) and the [revision 3 assessment](../research/2026-11-15-url-to-preview-revision-3-assessment.md) (R29, R30 and R39 follow-ups, R41 to R43, four harness items).
+- Assessments of this plan: the in-session review (R1 to R24, below), the [second assessment](../research/2026-11-15-url-to-preview-plan-second-assessment.md) (R25 to R40) the [revision 3 assessment](../research/2026-11-15-url-to-preview-revision-3-assessment.md) (R29, R30 and R39 follow-ups, R41 to R43, four harness items) and the [revision 4 assessment](../research/2026-11-15-url-to-preview-revision-4-assessment.md) (R44, R39 and R30 follow-ups, two adapter details).
 - Controlling rules read in full: `AGENTS.md`, `.rpi/rules/webmcp.md`, `.rpi/rules/testing.md`, `.rpi/rules/deployment-safety.md`, `.rpi/rules/resource-lifecycle.md`, `.rpi/rules/supabase.md`, `docs/development/resource-lifecycle.md`, `docs/release/release-playbook.md`, `.rpi/policy.json`, `.rpi/release-profile.json`. Verifier source read in part: `.rpi/scripts/rpi-verify.py:163-210`.
 - No project overlay exists (`.rpi/project/rpi-plan.md` is absent). No declared override is applied.
 
@@ -48,8 +48,10 @@ VERIFIED from the files named.
 14. DNS for `thecreativetoken.com` is in Route 53 zone `Z05609513HH99AFEUOPD3`, reachable with the `aws` CLI. The Vercel team `thecreativetoken` exists.
 15. `git.deploymentEnabled` maps branches to booleans, and unspecified branches default to `true` (Vercel docs). The fleet pattern (`clarity/vercel.json`) disables `develop` and `sutura/*` and adds `"ignoreCommand": "test \"$VERCEL_ENV\" != \"production\""`.
 16. Ports 3001 to 3008 are assigned in Archy's port list. Fleet local Supabase API ports: 54321, 54331, 54421, 54521, 54621, 55321, 56321, 56621.
-17. The runtime keeps peer consent per origin: `engine.requestConsent(info)` returns `"allow"` or a decline for `info.peerOrigin`, and the runner calls it through the engine instance (`runtime/engine.js:109-139`, `:365`). After approval, the runtime resolves the peer manifest's `hocon` value, which may be an absolute URL on any origin, and fetches it (`runtime/engine.js:193-195`).
+17. The runtime keeps peer consent per host: `engine.requestConsent(info)` returns `"allow"` or a decline for `info.peerOrigin`, which is `URL.host` (host and port, no scheme) (`runtime/runner.js:33-34`, `:428`), and the runner calls it through the engine instance (`runtime/engine.js:109-139`, `:365`). The runtime's router probe requests `<router origin>/agent-manifest.json` (`runtime/engine.js:41-44`). After approval, the runtime resolves the peer manifest's `hocon` value, which may be an absolute URL on any origin, and fetches it (`runtime/engine.js:193-195`).
 18. The runtime's stream reader skips JSON without `choices`, skips non-`data:` lines, and returns the accumulated content when the stream ends normally (`runtime/llm.js:174-178`, `:209`, `:223`). It throws only on a non-OK HTTP status (`runtime/llm.js:128-131`) or a transport error.
+19. Tool results go back to the model as `{role: "tool", tool_call_id, name, content}` (`runtime/runner.js:585`), and the messages are sent unchanged (`runtime/llm.js:85-92`).
+20. The runtime prevents composition cycles before they run: when it builds a tool table, it removes a remote reference already visited in this request and records a `composition_skip` trace event with reason `already visited in this request` (`runtime/runner.js:168-174`). It does not throw a cycle error on this path.
 
 ## Owner decisions (2026-11-15)
 
@@ -64,7 +66,7 @@ Phase 1 writes them to `docs/decisions/2026-11-15-stack-and-hosting.md`.
 | Key panel style | New neutral style. |
 | Open source | Whole project, Apache-2.0, repository public since 2026-11-15. |
 | Key origin | `retrofit.thecreativetoken.com` is the key-bearing origin and serves only first-party code. No third-party script may ever run on it; a gate test enforces this. Future pages that need third-party scripts (payment, analytics) go on another origin. |
-| Judge access | A judge reserve of credits that public use cannot touch, enforced by hard spend caps through 2027-01-18; a judge code delivered in a judges-only Devpost field if the form has one, else in the public submission text; a daily credit check that alerts the owner; BYOK always available. |
+| Judge access | A judge reserve of credits, protected by hard public spend caps through 2027-01-18; a judge code delivered in a judges-only Devpost field if the form has one, else in the public submission text; a daily credit check that alerts the owner; BYOK always available. The strength of the reserve guarantee is settled at Phase 6 acceptance (see "Spend control" below). |
 | Release scope | Full spec §6 in production before the first release, with the synthetic peer `demo-harbor.thecreativetoken.com`. |
 | Schedule | A one-day write-confirmation spike after Phase 4, and the second plan's critical path outlined here. |
 
@@ -74,15 +76,19 @@ Phase 1 writes them to `docs/decisions/2026-11-15-stack-and-hosting.md`.
 - **Vendor the runtime unchanged** at the recorded commit, with a checksum manifest. Containment lives in Retrofit's adapter (`src/components/preview/Preview.tsx`), never in vendored files.
 - **CSP:** `script-src 'self' 'nonce-<n>'` without `'strict-dynamic'`, so trust does not propagate to scripts loaded by other scripts; `style-src 'self' 'unsafe-inline'` because of fact 9 (styles only; scripts stay strict); exact `connect-src` lists.
 - **Destination containment (facts 10 and 17):** the adapter wraps `fetch` while a preview is mounted. It keeps policy and consent apart:
-  - a peer origin is allowed only when it is in the top manifest's `allowed_peers` **and** the visitor approved it in this page session (the adapter wraps the engine instance's `requestConsent` and records each approved origin)
-  - the router origin is allowed only for `POST <router>/chat/completions`, `GET <router>/models` and the runtime's own `GET <router>/agent-manifest.json` check
+  - a peer origin is allowed only when it is in the top manifest's `allowed_peers` **and** the visitor approved it in this page session (the adapter wraps the engine instance's `requestConsent`; the approved `host:port` must match exactly one configured origin, else nothing is approved)
+  - the router origin is allowed only for `POST <router>/chat/completions`, `GET <router>/models` and the runtime's own `GET <router origin>/agent-manifest.json` probe
   - a provider origin the visitor is setting up is allowed only for `GET <router>/models`, through an explicit `authorizeProvider` call from the key panel, and is revoked if validation fails or the key is forgotten
   - every cross-origin request, and every same-origin request for agent artifacts (`/p/*`, `/agent-manifest.json`, `*.network.json`, `/links.json`), uses `redirect: "error"`
   - CSP `connect-src` lists the same origins as the outer bound. The runtime's own consent card still governs each peer call.
 - **Free path responses are buffered (fact 18):** the endpoint reads the whole upstream completion before it answers, then returns it as one SSE body. An upstream failure at any point becomes an HTTP 502 with recovery text, which the unchanged runtime shows as an error. The free path gives up token streaming for this.
 - **Private previews:** shared crawl and score data are separate from visitor-owned analyses. A visitor cookie authorizes every result, status and preview route.
 - **Free path authentication:** fixed placeholder key `retrofit-free` with an explicit router override to `<origin>/api/inference/v1`; the credential is an HttpOnly, `SameSite=Strict` cookie scoped to `/api/inference`, created and renewed at `/api/inference/session`. Manifests publish `<origin>/api/inference/v1` as `llm_router.base_url` and hosted Otari as `byok_router`, so a visitor's real key used without an override goes to Otari, never to Retrofit.
-- **Spend control:** a strict request schema (text-only content, fixed roles, bounded tools), input and output bounds, in-flight caps, and a reservation equal to a provable upper bound on the request's charge, taken before forwarding. The bound assumes a byte-level tokenizer (every billed input token covers at least one byte of the serialized request) plus a fixed framing allowance per message. Phase 6 checks the assumption against Otari with high-density input. If reported usage ever exceeds the reservation, the public pool is suspended for the day and the owner is alerted. Reconciliation only lowers a reservation to the reported usage; it never treats spend as undone.
+- **Spend control:** a strict request schema that accepts exactly what the vendored runtime sends (text-only content, fixed roles, bounded tools, tool results with `name`, fact 19), input and output bounds, in-flight caps, and a reservation taken before forwarding. The reservation is a conservative bound: one token per serialized request byte plus fixed framing allowances. It rests on assumptions about the provider's tokenizer, framing and billing, which Phase 6 probes test but cannot prove in general.
+  - **Overrun hold:** if reported usage ever exceeds a reservation, the bound is shown false. A persistent hold closes the public pool until the owner reconciles the bound, prices, actual provider balance and outstanding reservations, and authorizes resumption with `pnpm ops:resume-free`. The hold survives UTC rollover and restarts.
+  - **Judge availability** is computed from the remaining credit (ledger spend, including any overrun, plus outstanding reservations), not assumed.
+  - **Guarantee level** (decided at Phase 6 acceptance): if Otari offers per-key spending limits, the public pool uses its own key capped at credit minus reserve, which gives provider-backed isolation. If not, the guarantee is qualified: the reserve is protected while the bound holds; a detected overrun stops public use; charges already made cannot be undone. The owner accepts the level before Phase 6 is accepted.
+  - Reconciliation only lowers a reservation to the reported usage; it never treats spend as undone.
 - **Queued crawl liveness:** queued jobs are dispatched when any worker finishes and on every analyze, status or score request; a queued job that is not started within 120 s is dropped with a truthful message.
 - **Release ordering:** an authorized candidate production deployment, then production evidence bound to that deployment and commit, then analysis, then the owner's final acceptance and the tag.
 - **Evidence binding (fact 12):** the gate starts with `pnpm evidence:begin` and ends with `pnpm evidence:seal`; the analyzer accepts only reports sealed in the same attempt for the same tree.
@@ -175,7 +181,7 @@ Ordered by dependency. Dates are targets for planning, not commitments.
 | Free cap reached (session, client, public pool or ledger) | Chat and banner: "Retrofit's free AI is used up for <reason>. Paste your own key in AI settings to continue." | A key, or the window resets; judges use the reserve | `tests/inference/quota.test.ts`, `e2e/free-path.spec.ts` |
 | Session cookie expired | Renewal every 30 min and on tab focus at `/api/inference/session` keeps the same session; if a call still fails: "Your free session expired. Reload the page." | Automatic renewal, or reload | `e2e/free-path.spec.ts` |
 | Otari error, timeout or mid-stream failure | Chat: "The free AI provider did not answer. Try again, or use your own key." (HTTP 502, because the free path buffers the whole completion) | Retry by the visitor; the proxy never retries | `tests/inference/proxy.test.ts`, `e2e/free-path.spec.ts` |
-| Reported usage above the reservation | Visitors: "Retrofit's free AI is paused for today. Use your own key." Owner: a GitHub issue "Free AI reservation overrun" | Owner reviews the bound; the pool reopens the next UTC day or when the owner raises the framing allowance | `tests/inference/ledger.test.ts` |
+| Reported usage above the reservation (overrun hold) | Visitors: "Retrofit's free AI is paused. Use your own key." Judges keep access while remaining credit allows. Owner: a GitHub issue "Free AI reservation overrun" with the reconciliation steps | The owner reconciles bound, prices, provider balance and outstanding reservations, then runs `pnpm ops:resume-free` (an authorized production action). Never reopens by itself | `tests/inference/hold.test.ts` |
 | Inference counters unavailable | Chat: "Retrofit's free AI is not available right now. Use your own key." | Store recovers; no forwarding without a reservation | `tests/inference/proxy.test.ts` |
 | Credit threshold crossed | Owner: a GitHub issue "Free AI credit threshold reached" in `juan294/retrofit` | Owner adds credit, lowers caps or accepts | `tests/ops/credit-check.test.ts` |
 | Store unavailable in production | Visitor: "Retrofit is having trouble. Try again in a few minutes." `/api/health` `degraded` | Supabase recovers; no fallback to memory in production | `tests/store/supabase-failure.test.ts` |
@@ -205,7 +211,8 @@ No application code exists. This plan defines five shared formats. Before each p
 - **Inline styles allowed.** `'unsafe-inline'` for styles permits CSS injection if markup injection exists. Mitigation: hostile content and model-output rendering tests; scripts stay strict.
 - **Fetch guard scope.** The guard covers `fetch`; CSP covers other request types (`img-src`, `frame-src`, `connect-src`).
 - **Adapter depends on runtime internals.** The consent hook wraps `engine.requestConsent`, an internal method of the pinned runtime. A runtime update can break it; `e2e/redirects.spec.ts` and `e2e/spec6.spec.ts` fail in that case, and the vendor checksum blocks silent updates.
-- **Tokenizer assumption.** The reservation bound assumes byte-level tokenization. Phase 6 measures it against Otari; an overrun suspends the public pool rather than spending the judge reserve.
+- **Billing assumptions.** The reservation bound assumes byte-level tokenization and bounded provider framing. Phase 6 probes it against Otari; an overrun holds the public pool until the owner reconciles. Without a provider-side per-key cap, a charge already made above a reservation can reach the judge reserve; the plan states this as a qualified guarantee for the owner to accept.
+- **Cycle diagnostics.** The runtime prevents cycles silently (fact 20). The adapter turns its `composition_skip` trace event into a visible notice; this depends on the runtime's trace API, checked at Phase 4 entry.
 - **No streaming on the free path.** Visitors on the free path see the answer at once when it is complete, not word by word. BYOK keeps streaming.
 - **Serverless time limits.** Crawl budget 45 s, upstream timeout 45 s, `maxDuration` 60 s.
 
@@ -251,12 +258,23 @@ All resolved in revision 2 and kept in this revision: R1 vendored runtime for th
 | H3 | S3 | Load test needed ten hosts but fixtures allowed two | `<label>.fixture.test` host names, mapped to loopback in fixtures mode for Node and for Chromium (Phases 1 and 2) |
 | H4 | S3 | Universal CSP fixture conflicted with expected violations | Per-test `expectCspViolations` with an exact list; anything unexpected or missing fails (Phases 1 and 4) |
 
+### Revision 4 assessment (revision 5 dispositions)
+
+| ID | Sev | Finding | Disposition in revision 5 |
+| --- | --- | --- | --- |
+| R44 | S2 | Proxy schema rejected the runtime's tool messages (`name`) | Schema accepts a validated `name` on tool messages (fact 19); request bodies captured from the vendored runtime in Phase 4 are replayed through the schema; free-path e2e runs a delegation and a site action followed by the next model call (Phases 4 and 6) |
+| R39 cycle | S2 | Cycle case expected an error the runtime does not throw | Cycle case proves prevention: the back edge is absent from the model's tool list, no recursive fetch, a `composition_skip` event, and a visible adapter notice; an unknown-tool error does not count (Phases 4 and 7) |
+| R30 hold | S2 | Overrun reopened at midnight; reserve guarantee overstated | Persistent hold until owner reconciliation and `ops:resume-free`; judge budget from remaining credit; provider-backed isolation if Otari has per-key limits, else a qualified guarantee accepted by the owner (Phase 6) |
+| A1 | S3 | `peerOrigin` is `host:port` without a scheme | Mapped to exactly one configured origin, else no approval; scheme and port tests (Phase 4) |
+| A2 | S3 | Router probe path is the router's origin root | Guard allows `GET <router origin>/agent-manifest.json`; recorder test uses that path (Phase 4) |
+
 ## Handoff
 
 - **Objective and scope:** this plan, Phases 1 to 7. Approved scope so far: planning only. No implementation, push, deployment, provider account, credential or DNS action is authorized.
-- **State at writing:** branch `develop`, revision 3 at `f5cbb6f`; `origin/develop` at `44c5325`; worktree `/Users/juan/code/retrofit`. Spec commit `63a956c`. Neuro SAN reference commit `71b9f41`.
+- **State at writing:** branch `develop`, revision 4 at `09fe016`; `origin/develop` at `44c5325`; worktree `/Users/juan/code/retrofit`. Spec commit `63a956c`. Neuro SAN reference commit `71b9f41`.
 - **Evidence limits:** listed under "Specification read". Next.js 16 behavior, cookie behavior in real browsers, the HOCON reference bodies and Otari's balance and key-budget features were not checked; the phases that depend on them verify them first.
 - **Decisions:** owner decisions and planner decisions above.
-- **Review:** R1 to R43 and H1 to H4 dispositions above. Revision 4 has not had its own independent review.
+- **Review:** R1 to R44, H1 to H4 and A1 to A2 dispositions above. Revision 5 has not had its own independent review.
+- **Owner acceptance items inside phases:** the `score/v1` weights (Phase 3), the write-confirmation approach (Phase 5), and the judge-reserve guarantee level (Phase 6).
 - **Overlay:** none present; no override applied.
 - **Next step:** owner acceptance. On acceptance, start Phase 1 in a worktree with `/rpi-implement`.
