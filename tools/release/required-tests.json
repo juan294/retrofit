@@ -5437,6 +5437,18 @@
       "suite": "unit",
       "file": "tests/preview/fetch-guard.test.ts",
       "title": "runtime generations (V08) keeps the caller's abort signal on the site snapshot load"
+    },
+    {
+      "rule": "runtime request capture",
+      "suite": "unit",
+      "file": "tests/e2e-support/runtime-capture.test.ts",
+      "title": "normalizeCapture replaces the snapshot date so a capture on another day writes the same file"
+    },
+    {
+      "rule": "runtime request capture",
+      "suite": "unit",
+      "file": "tests/e2e-support/runtime-capture.test.ts",
+      "title": "normalizeCapture replaces analysis ids, call ids, UUIDs and timestamps"
     }
   ],
   "repairs": {

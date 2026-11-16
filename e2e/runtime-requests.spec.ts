@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { test, expect } from "./fixtures/csp";
 import { analyzeFixture, connectKey, mockOtari } from "./support/agent";
+import { normalizeCapture } from "./support/runtime-capture";
 
 const OUT = "tests/fixtures/runtime-requests";
 
@@ -27,17 +28,11 @@ test("captures the runtime's chat request bodies for the free-path schema", asyn
 
   const vendorHash = createHash("sha256").update(readFileSync("vendor/agentic-web.json")).digest("hex");
   mkdirSync(OUT, { recursive: true });
-  // Dynamic values (ids, timestamps) are normalized, so a rerun on the same runtime writes nothing.
-  const normalize = (text: string) =>
-    text
-      .replaceAll(/http:\/\/127\.0\.0\.1:3010\/p\/[0-9a-f]{32}/g, "http://127.0.0.1:3010/p/ANALYSIS_ID")
-      .replaceAll(/call_\d+_\d+/g, "call_ID")
-      .replaceAll(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "UUID")
-      .replaceAll(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "TIMESTAMP");
+  // Dynamic values are normalized, so a rerun on the same runtime writes nothing.
   const capture = {
     vendorManifestSha256: vendorHash,
-    note: "Request bodies sent by the vendored runtime to <router>/chat/completions. Synthetic bakery fixture; test key only. Ids and timestamps normalized.",
-    bodies: JSON.parse(normalize(JSON.stringify(bodies))) as unknown[],
+    note: "Request bodies sent by the vendored runtime to <router>/chat/completions. Synthetic bakery fixture; test key only. Ids, timestamps and the snapshot date normalized.",
+    bodies: JSON.parse(normalizeCapture(JSON.stringify(bodies))) as unknown[],
   };
   const file = `${OUT}/bakery-session.json`;
   const text = `${JSON.stringify(capture, null, 2)}\n`;
