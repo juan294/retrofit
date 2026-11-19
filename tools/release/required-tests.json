@@ -5449,6 +5449,18 @@
       "suite": "unit",
       "file": "tests/e2e-support/runtime-capture.test.ts",
       "title": "normalizeCapture replaces analysis ids, call ids, UUIDs and timestamps"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the preview's runtime text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the preview's runtime text is readable in dark mode"
     }
   ],
   "repairs": {

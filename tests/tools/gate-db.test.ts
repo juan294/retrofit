@@ -10,8 +10,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { takeOverLock } from "../../tools/gate-db.mjs";
+
+// Each test spawns several Node processes (the tool and its fake CLIs). They take about 4.3 s on an
+// idle machine, which the default 5 s limit made fail under load (two timeouts at load average 15).
+vi.setConfig({ testTimeout: 30_000 });
 
 const tool = fileURLToPath(new URL("../../tools/gate-db.mjs", import.meta.url));
 const fakeCli = fileURLToPath(new URL("./shims/fake-cli.mjs", import.meta.url));
