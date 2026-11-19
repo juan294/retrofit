@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: whitespace
+        run: git diff --check a26865a08b8f3a9811ff4dd99ce3726b67591924
+      - run: pnpm evidence:begin
+      - run: pnpm vendor:verify
+      - run: pnpm agent:check
+      - run: pnpm peer:check
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm test:coverage
+      - run: pnpm build
+      - run: pnpm test:perf
+      - run: pnpm test:e2e
+      - run: pnpm evidence:seal
+
+  db:
+    name: Database
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: supabase/setup-cli@v3
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:db
