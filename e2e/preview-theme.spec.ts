@@ -1,6 +1,7 @@
-import type { Locator } from "@playwright/test";
 import { test, expect } from "./fixtures/csp";
 import { analyzeFixture, mockOtari } from "./support/agent";
+
+type Locator = import("@playwright/test").Locator;
 
 /**
  * WCAG contrast of a text element against the first opaque background behind it.
@@ -9,10 +10,11 @@ import { analyzeFixture, mockOtari } from "./support/agent";
 async function contrastOf(el: Locator): Promise<{ ratio: number; color: string; background: string }> {
   return el.evaluate((node) => {
     const parse = (c: string) => {
-      const m = c.match(/rgba?\(([^)]+)\)/);
-      if (!m) return null;
-      const [r, g, b, a = "1"] = m[1].split(/[ ,/]+/).filter(Boolean);
-      return { r: Number(r), g: Number(g), b: Number(b), a: Number(a) };
+      const m = c.match(/^rgba?\(([^)]+)\)$/);
+      const parts = m?.[1]?.split(/[ ,/]+/).filter(Boolean).map(Number) ?? [];
+      if (parts.length < 3 || parts.some(Number.isNaN)) return null;
+      const [r = 0, g = 0, b = 0, a = 1] = parts;
+      return { r, g, b, a };
     };
     const luminance = ({ r, g, b }: { r: number; g: number; b: number }) => {
       const lin = (v: number) => {
@@ -36,8 +38,8 @@ async function contrastOf(el: Locator): Promise<{ ratio: number; color: string; 
     const fg = parse(color);
     const back = parse(background || "rgb(255, 255, 255)");
     if (!fg || !back) throw new Error(`Unparsed colors: ${color} on ${background}`);
-    const [hi, lo] = [luminance(fg), luminance(back)].sort((x, y) => y - x);
-    return { ratio: (hi + 0.05) / (lo + 0.05), color, background };
+    const [l1, l2] = [luminance(fg), luminance(back)];
+    return { ratio: (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05), color, background };
   });
 }
 
