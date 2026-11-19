@@ -165,7 +165,7 @@ export function Preview({ originUrl, inference, label, onNotice, network }: Prev
           {bootError}
         </p>
       ) : null}
-      <div ref={mountRef} className="mt-3" data-testid="preview-mount" />
+      <div ref={mountRef} className="runtime-surface mt-3" data-testid="preview-mount" />
       {notices.length ? (
         <ul data-testid="preview-notices" aria-live="polite" className="mt-3 flex flex-col gap-1 text-sm">
           {notices.map((n) => (

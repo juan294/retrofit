@@ -33,3 +33,16 @@ body {
   color: var(--color-text);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
+
+/* The vendored runtime has light colors built in (white cards, light bubbles, dark text that
+   inherits through its variables). On a dark page its panel keeps a light surface of its own,
+   so every runtime text stays readable. Vendored files are never edited. */
+@media (prefers-color-scheme: dark) {
+  .runtime-surface {
+    color-scheme: light;
+    background: #ffffff;
+    color: #1a1a1a;
+    padding: 12px;
+    border-radius: var(--radius);
+  }
+}
