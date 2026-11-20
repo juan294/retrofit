@@ -1,5 +1,5 @@
 {
-  "vendorManifestSha256": "5d264186923af812095b44a96743e6629e19e913239770f7ec67bdc6eb8d3430",
+  "vendorManifestSha256": "3c955130ce59583572209dd03f049a80b42ed448fcf15fafe9521cb70a1b9655",
   "note": "Request bodies sent by the vendored runtime to <router>/chat/completions. Synthetic bakery fixture; test key only. Ids, timestamps and the snapshot date normalized.",
   "bodies": [
     {
@@ -39,7 +39,7 @@
           "type": "function",
           "function": {
             "name": "website_search_site_content",
-            "description": "Search the saved snapshot of the website's public pages. Returns the best matching pages with title, URL and a text excerpt, plus the snapshot date.",
+            "description": "Search the saved snapshot of the website's public pages. Call it before answering about the site, unless website_get_site_records has the answer. Returns the best matching pages with title, URL and a text excerpt, plus the snapshot date.",
             "parameters": {
               "type": "object",
               "additionalProperties": false,
@@ -67,7 +67,7 @@
           "type": "function",
           "function": {
             "name": "website_get_site_records",
-            "description": "Read structured records from the website snapshot, such as products or opening hours. Give a collection, and optionally one record id.",
+            "description": "Read structured records from the website snapshot, such as products or opening hours. Call it for questions about those records. Give a collection, and optionally one record id.",
             "parameters": {
               "type": "object",
               "additionalProperties": false,
@@ -113,7 +113,7 @@
           "type": "function",
           "function": {
             "name": "website_search_site_content",
-            "description": "Search the saved snapshot of the website's public pages. Returns the best matching pages with title, URL and a text excerpt, plus the snapshot date.",
+            "description": "Search the saved snapshot of the website's public pages. Call it before answering about the site, unless website_get_site_records has the answer. Returns the best matching pages with title, URL and a text excerpt, plus the snapshot date.",
             "parameters": {
               "type": "object",
               "additionalProperties": false,
@@ -141,7 +141,7 @@
           "type": "function",
           "function": {
             "name": "website_get_site_records",
-            "description": "Read structured records from the website snapshot, such as products or opening hours. Give a collection, and optionally one record id.",
+            "description": "Read structured records from the website snapshot, such as products or opening hours. Call it for questions about those records. Give a collection, and optionally one record id.",
             "parameters": {
               "type": "object",
               "additionalProperties": false,
@@ -207,7 +207,7 @@
           "type": "function",
           "function": {
             "name": "website_search_site_content",
-            "description": "Search the saved snapshot of the website's public pages. Returns the best matching pages with title, URL and a text excerpt, plus the snapshot date.",
+            "description": "Search the saved snapshot of the website's public pages. Call it before answering about the site, unless website_get_site_records has the answer. Returns the best matching pages with title, URL and a text excerpt, plus the snapshot date.",
             "parameters": {
               "type": "object",
               "additionalProperties": false,
@@ -235,7 +235,7 @@
           "type": "function",
           "function": {
             "name": "website_get_site_records",
-            "description": "Read structured records from the website snapshot, such as products or opening hours. Give a collection, and optionally one record id.",
+            "description": "Read structured records from the website snapshot, such as products or opening hours. Call it for questions about those records. Give a collection, and optionally one record id.",
             "parameters": {
               "type": "object",
               "additionalProperties": false,
@@ -320,7 +320,7 @@
           "type": "function",
           "function": {
             "name": "website_search_site_content",
-            "description": "Search the saved snapshot of the website's public pages. Returns the best matching pages with title, URL and a text excerpt, plus the snapshot date.",
+            "description": "Search the saved snapshot of the website's public pages. Call it before answering about the site, unless website_get_site_records has the answer. Returns the best matching pages with title, URL and a text excerpt, plus the snapshot date.",
             "parameters": {
               "type": "object",
               "additionalProperties": false,
@@ -348,7 +348,7 @@
           "type": "function",
           "function": {
             "name": "website_get_site_records",
-            "description": "Read structured records from the website snapshot, such as products or opening hours. Give a collection, and optionally one record id.",
+            "description": "Read structured records from the website snapshot, such as products or opening hours. Call it for questions about those records. Give a collection, and optionally one record id.",
             "parameters": {
               "type": "object",
               "additionalProperties": false,

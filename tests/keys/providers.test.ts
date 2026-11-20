@@ -4,6 +4,13 @@ import { describe, expect, it } from "vitest";
 import { PROVIDERS, providerForRouter, routerOrigins } from "@/lib/keys/providers";
 
 const UI_JS = path.resolve(__dirname, "../../public/runtime/ui.js");
+const OPENROUTER_JS = path.resolve(__dirname, "../../public/runtime/openrouter-connect.js");
+
+/** The string constants of the vendored OpenRouterConnect class, which the provider literal refers to. */
+function openRouterConstants(): Record<string, string> {
+  const source = readFileSync(OPENROUTER_JS, "utf8");
+  return Object.fromEntries([...source.matchAll(/^\s*static ([A-Z_]+) = "([^"]*)";/gm)].map((m) => [m[1]!, m[2]!]));
+}
 
 type RuntimeRow = {
   name: string;
@@ -12,6 +19,7 @@ type RuntimeRow = {
   model: string;
   keyPrefixes: string[];
   accessNote: string;
+  button?: boolean;
 };
 
 /** Reads `API_KEY_PROVIDERS` from the vendored source text (no runtime import, no DOM). */
@@ -21,47 +29,47 @@ function runtimeRows(): RuntimeRow[] {
   expect(start, "ui.js no longer exports API_KEY_PROVIDERS").toBeGreaterThan(-1);
   const open = source.indexOf("[", start);
   const close = source.indexOf("\n];", open);
-  // The vendored literal holds only strings, arrays and comments.
-  return new Function(`return ${source.slice(open, close + 2)}`)() as RuntimeRow[];
+  // The vendored literal holds only strings, booleans, arrays, comments and OpenRouterConnect constants.
+  return new Function("OpenRouterConnect", `return ${source.slice(open, close + 2)}`)(openRouterConstants()) as RuntimeRow[];
 }
 
 describe("provider rows", () => {
   // Fails when a row in providers.ts drifts from the vendored runtime (name, prefixes, router,
-  // model, key page or note), or when a runtime row is dropped or reordered.
-  it("start with the vendored runtime rows, in order and unchanged", () => {
+  // model, key page, note or button), or when a runtime row is dropped, reordered or added to.
+  it("are exactly the vendored runtime rows, in order and unchanged", () => {
     const rows = runtimeRows();
-    expect(rows.length).toBe(5);
-    const ours = PROVIDERS.slice(0, rows.length).map(({ name, keyUrl, router, model, keyPrefixes, accessNote }) => ({
+    expect(rows.length).toBe(7);
+    const ours = PROVIDERS.map(({ name, keyUrl, router, model, keyPrefixes, accessNote, button }) => ({
       name,
       keyUrl,
       router,
       model,
       keyPrefixes: [...keyPrefixes],
       accessNote,
+      ...(button === undefined ? {} : { button }),
     }));
     expect(ours).toEqual(rows);
   });
 
-  // Fails when the OpenRouter row is removed or its prefix, router or key page changes.
-  it("add exactly one OpenRouter row after them", () => {
-    expect(PROVIDERS).toHaveLength(6);
-    const row = PROVIDERS[5]!;
-    expect(row.name).toBe("OpenRouter");
-    expect(row.keyPrefixes).toEqual(["sk-or-v1-"]);
-    expect(row.router).toBe("https://openrouter.ai/api/v1");
-    expect(row.keyUrl).toBe("https://openrouter.ai/keys");
-    expect(row.model).toMatch(/^[a-z0-9-]+\/[a-z0-9.:-]+$/);
+  // Fails when the EU Otari row loses its gateway, its prefix or its hidden button (OT-2).
+  it("route EU Otari keys to the EU gateway without a second Otari button", () => {
+    const eu = PROVIDERS.find((p) => p.name === "Otari EU")!;
+    expect(eu.router).toBe("https://eu.api.otari.ai/api/v1");
+    expect(eu.keyPrefixes).toEqual(["otk_v1_eu_"]);
+    expect(eu.button).toBe(false);
+    expect(PROVIDERS.filter((p) => p.button !== false).map((p) => p.name)).not.toContain("Otari EU");
   });
 
   // Fails when routerOrigins returns paths, duplicates or misses a provider (connect-src input).
   it("list each router origin once", () => {
     expect(routerOrigins()).toEqual([
       "https://api.otari.ai",
+      "https://eu.api.otari.ai",
       "https://generativelanguage.googleapis.com",
       "https://api.groq.com",
+      "https://openrouter.ai",
       "https://api.openai.com",
       "https://api.anthropic.com",
-      "https://openrouter.ai",
     ]);
   });
 

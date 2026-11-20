@@ -121,7 +121,8 @@ export async function testKey(input: KeyTestInput): Promise<KeyTestResult> {
   const entries = modelIds(body);
   // Like the runtime (ui.js:1175-1185): only a non-empty list that lacks the model blocks.
   if (entries === null) return { ok: true };
-  const match = entries.find((entry) => bareId(entry.id) === model);
+  // The runtime's Google row names the model "models/<id>" (agentic-web 0516537); compare bare ids.
+  const match = entries.find((entry) => bareId(entry.id) === bareId(model));
   if (entries.length > 0 && !match) {
     return fail("model-missing", `${name} does not list the model ${model}. Choose another model under Advanced.`);
   }

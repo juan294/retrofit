@@ -6,6 +6,9 @@ describe("detectProvider", () => {
   // Fails when a prefix in the table changes or detection stops matching on prefix.
   it.each([
     ["otk_abc123", "Otari"],
+    // An EU Otari key works only on the EU gateway; the longer prefix must win over "otk_".
+    ["otk_v1_eu_abc123", "Otari EU"],
+    ["otk_v1_us_abc123", "Otari"],
     ["AIzaSyExample", "Google AI Studio"],
     ["gsk_example", "Groq"],
     ["sk-proj-example", "OpenAI"],
@@ -22,7 +25,7 @@ describe("detectProvider", () => {
   });
 
   // Fails when detection guesses a provider for a key it cannot place.
-  it.each(["", "   ", "sk-plain-legacy", "tk-selfhosted", "SK-OR-V1-upper", "xsk-or-v1-abc"])(
+  it.each(["", "   ", "sk-plain-legacy", "tk-selfhosted", "SK-OR-V1-upper", "xsk-or-abc"])(
     "returns null for %j",
     (key) => {
       expect(detectProvider(key)).toBeNull();

@@ -18,7 +18,7 @@
     "test:coverage": "vitest run --project unit --coverage --reporter=default",
     "test:perf": "vitest run --project perf --reporter=default --reporter=json --outputFile.json=.local/evidence/current/vitest-perf.json",
     "test:e2e": "playwright test",
-    "vendor:sync": "node tools/vendor-agentic-web.mjs sync --source .local/vendor/agentic-web --commit 63a956cf4653f610b1c238c70946f4d7647d17a8",
+    "vendor:sync": "node tools/vendor-agentic-web.mjs sync --source .local/vendor/agentic-web --commit 05165377aca457381bd41b5c05e7a26cd23e6d74",
     "vendor:verify": "node tools/vendor-agentic-web.mjs verify",
     "evidence:begin": "node tools/evidence.mjs begin",
     "evidence:seal": "node tools/evidence.mjs seal",
