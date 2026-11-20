@@ -5478,31 +5478,31 @@
       "rule": "preview question cost bounded by per-agent step limits",
       "suite": "unit",
       "file": "tests/generate/network.test.ts",
-      "title": "each agent has its own small step limit"
+      "title": "generateNetwork on every fixture snapshot each agent has its own small step limit"
     },
     {
       "rule": "Retrofit's own site carries the signals it scores",
       "suite": "unit",
       "file": "tests/site/own-site.test.ts",
-      "title": "the home page JSON-LD passes data.jsonld, data.business and data.offers"
+      "title": "Retrofit's own site, scored by Retrofit the home page JSON-LD passes data.jsonld, data.business and data.offers"
     },
     {
       "rule": "Retrofit's own site carries the signals it scores",
       "suite": "unit",
       "file": "tests/site/own-site.test.ts",
-      "title": "robots allows every agent and declares the sitemap"
+      "title": "Retrofit's own site, scored by Retrofit robots allows every agent and declares the sitemap"
     },
     {
       "rule": "Retrofit's own site carries the signals it scores",
       "suite": "unit",
       "file": "tests/site/own-site.test.ts",
-      "title": "the sitemap lists the public pages only"
+      "title": "Retrofit's own site, scored by Retrofit the sitemap lists the public pages only"
     },
     {
       "rule": "Retrofit's own site carries the signals it scores",
       "suite": "unit",
       "file": "tests/site/own-site.test.ts",
-      "title": "llms.txt is Markdown text with a title, a summary and every public page"
+      "title": "Retrofit's own site, scored by Retrofit llms.txt is Markdown text with a title, a summary and every public page"
     },
     {
       "rule": "Retrofit's own site carries the signals it scores",
@@ -5514,13 +5514,13 @@
       "rule": "the result page leads with what to fix",
       "suite": "unit",
       "file": "tests/score/fixes.test.ts",
-      "title": "every check has a one-sentence fix"
+      "title": "fix hints every check has a one-sentence fix"
     },
     {
       "rule": "the result page leads with what to fix",
       "suite": "unit",
       "file": "tests/score/fixes.test.ts",
-      "title": "fixFirst returns the three heaviest failures, ties in definition order"
+      "title": "fix hints fixFirst returns the three heaviest failures, ties in definition order"
     },
     {
       "rule": "the result page leads with what to fix",
@@ -5532,13 +5532,13 @@
       "rule": "router errors reach the visitor as their message, hostile bodies stay inert",
       "suite": "unit",
       "file": "tests/preview/error-text.test.ts",
-      "title": "turns the runtime's JSON error bubble into the error's message"
+      "title": "friendlyRuntimeError turns the runtime's JSON error bubble into the error's message"
     },
     {
       "rule": "router errors reach the visitor as their message, hostile bodies stay inert",
       "suite": "unit",
       "file": "tests/preview/error-text.test.ts",
-      "title": "leaves everything else unchanged (returns null)"
+      "title": "friendlyRuntimeError leaves everything else unchanged (returns null)"
     }
   ],
   "repairs": {
