@@ -1,6 +1,6 @@
 import { KEY_ITEM } from "@/lib/keys/storage";
 import { test, expect } from "./fixtures/csp";
-import { OTARI, analyzeFixture, connectKey, mockOtari } from "./support/agent";
+import { OTARI, analyzeFixture, connectKey, mockOtari, openKeyForm } from "./support/agent";
 import { RETROFIT_ORIGIN, recordRequests, type Page, recordStorageWrites, storageNames, whereSecretAppears } from "./support/extra-requests";
 
 const RUNTIME_PREFIX = "nsweb-byok-";
@@ -91,8 +91,8 @@ test("the runtime writes no nsweb-byok item during a chat, and Forget my key cle
   expect(seeded.cookies).toContain(RUNTIME_COOKIE);
 
   await page.getByRole("button", { name: "Forget my key" }).click();
-  // Back to the free path (Phase 6), with the key prompt offered again.
-  await expect(page.getByLabel("Paste your key")).toBeVisible();
+  // Back to the free path (Phase 6), with the key prompt offered again in the closed "own key" disclosure.
+  await expect(page.getByTestId("own-key").locator(":scope > summary")).toHaveText("Use your own AI key (optional)");
   await expect(page.getByText(/Connected to Otari/)).toHaveCount(0);
   await expect(page.getByText(/Using Retrofit's free AI/)).toBeVisible();
 
@@ -107,6 +107,7 @@ test("the runtime writes no nsweb-byok item during a chat, and Forget my key cle
 test("with Remember on this device unticked, a new tab does not get the key", async ({ page, context }) => {
   await mockOtari(page);
   const id = await analyzeFixture(page, "bakery.fixture.test");
+  await openKeyForm(page);
   await expect(page.getByRole("checkbox", { name: "Remember on this device" })).not.toBeChecked();
   await connectKey(page);
   await expect(page.getByTestId("preview-mount").locator('[data-ns-slot="chat"]')).toBeVisible();
@@ -115,7 +116,7 @@ test("with Remember on this device unticked, a new tab does not get the key", as
   const router2 = await mockOtari(second);
   await second.goto(`/r/${id}`);
   await expect(second.getByTestId("score-total")).toBeVisible({ timeout: 30_000 });
-  await expect(second.getByLabel("Paste your key")).toBeVisible();
+  await expect(second.getByTestId("own-key").locator(":scope > summary")).toBeVisible();
   await expect(second.getByText(/Connected to Otari/)).toHaveCount(0);
   // Without a remembered key the new tab runs on the free path.
   await expect(second.getByText(/Using Retrofit's free AI/)).toBeVisible();
@@ -128,6 +129,7 @@ test("with Remember on this device unticked, a new tab does not get the key", as
 test("with Remember on this device ticked, a new tab restores the key", async ({ page, context }) => {
   await mockOtari(page);
   const id = await analyzeFixture(page, "bakery.fixture.test");
+  await openKeyForm(page);
   await page.getByRole("checkbox", { name: "Remember on this device" }).check();
   await connectKey(page);
   const first = await storageNames(page);
@@ -163,6 +165,7 @@ test("with a visitor key, no request goes to /api/inference after the key connec
 test("a remembered key starts no free session", async ({ page, context }) => {
   await mockOtari(page);
   await analyzeFixture(page, "bakery.fixture.test");
+  await openKeyForm(page);
   await page.getByRole("checkbox", { name: "Remember on this device" }).check();
   await connectKey(page);
   const second = await context.newPage();

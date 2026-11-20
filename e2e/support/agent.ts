@@ -38,8 +38,19 @@ export async function analyzeFixture(page: Page, host: string): Promise<string> 
   return new URL(page.url()).pathname.split("/").pop()!;
 }
 
+/**
+ * Opens the key form. While the free AI works, the form sits in a closed "Use your own AI key" disclosure;
+ * wait until the free path has settled (free AI on, a key connected, or the free AI refused) before opening it.
+ */
+export async function openKeyForm(page: Page) {
+  await expect(page.getByText("Using Retrofit's free AI").or(page.getByText(/Connected to /)).or(page.getByTestId("free-banner")).first()).toBeVisible({ timeout: 20_000 });
+  const disclosure = page.getByTestId("own-key");
+  if (!(await disclosure.evaluate((d) => (d as HTMLDetailsElement).open))) await disclosure.locator(":scope > summary").click();
+}
+
 /** Connects the Otari test key through the key panel inside `scope`. */
 export async function connectKey(page: Page, key = OTARI.key) {
+  await openKeyForm(page);
   await page.getByLabel("Paste your key").fill(key);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByText(/Connected to Otari/)).toBeVisible();
