@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "project": "retrofit",
-  "release_ready": false,
-  "stage": "build",
+  "release_ready": true,
+  "stage": "released",
   "integration_branch": "develop",
   "production_branch": "main",
   "release_procedure": "docs/release/release-playbook.md",
@@ -27,10 +27,8 @@
     "hosting-and-domain-decision"
   ],
   "current_gaps": [
-    "no-hosting-or-deployment-target",
-    "no-production-deployment-or-evidence",
-    "rpi-installation-check-failing",
-    "phase-6-owner-inputs-and-contract-probe"
+    "vendored-runtime-behind-upstream-0516537",
+    "visitor-eu-otari-keys-OT-2"
   ],
   "invariants": [
     "passing-check-count-greater-than-zero",
@@ -38,5 +36,44 @@
     "candidate-and-artifact-identities-match",
     "cleanup-or-retained-resource-handoff-present",
     "tag-last-after-evidence-and-authorization"
-  ]
+  ],
+  "first_release": {
+    "version": "v0.1.0",
+    "commit": "0a05f231f8e16621087e4597eb52c78db396f6a4",
+    "date": "2026-11-20",
+    "deployment": "dpl_6HzX3W9h8NpxprP8LwDMoHrutr9q",
+    "release": "https://github.com/juan294/retrofit/releases/tag/v0.1.0",
+    "evidence": {
+      "accepted-product-plan-and-stack-decision": [
+        "docs/plans/2026-11-15-retrofit-url-to-preview.md",
+        "docs/decisions/2026-11-15-stack-and-hosting.md",
+        "docs/plans/2026-11-15-retrofit-url-to-preview-notes.md (Owner acceptances, 2026-11-19)"
+      ],
+      "executable-application-tests": [
+        ".local/runs/2026-11-20-release/gate-0a05f23.log (ignored)",
+        "tools/release/required-tests.json"
+      ],
+      "candidate-bound-evidence-analyzer": [
+        "tools/release/analyze-evidence.mjs",
+        "node tools/release/analyze-evidence.mjs 0a05f23 (local ACCEPTED) and --production .local/evidence/production/dpl_6HzX3W9h8NpxprP8LwDMoHrutr9q (ACCEPTED, 20 cases)"
+      ],
+      "open-agentic-web-spec-conformance-evidence": [
+        "e2e/spec6.spec.ts and e2e/spec6-prod-shape.spec.ts in the local gate",
+        ".local/evidence/production/dpl_6HzX3W9h8NpxprP8LwDMoHrutr9q/spec6-*.json and partner-*.json (ignored)",
+        "specification commit 63a956c (vendored); upstream 0516537 editorial only"
+      ],
+      "third-party-fetch-safety-evidence": [
+        "local gate unit and e2e tests for robots, pacing and the SSRF guard (tools/release/required-tests.json)",
+        ".local/evidence/production/dpl_6HzX3W9h8NpxprP8LwDMoHrutr9q/concurrent-analyses-five.json and analyze-own-site.json (ignored)"
+      ],
+      "visitor-key-handling-evidence": [
+        "e2e/key-panel.spec.ts and tests/inference/redaction.test.ts in the local gate",
+        ".local/evidence/production/dpl_6HzX3W9h8NpxprP8LwDMoHrutr9q/spec6-peer-no-cookie-or-key.json (ignored)"
+      ],
+      "hosting-and-domain-decision": [
+        "docs/decisions/2026-11-15-stack-and-hosting.md",
+        "docs/plans/2026-11-15-retrofit-url-to-preview-notes.md (Phase 7 external actions, 2026-11-20)"
+      ]
+    }
+  }
 }
