@@ -5479,6 +5479,36 @@
       "suite": "unit",
       "file": "tests/generate/network.test.ts",
       "title": "each agent has its own small step limit"
+    },
+    {
+      "rule": "Retrofit's own site carries the signals it scores",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "the home page JSON-LD passes data.jsonld, data.business and data.offers"
+    },
+    {
+      "rule": "Retrofit's own site carries the signals it scores",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "robots allows every agent and declares the sitemap"
+    },
+    {
+      "rule": "Retrofit's own site carries the signals it scores",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "the sitemap lists the public pages only"
+    },
+    {
+      "rule": "Retrofit's own site carries the signals it scores",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "llms.txt is Markdown text with a title, a summary and every public page"
+    },
+    {
+      "rule": "Retrofit's own site carries the signals it scores",
+      "suite": "playwright",
+      "file": "own-site.spec.ts",
+      "title": "Retrofit serves robots.txt, sitemap.xml, llms.txt, home JSON-LD and a contact link"
     }
   ],
   "repairs": {
