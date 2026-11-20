@@ -67,6 +67,17 @@ describe("free inference configuration", () => {
     expect(() => loadConfig({ SESSION_SECRET: secret, FREE_UPSTREAM_TIMEOUT_MS: "55000" })).toThrow(/FREE_UPSTREAM_TIMEOUT_MS/);
   });
 
+  // Fails if production can reach only Otari's US host: EU accounts get HTTP 421 there.
+  it("selects Otari's regional host with OTARI_REGION, required on Vercel", () => {
+    expect(loadConfig({ ...vercel, OTARI_REGION: "eu" }).free.upstreamUrl).toBe("https://eu.api.otari.ai/api/v1");
+    expect(loadConfig({ ...vercel, OTARI_REGION: "us" }).free.upstreamUrl).toBe("https://api.otari.ai/api/v1");
+    expect(loadConfig({ SESSION_SECRET: secret, OTARI_REGION: "eu" }).free.upstreamUrl).toBe("https://eu.api.otari.ai/api/v1");
+    expect(() => loadConfig({ ...vercel, OTARI_REGION: "https://evil.example" })).toThrow(/OTARI_REGION/);
+    const env: Record<string, string> = { ...vercel };
+    delete env.OTARI_REGION;
+    expect(() => loadConfig(env)).toThrow(/OTARI_REGION/);
+  });
+
   it("accepts a per-request fee of zero or more", () => {
     expect(loadConfig({ SESSION_SECRET: secret, FREE_PER_REQUEST_FEE_USD: "0.0001" }).free.perRequestFeeUsd).toBe(0.0001);
     expect(() => loadConfig({ SESSION_SECRET: secret, FREE_PER_REQUEST_FEE_USD: "-1" })).toThrow(/FREE_PER_REQUEST_FEE_USD/);

@@ -69,7 +69,7 @@ export interface FreeConfig {
   readonly upstreamTimeoutMs: number;
   /** Fractions of the credit that raise one alert each, ascending. */
   readonly alertThresholds: readonly number[];
-  /** OpenAI-compatible base URL of the provider (Otari). Overridable off Vercel only (tests). */
+  /** OpenAI-compatible base URL of the provider (Otari), chosen by OTARI_REGION. FREE_UPSTREAM_URL overrides it off Vercel only (tests). */
   readonly upstreamUrl: string;
   /** Server keys per pool. One key serves both when Otari has no per-key limits (qualified guarantee). */
   readonly keyPublic: string | null;
@@ -197,6 +197,9 @@ function parseNonNegative(env: Env, name: string, fallback: number): number {
 /** Off Vercel, placeholder amounts keep local development and tests running; Vercel requires the real values. */
 const LOCAL_FREE_DEFAULTS = { FREE_PRICE_IN_PER_M: 0.1, FREE_PRICE_OUT_PER_M: 0.4, FREE_CREDIT_USD: 10, JUDGE_RESERVE_USD: 3 } as const;
 
+/** Otari's OpenAI-compatible base URL per account region (OTARI_REGION). */
+const OTARI_HOSTS = { us: "https://api.otari.ai/api/v1", eu: "https://eu.api.otari.ai/api/v1" } as const;
+
 export function loadFreeConfig(env: Env, onVercel: boolean): FreeConfig {
   const required = (name: keyof typeof LOCAL_FREE_DEFAULTS): number => {
     if (onVercel && !env[name]) throw new ConfigError(name, "is required on Vercel");
@@ -222,8 +225,12 @@ export function loadFreeConfig(env: Env, onVercel: boolean): FreeConfig {
     throw new ConfigError("CREDIT_ALERT_THRESHOLDS", "must be ascending fractions between 0 and 1");
   }
 
+  // An Otari key works only on its account's regional host; another host answers 421.
+  const region = env.OTARI_REGION?.trim();
+  if (onVercel && !region) throw new ConfigError("OTARI_REGION", "is required on Vercel (us or eu)");
+  if (region && !Object.hasOwn(OTARI_HOSTS, region)) throw new ConfigError("OTARI_REGION", `must be us or eu, got "${region}"`);
   if (onVercel && env.FREE_UPSTREAM_URL) throw new ConfigError("FREE_UPSTREAM_URL", "must not be set on Vercel");
-  const upstreamUrl = (env.FREE_UPSTREAM_URL ?? "https://api.otari.ai/api/v1").replace(/\/$/, "");
+  const upstreamUrl = (env.FREE_UPSTREAM_URL ?? OTARI_HOSTS[(region ?? "us") as keyof typeof OTARI_HOSTS]).replace(/\/$/, "");
   try {
     const u = new URL(upstreamUrl);
     if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error();
