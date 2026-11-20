@@ -125,8 +125,9 @@ test.describe("spec §6 in production (/conformance and the landing assistant)",
     // Hold a real Retrofit session cookie in this browser, so the check covers it.
     const session = await page.evaluate(async () => (await fetch("/api/inference/session", { method: "POST", credentials: "same-origin" })).status);
     expect(session).toBe(200);
-    const cookieNames = (await context.cookies(PROD.origin)).map((c) => c.name);
-    expect(cookieNames.length).toBeGreaterThan(0);
+    // The session cookie is scoped to Path=/api/inference, so ask for it at that path.
+    const cookieNames = (await context.cookies(`${PROD.origin}/api/inference/session`)).map((c) => c.name);
+    expect(cookieNames).toContain("retrofit_session");
     await s.send("call harbor_tours");
     await s.mount.locator(".ns-consent").last().getByRole("button", { name: "Allow", exact: true }).click();
     await expect(s.mount.getByText(HARBOR_FACT).filter({ visible: true }).first()).toBeVisible({ timeout: 30_000 });
