@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "develop": false,
+      "sutura/*": false
+    }
+  },
+  "ignoreCommand": "test \"$VERCEL_ENV\" != \"production\"",
+  "functions": {
+    "src/app/api/**/*.ts": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    { "path": "/api/cron/cleanup", "schedule": "17 3 * * *" },
+    { "path": "/api/cron/credit-check", "schedule": "23 8 * * *" }
+  ]
+}

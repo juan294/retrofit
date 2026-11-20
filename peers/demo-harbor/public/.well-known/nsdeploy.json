@@ -1,0 +1,17 @@
+{
+  "protocol": "nsdeploy-link/v1",
+  "exports": [
+    {
+      "network": "harbor_tours",
+      "front_man": "harbor_guide",
+      "aliases": [
+        "harbor_tours"
+      ],
+      "url": "harbor_tours"
+    }
+  ],
+  "imports": [],
+  "link_updates": {
+    "mode": "browser-local"
+  }
+}

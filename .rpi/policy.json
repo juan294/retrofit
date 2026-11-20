@@ -31,6 +31,97 @@
         "--route",
         "direct"
       ]
+    },
+    {
+      "name": "evidence-begin",
+      "argv": [
+        "pnpm",
+        "evidence:begin"
+      ]
+    },
+    {
+      "name": "vendor-verify",
+      "argv": [
+        "pnpm",
+        "vendor:verify"
+      ]
+    },
+    {
+      "name": "agent-check",
+      "argv": [
+        "pnpm",
+        "agent:check"
+      ]
+    },
+    {
+      "name": "peer-check",
+      "argv": [
+        "pnpm",
+        "peer:check"
+      ]
+    },
+    {
+      "name": "typecheck",
+      "argv": [
+        "pnpm",
+        "typecheck"
+      ]
+    },
+    {
+      "name": "lint",
+      "argv": [
+        "pnpm",
+        "lint"
+      ]
+    },
+    {
+      "name": "unit-tests",
+      "argv": [
+        "pnpm",
+        "test"
+      ]
+    },
+    {
+      "name": "coverage",
+      "argv": [
+        "pnpm",
+        "test:coverage"
+      ]
+    },
+    {
+      "name": "db-tests",
+      "argv": [
+        "pnpm",
+        "test:db"
+      ]
+    },
+    {
+      "name": "build",
+      "argv": [
+        "pnpm",
+        "build"
+      ]
+    },
+    {
+      "name": "perf",
+      "argv": [
+        "pnpm",
+        "test:perf"
+      ]
+    },
+    {
+      "name": "e2e",
+      "argv": [
+        "pnpm",
+        "test:e2e"
+      ]
+    },
+    {
+      "name": "evidence-seal",
+      "argv": [
+        "pnpm",
+        "evidence:seal"
+      ]
     }
   ],
   "production_branches": [

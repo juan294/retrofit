@@ -1,0 +1,7 @@
+{
+  "protocol": "nsdeploy-agent-mcp/v1",
+  "network": "harbor_tours",
+  "front_man": "harbor_guide",
+  "available": false,
+  "reason": "This is a static demo site; a public MCP facade requires an application host."
+}

@@ -1,0 +1,4 @@
+# Vendored, unchanged third-party files: checked by vendor:verify, not by the whitespace check.
+public/runtime/** -whitespace
+public/preview-assets/** -whitespace
+tools/agentic-web/** -whitespace

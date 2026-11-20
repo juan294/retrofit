@@ -22,7 +22,7 @@ Source: the Devpost overview page, the official rules page and the `cognizant-ai
 - Submission: a video under 2 minutes on YouTube with the entrant explaining (the overview says "not AI generated"), no third-party trademarks in the video, a text description and screenshots. If Otari is used, the account email and one sentence of feedback.
 - The project must be "free of charge and without any restriction" for judges until judging ends.
 - Judging: Stage 1 is pass or fail on conformance. Stage 2 has four equal criteria: Technological Implementation (first tie-breaker), Design, Potential Impact (includes tools shared with the community) and Quality of the Idea.
-- Open source: the overview says "Everything you build is open source, so the best ideas become part of the foundation everyone builds on next." The Discord announcement says "Any LLM works, as long as your project is open source". The rules page does not mention open source. The license, the repository requirement and the scope for server-side code are not stated in the pages read. The rules say that ambiguous terms need a written clarification request.
+- Open source: the overview says "Everything you build is open source, so the best ideas become part of the foundation everyone builds on next." The Discord announcement says "Any LLM works, as long as your project is open source". The rules page does not mention open source. The license, the repository requirement and the scope for server-side code are not stated in the pages read. The rules say that ambiguous terms need a written clarification request. The owner decided on 2026-11-15 that the whole project, including server-side code, is open source under Apache-2.0, so no clarification request is needed (see `docs/decisions/2026-11-15-open-source-and-key-panel-style.md`).
 - Intellectual property stays with the entrant. Spain is not on the exclusion list (INFERRED eligible).
 - Existing projects are allowed only if "significantly updated" after the start. Retrofit is new, so this does not apply.
 
@@ -75,6 +75,7 @@ The owner called key pasting "terrible UX and insecure". The panel must reduce b
 - The key is kept for the session only by default, with a "Forget my key" control. Show a cost estimate and suggest a limited key.
 - Host the panel and runtime on a separate subdomain with no third-party scripts.
 - Offer a "built-in AI, no key" choice where the browser supports it.
+- Use a new neutral visual style for now (owner decision, 2026-11-15).
 
 Options that were examined and rejected: Sign in with ChatGPT (limited partner trial, needs a confidential client for websites), OpenRouter OAuth (works in the browser, rejected because it forces visitors to create an OpenRouter account). Options still open: the on-device Chrome Prompt API (desktop Chrome 148 or later, tool calling not confirmed, no mobile) and a capped default paid by Retrofit (estimate 1 to 3 cents per plan, not measured).
 
@@ -114,7 +115,6 @@ Owner decision, 2026-11-14: because the product is published under a `thecreativ
 ## Open questions for the plan
 
 - Stack, package manager, test tools and hosting provider.
-- Which license the organizers expect and whether server-side code must be open. A clarification request needs the owner's approval and agreed wording.
 - How the acting agent reaches cart and booking functions on a site that Retrofit does not control.
 - Key-format detection patterns for each provider.
 - Whether the Chrome Prompt API supports tool calling.

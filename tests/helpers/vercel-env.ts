@@ -1,0 +1,17 @@
+/** A complete Vercel environment for configuration tests (synthetic values only). */
+export const VERCEL_ENV: Record<string, string> = {
+  VERCEL: "1",
+  SESSION_SECRET: "s".repeat(32),
+  PUBLIC_ORIGIN: "https://retrofit.example",
+  FREE_PRICE_IN_PER_M: "0.05",
+  FREE_PRICE_OUT_PER_M: "0.2",
+  FREE_CREDIT_USD: "100",
+  JUDGE_RESERVE_USD: "30",
+  OTARI_API_KEY: "otk_server_test",
+  OTARI_REGION: "eu",
+  JUDGE_CODE: "judge-code-test-0123456789",
+  CRON_SECRET: "cron-secret-test",
+  ALERT_GITHUB_TOKEN: "github-token-test",
+  SUPABASE_URL: "https://store.supabase.test",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role-key-test",
+};

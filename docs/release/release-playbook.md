@@ -4,27 +4,36 @@ This is the single release procedure for Retrofit. Native `rpi-release` delegate
 
 ## Present readiness
 
-The repository holds workspace setup only. There is no application code, test suite, deployment target or candidate-bound evidence. Release readiness is **BLOCKED**. The setup checks can pass while this stays true. Do not report a test count or a coverage percentage that no suite produced.
+The application is built through Phase 7's local work (`docs/plans/2026-11-15-retrofit-url-to-preview-notes.md`). Release readiness is **BLOCKED** until the Phase 7 external actions are authorized and done (hosting, database, domains, production evidence), the owner's Phase 6 inputs exist (Otari key, prices, credit, reserve, judge code, contract probe) and the `rpi-installation` gate check passes again. Do not report a test count or coverage that the current gate run did not produce.
 
-Machine-readable selection and gaps are in `.rpi/release-profile.json`. The product plan must supply executable checks and the evidence analyzer described below before the first release. Installing RPI does not implement them.
+Machine-readable selection and gaps are in `.rpi/release-profile.json`.
 
 ## Adaptation profile
 
 | Area | Retrofit decision |
 | --- | --- |
-| Product | Web tool and browser runtime that conforms to the open agentic web specification. Stack not decided. |
-| Repository | `juan294/retrofit`. Private at bootstrap. The hackathon requires open source, so visibility must change before submission, with Juan's authorization. |
-| Branches | `develop` integration, `main` production, merge-commit promotion |
-| Artifact | Not decided. Expected: one deployed site at `retrofit.thecreativetoken.com` plus the published runtime and manifest files, each tied to a source commit. |
-| State | Not decided. Expected: accounts, saved reports and site claims. Visitor LLM keys stay in the browser and are never server state. |
-| Network | Reads third-party public sites through a server-side fetch service. Calls LLM providers from the browser. |
+| Product | Next.js 16 web tool and the vendored agentic-web browser runtime (`docs/decisions/2026-11-15-stack-and-hosting.md`). |
+| Repository | `juan294/retrofit`. Public since 2026-11-15, by Juan's authorization. |
+| Branches | `develop` integration, `main` production, merge-commit promotion. |
+| Artifact | One Vercel production deployment of the merge commit on `main`, serving `retrofit.thecreativetoken.com` and, host-routed, `demo-harbor.thecreativetoken.com`. `/api/version` reports the commit (`BUILD_COMMIT`). |
+| State | Supabase Postgres project `retrofit`: crawl jobs, visitor-owned analyses (7 days), free-inference sessions, quotas, the ledger and the overrun hold. Visitor LLM keys stay in the browser and are never server state. |
+| Network | Server: guarded fetch of public sites (robots, pacing, SSRF guard) and the Otari upstream for the free path. Browser: the visitor's provider router or Retrofit's free path, and consented peers. |
 | Release owner | Juan |
-| Rollback | Restore the previous verified deployment with owner authorization. Decide the exact mechanism with the hosting choice. |
-| Hosted CI | None configured at bootstrap. Sutura owns fleet CI routing. |
+| Rollback | First release: remove the production aliases with owner authorization. Later releases: `vercel rollback <previous deployment>` with owner authorization; the database keeps its data (no destructive migration in this plan). |
+| Hosted CI | None in this repository. Sutura owns fleet CI routing (`docs/development/ci-handoff.md`). |
 | Deadline | Submission closes 2027-01-11 8:00 am PT. Judges need free access until 2027-01-18. |
 | Wave A | Mandatory: fixed candidate, nonempty passing evidence, required miss blocks, tag last. |
-| Wave B | Not selected. Retrofit ships no code that runs unattended or destructively on users' machines. Reassess if that changes. |
-| Waves C to H | Reassess after the product plan fixes the stack, the data model and the payment scope. |
+| Wave B | Not selected. Retrofit ships no code that runs unattended or destructively on users' machines. |
+| Waves C to H | Reassess before the second plan's release. |
+
+### Wave A commands for this stack
+
+1. Candidate: merge `develop` into `main` locally with a merge commit; `git status` clean.
+2. Local gate on that commit: `python3 .rpi/scripts/rpi-verify.py` (includes `pnpm test:db`, the disposable gate database, and `pnpm test:e2e`).
+3. Local analysis: `node tools/release/analyze-evidence.mjs <merge commit>`. Any accepted exception (`--accept-failed-check <name> --reason <text>`) is shown to Juan with the candidate.
+4. After the authorized candidate deployment (`vercel deploy --prod --build-env BUILD_COMMIT=<merge commit>` from a clean checkout of that commit): production evidence into `.local/evidence/production/<deployment id>/` (phase-7.md "Production evidence"), then `node tools/release/analyze-evidence.mjs <merge commit> --production .local/evidence/production/<deployment id>`.
+   - Deployment identity: `/api/version` names only a commit, and two deployments of one commit can differ. `tools/release/production-evidence.mjs` therefore runs `vercel inspect <target> --format json` for the deployment URL, `retrofit.thecreativetoken.com` and `demo-harbor.thecreativetoken.com` (the `aliases` of the `alias-binding` case in `tools/release/required-production-cases.json`) before the first case and again after the last. Each must name the candidate deployment id both times. A host bound to another deployment, or one that Vercel cannot inspect, fails `alias-binding`; when this happens before the suites, the script stops and runs no suite. The analyzer rejects a binding case without this identity and any case recorded outside the two checks.
+5. Juan's final acceptance, then the release tag last through `rpi-release`.
 
 ## Required ordering
 
@@ -40,6 +49,18 @@ Machine-readable selection and gaps are in `.rpi/release-profile.json`. The prod
 ## Hackathon submission
 
 The Devpost submission is an outward-facing action that needs Juan's authorization for the exact content. It needs a public URL, a video under 2 minutes on YouTube with Juan explaining and no third-party trademarks, a text description and screenshots. Making the repository public is a separate authorized action.
+
+## Free-path overrun recovery
+
+An overrun hold closes the public free pool until Juan reconciles the bound, prices, provider balance and outstanding reservations. Resuming production is an authorized owner action. Run it from a clean checkout with the production store, the credit, the judge reserve, the prices and the service end in the environment (all seven are required):
+
+```sh
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... FREE_CREDIT_USD=... JUDGE_RESERVE_USD=... \
+FREE_PRICE_IN_PER_M=... FREE_PRICE_OUT_PER_M=... FREE_SERVICE_END=... \
+pnpm ops:resume-free --reconciled-balance <usd> --note <text>
+```
+
+The other free-path settings (per-request fee, bound and limits) keep their `src/lib/config.ts` defaults when unset. The command prints every effective setting and marks each default; set any value that production overrides, then rerun. It prints the target store's origin and the ledger, hold and bound before any change, writes an `inference:audit:<time>` record, then clears the hold. A refusal or a store failure adds a `resume-free-refused` or `resume-free-failed` audit record. Exit status: 0 resumed; 1 refused (missing balance or note, balance below the ledger's remaining credit, no hold, or a new overrun recorded while it ran, which keeps the hold); 2 store or ledger configuration missing; 3 store error (nothing was reported as resumed); 4 the ledger hold was cleared but a legacy `inference:hold` record from the earlier layout could not be deleted (a `resume-free-legacy-delete-failed` audit record notes the error; that record still closes the public pool, so rerun the command). After a refusal for a new overrun, inspect the new state and reconcile again. `tests/db/resume-free.test.ts` runs the executable against the disposable gate stack only.
 
 ## Evidence and rollback
 

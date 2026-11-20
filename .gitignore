@@ -20,3 +20,7 @@ coverage/
 logs/
 docs/agents/
 graphify-out
+
+# Build and test outputs
+*.tsbuildinfo
+next-env.d.ts

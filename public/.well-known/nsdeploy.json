@@ -1,0 +1,17 @@
+{
+  "protocol": "nsdeploy-link/v1",
+  "exports": [
+    {
+      "network": "retrofit_guide",
+      "front_man": "retrofit_guide",
+      "aliases": [
+        "retrofit_guide"
+      ],
+      "url": "retrofit_guide"
+    }
+  ],
+  "imports": [],
+  "link_updates": {
+    "mode": "browser-local"
+  }
+}
