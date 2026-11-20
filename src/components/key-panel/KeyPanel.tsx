@@ -89,17 +89,8 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
     onForget();
   }
 
-  return (
-    <section
-      aria-labelledby={`${ids}-heading`}
-      className="flex flex-col gap-3 border p-4"
-      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", borderRadius: "var(--radius)" }}
-    >
-      {freePathActive && !connected ? (
-        <p className="text-sm" style={{ color: "var(--color-ok)" }} role="status">
-          Using Retrofit&apos;s free AI
-        </p>
-      ) : null}
+  const body = (
+    <>
       <h2 id={`${ids}-heading`} className="font-medium">
         {freePathActive ? "Use your own key" : "Connect your AI key"}
       </h2>
@@ -203,6 +194,7 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
         </details>
       </form>
 
+      {connected ? (
       <button
         type="button"
         onClick={forget}
@@ -211,6 +203,27 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
       >
         Forget my key
       </button>
+      ) : null}
+    </>
+  );
+
+  return (
+    <section
+      aria-labelledby={`${ids}-heading`}
+      className="flex flex-col gap-3 border p-4"
+      style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", borderRadius: "var(--radius)" }}
+    >
+      {freePathActive && !connected ? (
+        <p className="text-sm" style={{ color: "var(--color-ok)" }} role="status">
+          Using Retrofit&apos;s free AI
+        </p>
+      ) : null}
+      {/* One structure in every state, so the form is never rebuilt (a key being typed survives the free
+          session becoming ready). Closed while the free AI works and no key is connected. */}
+      <details data-testid="own-key" open={!(freePathActive && !connected)} className="flex flex-col gap-3">
+        <summary className="cursor-pointer text-sm font-medium">{freePathActive && !connected ? "Use your own AI key (optional)" : "Your AI key"}</summary>
+        <div className="mt-3 flex flex-col gap-3">{body}</div>
+      </details>
     </section>
   );
 }

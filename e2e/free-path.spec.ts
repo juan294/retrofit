@@ -34,6 +34,10 @@ test.afterEach(async ({ request }) => {
 test("a visitor without a key previews bakery on the free path, through a delegation and a tool result", async ({ page }) => {
   await analyzeFixture(page, "bakery.fixture.test");
   await expect(page.getByText("Using Retrofit's free AI")).toBeVisible();
+  // The key panel stays out of the way while the free AI works: closed, and no "Forget my key" without a key.
+  await expect(page.getByTestId("own-key")).not.toHaveAttribute("open");
+  await expect(page.getByLabel("Paste your key")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Forget my key" })).toHaveCount(0);
   await ask(page, "What are your opening hours?");
   await expect(chatText(page, /Our opening hours are Monday to Friday 7:00 to 18:00/)).toBeVisible({ timeout: 20_000 });
   const chats = (await upstreamLog()).filter((e) => e.path === "chat");
@@ -100,6 +104,8 @@ test("at the session cap the chat shows the cap text and the banner offers a key
   await expect(page.getByTestId("free-banner")).toContainText("Retrofit's free AI is used up for", { timeout: 20_000 });
   // The chat shows the cap text too (the runtime's error bubble carries the proxy's message).
   await expect(chatText(page, /Retrofit's free AI is used up for/)).toBeVisible();
+  // The bubble shows the message, not the runtime's "LLM HTTP 429: {json}".
+  await expect(page.getByTestId("preview-mount").locator(".ns-msg.bot").filter({ hasText: /LLM HTTP|"error"/ })).toHaveCount(0);
   await expect(page.getByTestId("free-banner").getByRole("link", { name: "Use your own key" })).toBeVisible();
 });
 
