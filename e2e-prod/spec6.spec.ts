@@ -145,7 +145,16 @@ test.describe("spec §6 in production (/conformance and the landing assistant)",
     // and nothing went to Retrofit's free router or any other model host.
     expect(s.router.bodies.some(isPeerHopBody)).toBe(true);
     expect(s.router.authorizations.length).toBeGreaterThan(0);
-    expect(s.router.authorizations.every((a) => a === `Bearer ${OTARI.key}`)).toBe(true);
+    // Every router request that carries a credential carries the caller's key. The runtime's own model check
+    // (public/runtime/ui.js:1085-1091) reads a settings field that holds no key, so it sends GET /models without
+    // Authorization; that is the only request allowed without one (the same contract as e2e/key-panel.spec.ts).
+    const routerRequests = s.requests.filter((r) => r.url().startsWith(`${OTARI.routerBase}/`) && r.method() !== "OPTIONS");
+    for (const r of routerRequests) {
+      const authorization = (await r.allHeaders())["authorization"];
+      if (authorization === undefined) expect(`${r.method()} ${r.url()}`).toBe(`GET ${OTARI.routerBase}/models`);
+      else expect(authorization).toBe(`Bearer ${OTARI.key}`);
+    }
+    expect(s.router.authorizations.filter((a) => a !== "").every((a) => a === `Bearer ${OTARI.key}`)).toBe(true);
     expect(freeChatRequests(s.requests)).toEqual([]);
     const webHosts = new Set(s.requests.filter((r) => /^https?:/.test(r.url())).map((r) => new URL(r.url()).host));
     expect([...webHosts].filter((h) => ![PROD.host, PEER_HOST, OTARI_HOST].includes(h))).toEqual([]);
