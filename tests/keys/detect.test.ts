@@ -25,7 +25,7 @@ describe("detectProvider", () => {
   });
 
   // Fails when detection guesses a provider for a key it cannot place.
-  it.each(["", "   ", "sk-plain-legacy", "tk-selfhosted", "SK-OR-V1-upper", "xsk-or-abc"])(
+  it.each(["", "   ", "sk-plain-legacy", "tk-selfhosted", "SK-OR-V1-upper", "xsk-or-v1-abc"])(
     "returns null for %j",
     (key) => {
       expect(detectProvider(key)).toBeNull();
