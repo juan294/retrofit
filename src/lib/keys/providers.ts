@@ -1,6 +1,7 @@
 // Providers a visitor can connect with their own key. Framework-free; no DOM at import time.
-// The first five rows are copied unchanged from the vendored runtime's API_KEY_PROVIDERS
-// (public/runtime/ui.js:31-75); tests/keys/providers.test.ts compares them with that source.
+// The rows are copied unchanged, in order, from the vendored runtime's API_KEY_PROVIDERS
+// (public/runtime/ui.js:33-99, agentic-web 0516537); tests/keys/providers.test.ts compares them
+// with that source. The runtime now ships the OpenRouter row that Retrofit used to add itself.
 
 export type Provider = {
   readonly name: string;
@@ -10,6 +11,8 @@ export type Provider = {
   readonly model: string;
   readonly keyUrl: string;
   readonly accessNote: string;
+  /** false: detected from the key, but no provider button (the runtime's "Otari EU" row). */
+  readonly button?: false;
 };
 
 export const PROVIDERS: readonly Provider[] = [
@@ -21,11 +24,22 @@ export const PROVIDERS: readonly Provider[] = [
     keyPrefixes: ["otk_"],
     accessNote: "Billing may be required",
   },
+  // An otari.ai key belongs to one region; the other gateway answers HTTP 421. EU keys start
+  // with "otk_v1_eu_"; the longest prefix wins in detectProvider.
+  {
+    name: "Otari EU",
+    keyUrl: "https://otari.ai/dashboard#/keys",
+    router: "https://eu.api.otari.ai/api/v1",
+    model: "alibaba/qwen3.8-flash",
+    keyPrefixes: ["otk_v1_eu_"],
+    accessNote: "Billing may be required",
+    button: false,
+  },
   {
     name: "Google AI Studio",
     keyUrl: "https://aistudio.google.com/apikey",
     router: "https://generativelanguage.googleapis.com/v1beta/openai",
-    model: "gemini-3.8-flash",
+    model: "models/gemini-3.8-flash",
     keyPrefixes: ["AIza"],
     accessNote: "Free tier",
   },
@@ -35,6 +49,14 @@ export const PROVIDERS: readonly Provider[] = [
     router: "https://api.groq.com/openai/v1",
     model: "openai/gpt-oss-120b",
     keyPrefixes: ["gsk_"],
+    accessNote: "Free tier",
+  },
+  {
+    name: "OpenRouter",
+    keyUrl: "https://openrouter.ai/settings/keys",
+    router: "https://openrouter.ai/api/v1",
+    model: "google/gemma-4-31b-it:free",
+    keyPrefixes: ["sk-or-"],
     accessNote: "Free tier",
   },
   {
@@ -53,18 +75,10 @@ export const PROVIDERS: readonly Provider[] = [
     keyPrefixes: ["sk-ant-"],
     accessNote: "Billing may be required",
   },
-  // Retrofit addition (not in the runtime table).
-  {
-    name: "OpenRouter",
-    keyUrl: "https://openrouter.ai/keys",
-    router: "https://openrouter.ai/api/v1",
-    // INFERRED: OpenRouter lists `openai/gpt-oss-120b` (seen in its catalog before 2026-06); not
-    // re-checked against the live /models list. The manual key check in phase-4.md confirms it.
-    model: "openai/gpt-oss-120b",
-    keyPrefixes: ["sk-or-v1-"],
-    accessNote: "Billing may be required",
-  },
 ];
+
+/** The providers that get a button in the key panel (the runtime's provider buttons). */
+export const BUTTON_PROVIDERS: readonly Provider[] = PROVIDERS.filter((p) => p.button !== false);
 
 function routerBase(router: string): string | null {
   try {

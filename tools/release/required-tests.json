@@ -1272,6 +1272,12 @@
       "rule": "key panel",
       "suite": "unit",
       "file": "tests/keys/detect.test.ts",
+      "title": "detectProvider detects otk_v1_eu_abc123 as Otari EU"
+    },
+    {
+      "rule": "key panel",
+      "suite": "unit",
+      "file": "tests/keys/detect.test.ts",
       "title": "detectProvider detects AIzaSyExample as Google AI Studio"
     },
     {
@@ -1356,13 +1362,13 @@
       "rule": "key panel",
       "suite": "unit",
       "file": "tests/keys/providers.test.ts",
-      "title": "provider rows start with the vendored runtime rows, in order and unchanged"
+      "title": "provider rows are exactly the vendored runtime rows, in order and unchanged"
     },
     {
       "rule": "key panel",
       "suite": "unit",
       "file": "tests/keys/providers.test.ts",
-      "title": "provider rows add exactly one OpenRouter row after them"
+      "title": "provider rows route EU Otari keys to the EU gateway without a second Otari button"
     },
     {
       "rule": "key panel",

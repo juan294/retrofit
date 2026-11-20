@@ -2,8 +2,8 @@ import { PROVIDERS, type Provider } from "./providers";
 
 /**
  * The provider whose longest key prefix matches the trimmed key, else null.
- * The runtime's providerForApiKey takes the first row in table order (ui.js:77-83); the longest
- * prefix keeps `sk-or-v1-` and `sk-ant-` correct if a shorter `sk-` row is ever added.
+ * Same rule as the runtime's providerForApiKey (public/runtime/ui.js:101-115): the longest prefix
+ * wins, so an EU Otari key (`otk_v1_eu_`) finds the "Otari EU" row and not the general `otk_` row.
  */
 export function detectProvider(key: string, providers: readonly Provider[] = PROVIDERS): Provider | null {
   const trimmed = String(key ?? "").trim();
