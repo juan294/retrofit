@@ -36,7 +36,8 @@ describe("Retrofit's own site, scored by Retrofit", () => {
   it("robots allows every agent and declares the sitemap", () => {
     const r = robots();
     const origin = getConfig().publicOrigin;
-    expect(r.rules).toEqual([{ userAgent: "*", allow: "/" }]);
+    // Private pages (results, previews, the judge page) are visitor-owned; crawlers have no reason to request them.
+    expect(r.rules).toEqual([{ userAgent: "*", allow: "/", disallow: ["/r/", "/p/", "/judges"] }]);
     expect(r.sitemap).toBe(`${origin}/sitemap.xml`);
   });
 
