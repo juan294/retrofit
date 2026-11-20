@@ -5467,6 +5467,18 @@
       "suite": "playwright",
       "file": "preview-theme.spec.ts",
       "title": "the preview's runtime text is readable in dark mode"
+    },
+    {
+      "rule": "preview question cost bounded by per-agent step limits",
+      "suite": "playwright",
+      "file": "preview.spec.ts",
+      "title": "a model that never stops calling tools costs at most 12 model calls per question"
+    },
+    {
+      "rule": "preview question cost bounded by per-agent step limits",
+      "suite": "unit",
+      "file": "tests/generate/network.test.ts",
+      "title": "each agent has its own small step limit"
     }
   ],
   "repairs": {
