@@ -8,7 +8,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { connectKey, priceText, type Connection, type KeyGuard } from "@/lib/keys/connect";
 import { detectProvider } from "@/lib/keys/detect";
-import { PROVIDERS, providerForRouter, type Provider } from "@/lib/keys/providers";
+import { BUTTON_PROVIDERS, providerForRouter, type Provider } from "@/lib/keys/providers";
 import { forgetAll, loadKey, saveKey } from "@/lib/keys/storage";
 
 export type KeyPanelProps = {
@@ -181,7 +181,7 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
               style={field}
             >
               <option value="">Match my key</option>
-              {PROVIDERS.map((p) => (
+              {BUTTON_PROVIDERS.map((p) => (
                 <option key={p.router} value={p.router}>
                   {p.name} ({p.router})
                 </option>
