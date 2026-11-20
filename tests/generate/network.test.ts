@@ -120,6 +120,12 @@ describe("generateNetwork on every fixture snapshot", () => {
     expect(text).not.toContain('"allow"');
   });
 
+  // Fails if an agent loses its own step limit (the network's 12 would apply to each agent: up to 12 + 12 x 12 calls).
+  it("each agent has its own small step limit", () => {
+    const steps = Object.fromEntries(agents(get("bakery")).map((a) => [a.name, (a as unknown as { max_steps?: number }).max_steps]));
+    expect(steps).toEqual({ site_guide: 3, content_specialist: 3 });
+  });
+
   // Fails if the no-records branch still points the specialist at get_site_records.
   it("spaOnly (no records): content_specialist uses search_site_content only", () => {
     const g = get("spaOnly");

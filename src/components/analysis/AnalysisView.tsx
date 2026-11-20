@@ -1,5 +1,7 @@
 "use client";
 
+import { FIX_HINTS, fixFirst } from "@/lib/score/fixes";
+import type { CheckId } from "@/lib/score/checks";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { COUNTING_RETRY_S, visitorTexts } from "@/lib/analysis/texts";
@@ -135,6 +137,9 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
   }
 
   const groups = [...new Set(report.checks.map((c) => c.group))];
+  const checked = report.checks.filter((c) => c.result !== "not-checked").length;
+  const passed = report.checks.filter((c) => c.result === "pass").length;
+  const fixes = fixFirst(report.checks);
   return (
     <section className="mt-8" aria-labelledby="score-heading">
       <h2 id="score-heading" className="sr-only">
@@ -144,13 +149,42 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
         {report.score === null ? <span>No score</span> : <span data-testid="score-total">{report.score}</span>}
         {report.score === null ? null : <span className="text-xl font-normal"> / 100</span>}
       </p>
-      <p className="mt-2">{report.summary}</p>
+      <p className="mt-2" data-testid="score-passed">
+        {passed} of {checked} checks passed.
+      </p>
       <p className="mt-1 text-sm" style={{ color: "var(--color-muted)" }}>
-        Read on {new Date(report.fetchedAt).toLocaleString()}. WebMCP: {report.webmcp}
+        Read on {new Date(report.fetchedAt).toLocaleString()}.
+      </p>
+
+      {fixes.length ? (
+        <div className="mt-8" data-testid="fix-first">
+          <h3 className="text-lg font-semibold">Fix these first</h3>
+          <ol className="mt-2 flex list-decimal flex-col gap-2 pl-5">
+            {fixes.map((c) => (
+              <li key={c.id}>
+                <span className="font-medium">{FIX_HINTS[c.id as CheckId] ?? c.rule}</span>{" "}
+                <span className="text-sm" style={{ color: "var(--color-muted)" }}>
+                  ({c.weight} points)
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+
+      <AgentPanel
+        basePath={`/p/${id}`}
+        title="Try the agent Retrofit built"
+        label={`Private preview. Unofficial. Built by Retrofit from public pages of ${report.host} on ${report.fetchedAt.slice(0, 10)}. Not affiliated with ${report.host}.`}
+      />
+
+      <h3 className="mt-12 text-lg font-semibold">All checks</h3>
+      <p className="mt-1 text-sm" style={{ color: "var(--color-muted)" }}>
+        {report.summary} WebMCP tools: {report.webmcp}.
       </p>
       {groups.map((g) => (
         <div key={g} className="mt-6">
-          <h3 className="text-lg font-semibold">{g}</h3>
+          <h4 className="font-semibold">{g}</h4>
           <ul className="mt-2 flex flex-col gap-2">
             {report.checks
               .filter((c) => c.group === g)
@@ -160,7 +194,7 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
                     <strong style={{ color: c.result === "pass" ? "var(--color-ok)" : c.result === "fail" ? "var(--color-danger)" : "var(--color-muted)" }}>
                       {RESULT_TEXT[c.result]}
                     </strong>{" "}
-                    {c.rule} <span style={{ color: "var(--color-muted)" }}>({c.weight})</span>
+                    {c.rule} <span style={{ color: "var(--color-muted)" }}>({c.weight} points)</span>
                   </p>
                   <p className="mt-1 text-sm" style={{ color: "var(--color-muted)" }}>
                     {c.evidence}
@@ -170,11 +204,6 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
           </ul>
         </div>
       ))}
-      <AgentPanel
-        basePath={`/p/${id}`}
-        title="Try the agent Retrofit built"
-        label={`Private preview. Unofficial. Built by Retrofit from public pages of ${report.host} on ${report.fetchedAt.slice(0, 10)}. Not affiliated with ${report.host}.`}
-      />
     </section>
   );
 }

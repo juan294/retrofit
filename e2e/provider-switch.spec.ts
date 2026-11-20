@@ -140,8 +140,7 @@ test("Forget my key returns to the free path and no provider gets another reques
   const aCount = a.authorizations.length;
   await page.getByRole("button", { name: "Forget my key" }).click();
   // Phase 6: the free path comes back (the runtime reboots with Retrofit's own router).
-  await expect(page.getByLabel("Paste your key")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Use your own key" })).toBeVisible();
+  await expect(page.getByTestId("own-key").locator(":scope > summary")).toHaveText("Use your own AI key (optional)");
   await expect(page.getByText(/Connected to/)).toHaveCount(0);
   await expect(page.getByText(/Using Retrofit's free AI/)).toBeVisible();
   await expect(page.getByTestId("preview-mount").locator('[data-ns-slot="chat"]')).toBeVisible();

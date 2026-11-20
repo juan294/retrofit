@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/csp";
 import { analyzeFixture, connectKey, mockOtari, traceEvents } from "./support/agent";
+import { toolNames, type Script } from "./support/mock-router";
 
 test("a visitor previews the bakery agent with their own key", async ({ page }) => {
   const router = await mockOtari(page);
@@ -28,4 +29,46 @@ test("a visitor previews the bakery agent with their own key", async ({ page }) 
   const tools = (await traceEvents(page)).filter((e) => e.kind === "tool").map((e) => e.tool);
   expect(tools).toContain("website_search_site_content");
   expect(router.bodies.length).toBeGreaterThanOrEqual(4);
+});
+
+/**
+ * Worst case for a weak model: it calls a tool whenever one is offered and never answers.
+ * The front agent delegates on every step; the specialist runs four searches on every step.
+ */
+const greedyScript: Script = (body) => {
+  const tools = toolNames(body);
+  if (tools.includes("content_specialist")) return { call: [{ name: "content_specialist", args: { request: "everything" } }] };
+  if (tools.includes("website_search_site_content")) {
+    return { call: ["hours", "menu", "prices", "contact"].map((query) => ({ name: "website_search_site_content", args: { query } })) };
+  }
+  return { text: "No tools." };
+};
+
+// Fails if a question can cost more model calls than the per-agent step limits allow:
+// site_guide 3 steps, each delegating to content_specialist with 3 steps (3 + 3 x 3 = 12).
+test("a model that never stops calling tools costs at most 12 model calls per question", async ({ page }) => {
+  const router = await mockOtari(page, greedyScript);
+  await analyzeFixture(page, "bakery.fixture.test");
+  await connectKey(page);
+  const mount = page.getByTestId("preview-mount");
+  await expect(mount.locator('[data-ns-slot="chat"]')).toBeVisible();
+  const input = mount.getByRole("textbox").last();
+  await input.fill("Tell me everything.");
+  await input.press("Enter");
+  // The turn is over when the router has seen no new request for 3 s.
+  let seen = -1;
+  await expect
+    .poll(
+      async () => {
+        await page.waitForTimeout(3_000);
+        const now = router.bodies.length;
+        const settled = now === seen;
+        seen = now;
+        return settled;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
+  expect(router.bodies.length).toBeGreaterThan(0);
+  expect(router.bodies.length).toBeLessThanOrEqual(12);
 });

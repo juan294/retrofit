@@ -34,6 +34,8 @@ interface AgentSpec {
   function: { description: string; parameters: { type: "object"; properties: Record<string, { type: "string"; description: string }>; required: string[] } };
   instructions: string;
   tools: string[];
+  /** This agent's own step limit; without it the network's max_steps applies to every agent, and each delegation multiplies it. */
+  max_steps: number;
 }
 
 /** The network JSON exactly as the runtime fetches it at `<networkName>.network.json`. */
@@ -129,13 +131,19 @@ const requestParameters = (description: string): AgentSpec["function"]["paramete
   required: ["request"],
 });
 
+// Per-agent step limits. A question costs at most GUIDE_MAX_STEPS + GUIDE_MAX_STEPS x SPECIALIST_MAX_STEPS
+// model calls (3 + 3 x 3 = 12), against 12 + 12 x 12 = 156 with only the network-wide limit.
+const GUIDE_MAX_STEPS = 3;
+const SPECIALIST_MAX_STEPS = 3;
+
 function siteGuide(host: string, date: string): AgentSpec {
   return {
     name: FRONT_MAN,
     function: { description: `Answers questions about the website ${host}.`, parameters: requestParameters("The visitor's question in plain language.") },
     instructions: [
       `You answer questions about the website at ${host}.`,
-      `Delegate each question to ${SPECIALIST} and answer only from what it returns.`,
+      `Delegate each question to ${SPECIALIST} once, with the whole question, and answer only from what it returns.`,
+      `Delegate a second time only if its answer misses a fact the visitor asked for. Then answer, even if the answer is incomplete.`,
       `The answers come from a snapshot of public pages taken on ${date}. Prices and availability may have changed since then, so say so when they matter.`,
       "Give the source link for each fact.",
       `For an order, booking or purchase, give the page link and say "I can't do this for you in this preview."`,
@@ -144,6 +152,7 @@ function siteGuide(host: string, date: string): AgentSpec {
       DATA_RULE,
     ].join(" "),
     tools: [SPECIALIST],
+    max_steps: GUIDE_MAX_STEPS,
   };
 }
 
@@ -153,12 +162,14 @@ function contentSpecialist(host: string, date: string, withRecords: boolean): Ag
     function: { description: `Finds facts in the saved snapshot of ${host}.`, parameters: requestParameters("What the front agent needs to know.") },
     instructions: [
       `You find facts in the saved snapshot of ${host}, taken on ${date}.`,
-      "Call website_search_site_content with a few keywords from the request.",
+      "Call website_search_site_content once, with the most specific keywords from the request.",
+      "Search a second time only if the first search returned nothing useful. Never make more than two searches, and never run searches in parallel.",
       ...(withRecords ? ["Call website_get_site_records for structured records such as products, menus or opening hours."] : []),
-      "Return each fact with its source URL. If nothing matches, say so.",
+      "Then return each fact with its source URL. If nothing matches, say so.",
       DATA_RULE,
     ].join(" "),
     tools: [],
+    max_steps: SPECIALIST_MAX_STEPS,
   };
 }
 
