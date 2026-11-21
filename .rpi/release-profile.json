@@ -26,10 +26,7 @@
     "visitor-key-handling-evidence",
     "hosting-and-domain-decision"
   ],
-  "current_gaps": [
-    "vendored-runtime-behind-upstream-0516537",
-    "visitor-eu-otari-keys-OT-2"
-  ],
+  "current_gaps": [],
   "invariants": [
     "passing-check-count-greater-than-zero",
     "required-failure-or-skip-blocks",
