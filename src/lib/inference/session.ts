@@ -21,13 +21,13 @@ const MAX_BODY_BYTES = 1024;
 
 export const sessionTexts = {
   crossOrigin: "Open Retrofit at its own address to use the free AI.",
-  sessionLimit: "Retrofit's free AI is used up for new sessions from this network this hour. Paste your own key in AI settings to continue.",
-  unavailable: "Retrofit's free AI is not available right now. Paste your own key in AI settings to continue.",
+  sessionLimit: "Retrofit's free AI is used up for new sessions from this network this hour. Use your own AI key to continue.",
+  unavailable: "Retrofit's free AI is not available right now. Use your own AI key to continue.",
   expired: "Your free session expired. Reload the page.",
   badRequest: "Enter the judge code.",
   invalidCode: "That judge code is not valid.",
   notConfigured: "Judge access is not configured.",
-  judgeLimit: "Judge access is used up for this network today. Paste your own key in AI settings to continue.",
+  judgeLimit: "Judge access is used up for this network today. Use your own AI key to continue.",
   tooManyCodes: "Too many judge code attempts from this network. Try again in an hour.",
 } as const;
 

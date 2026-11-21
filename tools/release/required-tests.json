@@ -5539,6 +5539,30 @@
       "suite": "unit",
       "file": "tests/preview/error-text.test.ts",
       "title": "friendlyRuntimeError leaves everything else unchanged (returns null)"
+    },
+    {
+      "rule": "free path",
+      "suite": "playwright",
+      "file": "free-path.spec.ts",
+      "title": "while the free AI starts, the key form stays closed and the page says the free AI is starting"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/ fits a 390 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/conformance fits a 390 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/bot fits a 390 px phone screen without sideways scrolling"
     }
   ],
   "repairs": {

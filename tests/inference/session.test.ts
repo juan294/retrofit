@@ -82,7 +82,7 @@ describe("POST /api/inference/session", () => {
     expect(third.status).toBe(429);
     const body = (await third.json()) as { error: string; message: string; retryAt: string };
     expect(body.error).toBe("session_limit");
-    expect(body.message).toContain("Paste your own key in AI settings to continue.");
+    expect(body.message).toContain("Use your own AI key to continue.");
     expect(third.headers.get("set-cookie")).toBeNull();
     // Another client is not affected.
     expect((await handleSession(sessionReq({ ip: "198.51.100.20" }), d)).status).toBe(200);

@@ -24,7 +24,7 @@ export default async function Conformance() {
       <h1 className="text-4xl font-semibold">Conformance fixtures</h1>
       <p className="mt-4" style={{ color: "var(--color-muted)" }}>
         Retrofit publishes a small agent network, <code>{CONFORMANCE_NETWORK}</code>, that calls one working partner network and three that must fail safely.
-        Other sites and the organizers&apos; partner check can read it at <code>{`${RETROFIT_ORIGIN}/${CONFORMANCE_NETWORK}`}</code>. The partner networks are on{" "}
+        Other sites and the organizers&apos; partner check can read it at <code className="break-all">{`${RETROFIT_ORIGIN}/${CONFORMANCE_NETWORK}`}</code>. The partner networks are on{" "}
         <a href={PEER_ORIGIN} className="underline">
           Harbor tours demo
         </a>

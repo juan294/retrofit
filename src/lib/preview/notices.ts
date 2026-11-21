@@ -31,7 +31,7 @@ export function noticeForTrace(ev: TraceEvent): Notice | null {
   const redirect = /^Retrofit blocked a redirect from (\S+) to an address that was not approved\./.exec(error);
   if (redirect) return { kind: "blocked", text: REDIRECT_BLOCKED_TEXT(redirect[1]!) };
   // A free-path refusal or failure (cap, hold, expired session, provider error) carried in a model call error.
-  const free = /(Retrofit's free AI is [^.]*\.(?: Paste your own key in AI settings to continue\.| Use your own key\.)?|Your free session expired\. Reload the page\.|The free AI provider did not answer\. Try again, or use your own key\.)/.exec(error);
+  const free = /(Retrofit's free AI is [^.]*\.(?: Use your own AI key to continue\.| Use your own key\.)?|Your free session expired\. Reload the page\.|The free AI provider did not answer\. Try again, or use your own key\.)/.exec(error);
   if (kind === "model_call" && free) return { kind: "free", text: free[1]! };
   if (kind === "remote_fetch") return { kind: "error", text: `Retrofit could not load the network from ${str(ev.peerOrigin)}: ${error}` };
   const policy = /^Policy: (\S+) is not in .+ allowed_peers/.exec(error);
