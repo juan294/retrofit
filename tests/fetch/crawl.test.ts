@@ -105,6 +105,24 @@ describe("crawlSite", () => {
     expect(server.requests.filter((r) => /^\/p\d+$/.test(r.path))).toHaveLength(11);
   });
 
+  // Fails if the crawl spends its page budget in page order: a first menu of 15 deep pages and a cookie
+  // page would push the menu and contact pages, linked last, out of the 11 slots (rank.ts).
+  it("spends the page budget on hubs and task pages before a long first menu", async () => {
+    const page = { headers: { "content-type": "text/html" }, body: "<main>page</main>" };
+    const links = ["/help/cookies", ...Array.from({ length: 15 }, (_, i) => `/shop/range/item-${i}`), "/menu", "/contact"];
+    const site: FixtureSite = {
+      "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nAllow: /\n" },
+      "/": { headers: { "content-type": "text/html" }, body: `<main>${links.map((l) => `<a href="${l}">${l}</a>`).join(" ")}</main>` },
+    };
+    for (const l of links) site[l] = page;
+    const { snapshot, server } = await crawl({ "menu.fixture.test": site }, "menu.fixture.test");
+    const kept = snapshot.pages.map((p) => new URL(p.url).pathname);
+    expect(kept.slice(1, 3)).toEqual(["/menu", "/contact"]);
+    expect(kept).not.toContain("/help/cookies");
+    expect(server.requests.some((r) => r.path === "/help/cookies")).toBe(false);
+    expect(snapshot.pages).toHaveLength(12);
+  });
+
   // Fails if noindex text is kept.
   it("excludes noindex page text and records the exclusion", async () => {
     const { snapshot } = await crawl({ "ni.fixture.test": noindexPage }, "ni.fixture.test");
