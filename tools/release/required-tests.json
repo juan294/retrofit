@@ -5551,6 +5551,42 @@
       "suite": "playwright",
       "file": "phone-width.spec.ts",
       "title": "/bot fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "crawl page ranking",
+      "suite": "unit",
+      "file": "tests/fetch/rank.test.ts",
+      "title": "rankLinks puts utility pages after every content page"
+    },
+    {
+      "rule": "crawl page ranking",
+      "suite": "unit",
+      "file": "tests/fetch/rank.test.ts",
+      "title": "rankLinks puts shallower pages first and keeps page order within a depth"
+    },
+    {
+      "rule": "crawl page ranking",
+      "suite": "unit",
+      "file": "tests/fetch/rank.test.ts",
+      "title": "rankLinks moves task and content pages one level up"
+    },
+    {
+      "rule": "crawl page ranking",
+      "suite": "unit",
+      "file": "tests/fetch/rank.test.ts",
+      "title": "rankLinks puts pages in another language than the home page with the utility pages"
+    },
+    {
+      "rule": "crawl page ranking",
+      "suite": "unit",
+      "file": "tests/fetch/rank.test.ts",
+      "title": "rankLinks returns a permutation of its input, deterministically"
+    },
+    {
+      "rule": "crawl page ranking",
+      "suite": "unit",
+      "file": "tests/fetch/crawl.test.ts",
+      "title": "crawlSite spends the page budget on hubs and task pages before a long first menu"
     }
   ],
   "repairs": {
