@@ -2190,18 +2190,6 @@
       "rule": "free path",
       "suite": "unit",
       "file": "tests/inference/proxy.test.ts",
-      "title": "POST /api/inference/v1/chat/completions: forwarding replays the runtime body bakery-session.json #3 with 200"
-    },
-    {
-      "rule": "free path",
-      "suite": "unit",
-      "file": "tests/inference/proxy.test.ts",
-      "title": "POST /api/inference/v1/chat/completions: forwarding replays the runtime body bakery-session.json #4 with 200"
-    },
-    {
-      "rule": "free path",
-      "suite": "unit",
-      "file": "tests/inference/proxy.test.ts",
       "title": "POST /api/inference/v1/chat/completions: forwarding reconciles the reservation to the reported usage"
     },
     {
