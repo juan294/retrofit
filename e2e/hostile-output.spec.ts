@@ -39,7 +39,7 @@ interface Session {
   mount: ReturnType<Page["getByTestId"]>;
 }
 
-async function hostileSession(page: Page, context: BrowserContext, finalAnswer: string, o: { dev?: boolean } = {}): Promise<Session> {
+async function hostileSession(page: Page, context: BrowserContext, finalAnswer: string, o: { dev?: boolean; question?: string } = {}): Promise<Session> {
   const log = recordRequests(context);
   if (o.dev) await page.addInitScript(() => localStorage.setItem("nsweb-dev", "1"));
   const router = await mockOtari(page, hostileScript(finalAnswer));
@@ -51,7 +51,7 @@ async function hostileSession(page: Page, context: BrowserContext, finalAnswer: 
   // boot loaded content-actions.js, which read the injected site-content.json.
   await expect.poll(() => injected.served).toBeGreaterThanOrEqual(1);
   const input = mount.getByRole("textbox").last();
-  await input.fill(QUESTION);
+  await input.fill(o.question ?? QUESTION);
   await input.press("Enter");
   await expect(mount.locator(".ns-msg.user")).toHaveCount(1);
   await expect.poll(() => router.bodies.length, { timeout: 20_000 }).toBeGreaterThanOrEqual(1);
@@ -66,8 +66,8 @@ function expectToolResultsCarriedPayloads(router: MockRouter) {
 }
 
 async function finished(s: Session) {
-  // The front agent's final model call happened (delegation, two tools, two answers).
-  await expect.poll(() => s.router.bodies.length, { timeout: 20_000 }).toBeGreaterThanOrEqual(4);
+  // The agent's final model call happened (one call for the two tools, one for the answer).
+  await expect.poll(() => s.router.bodies.length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
   await expect(s.mount.getByRole("textbox").last()).toBeEnabled({ timeout: 20_000 });
 }
 
@@ -202,7 +202,9 @@ test("error bubble shows a hostile router error body as text", async ({ page, co
 });
 
 test("developer log escapes tool results, answer previews and request payloads", async ({ page, context }) => {
-  const s = await hostileSession(page, context, MARKDOWN, { dev: true });
+  // The one preview agent has no agent-to-agent answer row, and the runtime cuts tool-result previews
+  // short (runtime/ui.js:1771), so the run input carries the payloads into the log here.
+  const s = await hostileSession(page, context, MARKDOWN, { dev: true, question: `${QUESTION} ${IMG} ${SCRIPT}` });
   await finished(s);
   // In the composed layout the runtime's app root (runtime/ui.js:413) is the per-boot root that
   // Preview.tsx puts inside the mount, so a late boot never takes over the live one.
@@ -211,8 +213,8 @@ test("developer log escapes tool results, answer previews and request payloads",
   await expect(root).toHaveAttribute("data-dev", "true");
   const dev = s.mount.locator(".ns-dev");
   await expect(dev).toBeVisible();
-  // Rows for the tool results exist; their previews are cut short by the runtime, and the
-  // specialist's answer and the run input carry the payloads into the log as text.
+  // Rows for the tool results exist; their previews are cut short by the runtime, and the run
+  // input carries the payloads into the log as text.
   await expect(dev.locator(".ns-row.k-tool_result").first()).toBeAttached();
   const devText = await dev.evaluate((el) => el.textContent ?? "");
   expect(devText).toContain("onerror=window.__pwned=1");

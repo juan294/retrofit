@@ -51,15 +51,19 @@ describe("parseChatRequest", () => {
     const files = fs.readdirSync(fixturesDir).filter((f) => f.endsWith(".json"));
     expect(files.length).toBeGreaterThan(0);
     let count = 0;
+    let withToolResult = 0;
     for (const file of files) {
       const { bodies } = JSON.parse(fs.readFileSync(path.join(fixturesDir, file), "utf8")) as { bodies: unknown[] };
       for (const body of bodies) {
         const r = parseChatRequest(body, free);
         expect(r, `${file} body ${count}`).toEqual({ ok: true, body });
+        if ((body as { messages: { role: string }[] }).messages.some((m) => m.role === "tool")) withToolResult++;
         count++;
       }
     }
-    expect(count).toBeGreaterThanOrEqual(4);
+    // The preview's search call, then the model call that carries the tool result.
+    expect(count).toBeGreaterThanOrEqual(2);
+    expect(withToolResult).toBeGreaterThanOrEqual(1);
   });
 
   // Fails if optional sampling fields from the allowlist are refused.

@@ -22,7 +22,7 @@ async function ask(page: Page, router: MockRouter) {
   await expect(input).toBeEnabled();
   await input.fill("What are your opening hours?");
   await input.press("Enter");
-  await expect.poll(() => router.bodies.length, { timeout: 20_000 }).toBeGreaterThanOrEqual(before + 4);
+  await expect.poll(() => router.bodies.length, { timeout: 20_000 }).toBeGreaterThanOrEqual(before + 2);
   await expect(mount.getByText(/Our opening hours are Monday to Friday/).filter({ visible: true }).last()).toBeVisible({ timeout: 20_000 });
   await expect(input).toBeEnabled({ timeout: 20_000 });
 }
@@ -77,7 +77,7 @@ test("switching from provider A to provider B validates at B, then chats only wi
   const firstChat = bRequests.findIndex((r) => r.method === "POST" && r.url === `${GROQ.routerBase}/chat/completions`);
   expect(firstModels).toBeGreaterThanOrEqual(0);
   expect(firstChat).toBeGreaterThan(firstModels);
-  expect(b.bodies.length).toBeGreaterThanOrEqual(4);
+  expect(b.bodies.length).toBeGreaterThanOrEqual(2);
   expect(bRequests.filter((r) => r.method === "POST").every((r) => r.headers["authorization"] === `Bearer ${GROQ.key}`)).toBe(true);
   // Provider A received nothing after the switch, and the old key went nowhere.
   expect(onOrigin(after, OTARI.routerBase).map((r) => `${r.method} ${r.url}`)).toEqual([]);
@@ -119,7 +119,7 @@ test("a failed validation of provider B leaves provider A active and B without a
   const bRequests = onOrigin(after, GROQ.routerBase);
   expect(bRequests.map((r) => `${r.method} ${new URL(r.url).pathname}`)).toEqual(["GET /openai/v1/models"]);
   expect(b.bodies).toEqual([]);
-  expect(onOrigin(after, OTARI.routerBase).filter((r) => r.method === "POST").length).toBeGreaterThanOrEqual(4);
+  expect(onOrigin(after, OTARI.routerBase).filter((r) => r.method === "POST").length).toBeGreaterThanOrEqual(2);
   // B has no access at all now: even its /models is refused before any network contact.
   expect(await tryFetch(page, `${GROQ.routerBase}/models`)).toMatch(new RegExp(`^error ${BLOCKED.source}$`));
   expect(await tryFetch(page, `${GROQ.routerBase}/chat/completions`, { method: "POST", body: "{}" })).toMatch(new RegExp(`^error ${BLOCKED.source}$`));
@@ -177,12 +177,12 @@ test("connecting a key while a delayed free answer with a tool call is in flight
   page.on("requestfailed", (r) => {
     if (r.url() === FREE_CHAT) failed.push(r.failure()?.errorText ?? "");
   });
-  // The free model answers its first call late, with a delegation the runtime would execute
+  // The free model answers its first call late, with a search the runtime would execute
   // (a tool round-trip that asks the free model again). Later calls answer at once.
   await page.route(FREE_CHAT, async (route) => {
     freeChats += 1;
     if (freeChats === 1) await released;
-    const turn = freeChats === 1 ? { call: [{ name: "content_specialist", args: { request: "opening hours" } }] } : { text: "Free answer after the switch." };
+    const turn = freeChats === 1 ? { call: [{ name: "website_search_site_content", args: { query: "opening hours" } }] } : { text: "Free answer after the switch." };
     await route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: sse(turn, UPSTREAM_MODEL) }).catch(() => undefined);
   });
   await analyzeFixture(page, "bakery.fixture.test");

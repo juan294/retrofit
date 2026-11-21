@@ -12,7 +12,7 @@ test("a preview session contacts only Retrofit's origin and the selected router 
   await input.fill("What are your opening hours?");
   await input.press("Enter");
   await expect(mount.getByText(/Our opening hours are Monday to Friday/).filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
-  expect(router.bodies.length).toBeGreaterThanOrEqual(4);
+  expect(router.bodies.length).toBeGreaterThanOrEqual(2);
   // Let trailing requests (status polls, late assets) start before the log is read.
   await page.waitForTimeout(500);
 

@@ -7,8 +7,8 @@ import { OTARI_ROUTER_ORIGIN } from "./router-origin";
 export const OTARI = { routerBase: `${OTARI_ROUTER_ORIGIN}/api/v1`, model: "alibaba/qwen3.8-flash", key: "otk_test_e2e_0123456789abcdef" };
 
 /**
- * Scripted two-agent turn for a generated preview network: the front agent delegates to
- * content_specialist, which searches the site content; each then answers from the tool result.
+ * Scripted turn for a generated preview network: the agent searches the site content, then answers
+ * from the tool result. A network with a content_specialist (Retrofit's own and peer networks) delegates first.
  */
 export const previewScript: Script = (body) => {
   const result = lastToolResult(body);

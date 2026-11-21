@@ -40,7 +40,7 @@ test("the key goes only to the provider, never to Retrofit's origin", async ({ p
 
   // The scripted router received it, as a Bearer token on /models and on every chat request.
   expect(router.modelRequests).toBeGreaterThanOrEqual(1);
-  expect(router.bodies.length).toBeGreaterThanOrEqual(4);
+  expect(router.bodies.length).toBeGreaterThanOrEqual(2);
   expect(router.authorizations.length).toBeGreaterThan(0);
   const routerRequests = requests.filter((r) => r.url.startsWith(`${OTARI.routerBase}/`) && r.method !== "OPTIONS");
   expect(routerRequests.length).toBeGreaterThan(0);
@@ -144,7 +144,7 @@ test("with Remember on this device ticked, a new tab restores the key", async ({
   await expect(second.getByRole("checkbox", { name: "Remember on this device" })).toBeChecked();
   await askHours(second);
   // The restored key reaches the router: every chat request carries it as Bearer.
-  expect(router2.bodies.length).toBeGreaterThanOrEqual(4);
+  expect(router2.bodies.length).toBeGreaterThanOrEqual(2);
   expect(router2.authorizations).toContain(`Bearer ${OTARI.key}`);
   expect(router2.authorizations.filter((a) => a !== "" && a !== `Bearer ${OTARI.key}`)).toEqual([]);
   await second.close();

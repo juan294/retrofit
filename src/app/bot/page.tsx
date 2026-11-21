@@ -8,7 +8,7 @@ const ENDPOINT_DESCRIPTION =
 
 export default function BotPage() {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12 leading-relaxed">
+    <main className="mx-auto max-w-2xl px-4 py-12 leading-relaxed [overflow-wrap:anywhere]">
       <p>
         <Link href="/" className="underline">
           Retrofit
