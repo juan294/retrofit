@@ -12,6 +12,7 @@ import {
   type SnapshotPage,
 } from "../snapshot/types";
 import { declaredNetworkUrl } from "../score/manifest";
+import { rankLinks } from "./rank";
 import { CrawlDelayTooLong, PrivatePathRefused } from "./errors";
 import { extractPage, scrubEmails } from "./extract";
 import { guardedFetch, type FetchContext, type FetchOptions, type FetchResult } from "./http";
@@ -170,7 +171,7 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
   if (networkUrl) probes.network = await probe(networkUrl, "probe network");
 
   const seen = new Set<string>([normalize(inputUrl)!, normalize(home.url)!]);
-  const queue: string[] = [];
+  const candidates: { url: string; text: string }[] = [];
   for (const link of pages[0]?.links ?? []) {
     const n = normalize(link.href);
     if (!n || seen.has(n)) continue;
@@ -181,8 +182,10 @@ export async function crawlSite(inputOrigin: string, o: CrawlOptions): Promise<S
       skipped.push({ url: n, reason: "private-path" });
       continue;
     }
-    queue.push(n);
+    candidates.push({ url: n, text: link.text });
   }
+  // The page budget goes to section hubs and task pages first, not to the first menu (rank.ts).
+  const queue = rankLinks(candidates, home.url).map((c) => c.url);
 
   for (const next of queue) {
     if (pages.length >= o.config.crawlMaxPages) {
