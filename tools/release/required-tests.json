@@ -5472,13 +5472,13 @@
       "rule": "preview question cost bounded by per-agent step limits",
       "suite": "playwright",
       "file": "preview.spec.ts",
-      "title": "a model that never stops calling tools costs at most 12 model calls per question"
+      "title": "a model that never stops calling tools costs at most 4 model calls per question"
     },
     {
       "rule": "preview question cost bounded by per-agent step limits",
       "suite": "unit",
       "file": "tests/generate/network.test.ts",
-      "title": "generateNetwork on every fixture snapshot each agent has its own small step limit"
+      "title": "generateNetwork on every fixture snapshot the one preview agent searches the snapshot itself, within 4 steps"
     },
     {
       "rule": "Retrofit's own site carries the signals it scores",
@@ -5550,19 +5550,19 @@
       "rule": "phone layout",
       "suite": "playwright",
       "file": "phone-width.spec.ts",
-      "title": "/ fits a 390 px phone screen without sideways scrolling"
+      "title": "/ fits a 320 px phone screen without sideways scrolling"
     },
     {
       "rule": "phone layout",
       "suite": "playwright",
       "file": "phone-width.spec.ts",
-      "title": "/conformance fits a 390 px phone screen without sideways scrolling"
+      "title": "/conformance fits a 320 px phone screen without sideways scrolling"
     },
     {
       "rule": "phone layout",
       "suite": "playwright",
       "file": "phone-width.spec.ts",
-      "title": "/bot fits a 390 px phone screen without sideways scrolling"
+      "title": "/bot fits a 320 px phone screen without sideways scrolling"
     }
   ],
   "repairs": {

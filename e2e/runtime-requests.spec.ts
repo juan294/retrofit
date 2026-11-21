@@ -8,7 +8,7 @@ const OUT = "tests/fixtures/runtime-requests";
 
 /**
  * Captures the exact request bodies the vendored runtime sends during a scripted session with
- * an agent delegation, a website_search_site_content result and the next model call. Phase 6
+ * a website_search_site_content call, its result and the next model call. Phase 6
  * replays them through the free-path request schema. Each capture records the vendor manifest hash.
  */
 test("captures the runtime's chat request bodies for the free-path schema", async ({ page }) => {
@@ -22,8 +22,8 @@ test("captures the runtime's chat request bodies for the free-path schema", asyn
   await expect(mount.getByText(/Our opening hours are/).filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
 
   const bodies = router.bodies;
-  // The session covers a delegation, a tool result with its name, and the model call after it.
-  expect(bodies.some((b) => b.messages.some((m) => m.role === "assistant" && m.tool_calls?.some((c) => c.function.name === "content_specialist")))).toBe(true);
+  // The session covers a tool call, its result with its name, and the model call after it.
+  expect(bodies.some((b) => b.messages.some((m) => m.role === "assistant" && m.tool_calls?.some((c) => c.function.name === "website_search_site_content")))).toBe(true);
   expect(bodies.some((b) => b.messages.some((m) => m.role === "tool" && m.name === "website_search_site_content"))).toBe(true);
 
   const vendorHash = createHash("sha256").update(readFileSync("vendor/agentic-web.json")).digest("hex");
