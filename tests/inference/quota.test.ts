@@ -7,7 +7,7 @@ import { fakeClock } from "../helpers/server-deps";
 
 const free: FreeConfig = loadFreeConfig({}, false);
 const START = Date.parse("2026-11-15T12:00:00Z");
-const TEXT = /^Retrofit's free AI is used up for .+\. Paste your own key in AI settings to continue\.$/;
+const TEXT = /^Retrofit's free AI is used up for .+\. Use your own AI key to continue\.$/;
 
 function setup() {
   const clock = fakeClock(START);
