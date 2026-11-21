@@ -28,12 +28,14 @@ test("a visitor previews the bakery agent with their own key", async ({ page }) 
   // The content tool ran, as the trace records (the visible status names it "Website Search Site Content").
   const tools = (await traceEvents(page)).filter((e) => e.kind === "tool").map((e) => e.tool);
   expect(tools).toContain("website_search_site_content");
-  expect(router.bodies.length).toBeGreaterThanOrEqual(4);
+  // One agent: it searches, then answers. Two model calls, and no delegation tool is offered.
+  expect(router.bodies.length).toBe(2);
+  expect(router.bodies.every((b) => !toolNames(b).includes("content_specialist"))).toBe(true);
 });
 
 /**
  * Worst case for a weak model: it calls a tool whenever one is offered and never answers.
- * The front agent delegates on every step; the specialist runs four searches on every step.
+ * It delegates whenever it can, and otherwise runs four searches on every step.
  */
 const greedyScript: Script = (body) => {
   const tools = toolNames(body);
@@ -44,9 +46,8 @@ const greedyScript: Script = (body) => {
   return { text: "No tools." };
 };
 
-// Fails if a question can cost more model calls than the per-agent step limits allow:
-// site_guide 3 steps, each delegating to content_specialist with 3 steps (3 + 3 x 3 = 12).
-test("a model that never stops calling tools costs at most 12 model calls per question", async ({ page }) => {
+// Fails if a question can cost more model calls than the preview agent's step limit (site_guide, 4 steps).
+test("a model that never stops calling tools costs at most 4 model calls per question", async ({ page }) => {
   const router = await mockOtari(page, greedyScript);
   await analyzeFixture(page, "bakery.fixture.test");
   await connectKey(page);
@@ -70,5 +71,5 @@ test("a model that never stops calling tools costs at most 12 model calls per qu
     )
     .toBe(true);
   expect(router.bodies.length).toBeGreaterThan(0);
-  expect(router.bodies.length).toBeLessThanOrEqual(12);
+  expect(router.bodies.length).toBeLessThanOrEqual(4);
 });

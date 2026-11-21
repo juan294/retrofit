@@ -26,7 +26,7 @@ describe("generateNetwork on every fixture snapshot", () => {
       const result = validateNetwork(new AgentNetwork(structuredClone(g.network), g.networkName)) as { errors: string[] };
       expect(result.errors).toEqual([]);
       expect(g.networkName).toMatch(NAME);
-      expect(agents(g).map((a) => a.name)).toEqual(["site_guide", "content_specialist"]);
+      expect(agents(g).map((a) => a.name)).toEqual(["site_guide"]);
     });
 
     // Fails if the preview serves anything other than the organizers' site-content.json shape.
@@ -120,18 +120,21 @@ describe("generateNetwork on every fixture snapshot", () => {
     expect(text).not.toContain('"allow"');
   });
 
-  // Fails if an agent loses its own step limit (the network's 12 would apply to each agent: up to 12 + 12 x 12 calls).
-  it("each agent has its own small step limit", () => {
-    const steps = Object.fromEntries(agents(get("bakery")).map((a) => [a.name, (a as unknown as { max_steps?: number }).max_steps]));
-    expect(steps).toEqual({ site_guide: 3, content_specialist: 3 });
+  // Fails if the agent loses its own step limit (the network's 12 would apply) or delegates instead of searching itself.
+  it("the one preview agent searches the snapshot itself, within 4 steps", () => {
+    const [guide] = agents(get("bakery")) as (Agent & { max_steps?: number })[];
+    expect(guide!.max_steps).toBe(4);
+    expect(guide!.tools).toEqual([]);
+    expect(guide!.instructions).toContain("website_search_site_content");
+    expect(guide!.instructions).toContain("website_get_site_records");
   });
 
-  // Fails if the no-records branch still points the specialist at get_site_records.
-  it("spaOnly (no records): content_specialist uses search_site_content only", () => {
+  // Fails if the no-records branch still points the agent at get_site_records.
+  it("spaOnly (no records): site_guide uses search_site_content only", () => {
     const g = get("spaOnly");
-    const specialist = agents(g).find((a) => a.name === "content_specialist")!;
-    expect(specialist.instructions).toContain("website_search_site_content");
-    expect(specialist.instructions).not.toContain("website_get_site_records");
+    const guide = agents(g).find((a) => a.name === "site_guide")!;
+    expect(guide.instructions).toContain("website_search_site_content");
+    expect(guide.instructions).not.toContain("website_get_site_records");
     expect(g.manifest.actions.agentTools).toEqual(["search_site_content"]);
     expect(g.network.metadata.sample_queries).toEqual(["What is this website about?"]);
   });

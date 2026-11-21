@@ -42,17 +42,12 @@ export async function injectHostileContent(page: Page): Promise<{ served: number
 }
 
 /**
- * The front agent delegates to content_specialist; the specialist calls both content tools
- * (their results carry the payloads) and answers with the payloads; the front agent then
- * gives `finalAnswer`.
+ * The preview agent calls both content tools (their results carry the payloads), then gives `finalAnswer`.
  */
 export function hostileScript(finalAnswer: string): Script {
   return (body) => {
     const tools = toolNames(body);
-    const front = tools.includes("content_specialist");
-    const result = lastToolResult(body);
-    if (result !== null) return { text: front ? finalAnswer : `The snapshot says: ${ALL}` };
-    if (front) return { call: [{ name: "content_specialist", args: { request: "candles" } }] };
+    if (lastToolResult(body) !== null) return { text: finalAnswer };
     const calls: { name: string; args: Record<string, unknown> }[] = [];
     if (tools.includes("website_search_site_content")) calls.push({ name: "website_search_site_content", args: { query: "candles" } });
     if (tools.includes("website_get_site_records")) calls.push({ name: "website_get_site_records", args: { collection: "products" } });
