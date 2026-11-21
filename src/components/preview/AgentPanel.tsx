@@ -65,7 +65,13 @@ export function AgentPanel({ basePath, label, title, network }: AgentPanelProps)
       ) : null}
       {guard ? (
         <div id="key-panel">
-          <KeyPanel guard={guard} onConnect={onConnect} onForget={onForget} freePathActive={!ownKey && free.status === "ready"} />
+          <KeyPanel
+            guard={guard}
+            onConnect={onConnect}
+            onForget={onForget}
+            freePathActive={!ownKey && free.status === "ready"}
+            freePathStarting={!ownKey && !hasStoredKey && free.status === "starting"}
+          />
         </div>
       ) : null}
       {inference && originUrl ? <Preview originUrl={originUrl} inference={inference} label={label} onNotice={onNotice} network={network} /> : null}

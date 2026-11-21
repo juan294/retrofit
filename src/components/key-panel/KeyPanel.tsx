@@ -19,6 +19,8 @@ export type KeyPanelProps = {
   onForget: () => void;
   /** Phase 6: Retrofit's free AI is in use while no key is connected. */
   freePathActive?: boolean;
+  /** Retrofit's free AI is starting: the key form stays closed, so it does not flash open first. */
+  freePathStarting?: boolean;
 };
 
 type Connected = { provider: string; price: string; note: string | null };
@@ -26,7 +28,7 @@ type Connected = { provider: string; price: string; note: string | null };
 const field = { borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" };
 const muted = { color: "var(--color-muted)" };
 
-export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }: KeyPanelProps) {
+export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, freePathStarting = false }: KeyPanelProps) {
   const ids = useId();
   const keyRef = useRef<HTMLInputElement>(null);
   const attempt = useRef(0);
@@ -207,21 +209,24 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false }:
     </>
   );
 
+  // The free AI is working or about to: the key form is optional and starts closed.
+  const freeFirst = (freePathActive || freePathStarting) && !connected;
+
   return (
     <section
       aria-labelledby={`${ids}-heading`}
       className="flex flex-col gap-3 border p-4"
       style={{ borderColor: "var(--color-border)", background: "var(--color-surface)", borderRadius: "var(--radius)" }}
     >
-      {freePathActive && !connected ? (
-        <p className="text-sm" style={{ color: "var(--color-ok)" }} role="status">
-          Using Retrofit&apos;s free AI
+      {freeFirst ? (
+        <p className="text-sm" style={{ color: freePathActive ? "var(--color-ok)" : "var(--color-muted)" }} role="status">
+          {freePathActive ? <>Using Retrofit&apos;s free AI</> : <>Starting Retrofit&apos;s free AI…</>}
         </p>
       ) : null}
       {/* One structure in every state, so the form is never rebuilt (a key being typed survives the free
-          session becoming ready). Closed while the free AI works and no key is connected. */}
-      <details data-testid="own-key" open={!(freePathActive && !connected)} className="flex flex-col gap-3">
-        <summary className="cursor-pointer text-sm font-medium">{freePathActive && !connected ? "Use your own AI key (optional)" : "Your AI key"}</summary>
+          session becoming ready). Closed while the free AI starts or works and no key is connected. */}
+      <details data-testid="own-key" open={!freeFirst} className="flex flex-col gap-3">
+        <summary className="cursor-pointer text-sm font-medium">{freeFirst ? "Use your own AI key (optional)" : "Your AI key"}</summary>
         <div className="mt-3 flex flex-col gap-3">{body}</div>
       </details>
     </section>

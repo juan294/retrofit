@@ -35,7 +35,7 @@ const REASON_PHRASE: Record<CapReason, string> = {
 
 /** Visitor text for a cap (parent plan, stuck state "Free cap reached"). */
 export function capMessage(reason: CapReason): string {
-  return `Retrofit's free AI is used up for ${REASON_PHRASE[reason]}. Paste your own key in AI settings to continue.`;
+  return `Retrofit's free AI is used up for ${REASON_PHRASE[reason]}. Use your own AI key to continue.`;
 }
 
 export type QuotaRefusal = { ok: false; status: 429; reason: CapReason; message: string };

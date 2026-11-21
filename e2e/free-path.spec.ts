@@ -54,6 +54,23 @@ test("a visitor without a key previews bakery on the free path, through a delega
   expect(models.every((ev) => ev.status !== "error")).toBe(true);
 });
 
+test("while the free AI starts, the key form stays closed and the page says the free AI is starting", async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route("**/api/inference/session", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto("/");
+  await expect(page.getByText("Starting Retrofit's free AI")).toBeVisible();
+  await expect(page.getByTestId("own-key")).not.toHaveAttribute("open");
+  await expect(page.getByLabel("Paste your key")).toBeHidden();
+  release();
+  await expect(page.getByText("Using Retrofit's free AI")).toBeVisible();
+  await expect(page.getByText("Starting Retrofit's free AI")).toHaveCount(0);
+  await expect(page.getByTestId("own-key")).not.toHaveAttribute("open");
+});
+
 test("Retrofit's own agent uses its published default router on the free path", async ({ page }) => {
   await openFree(page);
   await ask(page, "hello");
