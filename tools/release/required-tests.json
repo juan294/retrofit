@@ -5839,6 +5839,84 @@
       "suite": "unit",
       "file": "tests/site/own-site.test.ts",
       "title": "installation inquiries publishes the installation service and its email in JSON-LD and llms.txt"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "Retrofit's action bridge shares score_site registers exactly score_site as a read shared with every caller origin"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "Retrofit's action bridge shares score_site keeps the local action's description and input schema, so peers see the same contract"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "Retrofit's action bridge shares score_site asks Retrofit's own score API from the bridge frame and maps a ready answer"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "Retrofit's action bridge shares score_site points a peer's visitor at Retrofit's home page, not at the calling page's form, when the answer is unreadable"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "a partner network that runs retrofit_guide gets website_score_site accepts the shared bridge action in a partner context"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "a partner network that runs retrofit_guide gets website_score_site refuses the local-only page action in a partner context, so only the bridge copy reaches partners"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "a partner network that runs retrofit_guide gets website_score_site names the bridge module in the published bridge manifest"
+    },
+    {
+      "rule": "conformance",
+      "suite": "playwright",
+      "file": "bridge.spec.ts",
+      "title": "a page on another origin frames Retrofit's action bridge and completes the handshake"
+    },
+    {
+      "rule": "conformance",
+      "suite": "playwright",
+      "file": "bridge.spec.ts",
+      "title": "a partner page runs score_site through Retrofit's bridge and gets the same score as /api/score"
+    },
+    {
+      "rule": "free path",
+      "suite": "playwright",
+      "file": "own-site.spec.ts",
+      "title": "/judges points at the key panel by its on-page name, not at hidden AI settings"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "score_site polls inside one bridge call returns the ready answer after running answers, 20 s apart, in one call"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "score_site polls inside one bridge call stops within the caller's execute timeout and tells the model not to call again"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "the page's own score_site keeps one request per call returns running after one request, for the model to call again"
     }
   ],
   "repairs": {

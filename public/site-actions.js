@@ -9,6 +9,9 @@ const MAX_URL = 2048;
 const SPACING_MS = 20_000;
 const REQUEST_TIMEOUT_MS = 35_000;
 const MAX_RUNNING = 6;
+// A partner's call through the bridge ends after 180 s (runtime/action-transport.js); polling inside
+// one call stops before a further wait and request could pass this budget.
+const BRIDGE_POLL_BUDGET_MS = 140_000;
 
 const DESCRIPTION =
   "Gets Retrofit's agent-readiness score (0 to 100, score/v1) for a public website, with each check's result, rule and evidence. Pass the address as the user gave it; Retrofit scores the site from its home page, so a path is not used. Results are kept for 24 hours. A call can take up to a minute. If the result says the score is still running, call again with the same URL. Read-only: it changes nothing on this page or on the scored site.";
@@ -175,12 +178,35 @@ async function requestScore(url, signal) {
 }
 
 /**
- * Build the score_site action. Its state (the last running answer and the count of
- * consecutive running answers for each URL) lasts as long as this registration, that is
- * the page session of the assistant that registered it.
+ * Build the score_site action. On Retrofit's page, its state (the last running answer and
+ * the count of consecutive running answers for each URL) lasts as long as this registration,
+ * that is the page session of the assistant that registered it.
+ *
+ * :param options: unexpectedReason replaces the reason for an unreadable answer, because a
+ *   partner's visitor is not on Retrofit's page and has no Retrofit form to paste into.
+ *   pollInCall makes one call wait and ask again while the score runs, up to MAX_RUNNING
+ *   answers or BRIDGE_POLL_BUDGET_MS. The action bridge (bridge/bridge-actions.js) sets both:
+ *   the runtime opens a new bridge frame for each partner call, so state between calls is lost.
  */
-function scoreSiteAction() {
+export function scoreSiteAction({ unexpectedReason, pollInCall = false } = {}) {
   const runs = new Map();
+
+  async function ask(url, signal) {
+    const result = await requestScore(url, signal);
+    if (unexpectedReason && result.error === "unexpected_response") result.reason = unexpectedReason;
+    return result;
+  }
+
+  async function pollScore(url, signal) {
+    const start = Date.now();
+    for (let count = 1; ; count++) {
+      const result = await ask(url, signal);
+      if (result.status !== "running") return result;
+      const out = count >= MAX_RUNNING || Date.now() - start + SPACING_MS + REQUEST_TIMEOUT_MS > BRIDGE_POLL_BUDGET_MS;
+      if (out) return { ok: false, status: "running", reason: STOP_REASON };
+      if (!(await wait(SPACING_MS, signal))) return network();
+    }
+  }
 
   async function execute(args, context) {
     const url = plain(args) && typeof args.url === "string" ? args.url.trim() : "";
@@ -194,7 +220,8 @@ function scoreSiteAction() {
       if (delay > 0 && !(await wait(delay, signal))) return network();
     }
 
-    const result = await requestScore(url, signal);
+    if (pollInCall) return pollScore(url, signal);
+    const result = await ask(url, signal);
     if (result.status !== "running") {
       runs.delete(url);
       return result;

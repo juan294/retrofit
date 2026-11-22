@@ -166,11 +166,24 @@ function receive(event) {
   const channel = new MessageChannel();
   const port = channel.port1;
   const replyTimer = setTimeout(() => write("timeout", { readyOrigin: event.origin, error: "No catalog reply." }), 15000);
+  // ?score=<url>: after the catalog, run the shared score_site action once on the same connection. (A partner's
+  // runtime opens a new frame for each call; one connection is enough to prove the bridge executes it.)
+  const scoreUrl = new URLSearchParams(location.search).get("score");
+  let catalog;
+  let executeTimer;
   port.onmessage = ({ data }) => {
-    if (data?.id !== 1) return;
-    clearTimeout(replyTimer);
-    if (data.ok) write("connected", { readyOrigin: event.origin, catalog: data.value });
-    else write("error", { readyOrigin: event.origin, error: data.error });
+    if (data?.id === 1) {
+      clearTimeout(replyTimer);
+      if (!data.ok) { write("error", { readyOrigin: event.origin, error: data.error }); port.close(); return; }
+      catalog = data.value;
+      if (!scoreUrl) { write("connected", { readyOrigin: event.origin, catalog }); port.close(); return; }
+      executeTimer = setTimeout(() => write("timeout", { readyOrigin: event.origin, catalog, error: "No execute reply." }), 170000);
+      port.postMessage({ id: 2, type: "execute", name: "score_site", requestId: "bridge-host-1", args: { url: scoreUrl } });
+      return;
+    }
+    if (data?.id !== 2) return;
+    clearTimeout(executeTimer);
+    write("connected", { readyOrigin: event.origin, catalog, executed: data.ok ? { ok: true, value: data.value } : { ok: false, error: data.error } });
     port.close();
   };
   peer.postMessage({ protocol, type: "connect" }, origin, [channel.port2]);
