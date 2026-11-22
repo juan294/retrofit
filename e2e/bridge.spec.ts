@@ -37,6 +37,7 @@ test("a page on another origin frames Retrofit's action bridge and completes the
 });
 
 test("a partner page runs score_site through Retrofit's bridge and gets the same score as /api/score", async ({ page, request }) => {
+  test.setTimeout(120_000);
   const site = fixtureOrigin("bakery.fixture.test");
   // Score the site first, so the bridge call reads the cached ready answer instead of "running".
   let expected: { status?: string; score?: number } = {};

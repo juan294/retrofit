@@ -23,6 +23,6 @@ test("the organizers' check_partner.mjs accepts Retrofit's own network", async (
   expect(errorLines, report).toEqual([]);
   expect(output.trim().length, report).toBeGreaterThan(0);
   // The bridge names its action module, so partners get the reads it shares (score_site).
-  expect(output, report).toContain("Its bridge loads ./bridge-actions.js.");
+  expect(output, report).toContain(`Its bridge loads ${RETROFIT_ORIGIN}/bridge/bridge-actions.js.`);
   expect(output, report).not.toContain("Its bridge shares no actions");
 });

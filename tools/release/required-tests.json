@@ -5899,6 +5899,24 @@
       "suite": "playwright",
       "file": "own-site.spec.ts",
       "title": "/judges points at the key panel by its on-page name, not at hidden AI settings"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "score_site polls inside one bridge call returns the ready answer after running answers, 20 s apart, in one call"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "score_site polls inside one bridge call stops within the caller's execute timeout and tells the model not to call again"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "the page's own score_site keeps one request per call returns running after one request, for the model to call again"
     }
   ],
   "repairs": {

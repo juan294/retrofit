@@ -102,3 +102,63 @@ describe("a partner network that runs retrofit_guide gets website_score_site", (
     expect(bridgeManifest.networks).toEqual([{ name: "retrofit_guide" }]);
   });
 });
+
+describe("score_site polls inside one bridge call", () => {
+  // The runtime opens a new bridge frame for every partner call (runtime/action-transport.js), so state kept
+  // between calls is lost. The shared action waits and asks again within one call instead, below the caller's
+  // 180 s execute timeout.
+  const running = () => new Response(JSON.stringify({ status: "running" }), { status: 202, headers: { "content-type": "application/json" } });
+  const ready = () =>
+    new Response(
+      JSON.stringify({ status: "ready", scoreVersion: "score/v1", host: "bakery.example", score: 62, checks: Array.from({ length: 16 }, (_, i) => ({ id: `c${i}` })) }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function runWith(answers: (() => Response)[]) {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const start = Date.now();
+    const calls: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls.push(Date.now() - start);
+        return (answers[calls.length - 1] ?? answers[answers.length - 1]!)();
+      }),
+    );
+    const [shared] = await entriesOf(bridgeModuleUrl);
+    const pending = shared!.execute({ url: "bakery.example" }, { requestId: "p1", callerOrigin: "https://partner.example" });
+    await vi.runAllTimersAsync();
+    return { result: await pending, calls, elapsed: Date.now() - start };
+  }
+
+  it("returns the ready answer after running answers, 20 s apart, in one call", async () => {
+    const { result, calls } = await runWith([running, running, ready]);
+    expect(result).toMatchObject({ ok: true, status: "ready", report: { score: 62 } });
+    expect(calls).toHaveLength(3);
+    expect(calls[1]! - calls[0]!).toBeGreaterThanOrEqual(20_000);
+    expect(calls[2]! - calls[1]!).toBeGreaterThanOrEqual(20_000);
+  });
+
+  it("stops within the caller's execute timeout and tells the model not to call again", async () => {
+    const { result, calls, elapsed } = await runWith([running]);
+    expect(result).toMatchObject({ ok: false, status: "running", reason: "The score is still running after several checks. Tell the user to try again in a few minutes." });
+    expect(result.retryAfterSeconds).toBeUndefined();
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(elapsed).toBeLessThan(180_000);
+  });
+});
+
+describe("the page's own score_site keeps one request per call", () => {
+  it("returns running after one request, for the model to call again", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "running" }), { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const [local] = await entriesOf(siteModuleUrl);
+    const result = await local!.execute({ url: "bakery.example" }, { requestId: "l1" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: false, status: "running", retryAfterSeconds: 20 });
+  });
+});
