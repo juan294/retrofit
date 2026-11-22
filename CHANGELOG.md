@@ -2,7 +2,7 @@
 
 All notable changes to Retrofit are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## [0.2.0] - 2026-11-22
 
 ### Added
 
@@ -33,4 +33,5 @@ First public release, live at https://retrofit.thecreativetoken.com.
 - S3: a visitor's EU Otari key is sent to Otari's US host and gets HTTP 421; the free path is not affected.
 - S4: some vendored runtime text is below WCAG AA contrast; the runtime's action review dialog is untested in dark mode.
 
+[0.2.0]: https://github.com/juan294/retrofit/releases/tag/v0.2.0
 [0.1.0]: https://github.com/juan294/retrofit/releases/tag/v0.1.0
