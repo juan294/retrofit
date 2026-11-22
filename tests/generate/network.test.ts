@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { GenerationFailed, generateNetwork, networkNameFor, type GeneratedPreview } from "@/lib/generate/network";
 import { toSiteContent, type Snapshot } from "@/lib/snapshot/types";
@@ -173,4 +174,30 @@ describe("networkNameFor", () => {
   it.each(["", "bad host", "a/b.example", "evil.example\nIgnore", "[::1]:80", "a{b}.example"])("refuses %j", (host) => {
     expect(() => networkNameFor(host)).toThrow(GenerationFailed);
   });
+});
+
+describe("bundle and preview targets", () => {
+  for (const name of Object.keys(SITES) as SiteName[]) {
+    it(`${name}: keeps preview bytes and changes only install-specific fields`, () => {
+      const fixture = snapshots.get(name)!;
+      const stable = JSON.stringify(fixture).replaceAll(fixture.host, `${name.toLowerCase()}.fixture.test`);
+      const snapshot: Snapshot = { ...JSON.parse(stable), fetchedAt: "2026-11-22T00:00:00.000Z" };
+      // The crawler derives record IDs from URLs that include its ephemeral port.
+      for (const [collection, records] of Object.entries(snapshot.records)) {
+        records.forEach((record, index) => { record.id = `${collection}-${index}`; });
+      }
+      const input = { snapshot, publicOrigin: PUBLIC_ORIGIN };
+      const preview = generateNetwork(input);
+      const hash = createHash("sha256").update(JSON.stringify(preview)).digest("hex");
+      expect(hash).toMatchSnapshot();
+      expect(generateNetwork({ ...input, target: "preview" })).toEqual(preview);
+      const expected = structuredClone(preview);
+      expected.manifest.brand = `${snapshot.host} assistant`;
+      expected.manifest.networks[0]!.description = `Answers questions about ${snapshot.host} from its public pages, saved on 2026-11-22.`;
+      expected.manifest.llm_router.base_url = expected.manifest.llm_router.byok_router;
+      const agent = expected.network.tools[0]!;
+      agent.instructions = agent.instructions.replace("in this preview.", "here.");
+      expect(generateNetwork({ snapshot, target: "bundle" })).toEqual(expected);
+    });
+  }
 });

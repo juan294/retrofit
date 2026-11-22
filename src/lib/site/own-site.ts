@@ -8,6 +8,7 @@ export const OWN_PAGES: readonly { path: string; title: string; summary: string 
   { path: "/bot", title: "How RetrofitBot reads your site", summary: "What RetrofitBot fetches, which pages it skips, and how it follows robots rules." },
 ];
 
+export const LEAD_EMAIL = "retrofit@thecreativetoken.com";
 export const CONTACT_URL = "https://github.com/juan294/retrofit/issues";
 export const SOURCE_URL = "https://github.com/juan294/retrofit";
 
