@@ -26,7 +26,9 @@
     "visitor-key-handling-evidence",
     "hosting-and-domain-decision"
   ],
-  "current_gaps": [],
+  "current_gaps": [
+    "Install bundle: owner review of the sample README and the install panel during the UI pass."
+  ],
   "invariants": [
     "passing-check-count-greater-than-zero",
     "required-failure-or-skip-blocks",

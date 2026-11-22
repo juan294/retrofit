@@ -31,3 +31,19 @@ Independent review approved the phase and verified that the built route's trace 
 The plan put access to the ZIP in the preview artifact resolver. The implemented branch runs after the shared owner and status checks and before preview generation, so a ZIP request builds the installed network only. The results response exposes install availability to hide the download when generation fails even if the visitor has no key. The install instructions specify the contents of the site folder to preserve root-relative URLs.
 
 The first Phase 2 gate rejected `588691f`. The 320 px results page overflowed by 96 px after the runtime mounted. The focused run had sampled before that mount. The provider badge and Developer button extended to 324 and 416 px respectively. The repair lets the preview header wrap and breaks long site names. The width regression now waits for the runtime title. It reproduced the 96 px failure before the fix and passed against the rebuilt app after it. The initial failed receipt and trace are kept with the accepted run.
+
+Phase 2 passed all 15 checks on `8ee41061daf4e7dac374701b3f67d85c9a32c8da`. The analyzer accepted 1,249 unit, 3 performance, 45 database and 75 browser tests (970 required). Statement coverage was 94.12% and branch coverage was 88.59%. The gate database teardown completed. The repaired phone-width test waited until the full preview was visible.
+
+## Phase 3
+
+The rebase included `develop` at `10ed45d`. Juan approved adding the installation address to the existing SES recipient rule and sending one test email. The existing forwarding function uses one configured destination. After adding the recipient, a fresh read matched the prior rule plus that address. The forwarded message sent on 2026-11-22 at 12:14 UTC was found in the destination mailbox with the expected subject and the INBOX label.
+
+The scored link prepares an email with the displayed site and score. The home link uses a general subject. Scores of zero are preserved and an unavailable score is identified in the message. The installation contact remains available when the result exists but agent generation fails. New tests for the subject, service discovery and home link failed before the change. After the change, all nine focused browser checks passed, including the real install.
+
+The claim decision, changelog and release profile record the new local scope. The production mail route is active. Application publication remains a separate operation.
+
+### Owner review
+
+The downloaded bakery archive and its extracted README are retained under `.local/runs/2026-11-22-bundle-service/` in the canonical checkout. The installation ran successfully from that archive. Light and dark contrast and the fully rendered 320 px layout passed. The owner's README and visual impressions are pending. Inbox delivery was verified directly.
+
+Independent review approved the email links, discovery data, recovery contact and access decision. The simplify pass checked reuse of the address, subject generation and fallback rendering. The contact markup is shared between downloadable and unavailable results. The phase candidate is the commit containing this handoff. The gate receipt and analyzer in the retained run directory identify its complete Git commit and tree.

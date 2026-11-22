@@ -12,7 +12,18 @@ export const LEAD_EMAIL = "retrofit@thecreativetoken.com";
 export const CONTACT_URL = "https://github.com/juan294/retrofit/issues";
 export const SOURCE_URL = "https://github.com/juan294/retrofit";
 
-/** The home page's JSON-LD: the organization and the free agent-readiness service it offers. */
+/** The score report already supplies an ASCII host. Normalize international names for other callers. */
+export function leadMailto(host?: string, score?: number | null): string {
+  let subject = "Retrofit install for my site";
+  if (host) {
+    const origin = `https://${host}`;
+    const name = /\P{ASCII}/u.test(host) && URL.canParse(origin) && !/[/?#@]/.test(host) ? new URL(origin).host : host;
+    subject = `Retrofit install for ${name} (score ${score ?? "unavailable"})`;
+  }
+  return `mailto:${LEAD_EMAIL}?subject=${encodeURIComponent(subject)}`;
+}
+
+/** The home page's JSON-LD: the organization and the agent-readiness and installation services it offers. */
 export function retrofitJsonLd(origin: string): Record<string, unknown>[] {
   const organization = { "@type": "Organization", name: "Retrofit", url: `${origin}/`, sameAs: [SOURCE_URL] };
   return [
@@ -25,6 +36,12 @@ export function retrofitJsonLd(origin: string): Record<string, unknown>[] {
       url: `${origin}/`,
       provider: organization,
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "Service",
+      name: "Done-for-you agentic website setup",
+      provider: { ...organization, contactPoint: { "@type": "ContactPoint", contactType: "Installation inquiries", email: LEAD_EMAIL } },
     },
   ];
 }
@@ -44,6 +61,10 @@ export function llmsText(origin: string): string {
     "## Agents",
     "",
     `- [Agent manifest](${origin}/agent-manifest.json): Retrofit's own agent network and its conformance network.`,
+    "",
+    "## Contact",
+    "",
+    `For installation help, email ${LEAD_EMAIL}.`,
     "",
     "## Source",
     "",

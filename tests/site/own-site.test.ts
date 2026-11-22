@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CHECKS } from "@/lib/score/checks";
 import { SNAPSHOT_VERSION, type JsonValue, type Snapshot, type SnapshotPage } from "@/lib/snapshot/types";
-import { llmsText, OWN_PAGES, retrofitJsonLd } from "@/lib/site/own-site";
+import { leadMailto, llmsText, OWN_PAGES, retrofitJsonLd } from "@/lib/site/own-site";
 import robots from "@/app/robots";
 import sitemap from "@/app/sitemap";
 import { GET as llmsGet } from "@/app/llms.txt/route";
@@ -58,5 +58,25 @@ describe("Retrofit's own site, scored by Retrofit", () => {
     expect(body).toBe(llmsText(getConfig().publicOrigin));
     expect(body.startsWith("# Retrofit\n\n> ")).toBe(true);
     for (const p of OWN_PAGES) expect(body).toContain(`(${getConfig().publicOrigin}${p.path})`);
+  });
+});
+
+describe("installation inquiries", () => {
+  it("builds one email subject for a scored host, including reserved characters and international names", () => {
+    const to = "mailto:retrofit@thecreativetoken.com?subject=";
+    expect(leadMailto("demo & test#1", 37)).toBe(to + "Retrofit%20install%20for%20demo%20%26%20test%231%20(score%2037)");
+    expect(leadMailto("café.example", 0)).toBe(to + "Retrofit%20install%20for%20xn--caf-dma.example%20(score%200)");
+    expect(leadMailto("sample.test", null)).toBe(to + "Retrofit%20install%20for%20sample.test%20(score%20unavailable)");
+    expect(leadMailto()).toBe(to + "Retrofit%20install%20for%20my%20site");
+  });
+
+  it("publishes the installation service and its email in JSON-LD and llms.txt", () => {
+    const services = JSON.parse(JSON.stringify(retrofitJsonLd(ORIGIN))).filter((node: { "@type": string }) => node["@type"] === "Service");
+    expect(services).toHaveLength(2);
+    expect(services).toContainEqual(expect.objectContaining({
+      name: "Done-for-you agentic website setup",
+      provider: expect.objectContaining({ "@type": "Organization", name: "Retrofit", contactPoint: expect.objectContaining({ "@type": "ContactPoint", email: "retrofit@thecreativetoken.com" }) }),
+    }));
+    expect(llmsText(ORIGIN)).toMatch(/## Contact\n\n[^\n]*retrofit@thecreativetoken\.com/);
   });
 });

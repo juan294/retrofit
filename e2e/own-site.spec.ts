@@ -17,6 +17,7 @@ test("Retrofit serves robots.txt, sitemap.xml, llms.txt, home JSON-LD and a cont
   expect(await llms.text()).toMatch(/^# Retrofit\n/);
 
   await page.goto("/");
+  await expect(page.getByRole("link", { name: "retrofit@thecreativetoken.com" })).toHaveAttribute("href", "mailto:retrofit@thecreativetoken.com?subject=Retrofit%20install%20for%20my%20site");
   const ld = await page.locator('script[type="application/ld+json"]').allTextContents();
   const types = ld.flatMap((t) => [JSON.parse(t)].flat()).map((n: { "@type"?: string }) => n["@type"]);
   expect(types).toEqual(expect.arrayContaining(["Organization", "Service"]));

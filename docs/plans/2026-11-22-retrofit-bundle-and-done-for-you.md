@@ -1,6 +1,6 @@
 # Plan: Retrofit install bundle and done-for-you contact
 
-> Created 2026-11-22 with `rpi-plan`. Status: proposed, waiting for owner acceptance. Phase files: [phase-1](2026-11-22-retrofit-bundle-and-done-for-you-phases/phase-1.md), [phase-2](2026-11-22-retrofit-bundle-and-done-for-you-phases/phase-2.md), [phase-3](2026-11-22-retrofit-bundle-and-done-for-you-phases/phase-3.md). Notes file (created at Phase 1 entry): `2026-11-22-retrofit-bundle-and-done-for-you-notes.md`.
+> Created 2026-11-22 with `rpi-plan`. Juan approved implementation of all phases on 2026-11-22. See the implementation notes for results and owner review. Phase files: [phase-1](2026-11-22-retrofit-bundle-and-done-for-you-phases/phase-1.md), [phase-2](2026-11-22-retrofit-bundle-and-done-for-you-phases/phase-2.md), [phase-3](2026-11-22-retrofit-bundle-and-done-for-you-phases/phase-3.md). Notes file: `2026-11-22-retrofit-bundle-and-done-for-you-notes.md`.
 
 ## Objective
 

@@ -180,7 +180,7 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
         label={`Private preview. Unofficial. Built by Retrofit from public pages of ${report.host} on ${report.fetchedAt.slice(0, 10)}. Not affiliated with ${report.host}.`}
       />
 
-      {report.bundleReady && <InstallPanel id={id} />}
+      <InstallPanel id={id} host={report.host} score={report.score} available={report.bundleReady} />
 
       <h3 className="mt-12 text-lg font-semibold">All checks</h3>
       <p className="mt-1 text-sm" style={{ color: "var(--color-muted)" }}>

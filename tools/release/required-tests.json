@@ -5827,6 +5827,18 @@
       "suite": "perf",
       "file": "tests/perf/bundle.perf.test.ts",
       "title": "serves 20 complete owner downloads below the size and p95 budgets"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "installation inquiries builds one email subject for a scored host, including reserved characters and international names"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "installation inquiries publishes the installation service and its email in JSON-LD and llms.txt"
     }
   ],
   "repairs": {

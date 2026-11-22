@@ -11,6 +11,9 @@ const installed = "http://127.0.0.1:3015";
 test("an owner downloads, installs and runs the assistant on its own origin", async ({ page }, testInfo) => {
   test.setTimeout(60_000);
   await analyzeFixture(page, "bakery.fixture.test");
+  const score = await page.getByTestId("score-total").innerText();
+  const subject = encodeURIComponent(`Retrofit install for bakery.fixture.test:3011 (score ${score})`);
+  await expect(page.getByRole("link", { name: "Email retrofit@thecreativetoken.com" })).toHaveAttribute("href", "mailto:retrofit@thecreativetoken.com?subject=" + subject);
   const downloadLink = page.getByRole("link", { name: "Download the files" });
   await expect(downloadLink).toBeVisible();
   const downloadEvent = page.waitForEvent("download");
