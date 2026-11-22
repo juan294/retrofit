@@ -5779,6 +5779,54 @@
       "suite": "unit",
       "file": "tests/generate/network.test.ts",
       "title": "bundle and preview targets noindexPage: keeps preview bytes and changes only install-specific fields"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/preview/bundle-route.test.ts",
+      "title": "downloads a valid private ZIP attachment for the analysis owner"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/preview/bundle-route.test.ts",
+      "title": "uses the preview recovery messages for a missing owner, expiry, validation failure and store outage"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/preview/bundle-route.test.ts",
+      "title": "refuses a queued analysis with the generation recovery text"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/preview/bundle-route.test.ts",
+      "title": "the result offers installation only when the saved snapshot can generate an agent"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "playwright",
+      "file": "bundle-install.spec.ts",
+      "title": "an owner downloads, installs and runs the assistant on its own origin"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "playwright",
+      "file": "bundle-install.spec.ts",
+      "title": "an expired result removes the download and offers a new analysis"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the install panel fits a 320 px results page"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "perf",
+      "file": "tests/perf/bundle.perf.test.ts",
+      "title": "serves 20 complete owner downloads below the size and p95 budgets"
     }
   ],
   "repairs": {

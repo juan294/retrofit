@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { COUNTING_RETRY_S, visitorTexts } from "@/lib/analysis/texts";
 import { AgentPanel } from "@/components/preview/AgentPanel";
+import { InstallPanel } from "./InstallPanel";
 import { localizeRetry } from "./retry-time";
 import { COUNTING_ATTEMPTS } from "./request";
 import { createStartController, type StartController, type StartState } from "./start-controller";
@@ -31,6 +32,7 @@ interface Check {
   evidence: string;
 }
 interface Report {
+  bundleReady: boolean;
   host: string;
   score: number | null;
   summary: string;
@@ -91,7 +93,7 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
           const full = await fetch(`/api/analyze/${id}?include=result`, { credentials: "same-origin", cache: "no-store" });
           const fullBody = full.ok ? await full.json() : null;
           if (fullBody?.report) {
-            setReport(fullBody.report);
+            setReport({ ...fullBody.report, bundleReady: fullBody.bundleReady === true });
             finish();
             return;
           }
@@ -177,6 +179,8 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
         title="Try the agent Retrofit built"
         label={`Private preview. Unofficial. Built by Retrofit from public pages of ${report.host} on ${report.fetchedAt.slice(0, 10)}. Not affiliated with ${report.host}.`}
       />
+
+      {report.bundleReady && <InstallPanel id={id} />}
 
       <h3 className="mt-12 text-lg font-semibold">All checks</h3>
       <p className="mt-1 text-sm" style={{ color: "var(--color-muted)" }}>

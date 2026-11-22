@@ -50,6 +50,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     await analyzeFixture(page, "bakery.fixture.test");
     const mount = page.getByTestId("preview-mount");
     const targets = {
+      download: page.getByRole("link", { name: "Download the files" }),
       title: mount.locator(".ns-title").first(),
       actions: mount.getByText(/website actions? connected/).first(),
       greeting: mount.getByText(/^Private preview of /).first(),

@@ -45,7 +45,9 @@ describe("install ZIP", () => {
     const snapshots = await crawlFixtureSnapshots();
     for (const snapshot of snapshots.values()) {
       const { topFolder, entries } = await bundleFiles(snapshot);
-      withArchive(writeZip(entries), file => {
+      const archive = writeZip(entries);
+      expect(archive.byteLength).toBeLessThan(2_000_000);
+      withArchive(archive, file => {
         const listing = execFileSync("python3", ["-I", "-c",
           "import json,sys,zipfile; print(json.dumps(zipfile.ZipFile(sys.argv[1]).namelist()))",
           file], { encoding: "utf8" });

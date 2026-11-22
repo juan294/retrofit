@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { getAnalysis, isAnalysisId, readAnalysisView } from "@/lib/analysis/record";
+import { bundleFiles } from "@/lib/bundle/files";
+import { writeZip } from "@/lib/bundle/zip";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { hashVisitor, readVisitorToken, sameHash } from "@/lib/analysis/visitor";
 import type { JobDeps } from "@/lib/crawl/jobs";
@@ -21,7 +23,7 @@ const BRIDGE_FILE = /^[a-z0-9][a-z0-9-]*\.(?:html|js|json)$/;
 /** What the runtime's links loader reads: `doc.networks[<name>]`, here nothing (runtime/engine.js `_loadPublishedLinks`). */
 const EMPTY_LINKS = { version: 1, networks: {} } as const;
 
-function respond(status: number, body: string, contentType: string): Response {
+function respond(status: number, body: BodyInit, contentType: string): Response {
   return new Response(body, {
     status,
     headers: {
@@ -97,6 +99,12 @@ export async function handlePreviewFile(request: Request, deps: PreviewDeps, id:
     const snapshot = view.analysis.snapshot;
     if (view.status !== "ready" || !snapshot) return jsonResponse(404, { error: "not_ready", message: visitorTexts.generationFailed });
     try {
+      if (segments.length === 1 && segments[0] === "bundle.zip") {
+        const { topFolder, entries } = await bundleFiles(snapshot, deps.validate);
+        const response = respond(200, writeZip(entries), "application/zip");
+        response.headers.set("content-disposition", `attachment; filename="${topFolder}.zip"`);
+        return response;
+      }
       generated = generateNetwork({ snapshot, publicOrigin: deps.config.publicOrigin }, { validate: deps.validate });
     } catch (e) {
       if (!(e instanceof GenerationFailed)) throw e;

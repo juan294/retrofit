@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures/csp";
+import { analyzeFixture } from "./support/agent";
 
 test.use({ viewport: { width: 320, height: 640 } });
 
@@ -12,3 +13,9 @@ for (const [path, hasAgent] of [["/", true], ["/conformance", true], ["/bot", fa
     expect(overflow).toBe(0);
   });
 }
+
+test("the install panel fits a 320 px results page", async ({ page }) => {
+  await analyzeFixture(page, "bakery.fixture.test");
+  await expect(page.getByRole("link", { name: "Download the files" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
+});
