@@ -27,8 +27,7 @@
     "hosting-and-domain-decision"
   ],
   "current_gaps": [
-    "vendored-runtime-behind-upstream-0516537",
-    "visitor-eu-otari-keys-OT-2"
+    "Install bundle: owner review of the sample README and the install panel during the UI pass."
   ],
   "invariants": [
     "passing-check-count-greater-than-zero",

@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { connection } from "next/server";
 import { getConfig } from "@/lib/config";
-import { CONTACT_URL, retrofitJsonLd, SOURCE_URL } from "@/lib/site/own-site";
+import { CONTACT_URL, LEAD_EMAIL, leadMailto, retrofitJsonLd, SOURCE_URL } from "@/lib/site/own-site";
 import { UrlForm } from "@/components/UrlForm";
 import { AgentPanel } from "@/components/preview/AgentPanel";
 
@@ -21,6 +21,9 @@ export default async function Home() {
         An agent on your own website that can take the order, and it is yours to keep.
       </p>
       <UrlForm />
+      <p className="mt-4 text-sm">
+        We can also set it up for you: <a className="underline [overflow-wrap:anywhere]" href={leadMailto()}>{LEAD_EMAIL}</a>
+      </p>
       <p className="mt-6 text-sm" style={{ color: "var(--color-muted)" }}>
         Retrofit reads your public pages, your robots.txt, sitemap, llms.txt and agent manifest. It skips sign-in, account and checkout
         pages and follows your robots rules. <Link href="/bot" className="underline">How RetrofitBot reads your site</Link>.

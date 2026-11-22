@@ -8,9 +8,9 @@ const nextConfig: NextConfig = {
   env: { BUILD_COMMIT: process.env.BUILD_COMMIT ?? "" },
   reactStrictMode: true,
   typescript: { tsconfigPath: "tsconfig.build.json" },
-  // The preview route reads the vendored content-actions module and bridge from disk.
+  // The private artifact route reads the install bundle assets from disk.
   outputFileTracingIncludes: {
-    "/p/[id]/[...file]": ["./public/preview-assets/**/*"],
+    "/p/**": ["./public/preview-assets/**/*", "./public/runtime/**/*", "./tools/agentic-web/templates/assistant.css"],
     // The demo-harbor peer route reads its static site from disk.
     "/peer/[...path]": ["./peers/demo-harbor/public/**/*", "./peers/demo-harbor/public/.well-known/*"],
   },

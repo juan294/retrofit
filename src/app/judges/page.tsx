@@ -14,8 +14,8 @@ export default async function JudgesPage() {
     <main className="mx-auto max-w-2xl px-4 py-16">
       <h1 className="text-4xl font-semibold">Judges</h1>
       <p className="mt-4" style={{ color: "var(--color-muted)" }}>
-        Enter the judge code to use the judges&apos; share of Retrofit&apos;s free AI in this browser. You can also paste your own key in AI
-        settings instead.
+        Enter the judge code to use the judges&apos; share of Retrofit&apos;s free AI in this browser. You can also use your own key instead:
+        open &ldquo;Use your own AI key (optional)&rdquo; next to an agent.
       </p>
       <JudgeForm />
     </main>

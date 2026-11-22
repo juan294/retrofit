@@ -5587,6 +5587,336 @@
       "suite": "unit",
       "file": "tests/fetch/crawl.test.ts",
       "title": "crawlSite spends the page budget on hubs and task pages before a long first menu"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/files.test.ts",
+      "title": "self-hosted bundle files ships the complete runtime and unchanged actions, bridge and stylesheet"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/files.test.ts",
+      "title": "self-hosted bundle files lists each installed path before the install steps and keeps hosting configuration separate"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/files.test.ts",
+      "title": "self-hosted bundle files points the assistant at the site root and dates its page, greeting and instructions"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/files.test.ts",
+      "title": "self-hosted bundle files gives each hosting format the public discovery paths and the sandbox worker policy"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/files.test.ts",
+      "title": "self-hosted bundle files keeps hostile page text in the site content, away from code, documentation and instructions"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/files.test.ts",
+      "title": "self-hosted bundle files makes portable download names for ports and long valid hosts"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "matches the organizer's published bytes for bakery"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "matches the organizer's published bytes for spaOnly"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "matches the organizer's published bytes for agentified"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "matches the organizer's published bytes for hostile"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "matches the organizer's published bytes for noindexPage"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "proves the organizer rejects a front agent that calls a missing tool"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP extracts exact bytes with UTF-8 names, fixed dates, deflate and stored entries"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP validates every fixture archive and keeps every member beneath its single install folder"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP reuses prepared data under different bundle paths"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP rejects an unsafe or ambiguous path \"\""
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP rejects an unsafe or ambiguous path \"/site/a\""
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP rejects an unsafe or ambiguous path \"C:/site/a\""
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP rejects an unsafe or ambiguous path \"a\\\\b\""
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP rejects an unsafe or ambiguous path \"../site\""
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP rejects an unsafe or ambiguous path \"site/../a\""
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP rejects an unsafe or ambiguous path \"site/./a\""
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP rejects an unsafe or ambiguous path \"a//b\""
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP rejects an unsafe or ambiguous path \"a/\""
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP rejects an unsafe or ambiguous path \"a\\u0000b\""
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP refuses duplicate names, oversized encoded names and ZIP64 entry counts"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/bundle/zip.test.ts",
+      "title": "install ZIP refuses more than 64 MiB of content even if it compresses well"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/generate/network.test.ts",
+      "title": "bundle and preview targets bakery: keeps preview bytes and changes only install-specific fields"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/generate/network.test.ts",
+      "title": "bundle and preview targets spaOnly: keeps preview bytes and changes only install-specific fields"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/generate/network.test.ts",
+      "title": "bundle and preview targets agentified: keeps preview bytes and changes only install-specific fields"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/generate/network.test.ts",
+      "title": "bundle and preview targets hostile: keeps preview bytes and changes only install-specific fields"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/generate/network.test.ts",
+      "title": "bundle and preview targets noindexPage: keeps preview bytes and changes only install-specific fields"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/preview/bundle-route.test.ts",
+      "title": "downloads a valid private ZIP attachment for the analysis owner"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/preview/bundle-route.test.ts",
+      "title": "uses the preview recovery messages for a missing owner, expiry, validation failure and store outage"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/preview/bundle-route.test.ts",
+      "title": "refuses a queued analysis with the generation recovery text"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/preview/bundle-route.test.ts",
+      "title": "the result offers installation only when the saved snapshot can generate an agent"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "playwright",
+      "file": "bundle-install.spec.ts",
+      "title": "an owner downloads, installs and runs the assistant on its own origin"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "playwright",
+      "file": "bundle-install.spec.ts",
+      "title": "an expired result removes the download and offers a new analysis"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the install panel fits a 320 px results page"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "perf",
+      "file": "tests/perf/bundle.perf.test.ts",
+      "title": "serves 20 complete owner downloads below the size and p95 budgets"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "installation inquiries builds one email subject for a scored host, including reserved characters and international names"
+    },
+    {
+      "rule": "self-hosted install bundle",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "installation inquiries publishes the installation service and its email in JSON-LD and llms.txt"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "Retrofit's action bridge shares score_site registers exactly score_site as a read shared with every caller origin"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "Retrofit's action bridge shares score_site keeps the local action's description and input schema, so peers see the same contract"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "Retrofit's action bridge shares score_site asks Retrofit's own score API from the bridge frame and maps a ready answer"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "Retrofit's action bridge shares score_site points a peer's visitor at Retrofit's home page, not at the calling page's form, when the answer is unreadable"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "a partner network that runs retrofit_guide gets website_score_site accepts the shared bridge action in a partner context"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "a partner network that runs retrofit_guide gets website_score_site refuses the local-only page action in a partner context, so only the bridge copy reaches partners"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "a partner network that runs retrofit_guide gets website_score_site names the bridge module in the published bridge manifest"
+    },
+    {
+      "rule": "conformance",
+      "suite": "playwright",
+      "file": "bridge.spec.ts",
+      "title": "a page on another origin frames Retrofit's action bridge and completes the handshake"
+    },
+    {
+      "rule": "conformance",
+      "suite": "playwright",
+      "file": "bridge.spec.ts",
+      "title": "a partner page runs score_site through Retrofit's bridge and gets the same score as /api/score"
+    },
+    {
+      "rule": "free path",
+      "suite": "playwright",
+      "file": "own-site.spec.ts",
+      "title": "/judges points at the key panel by its on-page name, not at hidden AI settings"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "score_site polls inside one bridge call returns the ready answer after running answers, 20 s apart, in one call"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "score_site polls inside one bridge call stops within the caller's execute timeout and tells the model not to call again"
+    },
+    {
+      "rule": "conformance",
+      "suite": "unit",
+      "file": "tests/agent/bridge-actions.test.ts",
+      "title": "the page's own score_site keeps one request per call returns running after one request, for the model to call again"
     }
   ],
   "repairs": {
