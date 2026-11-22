@@ -2,6 +2,13 @@
 
 All notable changes to Retrofit are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- Analysis owners can download a ZIP with the browser assistant, saved public pages and hosting instructions. After installation, visitors can ask questions on the site's own `/assistant/` page using their chosen AI provider.
+- The results and home pages offer installation help by email. Inquiries from a result include the site and its score.
+
 ## [0.1.0] - 2026-11-20
 
 First public release, live at https://retrofit.thecreativetoken.com.

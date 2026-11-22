@@ -13,6 +13,7 @@ The canonical workspace is `/Users/juan/code/retrofit`. Parallel code tasks use 
 | 3011, 3013 | Loopback fixture servers (test peer origins) | Started inside the test that needs them | Closed by the same test | The test |
 | 3012 | Phase 5 merchant spike server | Record the pid before start | Stop that pid at the end of the spike | The spike task |
 | 3014 | `next start` for `pnpm test:perf` | Vitest `perf` global setup, from the existing build | The same setup stops its recorded pid at teardown | The gate run |
+| 3015 | Installed assistant fixture on loopback | Started by `e2e/bundle-install.spec.ts` from its extracted ZIP | The test stops its child and removes its temporary directory | The bundle install test |
 
 If a port is busy before a run, find its pid (`lsof -nP -iTCP:<port> -sTCP:LISTEN`) and verify the owner before you stop anything. Do not stop a process that another task started.
 

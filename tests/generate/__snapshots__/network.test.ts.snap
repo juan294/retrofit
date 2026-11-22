@@ -1,0 +1,11 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`bundle and preview targets > agentified: keeps preview bytes and changes only install-specific fields 1`] = `"38e2e9aa1acb66926b4d6ef5d974d2283c3653e074645bea25f0925d034cefec"`;
+
+exports[`bundle and preview targets > bakery: keeps preview bytes and changes only install-specific fields 1`] = `"01e155abca3d6b2352ce6f2fc839041795cfbc142ff978b4338a0d0136df9652"`;
+
+exports[`bundle and preview targets > hostile: keeps preview bytes and changes only install-specific fields 1`] = `"0b468443ecb7fdefe68ad2f04a40077694e62134f275447cf1eb4ca94d2cbbd7"`;
+
+exports[`bundle and preview targets > noindexPage: keeps preview bytes and changes only install-specific fields 1`] = `"38922ae57e7b0033153b2e6d3c86ffb416a0e0e7620f5f2dd6e2c9a3da4d9172"`;
+
+exports[`bundle and preview targets > spaOnly: keeps preview bytes and changes only install-specific fields 1`] = `"2b4384623b1ad9d82d3ed67e0b7be7d001077c3c9388681ec627750ba50e57db"`;

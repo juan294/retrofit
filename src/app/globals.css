@@ -46,3 +46,12 @@ body {
     border-radius: var(--radius);
   }
 }
+
+/* The title includes the analyzed site's host. Let the badge and controls move to the next line. */
+.runtime-surface .ns-header {
+  flex-wrap: wrap;
+}
+
+.runtime-surface .ns-title {
+  overflow-wrap: anywhere;
+}
