@@ -29,3 +29,5 @@ Independent review approved the phase and verified that the built route's trace 
 ### Phase 2 adjustments
 
 The plan put access to the ZIP in the preview artifact resolver. The implemented branch runs after the shared owner and status checks and before preview generation, so a ZIP request builds the installed network only. The results response exposes install availability to hide the download when generation fails even if the visitor has no key. The install instructions specify the contents of the site folder to preserve root-relative URLs.
+
+The first Phase 2 gate rejected `588691f`. The 320 px results page overflowed by 96 px after the runtime mounted. The focused run had sampled before that mount. The provider badge and Developer button extended to 324 and 416 px respectively. The repair lets the preview header wrap and breaks long site names. The width regression now waits for the runtime title. It reproduced the 96 px failure before the fix and passed against the rebuilt app after it. The initial failed receipt and trace are kept with the accepted run.

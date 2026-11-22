@@ -17,5 +17,6 @@ for (const [path, hasAgent] of [["/", true], ["/conformance", true], ["/bot", fa
 test("the install panel fits a 320 px results page", async ({ page }) => {
   await analyzeFixture(page, "bakery.fixture.test");
   await expect(page.getByRole("link", { name: "Download the files" })).toBeVisible();
+  await expect(page.getByTestId("preview-mount").locator(".ns-title").first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
 });
