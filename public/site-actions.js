@@ -178,8 +178,12 @@ async function requestScore(url, signal) {
  * Build the score_site action. Its state (the last running answer and the count of
  * consecutive running answers for each URL) lasts as long as this registration, that is
  * the page session of the assistant that registered it.
+ *
+ * :param options: unexpectedReason replaces the reason for an unreadable answer. The action
+ *   bridge (bridge/bridge-actions.js) sets it, because a partner's visitor is not on Retrofit's
+ *   page and has no Retrofit form to paste into.
  */
-function scoreSiteAction() {
+export function scoreSiteAction({ unexpectedReason } = {}) {
   const runs = new Map();
 
   async function execute(args, context) {
@@ -195,6 +199,7 @@ function scoreSiteAction() {
     }
 
     const result = await requestScore(url, signal);
+    if (unexpectedReason && result.error === "unexpected_response") result.reason = unexpectedReason;
     if (result.status !== "running") {
       runs.delete(url);
       return result;
