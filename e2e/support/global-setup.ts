@@ -47,6 +47,7 @@ export default async function globalSetup() {
       "agentified.fixture.test": agentified,
       "claim.fixture.test": withClaimTag(bakery, FIXTURE_CLAIM_TOKEN),
       "flaky.fixture.test": bakery,
+      "plain.fixture.test": bakery,
       ...peerSites({ routerOrigin: OTARI_ROUTER_ORIGIN }),
     }),
     { port: FIXTURE_PORT, extraRoutes: claimTagRoutes() },

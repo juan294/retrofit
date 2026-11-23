@@ -9,6 +9,10 @@ import { CLAIM_TAG_SWITCH, fixtureOrigin } from "./global-setup";
 export const CLAIM_HOST = "claim.fixture.test";
 export const FLAKY_HOST = "flaky.fixture.test";
 export const BLOCKED_HOST = "blocked.fixture.test";
+/** Claimed by meta in claimStates with no tag on the site: the plain "tag not found" pending state. */
+export const MISSING_HOST = "agentified.fixture.test";
+/** Claimed by DNS last in claimStates, so its panel shows the new token. */
+export const FRESH_HOST = "plain.fixture.test";
 /** playwright.config.ts gives the test server this CRON_SECRET. */
 const CRON_SECRET = "cron-secret-e2e-only-0123456789";
 const DAY_MS = 24 * 3600_000;
@@ -81,8 +85,9 @@ export async function lapseFlaky(request: APIRequestContext): Promise<void> {
 
 /**
  * An account with a claim in each state, for the layout and color checks: the flaky site lapsed, the
- * robots-blocked site pending with the DNS hint, the bakery copy superseded by a second account, and
- * the agentified site just claimed by DNS with its token shown. Returns the second account's page,
+ * robots-blocked site pending with the DNS hint, the bakery copy superseded by a second account, the
+ * agentified site pending with "no tag found", and the plain bakery copy just claimed by DNS with its
+ * token shown. Returns the second account's page,
  * where the bakery copy is verified. Leaves the server clock at zero and the flaky tag on.
  */
 export async function claimStates(page: Page, browser: Browser, label: string): Promise<{ other: Page; close: () => Promise<void> }> {
@@ -90,7 +95,7 @@ export async function claimStates(page: Page, browser: Browser, label: string): 
   try {
     await signIn(page, newEmail(`claims-${label}`));
     // bakery stays unclaimed, so the claim form stays on the page.
-    for (const host of [FLAKY_HOST, BLOCKED_HOST, CLAIM_HOST, "agentified.fixture.test", "bakery.fixture.test"]) await analyzeAny(page, host);
+    for (const host of [FLAKY_HOST, BLOCKED_HOST, CLAIM_HOST, MISSING_HOST, FRESH_HOST, "bakery.fixture.test"]) await analyzeAny(page, host);
 
     await setFlakyTag(request, true);
     await checkAgain(await claimSite(page, FLAKY_HOST, "meta"));
@@ -117,6 +122,11 @@ export async function claimStates(page: Page, browser: Browser, label: string): 
   await page.goto("/account");
   await expect(claimPanel(page, CLAIM_HOST).getByTestId("claim-status")).toHaveText(/^Ownership moved to another account on /);
   await expect(claimPanel(page, FLAKY_HOST).getByTestId("claim-status")).toHaveText(/^Verification failed on .*Your published page and badge are paused\.$/);
-  await claimSite(page, "agentified.fixture.test", "dns");
+  await checkAgain(await claimSite(page, MISSING_HOST, "meta"));
+  await expect(claimPanel(page, MISSING_HOST).getByTestId("claim-reason")).toContainText("found no retrofit-site-verification tag");
+  // A reload drops the token, so the panel shows the plain pending state.
+  await page.goto("/account");
+  await expect(claimPanel(page, MISSING_HOST).getByTestId("claim-token")).toHaveCount(0);
+  await claimSite(page, FRESH_HOST, "dns");
   return { other, close: () => context.close() };
 }

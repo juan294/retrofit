@@ -5,7 +5,7 @@ import { ACCOUNT_TEXT, SAVE_REPORT_TEXT, SAVED_REPORT_TEXT } from "@/lib/site/ac
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
 import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture, mockOtari } from "./support/agent";
-import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST } from "./support/claims";
+import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 
 type Locator = import("@playwright/test").Locator;
@@ -188,7 +188,7 @@ for (const colorScheme of ["light", "dark"] as const) {
   });
 }
 
-// Phase 3. Fails if any claim panel text (status, reason, token, last check, buttons, a limit answer) is unreadable in either scheme.
+// Phase 3. Fails if any claim panel text (status, where to add it, reason, token, last check, buttons, a limit answer) is unreadable in either scheme.
 for (const colorScheme of ["light", "dark"] as const) {
   test(`the claim panels are readable in ${colorScheme} mode`, async ({ page, browser }) => {
     test.setTimeout(180_000);
@@ -201,12 +201,16 @@ for (const colorScheme of ["light", "dark"] as const) {
         expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
       }
     };
-    const fresh = claimPanel(page, "agentified.fixture.test");
+    const fresh = claimPanel(page, FRESH_HOST);
+    const missing = claimPanel(page, MISSING_HOST);
     await readable({
       heading: page.getByRole("heading", { level: 2, name: CLAIMS_TEXT.heading }),
       lapsed: claimPanel(page, FLAKY_HOST).getByTestId("claim-status"),
       lapsedReason: claimPanel(page, FLAKY_HOST).getByTestId("claim-reason"),
       blockedReason: claimPanel(page, BLOCKED_HOST).getByTestId("claim-reason"),
+      missingStatus: missing.getByTestId("claim-status"),
+      missingWhere: missing.getByText(/^Retrofit looks for a retrofit-site-verification tag/),
+      missingReason: missing.getByTestId("claim-reason"),
       superseded: claimPanel(page, CLAIM_HOST).getByTestId("claim-status"),
       host: claimPanel(page, CLAIM_HOST).getByText(/fixture\.test/).first(),
       token: fresh.getByTestId("claim-token").locator("code"),

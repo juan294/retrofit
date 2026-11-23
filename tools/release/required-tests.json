@@ -7680,7 +7680,7 @@
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "AccountData contract: memory (two clients, one backing) ownership claims listClaimsDueForRecheck lists verified and lapsed claims checked before the cutoff, least recently checked first, up to the limit"
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims listClaimsDueForRecheck lists claims checked over a day before now: verified first, then lapsed, each least recently checked first"
     },
     {
       "rule": "accounts data",
@@ -8154,7 +8154,7 @@
       "rule": "accounts data",
       "suite": "db",
       "file": "tests/db/accounts.db.test.ts",
-      "title": "AccountData contract: supabase (two clients) ownership claims listClaimsDueForRecheck lists verified and lapsed claims checked before the cutoff, least recently checked first, up to the limit"
+      "title": "AccountData contract: supabase (two clients) ownership claims listClaimsDueForRecheck lists claims checked over a day before now: verified first, then lapsed, each least recently checked first"
     },
     {
       "rule": "accounts data",
@@ -8209,6 +8209,72 @@
       "suite": "playwright",
       "file": "preview-theme.spec.ts",
       "title": "the claim panels are readable in dark mode"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims a claim lapsed over 30 days ago is due only when its last check is over 7 days old"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "account deletion deletes the account's list of analyses"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "what a run checks logs, with counts only, when more claims are due than one run checks"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "what a run checks a Crawl-delay longer than the run budget fails the recheck with crawl_delay, so the claim can lapse"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "check, start over and remove the check limit is per account and host: Remove and a new claim do not reset it"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "check, start over and remove allows 20 claim creations and Start overs per account per hour, then 429 with retryAt"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "the scored host an analysis source gives the host the analysis scored, like its saved report"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method trims ASCII whitespace around the content, and nothing else"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method a Crawl-delay longer than the check may wait records crawl_delay; a shorter wait past the deadline defers"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "dns method a TXT lookup past the deadline records dns_timeout for a user check and defers a recheck"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims a claim lapsed over 30 days ago is due only when its last check is over 7 days old"
     }
   ],
   "repairs": {
