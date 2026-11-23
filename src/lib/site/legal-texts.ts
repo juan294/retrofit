@@ -10,9 +10,11 @@
 // fails when one of them drifts from the text.
 
 import { ACCOUNT_COOKIE, ACCOUNT_SESSION_TTL_S } from "@/lib/accounts/session";
+import { CLAIM_LAPSE_AFTER } from "@/lib/accounts/limits";
 import { EXPIRED_GRACE_S } from "@/lib/analysis/record";
 import { VISITOR_COOKIE, VISITOR_MAX_AGE_S } from "@/lib/analysis/visitor";
 import { SIGN_IN_COOKIE, SIGN_IN_TTL_S } from "@/lib/api/sign-in";
+import { BADGE_MAX_AGE_S } from "@/lib/badge/handler";
 import { SESSION_COOKIE, SESSION_TTL_S } from "@/lib/inference/session";
 import { LEAD_EMAIL, SOURCE_URL } from "./own-site";
 
@@ -78,7 +80,10 @@ export const PRIVACY: LegalDocument = {
         "To limit sign-in emails, Retrofit keeps a keyed hash of your email address for about an hour. It does not keep the address for that.",
         "A report you save is kept until you delete your account.",
         "If you claim a site, Retrofit stores the host, the method (a meta tag or a DNS record), a hash of the verification token and the results of its checks.",
-        "If you publish a site's agent on Retrofit (when publishing is available), the copy of its public pages and its score are kept until you unpublish it, and they are public.",
+        "If you publish a site's agent on Retrofit, Retrofit keeps a copy of the pages it read and the score, with the dates of the publish and the latest refresh. These are public: the score and its checks, the agent, and the text, titles, addresses and structured records of the pages Retrofit read (pages marked noindex are left out). Anyone can open them, and search engines can list the page. It does not show your email address or account.",
+        `Unpublish on your account page deletes the published copy and ends the page, its files and the badge. Other sites and search engines may keep their own copies, and a badge image can stay in a browser's cache for up to ${hours(BADGE_MAX_AGE_S)} hour.`,
+        `After ${CLAIM_LAPSE_AFTER} failed daily checks of your claim, the page, its files and the badge are hidden until a check passes; the copy is kept. If you remove the claim, or another account verifies the site, the copy is deleted.`,
+        "A published agent works only with the visitor's own AI key, never with Retrofit's free AI. A published page and a badge set no cookie.",
         "Payments go through Stripe when paid plans start. Retrofit stores your Stripe customer id, your plan and its renewal date. Card details go only to Stripe.",
         "Deleting your account: Retrofit deletes the account and its data (claims, published pages, saved reports, API keys and sign-in sessions). The sign-in provider may keep security logs for a limited time.",
       ],
@@ -111,7 +116,8 @@ export const TERMS: LegalDocument = {
       body: [
         "A preview agent for a site you have not claimed is private to the browser that made it and to your account when you are signed in, and labelled unofficial. It does not speak for the site's owner.",
         "You may download the files and install them on a site you own or have permission to change.",
-        "Publishing an agent on Retrofit and the badge need a verified ownership claim for the site, by a meta tag or a DNS record. Retrofit pauses a published page when the claim stops verifying.",
+        "Publishing an agent on Retrofit and the badge need a verified ownership claim for the site, by a meta tag or a DNS record. Publish only a site you own or have permission to publish. A published page shows a saved copy with its date, and anyone can open it.",
+        "Retrofit pauses a published page and its badge when the claim stops verifying, and ends them when you unpublish, remove the claim or delete your account, or when another account verifies the site.",
       ],
     },
     {

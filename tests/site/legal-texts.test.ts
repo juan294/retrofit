@@ -6,6 +6,8 @@ import { SESSION_COOKIE, SESSION_TTL_S } from "@/lib/inference/session";
 import { ACCOUNT_COOKIE, ACCOUNT_SESSION_TTL_S } from "@/lib/accounts/session";
 import { SIGN_IN_COOKIE, SIGN_IN_TTL_S } from "@/lib/api/sign-in";
 import { PRIVACY, TERMS, type LegalDocument } from "@/lib/site/legal-texts";
+import { CLAIM_LAPSE_AFTER } from "@/lib/accounts/limits";
+import { BADGE_MAX_AGE_S } from "@/lib/badge/handler";
 import { LEAD_EMAIL } from "@/lib/site/own-site";
 
 const text = (d: LegalDocument) => [d.title, d.intro, ...d.sections.flatMap((s) => [s.heading, ...s.body])].join("\n");
@@ -89,5 +91,45 @@ describe("terms draft", () => {
   it("states the free period, the claim rule for publishing and the contact address", () => {
     const terms = text(TERMS);
     for (const s of ["2027-01-18", "claim", "unofficial", "Apache-2.0", LEAD_EMAIL]) expect(terms, s).toContain(s);
+  });
+});
+
+// Phase 4. The facts come from src/lib/publish/*, src/lib/badge/* and AccountData publishSite; the numbers from the code.
+describe("publishing in the privacy notice and the terms", () => {
+  const privacy = text(PRIVACY);
+  const terms = text(TERMS);
+
+  // Fails if the notice hides what publishing makes public, or still calls publishing unavailable.
+  it("says what a published page makes public, and that it does not name the account", () => {
+    expect(privacy).not.toContain("when publishing is available");
+    expect(privacy).toContain("the score and its checks, the agent, and the text, titles, addresses and structured records of the pages Retrofit read");
+    expect(privacy).toContain("Anyone can open them, and search engines can list the page");
+    expect(privacy).toContain("It does not show your email address or account");
+  });
+
+  // Fails if the notice does not say how to unpublish, or promises more than the badge's cache allows.
+  it("says how to unpublish, what that deletes, and how long a badge can stay cached", () => {
+    expect(privacy).toContain("Unpublish on your account page deletes the published copy and ends the page, its files and the badge");
+    expect(privacy).toContain(`a badge image can stay in a browser's cache for up to ${BADGE_MAX_AGE_S / 3600} hour`);
+  });
+
+  // Fails if the notice is wrong about a lapse (hidden, kept), a transfer, removing the claim or account deletion (deleted).
+  it("says what happens on a lapse, a transfer, removing the claim and account deletion", () => {
+    expect(privacy).toContain(`After ${CLAIM_LAPSE_AFTER} failed daily checks of your claim, the page, its files and the badge are hidden until a check passes; the copy is kept.`);
+    expect(privacy).toContain("If you remove the claim, or another account verifies the site, the copy is deleted.");
+    expect(privacy).toContain("Retrofit deletes the account and its data (claims, published pages,");
+  });
+
+  // Fails if the notice lets a visitor think a published agent uses Retrofit's free AI or sends Retrofit the key or conversation.
+  it("says a published agent uses only the visitor's own key and the page sets no cookie", () => {
+    expect(privacy).toContain("A published agent works only with the visitor's own AI key, never with Retrofit's free AI. A published page and a badge set no cookie.");
+  });
+
+  // Fails if the terms let anyone publish, or hide that a claim that stops verifying ends the page.
+  it("the terms keep the claim rule and say when a published page pauses or ends", () => {
+    expect(terms).toContain("need a verified ownership claim for the site");
+    expect(terms).toContain("Retrofit pauses a published page and its badge when the claim stops verifying, and ends them when you unpublish, remove the claim or delete your account, or when another account verifies the site.");
+    expect(terms).toContain("Publish only a site you own or have permission to publish.");
+    expect(terms).toContain("shows a saved copy with its date");
   });
 });
