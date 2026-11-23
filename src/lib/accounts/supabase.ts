@@ -1,4 +1,5 @@
 import { sha256Hex, newToken, SHA256_HEX_PATTERN } from "@/lib/security/tokens";
+import type { PlanId } from "@/lib/billing/plans";
 import type { AgentSnapshot } from "@/lib/snapshot/types";
 import { isNormalizedHost } from "@/lib/fetch/url";
 import { serviceCall, serviceClient, type ServiceClientSource } from "@/lib/supabase/client";
@@ -9,11 +10,17 @@ import {
   CLAIM_SLOW_AFTER_S,
   CLAIM_SLOW_RECHECK_AFTER_S,
   isUuid,
+  MAX_API_KEYS,
   MAX_PENDING_CLAIMS,
   MAX_SAVED_REPORTS,
   normalizeEmail,
+  isCustomerId,
   requireAccountId,
+  requireApiKey,
+  requireBillingEvent,
+  requireBillingState,
   requireClaimToken,
+  requireCustomerId,
   requireNewClaim,
   requireEmail,
   requirePublishInput,
@@ -21,10 +28,14 @@ import {
   requireSaveInput,
   scoreOf,
   type AccountData,
+  type ApiKey,
+  type ApplyBillingResult,
+  type BillingRecord,
   type Claim,
   type ClaimResult,
   type ClaimStatus,
   type NotifySignup,
+  type ObservedBilling,
   type PublicSite,
   type PublishedSite,
   type RefreshError,
@@ -99,6 +110,29 @@ interface ClaimAnswer {
   moved_from?: string[];
 }
 
+interface BillingRow {
+  account_id: string;
+  stripe_customer_id: string;
+  plan: PlanId;
+  status: string;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  subscription_id: string | null;
+  state_at: string | null;
+}
+
+/** The answer of the billing functions (supabase/migrations/*_billing.sql). */
+interface BillingAnswer {
+  outcome: string;
+  billing?: BillingRow;
+}
+
+interface ApiKeyRow {
+  id: string;
+  hint: string | null;
+  created_at: string;
+}
+
 const iso = (t: string) => new Date(t).toISOString();
 const isoOrNull = (t: string | null) => (t === null ? null : iso(t));
 const CLAIM_COLUMNS = "id, account_id, host, method, token_hash, status, created_at, verified_at, last_checked_at, failures, superseded_at, lapsed_at, last_result, last_detail";
@@ -125,6 +159,23 @@ const SUMMARY = "id, host, fetched_at, created_at, score:report->score";
 
 const PUBLISHED_COLUMNS = "host, claim_id, fetched_at, published_at, refreshed_at, last_refresh_error, score";
 
+const BILLING_COLUMNS = "account_id, stripe_customer_id, plan, status, current_period_end, cancel_at_period_end, subscription_id, state_at";
+
+function billingOf(row: BillingRow): BillingRecord {
+  return {
+    accountId: row.account_id,
+    customerId: row.stripe_customer_id,
+    plan: row.plan,
+    status: row.status,
+    currentPeriodEnd: isoOrNull(row.current_period_end),
+    cancelAtPeriodEnd: row.cancel_at_period_end,
+    subscriptionId: row.subscription_id,
+    stateAt: isoOrNull(row.state_at),
+  };
+}
+
+const apiKeyOf = (row: ApiKeyRow): ApiKey => ({ id: row.id, hint: row.hint, createdAt: iso(row.created_at) });
+
 function publicSite(row: PublicRow): PublicSite {
   return { host: row.host, score: scoreOf({ score: row.score }), fetchedAt: iso(row.fetched_at), publishedAt: iso(row.published_at), refreshedAt: iso(row.refreshed_at) };
 }
@@ -144,6 +195,8 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
   const reports = () => client.from("saved_reports");
   const claims = () => client.from("site_claims");
   const published = () => client.from("published_sites");
+  const billing = () => client.from("billing_customers");
+  const apiKeys = () => client.from("api_keys");
   const call = <T>(operation: string, request: () => PromiseLike<{ data: T | null; error: { code?: string } | null }>) =>
     serviceCall<T>({ service: "accounts", operation }, request, (code) => new AccountDataUnavailable(operation, code));
   /**
@@ -168,6 +221,22 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
   async function publicRow(operation: string, host: string, part: "site" | "report" | "snapshot"): Promise<PublicRow | null> {
     if (!isNormalizedHost(host)) return null;
     return call<PublicRow>(operation, () => client.rpc("public_site", { p_host: host, p_part: part }));
+  }
+
+  const stateArgs = (customerId: string, s: ObservedBilling) => ({
+    p_customer_id: customerId,
+    p_plan: s.plan,
+    p_status: s.status,
+    p_current_period_end: s.currentPeriodEnd,
+    p_cancel_at_period_end: s.cancelAtPeriodEnd,
+    p_subscription_id: s.subscriptionId,
+    p_observed_at: s.observedAt,
+  });
+  /** The applied, stale or unknown answer of a billing function; anything else is AccountDataUnavailable. */
+  function applied(operation: string, answer: BillingAnswer | null): ApplyBillingResult {
+    if (answer?.outcome === "unknown") return { outcome: "unknown" };
+    if ((answer?.outcome === "applied" || answer?.outcome === "stale") && answer.billing) return { outcome: answer.outcome, billing: billingOf(answer.billing) };
+    throw new AccountDataUnavailable(operation, "bad_outcome");
   }
 
   return {
@@ -376,6 +445,76 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
 
     async listPublicHosts(limit) {
       return (await call<string[]>("listPublicHosts", () => client.rpc("public_hosts", { p_limit: Math.max(0, limit) }))) ?? [];
+    },
+
+    async getBilling(accountId) {
+      if (!isUuid(accountId)) return null;
+      const row = await call<BillingRow>("getBilling", () => billing().select(BILLING_COLUMNS).eq("account_id", accountId).maybeSingle());
+      return row && billingOf(row);
+    },
+
+    async getBillingByCustomer(customerId) {
+      if (!isCustomerId(customerId)) return null;
+      const row = await call<BillingRow>("getBillingByCustomer", () => billing().select(BILLING_COLUMNS).eq("stripe_customer_id", customerId).maybeSingle());
+      return row && billingOf(row);
+    },
+
+    async linkBillingCustomer(rawId, rawCustomer) {
+      const accountId = requireAccountId(rawId);
+      const customerId = requireCustomerId(rawCustomer);
+      const answer = await call<BillingAnswer>("linkBillingCustomer", () => client.rpc("link_billing_customer", { p_account_id: accountId, p_customer_id: customerId }));
+      const outcome = answer?.outcome;
+      if (outcome === "taken" || outcome === "no_account") return { outcome };
+      if ((outcome !== "linked" && outcome !== "existing") || !answer?.billing) throw new AccountDataUnavailable("linkBillingCustomer", "bad_outcome");
+      return { outcome, billing: billingOf(answer.billing) };
+    },
+
+    async applyBillingState(rawCustomer, rawState) {
+      const customerId = requireCustomerId(rawCustomer);
+      const state = requireBillingState(rawState);
+      return applied("applyBillingState", await call<BillingAnswer>("applyBillingState", () => client.rpc("apply_billing_state", stateArgs(customerId, state))));
+    },
+
+    async applyBillingEvent(event, rawCustomer, rawState) {
+      requireBillingEvent(event);
+      const customerId = requireCustomerId(rawCustomer);
+      const state = requireBillingState(rawState);
+      // One database function, one transaction: the event and its state together (supabase/migrations/*_billing.sql).
+      const answer = await call<BillingAnswer>("applyBillingEvent", () => client.rpc("apply_billing_event", { p_event_id: event.id, p_type: event.type, ...stateArgs(customerId, state) }));
+      return answer?.outcome === "duplicate" ? { outcome: "duplicate" } : applied("applyBillingEvent", answer);
+    },
+
+    async createApiKey(rawId, input) {
+      const accountId = requireAccountId(rawId);
+      requireApiKey(input);
+      const answer = await call<ApiKeyRow & { outcome: string }>("createApiKey", () =>
+        client.rpc("create_api_key", { p_account_id: accountId, p_key_hash: input.keyHash, p_hint: input.hint, p_max: MAX_API_KEYS }),
+      );
+      if (answer?.outcome === "full") return { outcome: "full" };
+      if (answer?.outcome !== "created") throw new AccountDataUnavailable("createApiKey", "bad_outcome");
+      return { outcome: "created", key: apiKeyOf(answer) };
+    },
+
+    async listApiKeys(accountId) {
+      if (!isUuid(accountId)) return [];
+      const rows = await call<ApiKeyRow[]>("listApiKeys", () =>
+        apiKeys().select("id, hint, created_at").eq("account_id", accountId).is("revoked_at", null).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(MAX_API_KEYS),
+      );
+      return (rows ?? []).map(apiKeyOf);
+    },
+
+    async revokeApiKey(accountId, keyId) {
+      if (!isUuid(accountId) || !isUuid(keyId)) return false;
+      const rows = await call<{ id: string }[]>("revokeApiKey", () =>
+        apiKeys().update({ revoked_at: new Date().toISOString() }).eq("account_id", accountId).eq("id", keyId).is("revoked_at", null).select("id"),
+      );
+      return (rows ?? []).length > 0;
+    },
+
+    async findApiKeyAccount(keyHash) {
+      if (!SHA256_HEX_PATTERN.test(keyHash)) return null;
+      const row = await call<{ account_id: string }>("findApiKeyAccount", () => apiKeys().select("account_id").eq("key_hash", keyHash).is("revoked_at", null).maybeSingle());
+      return row?.account_id ?? null;
     },
   };
 }

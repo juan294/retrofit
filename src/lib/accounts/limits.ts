@@ -20,3 +20,7 @@ export const CLAIM_SLOW_RECHECK_AFTER_S = 7 * 24 * 3600;
 export const PUBLISH_PER_HOUR = 10;
 /** Every try of one account per hour, also those without a newer read: each one reads the account's analyses. */
 export const PUBLISH_TRIES_PER_HOUR = 60;
+/** The most active API keys one account holds. */
+export const MAX_API_KEYS = 5;
+/** API key creations of one account per hour. */
+export const API_KEY_CREATES_PER_HOUR = 20;

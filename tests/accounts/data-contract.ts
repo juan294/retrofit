@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   CLAIM_LAPSE_AFTER,
+  MAX_API_KEYS,
   MAX_PENDING_CLAIMS,
   MAX_PUBLISHED_SNAPSHOT_BYTES,
   MAX_REPORT_BYTES,
@@ -22,6 +23,7 @@ import {
   type SaveReportInput,
   type SavedReportSummary,
 } from "@/lib/accounts/data";
+import type { BillingState } from "@/lib/billing/state";
 import { sha256Hex } from "@/lib/security/tokens";
 import type { AgentSnapshot } from "@/lib/snapshot/types";
 import { storedSnapshotOf } from "../helpers/agent-snapshot";
@@ -729,6 +731,167 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         const big = { ...ok.snapshot, source: "" };
         big.source = "x".repeat(MAX_PUBLISHED_SNAPSHOT_BYTES - Buffer.byteLength(JSON.stringify(big)));
         expect((await a.publishSite(owner, { ...ok, snapshot: big })).outcome).toBe("published");
+      });
+    });
+
+    describe("billing", () => {
+      const customer = (label: string) => `cus_${label}_${tag}`;
+      const pro: BillingState = { plan: "pro", status: "active", currentPeriodEnd: "2027-03-01T00:00:00.000Z", cancelAtPeriodEnd: false, subscriptionId: "sub_1" };
+      const none: BillingState = { plan: "free", status: "canceled", currentPeriodEnd: null, cancelAtPeriodEnd: true, subscriptionId: null };
+      const AT = "2027-02-01T10:00:00.500Z";
+      const BEFORE = "2027-02-01T10:00:00.499Z";
+      const AFTER = "2027-02-01T10:00:00.501Z";
+      const linked = async (label: string): Promise<string> => {
+        const owner = await newAccount();
+        expect((await a.linkBillingCustomer(owner, customer(label))).outcome).toBe("linked");
+        return owner;
+      };
+      const event = (id: string) => ({ id: `evt_${id}_${tag}`, type: "customer.subscription.updated" });
+
+      // Fails if a new account has billing state, a linked customer is not free, or either read misses it on another instance.
+      it("an account has no billing until its customer is linked; then it is free, found by account and by customer", async () => {
+        const owner = await newAccount();
+        expect(await a.getBilling(owner)).toBeNull();
+        expect(await a.getBillingByCustomer(customer("new"))).toBeNull();
+        const r = await a.linkBillingCustomer(owner, customer("new"));
+        const record = { accountId: owner, customerId: customer("new"), plan: "free", status: "none", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, stateAt: null };
+        expect(r).toEqual({ outcome: "linked", billing: record });
+        expect(await b.getBilling(owner)).toEqual(record);
+        expect(await b.getBillingByCustomer(customer("new"))).toEqual(record);
+        expect(await b.getBilling("not-a-uuid")).toBeNull();
+      });
+
+      // Fails if one account gets two customers (also when two checkouts race), or one customer belongs to two accounts.
+      it("one customer per account and one account per customer, also when two links race", async () => {
+        const owner = await newAccount();
+        const raced = await Promise.all([a.linkBillingCustomer(owner, customer("r1")), b.linkBillingCustomer(owner, customer("r2"))]);
+        expect(raced.map((r) => r.outcome).sort()).toEqual(["existing", "linked"]);
+        const ids = raced.map((r) => ("billing" in r ? r.billing.customerId : null));
+        expect(ids[0]).toBe(ids[1]);
+        expect((await a.linkBillingCustomer(owner, customer("r3"))).outcome).toBe("existing");
+        expect(await b.linkBillingCustomer(await newAccount(), ids[0] as string)).toEqual({ outcome: "taken" });
+      });
+
+      // Fails if a state is not stored, an older read overwrites a newer one, or an unknown customer gets a row.
+      it("applies a state read from Stripe unless a newer read is stored", async () => {
+        const owner = await linked("apply");
+        expect(await a.applyBillingState(customer("apply"), { ...pro, observedAt: AT })).toMatchObject({ outcome: "applied", billing: { ...pro, accountId: owner, stateAt: AT } });
+        expect(await b.applyBillingState(customer("apply"), { ...none, observedAt: BEFORE })).toMatchObject({ outcome: "stale", billing: { plan: "pro", stateAt: AT } });
+        expect(await b.getBilling(owner)).toMatchObject({ ...pro, stateAt: AT });
+        expect((await b.applyBillingState(customer("apply"), { ...none, observedAt: AT })).outcome).toBe("applied");
+        expect(await a.applyBillingState(customer("apply"), { ...pro, observedAt: AFTER })).toMatchObject({ outcome: "applied", billing: { plan: "pro", stateAt: AFTER } });
+        expect(await a.applyBillingState(customer("nobody"), { ...pro, observedAt: AT })).toEqual({ outcome: "unknown" });
+        expect(await a.getBillingByCustomer(customer("nobody"))).toBeNull();
+      });
+
+      // Fails if a replayed event is applied twice, also when two deliveries race.
+      it("applies an event once", async () => {
+        const owner = await linked("event");
+        expect((await a.applyBillingEvent(event("e1"), customer("event"), { ...pro, observedAt: AT })).outcome).toBe("applied");
+        expect(await b.applyBillingEvent(event("e1"), customer("event"), { ...none, observedAt: AFTER })).toEqual({ outcome: "duplicate" });
+        expect(await b.getBilling(owner)).toMatchObject({ plan: "pro", stateAt: AT });
+        const raced = await Promise.all([a, b, a, b].map((d) => d.applyBillingEvent(event("e2"), customer("event"), { ...none, observedAt: AFTER })));
+        expect(raced.map((r) => r.outcome).sort()).toEqual(["applied", "duplicate", "duplicate", "duplicate"]);
+        expect(await a.getBilling(owner)).toMatchObject({ status: "canceled", stateAt: AFTER });
+      });
+
+      // Fails if an event delivered late overwrites newer state, or an event for an unknown customer is recorded as handled
+      // (its redelivery after the customer is linked would be lost).
+      it("a late event is recorded and not applied; an unknown customer's event is not recorded", async () => {
+        const owner = await linked("late");
+        await a.applyBillingEvent(event("new"), customer("late"), { ...pro, observedAt: AT });
+        expect((await b.applyBillingEvent(event("old"), customer("late"), { ...none, observedAt: BEFORE })).outcome).toBe("stale");
+        expect(await b.getBilling(owner)).toMatchObject({ plan: "pro", stateAt: AT });
+        expect(await b.applyBillingEvent(event("old"), customer("late"), { ...none, observedAt: AFTER })).toEqual({ outcome: "duplicate" });
+        expect(await a.applyBillingEvent(event("early"), customer("unlinked"), { ...pro, observedAt: AT })).toEqual({ outcome: "unknown" });
+        await a.linkBillingCustomer(await newAccount(), customer("unlinked"));
+        expect((await a.applyBillingEvent(event("early"), customer("unlinked"), { ...pro, observedAt: AT })).outcome).toBe("applied");
+      });
+
+      // Fails if an invalid id, plan, status or time reaches storage, or records the event without its state.
+      it("refuses an invalid account, customer, event, plan, status or time with RangeError, and records nothing", async () => {
+        const owner = await linked("bad");
+        await expect(a.linkBillingCustomer("nope", customer("x"))).rejects.toThrow(RangeError);
+        for (const id of ["", "cus 1", "sub_1", "x".repeat(300)]) await expect(a.linkBillingCustomer(owner, id), id).rejects.toThrow(RangeError);
+        const ok = { ...pro, observedAt: AT };
+        for (const bad of [{ plan: "gold" }, { status: "" }, { status: "Active!" }, { currentPeriodEnd: "soon" }, { observedAt: "now" }, { subscriptionId: "not a sub" }]) {
+          await expect(a.applyBillingEvent(event("bad"), customer("bad"), { ...ok, ...bad } as typeof ok), JSON.stringify(bad)).rejects.toThrow(RangeError);
+          await expect(a.applyBillingState(customer("bad"), { ...ok, ...bad } as typeof ok), JSON.stringify(bad)).rejects.toThrow(RangeError);
+        }
+        await expect(a.applyBillingEvent({ id: "nope", type: "t" }, customer("bad"), ok)).rejects.toThrow(RangeError);
+        expect((await a.applyBillingEvent(event("bad"), customer("bad"), ok)).outcome).toBe("applied");
+      });
+
+      // Fails if account deletion leaves the billing row or a key, or touches another account's.
+      it("deleteAccountData removes the account's billing and API keys only", async () => {
+        const gone = await linked("gone");
+        const kept = await linked("kept");
+        for (const id of [gone, kept]) await a.createApiKey(id, { keyHash: sha256Hex(`${tag}-${id}`), hint: "beef" });
+        await b.deleteAccountData(gone);
+        expect(await a.getBilling(gone)).toBeNull();
+        expect(await a.getBillingByCustomer(customer("gone"))).toBeNull();
+        expect(await a.findApiKeyAccount(sha256Hex(`${tag}-${gone}`))).toBeNull();
+        expect(await a.getBilling(kept)).not.toBeNull();
+        expect(await a.findApiKeyAccount(sha256Hex(`${tag}-${kept}`))).toBe(kept);
+        expect(await a.applyBillingEvent(event("gone"), customer("gone"), { ...pro, observedAt: AT })).toEqual({ outcome: "unknown" });
+        expect(await b.getBilling(gone)).toBeNull();
+      });
+    });
+
+    describe("API keys", () => {
+      const keyHash = (n: string) => sha256Hex(`${tag}-key-${n}`);
+      const create = async (data: AccountData, id: string, n: string) => {
+        const r = await data.createApiKey(id, { keyHash: keyHash(n), hint: "0a1b" });
+        if (r.outcome !== "created") throw new Error(`unexpected ${r.outcome}`);
+        return r.key;
+      };
+
+      // Fails if a key is not found by its hash on another instance, the hash is returned, or another account sees it.
+      it("creates a key found by its hash and listed for its account only, without the hash", async () => {
+        const owner = await newAccount();
+        const key = await create(a, owner, "one");
+        expect(Number.isFinite(Date.parse(key.createdAt))).toBe(true);
+        expect(await b.listApiKeys(owner)).toEqual([{ id: key.id, hint: "0a1b", createdAt: key.createdAt }]);
+        expect(await b.findApiKeyAccount(keyHash("one"))).toBe(owner);
+        expect(JSON.stringify(await b.listApiKeys(owner))).not.toContain(keyHash("one"));
+        expect(await b.listApiKeys(await newAccount())).toEqual([]);
+        expect(await b.listApiKeys("not-a-uuid")).toEqual([]);
+      });
+
+      // Fails if a revoked key still works, another account can revoke it, or a second revoke reports success.
+      it("a revoked key is found no more; only its account revokes it, once", async () => {
+        const owner = await newAccount();
+        const key = await create(a, owner, "rev");
+        expect(await b.revokeApiKey(await newAccount(), key.id)).toBe(false);
+        expect(await b.findApiKeyAccount(keyHash("rev"))).toBe(owner);
+        expect(await b.revokeApiKey(owner, key.id)).toBe(true);
+        expect(await a.findApiKeyAccount(keyHash("rev"))).toBeNull();
+        expect(await a.listApiKeys(owner)).toEqual([]);
+        expect(await a.revokeApiKey(owner, key.id)).toBe(false);
+        expect(await a.revokeApiKey(owner, "../keys")).toBe(false);
+        expect(await a.findApiKeyAccount(keyHash("never"))).toBeNull();
+        expect(await a.findApiKeyAccount("not-a-hash")).toBeNull();
+      });
+
+      // Fails if an account can hold more than MAX_API_KEYS active keys (also when creates race), or a revoked key still counts.
+      it(`keeps at most ${MAX_API_KEYS} active keys per account, also when creates race`, async () => {
+        const owner = await newAccount();
+        const results = await Promise.all(Array.from({ length: MAX_API_KEYS + 3 }, (_, n) => (n % 2 ? a : b).createApiKey(owner, { keyHash: keyHash(`cap${n}`), hint: "0000" })));
+        expect(results.filter((r) => r.outcome === "created")).toHaveLength(MAX_API_KEYS);
+        expect(results.filter((r) => r.outcome === "full")).toHaveLength(3);
+        const keys = await a.listApiKeys(owner);
+        expect(keys).toHaveLength(MAX_API_KEYS);
+        await a.revokeApiKey(owner, keys[0]!.id);
+        expect((await b.createApiKey(owner, { keyHash: keyHash("cap-again"), hint: "0000" })).outcome).toBe("created");
+      });
+
+      // Fails if an invalid account, hash or hint reaches storage.
+      it("refuses an invalid account id, hash or hint with RangeError", async () => {
+        const owner = await newAccount();
+        await expect(a.createApiKey("nope", { keyHash: keyHash("x"), hint: "0000" })).rejects.toThrow(RangeError);
+        await expect(a.createApiKey(owner, { keyHash: "rk_retrofit_raw", hint: "0000" })).rejects.toThrow(RangeError);
+        for (const hint of ["", "xyz!", "00000"]) await expect(a.createApiKey(owner, { keyHash: keyHash("x"), hint })).rejects.toThrow(RangeError);
+        expect(await b.listApiKeys(owner)).toEqual([]);
       });
     });
 

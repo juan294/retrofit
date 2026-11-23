@@ -8,11 +8,16 @@ import {
   CLAIM_SLOW_AFTER_S,
   CLAIM_SLOW_RECHECK_AFTER_S,
   isUuid,
+  MAX_API_KEYS,
   MAX_PENDING_CLAIMS,
   MAX_SAVED_REPORTS,
   normalizeEmail,
   requireAccountId,
+  requireApiKey,
+  requireBillingEvent,
+  requireBillingState,
   requireClaimToken,
+  requireCustomerId,
   requireNewClaim,
   requireEmail,
   requirePublishInput,
@@ -20,9 +25,14 @@ import {
   requireSaveInput,
   scoreOf,
   type AccountData,
+  type ApiKey,
+  type ApplyBillingResult,
+  type BillingRecord,
   type Claim,
   type ClaimStatus,
+  type LinkCustomerResult,
   type NotifySignup,
+  type ObservedBilling,
   type PublicSite,
   type PublishedSite,
   type PublishSiteResult,
@@ -71,6 +81,13 @@ interface PublishedRow {
   lastRefreshError: RefreshError | null;
 }
 
+interface ApiKeyRow {
+  readonly key: ApiKey;
+  readonly accountId: string;
+  readonly keyHash: string;
+  revoked: boolean;
+}
+
 /** Shared state. Two adapters over one backing model two server instances. */
 export interface AccountMemoryBacking {
   /** Keyed by the normalized email. */
@@ -83,10 +100,16 @@ export interface AccountMemoryBacking {
   readonly claims: Map<string, ClaimRow>;
   /** Keyed by host. */
   readonly published: Map<string, PublishedRow>;
+  /** Keyed by account id. */
+  readonly billing: Map<string, BillingRecord>;
+  /** Recorded Stripe event ids and their types. */
+  readonly stripeEvents: Map<string, string>;
+  /** Keyed by key id. */
+  readonly apiKeys: Map<string, ApiKeyRow>;
 }
 
 export function createAccountMemoryBacking(): AccountMemoryBacking {
-  return { notify: new Map(), profiles: new Map(), savedReports: new Map(), claims: new Map(), published: new Map() };
+  return { notify: new Map(), profiles: new Map(), savedReports: new Map(), claims: new Map(), published: new Map(), billing: new Map(), stripeEvents: new Map(), apiKeys: new Map() };
 }
 
 let seq = 0;
@@ -110,7 +133,7 @@ const iso = (t: number | string) => new Date(t).toISOString();
  */
 export function createMemoryAccountData(options: MemoryAccountDataOptions = {}): AccountData {
   const clock = options.clock ?? systemClock;
-  const { notify, profiles, savedReports, claims, published } = options.backing ?? createAccountMemoryBacking();
+  const { notify, profiles, savedReports, claims, published, billing, stripeEvents, apiKeys } = options.backing ?? createAccountMemoryBacking();
   const accountClaims = (accountId: string) => [...claims.values()].filter((r) => r.claim.accountId === accountId).sort((x, y) => x.seq - y.seq);
   const pendingCount = (accountId: string) => accountClaims(accountId).filter((r) => r.claim.status === "pending").length;
   const copy = (claim: Claim): Claim => ({ ...claim });
@@ -148,6 +171,17 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
   };
   const publicSite = (row: PublishedRow): PublicSite => ({ host: row.host, score: scoreOf(row.report), fetchedAt: row.fetchedAt, publishedAt: row.publishedAt, refreshedAt: row.refreshedAt });
   const ownedSite = (row: PublishedRow): PublishedSite => ({ ...publicSite(row), claimId: row.claimId, lastRefreshError: row.lastRefreshError });
+
+  const byCustomer = (customerId: string): BillingRecord | undefined => [...billing.values()].find((r) => r.customerId === customerId);
+  /** applyBillingState on the stored row, inside one operation. */
+  const applyState = (customerId: string, { observedAt, ...state }: ObservedBilling): ApplyBillingResult => {
+    const row = byCustomer(customerId);
+    if (!row) return { outcome: "unknown" };
+    if (row.stateAt !== null && Date.parse(row.stateAt) > Date.parse(observedAt)) return { outcome: "stale", billing: { ...row } };
+    const next: BillingRecord = { ...row, ...state, stateAt: observedAt };
+    billing.set(row.accountId, next);
+    return { outcome: "applied", billing: { ...next } };
+  };
 
   async function op<R>(body: (now: number) => R): Promise<R> {
     await Promise.resolve();
@@ -245,6 +279,8 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       // One synchronous step after the yield, so it is atomic like the database function.
       return op(() => {
         profiles.delete(accountId);
+        billing.delete(accountId);
+        for (const [id, row] of apiKeys) if (row.accountId === accountId) apiKeys.delete(id);
         for (const [id, row] of savedReports) if (row.accountId === accountId) savedReports.delete(id);
         for (const [host, row] of published) if (row.accountId === accountId) published.delete(host);
         for (const [id, row] of claims) if (row.claim.accountId === accountId) claims.delete(id);
@@ -451,6 +487,79 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
           .slice(0, Math.max(0, limit))
           .map((r) => r.host),
       );
+    },
+
+    async getBilling(accountId) {
+      return op(() => {
+        const row = billing.get(accountId);
+        return row ? { ...row } : null;
+      });
+    },
+
+    async getBillingByCustomer(customerId) {
+      return op(() => {
+        const row = byCustomer(customerId);
+        return row ? { ...row } : null;
+      });
+    },
+
+    async linkBillingCustomer(rawId, rawCustomer) {
+      const accountId = requireAccountId(rawId);
+      const customerId = requireCustomerId(rawCustomer);
+      return op((): LinkCustomerResult => {
+        const existing = billing.get(accountId);
+        if (existing) return { outcome: "existing", billing: { ...existing } };
+        if (byCustomer(customerId)) return { outcome: "taken" };
+        const row: BillingRecord = { accountId, customerId, plan: "free", status: "none", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, stateAt: null };
+        billing.set(accountId, row);
+        return { outcome: "linked", billing: { ...row } };
+      });
+    },
+
+    async applyBillingState(rawCustomer, rawState) {
+      const customerId = requireCustomerId(rawCustomer);
+      const state = requireBillingState(rawState);
+      return op(() => applyState(customerId, state));
+    },
+
+    async applyBillingEvent(event, rawCustomer, rawState) {
+      requireBillingEvent(event);
+      const customerId = requireCustomerId(rawCustomer);
+      const state = requireBillingState(rawState);
+      return op(() => {
+        if (!byCustomer(customerId)) return { outcome: "unknown" };
+        if (stripeEvents.has(event.id)) return { outcome: "duplicate" };
+        stripeEvents.set(event.id, event.type);
+        return applyState(customerId, state);
+      });
+    },
+
+    async createApiKey(rawId, input) {
+      const accountId = requireAccountId(rawId);
+      requireApiKey(input);
+      return op((now) => {
+        if ([...apiKeys.values()].filter((r) => r.accountId === accountId && !r.revoked).length >= MAX_API_KEYS) return { outcome: "full" };
+        const key: ApiKey = { id: randomUUID(), hint: input.hint, createdAt: iso(now) };
+        apiKeys.set(key.id, { key, accountId, keyHash: input.keyHash, revoked: false });
+        return { outcome: "created", key: { ...key } };
+      });
+    },
+
+    async listApiKeys(accountId) {
+      return op(() => [...apiKeys.values()].filter((r) => r.accountId === accountId && !r.revoked).map((r) => ({ ...r.key })));
+    },
+
+    async revokeApiKey(accountId, keyId) {
+      return op(() => {
+        const row = apiKeys.get(keyId);
+        if (!row || row.accountId !== accountId || row.revoked) return false;
+        row.revoked = true;
+        return true;
+      });
+    },
+
+    async findApiKeyAccount(keyHash) {
+      return op(() => [...apiKeys.values()].find((r) => r.keyHash === keyHash && !r.revoked)?.accountId ?? null);
     },
   };
 }

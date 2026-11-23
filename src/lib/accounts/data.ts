@@ -1,3 +1,5 @@
+import type { BillingState } from "@/lib/billing/state";
+import { PLANS } from "@/lib/billing/plans";
 import { isNormalizedHost } from "@/lib/fetch/url";
 import type { AgentSnapshot } from "@/lib/snapshot/types";
 import { SHA256_HEX_PATTERN } from "@/lib/security/tokens";
@@ -216,6 +218,51 @@ export type PublicSnapshot = PublicSite & { readonly snapshot: AgentSnapshot };
  */
 export type PublishSiteResult = { readonly outcome: "published" | "refreshed" | "not_newer"; readonly site: PublishedSite } | { readonly outcome: "no_claim" | "not_verified" };
 
+/** The account's Stripe link and the subscription state last read from Stripe (src/lib/billing/state.ts). Server only. */
+export interface BillingRecord extends BillingState {
+  readonly accountId: string;
+  readonly customerId: string;
+  /** ISO 8601: when the stored state was read from Stripe; null before the first read. */
+  readonly stateAt: string | null;
+}
+
+/** A state read from Stripe at `observedAt` (ISO 8601, when the read started): an older read never replaces a newer one. */
+export interface ObservedBilling extends BillingState {
+  readonly observedAt: string;
+}
+
+export interface BillingEventId {
+  /** The Stripe event id (evt_...). */
+  readonly id: string;
+  readonly type: string;
+}
+
+/** `linked`: stored now. `existing`: the account already has a customer (returned). `taken`: the customer is another account's. `no_account`: no such account. */
+export type LinkCustomerResult = { readonly outcome: "linked" | "existing"; readonly billing: BillingRecord } | { readonly outcome: "taken" | "no_account" };
+/** `stale`: a newer read is stored; nothing changed. `unknown`: no account has this customer; nothing stored. */
+export type ApplyBillingResult = { readonly outcome: "applied" | "stale"; readonly billing: BillingRecord } | { readonly outcome: "unknown" };
+/** `duplicate`: the event was recorded before; nothing changed. */
+export type ApplyEventResult = ApplyBillingResult | { readonly outcome: "duplicate" };
+
+/** An active API key as its owner's account page lists it. The key and its hash are never returned. */
+export interface ApiKey {
+  /** UUID. */
+  readonly id: string;
+  /** The key's last four characters, or null. */
+  readonly hint: string | null;
+  /** ISO 8601. */
+  readonly createdAt: string;
+}
+
+export interface NewApiKey {
+  /** SHA-256 hex of the key. */
+  readonly keyHash: string;
+  /** The key's last four characters. */
+  readonly hint: string;
+}
+
+export type CreateApiKeyResult = { readonly outcome: "created"; readonly key: ApiKey } | { readonly outcome: "full" };
+
 export interface AccountData {
   /**
    * Stores a signup for `email` (trimmed, lower case) with `consent` (default
@@ -319,9 +366,35 @@ export interface AccountData {
   getPublicSnapshot(host: string): Promise<PublicSnapshot | null>;
   /** Hosts with a public site, the most recently refreshed first, at most `limit` (the sitemap). */
   listPublicHosts(limit: number): Promise<string[]>;
+
+  /** The account's billing record, or null before its first checkout (also for an id that is not a UUID). */
+  getBilling(accountId: string): Promise<BillingRecord | null>;
+  /** The billing record of a Stripe customer, or null. */
+  getBillingByCustomer(customerId: string): Promise<BillingRecord | null>;
+  /**
+   * Binds a Stripe customer to the account, once: one customer per account and one account per customer,
+   * atomic across instances. Throws RangeError for an invalid id before any write.
+   */
+  linkBillingCustomer(accountId: string, customerId: string): Promise<LinkCustomerResult>;
+  /** Stores the state read from Stripe for a linked customer, unless a newer read is stored. Throws RangeError for invalid input. */
+  applyBillingState(customerId: string, state: ObservedBilling): Promise<ApplyBillingResult>;
+  /**
+   * applyBillingState for one webhook event, in one transaction with the event's record: an event is applied at most
+   * once, and a failure records nothing, so its redelivery applies. An unknown customer's event is not recorded.
+   */
+  applyBillingEvent(event: BillingEventId, customerId: string, state: ObservedBilling): Promise<ApplyEventResult>;
+
+  /** Stores a new API key's hash, at most MAX_API_KEYS active keys per account. Atomic across instances. Throws RangeError for invalid input. */
+  createApiKey(accountId: string, input: NewApiKey): Promise<CreateApiKeyResult>;
+  /** The account's active keys, oldest first. Empty for an id that is not a UUID. */
+  listApiKeys(accountId: string): Promise<ApiKey[]>;
+  /** Revokes one active key of the account. False when there was none. */
+  revokeApiKey(accountId: string, keyId: string): Promise<boolean>;
+  /** The account of an active key by its hash, or null (unknown, revoked or malformed). */
+  findApiKeyAccount(keyHash: string): Promise<string | null>;
 }
 
-export { CLAIM_LAPSE_AFTER, CLAIM_RECHECK_AFTER_S, CLAIM_SLOW_AFTER_S, CLAIM_SLOW_RECHECK_AFTER_S, MAX_PENDING_CLAIMS, MAX_SAVED_REPORTS } from "./limits";
+export { MAX_API_KEYS, CLAIM_LAPSE_AFTER, CLAIM_RECHECK_AFTER_S, CLAIM_SLOW_AFTER_S, CLAIM_SLOW_RECHECK_AFTER_S, MAX_PENDING_CLAIMS, MAX_SAVED_REPORTS } from "./limits";
 /** A score/v1 report is a few kilobytes; this bound only refuses something that is not one. */
 export const MAX_REPORT_BYTES = 256 * 1024;
 /** The stored form of a 12-page snapshot is at most about 240 KB of text and its records; a larger one than this cannot be published. */
@@ -389,6 +462,45 @@ export function requireSaveInput(input: SaveReportInput): string {
   if (typeof host !== "string" || host.length === 0 || host.length > 253) throw new RangeError("host must be 1 to 253 characters");
   requireObject("report", report, MAX_REPORT_BYTES);
   return requireTime("fetchedAt", fetchedAt);
+}
+
+const CUSTOMER_ID = /^cus_\w{1,200}$/;
+const EVENT_ID = /^evt_\w{1,200}$/;
+const SUBSCRIPTION_ID = /^sub_\w{1,200}$/;
+const STATUS = /^[a-z_]{1,40}$/;
+const EVENT_TYPE = /^[a-z0-9_.]{1,100}$/;
+
+export const isCustomerId = (id: unknown): id is string => typeof id === "string" && CUSTOMER_ID.test(id);
+
+export function requireCustomerId(id: string): string {
+  if (!isCustomerId(id)) throw new RangeError("customerId must be a Stripe customer id");
+  return id;
+}
+
+export function requireBillingEvent(event: BillingEventId): void {
+  if (!EVENT_ID.test(event.id)) throw new RangeError("event id must be a Stripe event id");
+  if (!EVENT_TYPE.test(event.type)) throw new RangeError("event type is not valid");
+}
+
+/** The state rule of the contract above. Returns the state with normalized times (ISO 8601). */
+export function requireBillingState(state: ObservedBilling): ObservedBilling {
+  if (!PLANS.some((p) => p.id === state.plan)) throw new RangeError("plan must be a plan id");
+  if (!STATUS.test(state.status)) throw new RangeError("status is not valid");
+  if (state.subscriptionId !== null && !SUBSCRIPTION_ID.test(state.subscriptionId)) throw new RangeError("subscriptionId must be a Stripe subscription id");
+  return {
+    plan: state.plan,
+    status: state.status,
+    currentPeriodEnd: state.currentPeriodEnd === null ? null : requireTime("currentPeriodEnd", state.currentPeriodEnd),
+    cancelAtPeriodEnd: state.cancelAtPeriodEnd === true,
+    subscriptionId: state.subscriptionId,
+    observedAt: requireTime("observedAt", state.observedAt),
+  };
+}
+
+/** The API key rule of the contract above: a SHA-256 hex hash and four hex characters. */
+export function requireApiKey(input: NewApiKey): void {
+  if (!SHA256_HEX_PATTERN.test(input.keyHash)) throw new RangeError("keyHash must be SHA-256 hex");
+  if (!/^[0-9a-f]{4}$/.test(input.hint)) throw new RangeError("hint must be four hex characters");
 }
 
 /** The score field of a stored report: a finite number, else null. */
