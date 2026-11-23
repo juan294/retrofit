@@ -1,4 +1,5 @@
 import { sha256Hex, newToken, SHA256_HEX_PATTERN } from "@/lib/security/tokens";
+import { isNormalizedHost } from "@/lib/fetch/url";
 import { serviceCall, serviceClient, type ServiceClientSource } from "@/lib/supabase/client";
 import {
   AccountDataUnavailable,
@@ -14,6 +15,8 @@ import {
   requireClaimToken,
   requireNewClaim,
   requireEmail,
+  requirePublishInput,
+  requireRefreshError,
   requireSaveInput,
   scoreOf,
   type AccountData,
@@ -21,6 +24,9 @@ import {
   type ClaimResult,
   type ClaimStatus,
   type NotifySignup,
+  type PublicSite,
+  type PublishedSite,
+  type RefreshError,
   type SavedReportSummary,
 } from "./data";
 
@@ -69,6 +75,23 @@ interface ClaimRow {
   last_detail: number | null;
 }
 
+interface PublicRow {
+  host: string;
+  /** `report->score`. */
+  score: unknown;
+  fetched_at: string;
+  published_at: string;
+  refreshed_at: string;
+  /** Only with public_site's part `report` or `snapshot`. */
+  report?: Record<string, unknown>;
+  snapshot?: Record<string, unknown>;
+}
+
+interface PublishedRow extends PublicRow {
+  claim_id: string;
+  last_refresh_error: RefreshError | null;
+}
+
 /** The answer of the claim functions (supabase/migrations/*_claims.sql). */
 interface ClaimAnswer {
   outcome: string;
@@ -100,6 +123,16 @@ function claimOf(row: ClaimRow): Claim {
 }
 const SUMMARY = "id, host, fetched_at, created_at, score:report->score";
 
+const PUBLISHED_COLUMNS = "host, claim_id, fetched_at, published_at, refreshed_at, last_refresh_error, score:report->score";
+
+function publicSite(row: PublicRow): PublicSite {
+  return { host: row.host, score: scoreOf({ score: row.score }), fetchedAt: iso(row.fetched_at), publishedAt: iso(row.published_at), refreshedAt: iso(row.refreshed_at) };
+}
+
+function publishedSite(row: PublishedRow): PublishedSite {
+  return { ...publicSite(row), claimId: row.claim_id, lastRefreshError: row.last_refresh_error };
+}
+
 function summary(row: SavedReportRow, score: unknown): SavedReportSummary {
   return { id: row.id, host: row.host, score: scoreOf({ score }), fetchedAt: iso(row.fetched_at), savedAt: iso(row.created_at) };
 }
@@ -110,6 +143,7 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
   const profiles = () => client.from("account_profiles");
   const reports = () => client.from("saved_reports");
   const claims = () => client.from("site_claims");
+  const published = () => client.from("published_sites");
   const call = <T>(operation: string, request: () => PromiseLike<{ data: T | null; error: { code?: string } | null }>) =>
     serviceCall<T>({ service: "accounts", operation }, request, (code) => new AccountDataUnavailable(operation, code));
   /**
@@ -128,6 +162,12 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
     if ((bare as readonly string[]).includes(outcome as string)) return { outcome: outcome as B };
     if (!(carry as readonly string[]).includes(outcome as string) || !answer?.claim) throw new AccountDataUnavailable(operation, "bad_outcome");
     return { outcome: outcome as C, claim: claimOf(answer.claim), movedFrom: answer.moved_from ?? [] };
+  }
+
+  /** One read of the one public rule (supabase/migrations/*_publishing.sql public_site), with the part the caller needs. */
+  async function publicRow(operation: string, host: string, part: "site" | "report" | "snapshot"): Promise<PublicRow | null> {
+    if (!isNormalizedHost(host)) return null;
+    return call<PublicRow>(operation, () => client.rpc("public_site", { p_host: host, p_part: part }));
   }
 
   return {
@@ -284,6 +324,57 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
       // published_sites rows of the claim go with it (claim_id ... on delete cascade).
       const rows = await call<{ id: string }[]>("deleteClaim", () => claims().delete().eq("account_id", accountId).eq("id", claimId).select("id"));
       return (rows ?? []).length > 0;
+    },
+
+    async publishSite(rawId, input) {
+      const accountId = requireAccountId(rawId);
+      const { fetchedAt, now } = requirePublishInput(input);
+      // One database function, one transaction: the claim is checked again under the host's lock (*_publishing.sql publish_site).
+      const answer = await call<{ outcome: string; site?: PublishedRow }>("publishSite", () =>
+        client.rpc("publish_site", { p_account_id: accountId, p_host: input.host, p_snapshot: input.snapshot, p_report: input.report, p_fetched_at: fetchedAt, p_now: now }),
+      );
+      const outcome = answer?.outcome;
+      if (outcome === "no_claim" || outcome === "not_verified" || outcome === "not_newer") return { outcome };
+      if ((outcome !== "published" && outcome !== "refreshed") || !answer?.site) throw new AccountDataUnavailable("publishSite", "bad_outcome");
+      return { outcome, site: publishedSite(answer.site) };
+    },
+
+    async recordRefreshError(accountId, host, code) {
+      requireRefreshError(code);
+      if (!isUuid(accountId)) return false;
+      const rows = await call<{ host: string }[]>("recordRefreshError", () => published().update({ last_refresh_error: code }).eq("account_id", accountId).eq("host", host).select("host"));
+      return (rows ?? []).length > 0;
+    },
+
+    async unpublishSite(accountId, host) {
+      if (!isUuid(accountId)) return false;
+      const rows = await call<{ host: string }[]>("unpublishSite", () => published().delete().eq("account_id", accountId).eq("host", host).select("host"));
+      return (rows ?? []).length > 0;
+    },
+
+    async listPublishedSites(accountId) {
+      if (!isUuid(accountId)) return [];
+      const rows = await call<PublishedRow[]>("listPublishedSites", () => published().select(PUBLISHED_COLUMNS).eq("account_id", accountId).order("host", { ascending: true }));
+      return (rows ?? []).map(publishedSite);
+    },
+
+    async getPublicSite(host) {
+      const row = await publicRow("getPublicSite", host, "site");
+      return row && publicSite(row);
+    },
+
+    async getPublicReport(host) {
+      const row = await publicRow("getPublicReport", host, "report");
+      return row?.report ? { ...publicSite(row), report: row.report } : null;
+    },
+
+    async getPublicSnapshot(host) {
+      const row = await publicRow("getPublicSnapshot", host, "snapshot");
+      return row?.snapshot ? { ...publicSite(row), snapshot: row.snapshot } : null;
+    },
+
+    async listPublicHosts(limit) {
+      return (await call<string[]>("listPublicHosts", () => client.rpc("public_hosts", { p_limit: Math.max(0, limit) }))) ?? [];
     },
   };
 }

@@ -38,6 +38,14 @@ describe("Supabase AccountData on a closed port", () => {
     ["listSavedReports", (d) => d.listSavedReports(ACCOUNT)],
     ["getSavedReport", (d) => d.getSavedReport(ACCOUNT, ACCOUNT)],
     ["deleteAccountData", (d) => d.deleteAccountData(ACCOUNT)],
+    ["publishSite", (d) => d.publishSite(ACCOUNT, { host: "h.example", snapshot: {}, report: {}, fetchedAt: "2026-11-23T10:00:00.000Z", now: "2026-11-23T11:00:00.000Z" })],
+    ["recordRefreshError", (d) => d.recordRefreshError(ACCOUNT, "h.example", "too_large")],
+    ["unpublishSite", (d) => d.unpublishSite(ACCOUNT, "h.example")],
+    ["listPublishedSites", (d) => d.listPublishedSites(ACCOUNT)],
+    ["getPublicSite", (d) => d.getPublicSite("h.example")],
+    ["getPublicReport", (d) => d.getPublicReport("h.example")],
+    ["getPublicSnapshot", (d) => d.getPublicSnapshot("h.example")],
+    ["listPublicHosts", (d) => d.listPublicHosts(10)],
   ];
 
   // Fails if a failed call resolves (a fallback) instead of throwing, is logged below ERROR or without

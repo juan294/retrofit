@@ -418,6 +418,146 @@ begin
 end;
 $$;
 
+-- Publishing functions (*_publishing.sql): the one public rule, publish under the claim's lock, transfers that end
+-- other publications for good, the column limits, and the grants.
+insert into auth.users (id) values ('00000000-0000-4000-8000-0000000000d4'), ('00000000-0000-4000-8000-0000000000d5');
+do $$
+declare
+  a constant uuid := '00000000-0000-4000-8000-0000000000d4';
+  b constant uuid := '00000000-0000-4000-8000-0000000000d5';
+  v jsonb;
+  v_first uuid;
+  v_second uuid;
+  v_third uuid;
+  v_bad text;
+  v_fn text;
+begin
+  foreach v_fn in array array[
+    $q$select public.site_is_public('00000000-0000-4000-8000-0000000000c9', '00000000-0000-4000-8000-0000000000d4', 'p.example')$q$,
+    $q$select public.public_site('p.example', 'snapshot')$q$,
+    $q$select public.public_hosts(10)$q$,
+    $q$select public.publish_site('00000000-0000-4000-8000-0000000000d4', 'p.example', '{}', '{}', now(), now())$q$,
+    $q$select public.verify_claim('00000000-0000-4000-8000-0000000000c9', repeat('1', 64), now())$q$
+  ] loop
+    perform pg_temp.expect_denied('anon', v_fn);
+    perform pg_temp.expect_denied('authenticated', v_fn);
+  end loop;
+
+  set local role service_role;
+  -- Publishing needs the account's own verified claim.
+  if public.publish_site(a, 'p.example', '{"n": 1}', '{"score": 7}', '2026-11-20T08:00:00Z', '2026-11-20T10:00:00Z') ->> 'outcome' <> 'no_claim' then
+    raise exception 'accounts_access: publish_site published without a claim';
+  end if;
+  v_first := (public.create_claim(a, 'p.example', 'meta', repeat('1', 64), 10) -> 'claim' ->> 'id')::uuid;
+  if public.publish_site(a, 'p.example', '{"n": 1}', '{"score": 7}', '2026-11-20T08:00:00Z', '2026-11-20T10:00:00Z') ->> 'outcome' <> 'not_verified' then
+    raise exception 'accounts_access: publish_site published under a pending claim';
+  end if;
+  perform public.verify_claim(v_first, repeat('1', 64), '2026-11-20T09:00:00Z');
+  if public.publish_site(b, 'p.example', '{"n": 1}', '{"score": 7}', '2026-11-20T08:00:00Z', '2026-11-20T10:00:00Z') ->> 'outcome' <> 'no_claim' then
+    raise exception 'accounts_access: publish_site published under another account''s claim';
+  end if;
+  v := public.publish_site(a, 'p.example', '{"n": 1}', '{"score": 7}', '2026-11-20T08:00:00Z', '2026-11-20T10:00:00Z');
+  if v ->> 'outcome' <> 'published' or (v -> 'site' ->> 'score')::int <> 7 or v -> 'site' ? 'snapshot' or (v -> 'site' ->> 'claim_id')::uuid <> v_first then
+    raise exception 'accounts_access: publish_site did not publish: %', v;
+  end if;
+
+  -- The light read carries neither the report nor the snapshot; each part carries only itself.
+  v := public.public_site('p.example', 'site');
+  if v ->> 'host' <> 'p.example' or (v ->> 'score')::int <> 7 or v ? 'snapshot' or v ? 'report' then
+    raise exception 'accounts_access: the light public read is wrong: %', v;
+  end if;
+  if (public.public_site('p.example', 'report') ? 'snapshot') or not (public.public_site('p.example', 'report') ? 'report')
+     or (public.public_site('p.example', 'snapshot') ? 'report') or (public.public_site('p.example', 'snapshot') -> 'snapshot' ->> 'n')::int <> 1 then
+    raise exception 'accounts_access: public_site returned the wrong part';
+  end if;
+  if not (public.public_hosts(1000) ? 'p.example') or pg_catalog.jsonb_array_length(public.public_hosts(0)) <> 0 then
+    raise exception 'accounts_access: public_hosts is wrong';
+  end if;
+
+  -- A refresh must be newer; it keeps the first publication time and clears the error.
+  update public.published_sites set last_refresh_error = 'too_large' where host = 'p.example';
+  if public.publish_site(a, 'p.example', '{"n": 2}', '{"score": 8}', '2026-11-20T08:00:00Z', '2026-11-21T10:00:00Z') ->> 'outcome' <> 'not_newer'
+     or (public.public_site('p.example', 'snapshot') -> 'snapshot' ->> 'n')::int <> 1 then
+    raise exception 'accounts_access: a refresh that is not newer changed the snapshot';
+  end if;
+  v := public.publish_site(a, 'p.example', '{"n": 2}', '{"score": 8}', '2026-11-21T08:00:00Z', '2026-11-21T10:00:00Z');
+  if v ->> 'outcome' <> 'refreshed' or (v -> 'site' ->> 'published_at')::timestamptz <> '2026-11-20T10:00:00Z' or v -> 'site' ->> 'last_refresh_error' is not null then
+    raise exception 'accounts_access: publish_site did not refresh: %', v;
+  end if;
+
+  -- A lapse hides it; a pass restores the same publication.
+  for n in 1..3 loop
+    perform public.record_claim_failure(v_first, repeat('1', 64), 'tag_missing', null, '2026-11-22T09:00:00Z'::timestamptz + pg_catalog.make_interval(days => n), 3);
+  end loop;
+  if public.public_site('p.example', 'site') is not null or public.public_hosts(1000) ? 'p.example' then
+    raise exception 'accounts_access: a lapsed claim left its site public';
+  end if;
+  perform public.verify_claim(v_first, repeat('1', 64), '2026-11-26T09:00:00Z');
+  if (public.public_site('p.example', 'snapshot') -> 'snapshot' ->> 'n')::int is distinct from 2 then
+    raise exception 'accounts_access: a recovered claim did not restore its site';
+  end if;
+
+  -- A publication whose claim is another account's, or for another host, is never public.
+  v_third := (public.create_claim(b, 'q.example', 'meta', repeat('3', 64), 10) -> 'claim' ->> 'id')::uuid;
+  perform public.verify_claim(v_third, repeat('3', 64), '2026-11-26T09:00:00Z');
+  insert into public.published_sites (host, account_id, claim_id, snapshot, report) values ('q.example', a, v_third, '{}', '{}');
+  if public.public_site('q.example', 'site') is not null then
+    raise exception 'accounts_access: a site under another account''s claim was public';
+  end if;
+  update public.published_sites set account_id = b, host = 'r.example' where host = 'q.example';
+  if public.public_site('r.example', 'site') is not null then
+    raise exception 'accounts_access: a site under a claim of another host was public';
+  end if;
+
+  -- A transfer deletes the old publication, also one paused by a pending claim, so it never comes back.
+  for n in 1..3 loop
+    perform public.record_claim_failure(v_first, repeat('1', 64), 'tag_missing', null, '2026-11-27T09:00:00Z'::timestamptz + pg_catalog.make_interval(days => n), 3);
+  end loop;
+  perform public.restart_claim(v_first, a, 'meta', repeat('4', 64), 10);
+  v_second := (public.create_claim(b, 'p.example', 'dns', repeat('2', 64), 10) -> 'claim' ->> 'id')::uuid;
+  perform public.verify_claim(v_second, repeat('2', 64), '2026-12-01T09:00:00Z');
+  if exists (select 1 from public.published_sites where host = 'p.example') then
+    raise exception 'accounts_access: a transfer kept the old publication';
+  end if;
+  delete from public.site_claims where id = v_second;
+  perform public.verify_claim(v_first, repeat('4', 64), '2026-12-02T09:00:00Z');
+  if public.public_site('p.example', 'site') is not null then
+    raise exception 'accounts_access: the old publication came back after the host moved twice';
+  end if;
+  -- Removing the claim removes its publication.
+  perform public.publish_site(a, 'p.example', '{"n": 3}', '{"score": 9}', '2026-12-02T08:00:00Z', '2026-12-02T10:00:00Z');
+  if public.public_site('p.example', 'site') is null then
+    raise exception 'accounts_access: publishing again after a transfer did not make the site public';
+  end if;
+  delete from public.site_claims where id = v_first;
+  if exists (select 1 from public.published_sites where host = 'p.example') then
+    raise exception 'accounts_access: removing a claim kept its publication';
+  end if;
+  reset role;
+
+  perform pg_temp.expect_error('service_role', $q$update public.published_sites set last_refresh_error = '<b>page text</b>' where host = 'r.example'$q$, '23514');
+  perform pg_temp.expect_error('service_role', $q$update public.published_sites set host = 'R.example' where host = 'r.example'$q$, '23514');
+  perform pg_temp.expect_error('service_role', $q$update public.published_sites set report = pg_catalog.jsonb_build_object('pad', repeat('x', 600000)) where host = 'r.example'$q$, '23514');
+  perform pg_temp.expect_error('service_role', $q$update public.published_sites set snapshot = pg_catalog.jsonb_build_object('pad', repeat('x', 4200000)) where host = 'r.example'$q$, '23514');
+  perform pg_temp.expect_error('service_role', $q$select public.publish_site(null, 'p.example', '{}', '{}', now(), now())$q$, '22004');
+
+  select pg_catalog.string_agg(p.proname, ', ') into v_bad
+  from pg_catalog.pg_proc p
+  where p.pronamespace = 'public'::regnamespace
+    and p.proname in ('site_is_public', 'public_site', 'public_hosts', 'publish_site', 'verify_claim')
+    and (p.prosecdef
+      or not ('search_path=""' = any (coalesce(p.proconfig, '{}')))
+      or pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+      or pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+      or exists (select 1 from pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) x where x.grantee = 0)
+      or not pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE'));
+  if v_bad is not null or (select count(*) from pg_catalog.pg_proc where pronamespace = 'public'::regnamespace
+      and proname in ('site_is_public', 'public_site', 'public_hosts', 'publish_site', 'verify_claim')) <> 5 then
+    raise exception 'accounts_access: publishing functions missing, security definer, without search_path = '''', or with wrong EXECUTE: %', coalesce(v_bad, 'missing');
+  end if;
+end;
+$$;
+
 -- Static checks: privileges, RLS and foreign keys.
 do $$
 declare

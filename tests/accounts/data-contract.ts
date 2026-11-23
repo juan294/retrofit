@@ -9,7 +9,19 @@
  */
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { CLAIM_LAPSE_AFTER, MAX_PENDING_CLAIMS, MAX_SAVED_REPORTS, type AccountData, type Claim, type SaveReportInput, type SavedReportSummary } from "@/lib/accounts/data";
+import {
+  CLAIM_LAPSE_AFTER,
+  MAX_PENDING_CLAIMS,
+  MAX_PUBLISHED_SNAPSHOT_BYTES,
+  MAX_REPORT_BYTES,
+  MAX_SAVED_REPORTS,
+  type AccountData,
+  type Claim,
+  type PublishedSite,
+  type PublishSiteInput,
+  type SaveReportInput,
+  type SavedReportSummary,
+} from "@/lib/accounts/data";
 import { sha256Hex } from "@/lib/security/tokens";
 
 export interface AccountDataClients {
@@ -450,6 +462,278 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         await expect(a.createClaim(owner, { ...ok, method: "email" as "meta" })).rejects.toThrow(RangeError);
         await expect(a.createClaim(owner, { ...ok, tokenHash: "raw-token" })).rejects.toThrow(RangeError);
         expect(await b.listClaims(owner)).toEqual([]);
+      });
+    });
+
+    // Phase 4. Public means exactly: a publication row whose claim is verified now and belongs to the row's account.
+    describe("published sites", () => {
+      const hash = (label: string) => sha256Hex(`${tag}-${label}`);
+      const host = (label: string) => `${label}-${tag}.example.test`;
+      const at = (day: number, hour = 9) => `2026-11-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00:00.000Z`;
+      const claimFor = async (data: AccountData, accountId: string, label: string): Promise<Claim> => {
+        const r = await data.createClaim(accountId, { host: host(label), method: "meta", tokenHash: hash(`${label}-${accountId}`) });
+        if (r.outcome !== "created") throw new Error(`unexpected ${r.outcome}`);
+        return r.claim;
+      };
+      const verify = async (data: AccountData, c: Claim, when: string) => {
+        const r = await data.verifyClaim(c.id, { tokenHash: c.tokenHash, checkedAt: when });
+        expect(r.outcome).toBe("verified");
+      };
+      const lapse = async (data: AccountData, c: Claim, fromDay: number) => {
+        for (let n = 0; n < CLAIM_LAPSE_AFTER; n++) await data.recordClaimFailure(c.id, { tokenHash: c.tokenHash, result: "tag_missing", detail: null, checkedAt: at(fromDay + n) });
+        expect((await data.getClaim(c.accountId, c.id))?.status).toBe("lapsed");
+      };
+      const input = (label: string, text: string, day: number, over: Partial<PublishSiteInput> = {}): PublishSiteInput => ({
+        host: host(label),
+        snapshot: { version: "snapshot/v1", host: host(label), fetchedAt: at(day, 8), marker: text },
+        report: { scoreVersion: "score/v1", host: host(label), score: 72, fetchedAt: at(day, 8), summary: text },
+        fetchedAt: at(day, 8),
+        now: at(day, 10),
+        ...over,
+      });
+      const publish = async (data: AccountData, accountId: string, i: PublishSiteInput): Promise<PublishedSite> => {
+        const r = await data.publishSite(accountId, i);
+        if (!("site" in r)) throw new Error(`unexpected ${r.outcome}`);
+        return r.site;
+      };
+      const marker = async (data: AccountData, label: string) => (await data.getPublicSnapshot(host(label)))?.snapshot.marker ?? null;
+      /** Everything a visitor can reach answers null, and the host is not listed. */
+      const expectPrivate = async (data: AccountData, label: string) => {
+        expect(await data.getPublicSite(host(label))).toBeNull();
+        expect(await data.getPublicReport(host(label))).toBeNull();
+        expect(await data.getPublicSnapshot(host(label))).toBeNull();
+        expect(await data.listPublicHosts(100_000)).not.toContain(host(label));
+      };
+
+      // Fails if a site can be published without a claim, with a claim that is not verified, or under another account's claim.
+      it("publishSite needs the account's own verified claim for the host", async () => {
+        const owner = await newAccount();
+        const other = await newAccount();
+        expect(await a.publishSite(owner, input("need", "x", 20))).toEqual({ outcome: "no_claim" });
+        const c = await claimFor(a, owner, "need");
+        expect(await b.publishSite(owner, input("need", "x", 20))).toEqual({ outcome: "not_verified" });
+        await verify(a, c, at(20));
+        expect(await b.publishSite(other, input("need", "x", 20))).toEqual({ outcome: "no_claim" });
+        await claimFor(a, other, "need");
+        expect(await b.publishSite(other, input("need", "x", 20))).toEqual({ outcome: "not_verified" });
+        await expectPrivate(a, "need");
+        expect(await a.listPublishedSites(owner)).toEqual([]);
+      });
+
+      // Fails if a publication is not readable by another instance, the light read carries the snapshot or report, or the list is not the account's own.
+      it("a published site is readable whole, as its report and as a light read, and listed for its account only", async () => {
+        const owner = await newAccount();
+        const c = await claimFor(a, owner, "pub");
+        await verify(a, c, at(20));
+        const r = await a.publishSite(owner, input("pub", "first", 20));
+        expect(r.outcome).toBe("published");
+        const site = { host: host("pub"), claimId: c.id, score: 72, fetchedAt: at(20, 8), publishedAt: at(20, 10), refreshedAt: at(20, 10), lastRefreshError: null };
+        expect("site" in r && r.site).toEqual(site);
+        expect(await b.listPublishedSites(owner)).toEqual([site]);
+        expect(await b.listPublishedSites(await newAccount())).toEqual([]);
+        expect(await b.listPublishedSites("not-a-uuid")).toEqual([]);
+
+        const light = { host: host("pub"), score: 72, fetchedAt: at(20, 8), publishedAt: at(20, 10), refreshedAt: at(20, 10) };
+        expect(await b.getPublicSite(host("pub"))).toEqual(light);
+        expect(await b.getPublicReport(host("pub"))).toEqual({ ...light, report: input("pub", "first", 20).report });
+        expect(await b.getPublicSnapshot(host("pub"))).toEqual({ ...light, snapshot: input("pub", "first", 20).snapshot });
+        expect(await b.listPublicHosts(100_000)).toContain(host("pub"));
+        expect((await b.listPublicHosts(1)).length).toBeLessThanOrEqual(1);
+        expect(await b.listPublicHosts(0)).toEqual([]);
+        for (const bad of ["", "PUB.example.test", `${host("pub")}/`, "unknown.example.test"]) expect(await b.getPublicSite(bad)).toBeNull();
+      });
+
+      // Fails if a refresh moves the first publication time, keeps an old error, or an analysis that is not newer replaces a newer snapshot.
+      it("a newer analysis refreshes the site and clears the last error; the same or an older one is not_newer and changes nothing", async () => {
+        const owner = await newAccount();
+        await verify(a, await claimFor(a, owner, "fresh"), at(20));
+        await publish(a, owner, input("fresh", "first", 20));
+        expect(await b.recordRefreshError(owner, host("fresh"), "generation_failed")).toBe(true);
+        for (const i of [input("fresh", "same", 20), input("fresh", "older", 19)]) expect(await a.publishSite(owner, { ...i, now: at(21) })).toEqual({ outcome: "not_newer" });
+        expect(await marker(b, "fresh")).toBe("first");
+        expect((await b.listPublishedSites(owner))[0]).toMatchObject({ lastRefreshError: "generation_failed", refreshedAt: at(20, 10) });
+
+        const r = await b.publishSite(owner, input("fresh", "second", 22));
+        expect(r.outcome).toBe("refreshed");
+        expect("site" in r && r.site).toMatchObject({ publishedAt: at(20, 10), refreshedAt: at(22, 10), fetchedAt: at(22, 8), lastRefreshError: null });
+        expect(await marker(a, "fresh")).toBe("second");
+      });
+
+      // Fails if a failed refresh touches the snapshot, another account can write the error, or anything but a known code is stored.
+      it("recordRefreshError stores a known code on the account's own site and keeps the snapshot", async () => {
+        const owner = await newAccount();
+        await verify(a, await claimFor(a, owner, "err"), at(20));
+        expect(await a.recordRefreshError(owner, host("err"), "no_analysis")).toBe(false);
+        await publish(a, owner, input("err", "kept", 20));
+        expect(await b.recordRefreshError(await newAccount(), host("err"), "no_analysis")).toBe(false);
+        expect((await a.listPublishedSites(owner))[0]?.lastRefreshError).toBeNull();
+        for (const code of ["no_analysis", "not_newer", "generation_failed", "too_large"] as const) {
+          expect(await b.recordRefreshError(owner, host("err"), code)).toBe(true);
+          expect((await a.listPublishedSites(owner))[0]?.lastRefreshError).toBe(code);
+        }
+        await expect(a.recordRefreshError(owner, host("err"), "<b>page text</b>" as "no_analysis")).rejects.toThrow(RangeError);
+        expect(await marker(a, "err")).toBe("kept");
+      });
+
+      // Fails if a lapsed or restarted (pending) claim leaves the site public, or a recovered claim does not restore the same publication.
+      it("a lapse or Start over hides the site at once, and a passing check makes the same publication public again", async () => {
+        const owner = await newAccount();
+        const c = await claimFor(a, owner, "lapse");
+        await verify(a, c, at(10));
+        await publish(a, owner, input("lapse", "kept", 10));
+        await lapse(b, c, 11);
+        await expectPrivate(a, "lapse");
+        expect((await a.listPublishedSites(owner)).map((s) => s.host)).toEqual([host("lapse")]);
+        expect(await a.publishSite(owner, input("lapse", "while lapsed", 14))).toEqual({ outcome: "not_verified" });
+        await verify(b, c, at(15));
+        expect(await marker(a, "lapse")).toBe("kept");
+        expect(await a.getPublicSite(host("lapse"))).toMatchObject({ publishedAt: at(10, 10) });
+
+        await lapse(a, c, 16);
+        const restarted = await b.restartClaim(owner, c.id, { method: "dns", tokenHash: hash("lapse-2") });
+        if (restarted.outcome !== "restarted") throw new Error(restarted.outcome);
+        await expectPrivate(a, "lapse");
+        await verify(a, restarted.claim, at(20));
+        expect(await marker(b, "lapse")).toBe("kept");
+      });
+
+      // Fails if a transfer leaves the old owner's publication public (also under the new owner's claim), or a later re-claim by the old owner
+      // brings it back without publishing again.
+      it("a transfer ends the old owner's publication for good, also when the new owner loses the host and the old owner verifies a new claim", async () => {
+        const first = await newAccount();
+        const second = await newAccount();
+        const old = await claimFor(a, first, "move");
+        await verify(a, old, at(10));
+        await publish(a, first, input("move", "first owner", 10));
+        const mine = await claimFor(b, second, "move");
+        await verify(b, mine, at(11));
+        await expectPrivate(a, "move");
+        expect(await a.listPublishedSites(first)).toEqual([]);
+        expect(await a.publishSite(first, input("move", "again", 12))).toEqual({ outcome: "not_verified" });
+        expect(await b.deleteClaim(second, mine.id)).toBe(true);
+        await expectPrivate(a, "move");
+
+        expect(await a.deleteClaim(first, old.id)).toBe(true);
+        await verify(a, await claimFor(b, first, "move"), at(13));
+        await expectPrivate(b, "move");
+        await publish(a, first, input("move", "first owner again", 14));
+        expect(await marker(b, "move")).toBe("first owner again");
+      });
+
+      // Fails if a claim that went pending (lapsed, then Start over) keeps its publication through a transfer: the claim is not superseded then,
+      // so a later check of it would make the old snapshot public.
+      it("a transfer ends a paused publication whose claim is pending, so a later check of that claim does not bring it back", async () => {
+        const first = await newAccount();
+        const second = await newAccount();
+        const old = await claimFor(a, first, "paused");
+        await verify(a, old, at(10));
+        await publish(a, first, input("paused", "first owner", 10));
+        await lapse(a, old, 11);
+        const restarted = await a.restartClaim(first, old.id, { method: "meta", tokenHash: hash("paused-2") });
+        if (restarted.outcome !== "restarted") throw new Error(restarted.outcome);
+        const mine = await claimFor(b, second, "paused");
+        await verify(b, mine, at(15));
+        expect(await b.deleteClaim(second, mine.id)).toBe(true);
+        await verify(a, restarted.claim, at(16));
+        await expectPrivate(b, "paused");
+        expect(await a.listPublishedSites(first)).toEqual([]);
+      });
+
+      // Fails if the new owner's publish does not replace the row, or the old owner can still change or remove it.
+      it("the new owner's publish replaces the publication; the old owner cannot change or remove it", async () => {
+        const first = await newAccount();
+        const second = await newAccount();
+        await verify(a, await claimFor(a, first, "own"), at(20));
+        await publish(a, first, input("own", "first owner", 20));
+        const mine = await claimFor(b, second, "own");
+        await verify(b, mine, at(21));
+        // An older read of the site than the first owner's: not a refresh, so not_newer does not apply.
+        const r = await b.publishSite(second, input("own", "second owner", 19, { now: at(21, 11) }));
+        expect(r.outcome).toBe("published");
+        expect("site" in r && r.site).toMatchObject({ claimId: mine.id, publishedAt: at(21, 11) });
+        expect(await marker(a, "own")).toBe("second owner");
+        expect(await a.unpublishSite(first, host("own"))).toBe(false);
+        expect(await a.recordRefreshError(first, host("own"), "too_large")).toBe(false);
+        expect(await a.listPublishedSites(first)).toEqual([]);
+        expect((await a.listPublishedSites(second))[0]?.lastRefreshError).toBeNull();
+      });
+
+      // Fails if unpublishing, removing the claim or deleting the account leaves the site public, or touches another account's site.
+      it("unpublishing, removing the claim and deleting the account each remove the site and leave other accounts' sites", async () => {
+        const kept = await newAccount();
+        await verify(a, await claimFor(a, kept, "kept"), at(20));
+        await publish(a, kept, input("kept", "kept", 20));
+        const owner = await newAccount();
+        const claims: Record<string, Claim> = {};
+        for (const label of ["un", "rm", "del"]) {
+          claims[label] = await claimFor(a, owner, label);
+          await verify(a, claims[label], at(20));
+          await publish(a, owner, input(label, label, 20));
+        }
+        expect(await b.unpublishSite(kept, host("un"))).toBe(false);
+        expect(await b.unpublishSite(owner, host("un"))).toBe(true);
+        expect(await a.unpublishSite(owner, host("un"))).toBe(false);
+        await expectPrivate(a, "un");
+        expect((await a.getClaim(owner, claims.un!.id))?.status).toBe("verified");
+        expect(await b.deleteClaim(owner, claims.rm!.id)).toBe(true);
+        await expectPrivate(a, "rm");
+        expect((await a.listPublishedSites(owner)).map((s) => s.host)).toEqual([host("del")]);
+        await b.deleteAccountData(owner);
+        await expectPrivate(a, "del");
+        expect(await marker(a, "kept")).toBe("kept");
+        // A removed publication does not come back with a new claim.
+        await verify(a, await claimFor(b, owner, "rm"), at(22));
+        await expectPrivate(b, "rm");
+      });
+
+      // Fails if a publish that races another account's verification can leave the old account's snapshot public.
+      it("a publish racing another account's verification never leaves the old account's snapshot public", async () => {
+        for (let n = 0; n < 5; n++) {
+          const label = `race${n}`;
+          const first = await newAccount();
+          const second = await newAccount();
+          await verify(a, await claimFor(a, first, label), at(20));
+          const mine = await claimFor(b, second, label);
+          const [published] = await Promise.all([a.publishSite(first, input(label, "first owner", 20)), b.verifyClaim(mine.id, { tokenHash: mine.tokenHash, checkedAt: at(21) })]);
+          expect(["published", "not_verified"]).toContain(published.outcome);
+          await expectPrivate(a, label);
+          expect(await a.listPublishedSites(first)).toEqual([]);
+        }
+      });
+
+      // Fails if two instances refreshing at once leave the older snapshot.
+      it("two concurrent refreshes leave the newer snapshot", async () => {
+        const owner = await newAccount();
+        await verify(a, await claimFor(a, owner, "both"), at(20));
+        await publish(a, owner, input("both", "first", 20));
+        const results = await Promise.all([a.publishSite(owner, input("both", "newer", 23)), b.publishSite(owner, input("both", "older", 22))]);
+        expect(results[0]?.outcome).toBe("refreshed");
+        expect(await marker(a, "both")).toBe("newer");
+      });
+
+      // Fails if invalid or oversized input reaches storage.
+      it("refuses an invalid account id, host, time or object, and an oversized snapshot or report, with RangeError", async () => {
+        const owner = await newAccount();
+        await verify(a, await claimFor(a, owner, "bad"), at(20));
+        const ok = input("bad", "x", 20);
+        await expect(a.publishSite("nope", ok)).rejects.toThrow(RangeError);
+        for (const over of [
+          { host: "Upper.Example" },
+          { host: "a/b.example" },
+          { fetchedAt: "yesterday" },
+          { now: "now" },
+          { snapshot: [] as unknown as Record<string, unknown> },
+          { report: null as unknown as Record<string, unknown> },
+          { snapshot: { pad: "x".repeat(MAX_PUBLISHED_SNAPSHOT_BYTES) } },
+          { report: { pad: "x".repeat(MAX_REPORT_BYTES) } },
+        ]) {
+          await expect(a.publishSite(owner, { ...ok, ...over }), JSON.stringify(over).slice(0, 80)).rejects.toThrow(RangeError);
+        }
+        await expectPrivate(b, "bad");
+        // The largest snapshot the rule allows is stored.
+        const big = { ...ok.snapshot, pad: "" };
+        big.pad = "x".repeat(MAX_PUBLISHED_SNAPSHOT_BYTES - Buffer.byteLength(JSON.stringify(big)));
+        expect((await a.publishSite(owner, { ...ok, snapshot: big })).outcome).toBe("published");
       });
     });
 

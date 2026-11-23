@@ -162,11 +162,55 @@ export type VerifyClaimResult =
   | {
       readonly outcome: "verified";
       readonly claim: Claim;
-      /** Accounts whose verified or lapsed claim for the host this verification superseded (Phase 4 pauses their published sites). */
+      /** Accounts whose verified or lapsed claim for the host this verification superseded. */
       readonly movedFrom: readonly string[];
     }
   | { readonly outcome: "stale" | "superseded"; readonly claim: Claim }
   | { readonly outcome: "missing" };
+
+/** Why a refresh of a published site failed: a code, never page text (the page's copy names it). */
+export const REFRESH_ERRORS = ["no_analysis", "not_newer", "generation_failed", "too_large"] as const;
+export type RefreshError = (typeof REFRESH_ERRORS)[number];
+
+export interface PublishSiteInput {
+  /** The claimed host, normalized (isNormalizedHost). */
+  readonly host: string;
+  /** The analysis's snapshot, at most MAX_PUBLISHED_SNAPSHOT_BYTES as JSON. Untrusted site data. */
+  readonly snapshot: Record<string, unknown>;
+  /** The score/v1 report body, at most MAX_REPORT_BYTES as JSON. */
+  readonly report: Record<string, unknown>;
+  /** ISO 8601: when Retrofit read the site. A refresh must be newer. */
+  readonly fetchedAt: string;
+  /** ISO 8601, from the server clock. */
+  readonly now: string;
+}
+
+/** A published site as its owner's account page reads it (also while it is paused). */
+export interface PublishedSite {
+  readonly host: string;
+  readonly claimId: string;
+  readonly score: number | null;
+  /** ISO 8601: when Retrofit read the site. */
+  readonly fetchedAt: string;
+  /** ISO 8601: the first publish by this account. */
+  readonly publishedAt: string;
+  /** ISO 8601: the latest publish or refresh. */
+  readonly refreshedAt: string;
+  /** The latest refresh failed with this code; cleared by the next success. */
+  readonly lastRefreshError: RefreshError | null;
+}
+
+/** A published site as any visitor may see it (getPublicSite: without the report and the snapshot). */
+export type PublicSite = Omit<PublishedSite, "claimId" | "lastRefreshError">;
+export type PublicReport = PublicSite & { readonly report: Record<string, unknown> };
+export type PublicSnapshot = PublicSite & { readonly snapshot: Record<string, unknown> };
+
+/**
+ * `published`: the account's first publication of the host (or the first after a transfer). `refreshed`: a newer
+ * analysis replaced its snapshot. `no_claim`, `not_verified`: the account holds no claim, or no verified one, for the
+ * host. `not_newer`: the published snapshot is as new or newer; nothing changed.
+ */
+export type PublishSiteResult = { readonly outcome: "published" | "refreshed"; readonly site: PublishedSite } | { readonly outcome: "no_claim" | "not_verified" | "not_newer" };
 
 export interface AccountData {
   /**
@@ -231,7 +275,9 @@ export interface AccountData {
   /**
    * Records a passed check: the claim becomes verified with no failures. In the same transaction every
    * other account's verified or lapsed claim for the host becomes superseded (by this account, now), so
-   * the host moves and the change is recorded. A superseded claim is never verified again.
+   * the host moves and the change is recorded; every other account's publication of the host is deleted
+   * (also one paused by a pending claim), so it can never become public again. A superseded claim is never
+   * verified again.
    */
   verifyClaim(claimId: string, input: ClaimCheckInput): Promise<VerifyClaimResult>;
   /**
@@ -242,11 +288,40 @@ export interface AccountData {
   listClaimsDueForRecheck(now: string, limit: number): Promise<Claim[]>;
   /** Withdraws one claim of the account (a published site of the claim goes with it). False when there was none. */
   deleteClaim(accountId: string, claimId: string): Promise<boolean>;
+
+  /**
+   * Publishes the account's site for the host, or refreshes it, in one transaction that checks again that
+   * the account's claim for the host is verified (it may have lapsed or moved since the caller looked) and
+   * that a refresh is newer. A publication of another account for the host is replaced. Throws RangeError
+   * for invalid or oversized input before any write.
+   */
+  publishSite(accountId: string, input: PublishSiteInput): Promise<PublishSiteResult>;
+  /** Records why a refresh failed on the account's own publication; the published snapshot stays. False when there is none. */
+  recordRefreshError(accountId: string, host: string, code: RefreshError): Promise<boolean>;
+  /** Removes the account's publication of the host. False when there is none. The claim stays. */
+  unpublishSite(accountId: string, host: string): Promise<boolean>;
+  /** The account's publications, also paused ones, by host. Empty for an id that is not a UUID. */
+  listPublishedSites(accountId: string): Promise<PublishedSite[]>;
+  /**
+   * The host's public site, or null. The ONE rule, shared by the next four reads: a site is public only while its
+   * publication exists and its claim is verified, for that host, and held by the publication's account. A lapse,
+   * Start over, a transfer, removing the claim, unpublishing and account deletion all end it at once. One round
+   * trip. Null for a host that is not normalized. This light read loads neither the snapshot nor the report.
+   */
+  getPublicSite(host: string): Promise<PublicSite | null>;
+  /** The public site with its report (the page). */
+  getPublicReport(host: string): Promise<PublicReport | null>;
+  /** The public site with its snapshot (the agent files). */
+  getPublicSnapshot(host: string): Promise<PublicSnapshot | null>;
+  /** Hosts with a public site, the most recently refreshed first, at most `limit` (the sitemap). */
+  listPublicHosts(limit: number): Promise<string[]>;
 }
 
 export { CLAIM_LAPSE_AFTER, CLAIM_RECHECK_AFTER_S, CLAIM_SLOW_AFTER_S, CLAIM_SLOW_RECHECK_AFTER_S, MAX_PENDING_CLAIMS, MAX_SAVED_REPORTS } from "./limits";
 /** A score/v1 report is a few kilobytes; this bound only refuses something that is not one. */
 export const MAX_REPORT_BYTES = 256 * 1024;
+/** A 12-page snapshot is usually a few hundred kilobytes; a larger one than this cannot be published. */
+export const MAX_PUBLISHED_SNAPSHOT_BYTES = 2 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** True for a lower-case UUID (an account or saved report id). */
@@ -265,21 +340,51 @@ export function requireClaimToken(input: Omit<NewClaimInput, "host">): void {
   if (typeof input.tokenHash !== "string" || !SHA256_HEX_PATTERN.test(input.tokenHash)) throw new RangeError("tokenHash must be SHA-256 hex");
 }
 
+function requireHost(host: unknown): void {
+  if (typeof host !== "string" || !isNormalizedHost(host)) throw new RangeError("host must be a lower-case host name");
+}
+
 /** The create rule of the contract above: a normalized host (isNormalizedHost) and requireClaimToken. */
 export function requireNewClaim(input: NewClaimInput): void {
-  if (typeof input.host !== "string" || !isNormalizedHost(input.host)) throw new RangeError("host must be a lower-case host name");
+  requireHost(input.host);
   requireClaimToken(input);
+}
+
+/** A plain object of at most `max` bytes as JSON. */
+function requireObject(name: string, value: unknown, max: number): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new RangeError(`${name} must be an object`);
+  if (jsonBytes(value) > max) throw new RangeError(`${name} is too large`);
+}
+
+/** Bytes of `value` as JSON (what the size limits count). */
+export function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value));
+}
+
+function requireTime(name: string, value: unknown): string {
+  const ms = typeof value === "string" ? Date.parse(value) : NaN;
+  if (!Number.isFinite(ms)) throw new RangeError(`${name} must be an ISO date and time`);
+  return new Date(ms).toISOString();
+}
+
+/** The publish rule of the contract above. Returns the normalized times (ISO 8601). */
+export function requirePublishInput(input: PublishSiteInput): { fetchedAt: string; now: string } {
+  requireHost(input.host);
+  requireObject("snapshot", input.snapshot, MAX_PUBLISHED_SNAPSHOT_BYTES);
+  requireObject("report", input.report, MAX_REPORT_BYTES);
+  return { fetchedAt: requireTime("fetchedAt", input.fetchedAt), now: requireTime("now", input.now) };
+}
+
+export function requireRefreshError(code: string): void {
+  if (!(REFRESH_ERRORS as readonly string[]).includes(code)) throw new RangeError("unknown refresh error code");
 }
 
 /** The save rule of the contract above. Returns the normalized fetch time (ISO 8601). */
 export function requireSaveInput(input: SaveReportInput): string {
   const { host, report, fetchedAt } = input;
   if (typeof host !== "string" || host.length === 0 || host.length > 253) throw new RangeError("host must be 1 to 253 characters");
-  if (typeof report !== "object" || report === null || Array.isArray(report)) throw new RangeError("report must be an object");
-  if (Buffer.byteLength(JSON.stringify(report)) > MAX_REPORT_BYTES) throw new RangeError("report is too large");
-  const ms = typeof fetchedAt === "string" ? Date.parse(fetchedAt) : NaN;
-  if (!Number.isFinite(ms)) throw new RangeError("fetchedAt must be an ISO date and time");
-  return new Date(ms).toISOString();
+  requireObject("report", report, MAX_REPORT_BYTES);
+  return requireTime("fetchedAt", fetchedAt);
 }
 
 /** The score field of a stored report: a finite number, else null. */

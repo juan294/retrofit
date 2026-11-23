@@ -14,12 +14,18 @@ import {
   requireClaimToken,
   requireNewClaim,
   requireEmail,
+  requirePublishInput,
+  requireRefreshError,
   requireSaveInput,
   scoreOf,
   type AccountData,
   type Claim,
   type ClaimStatus,
   type NotifySignup,
+  type PublicSite,
+  type PublishedSite,
+  type PublishSiteResult,
+  type RefreshError,
   type SaveReportResult,
   type SavedReport,
   type SavedReportSummary,
@@ -52,6 +58,18 @@ interface ClaimRow {
   readonly seq: number;
 }
 
+interface PublishedRow {
+  readonly host: string;
+  readonly accountId: string;
+  readonly claimId: string;
+  readonly snapshot: Record<string, unknown>;
+  readonly report: Record<string, unknown>;
+  readonly fetchedAt: string;
+  readonly publishedAt: string;
+  readonly refreshedAt: string;
+  lastRefreshError: RefreshError | null;
+}
+
 /** Shared state. Two adapters over one backing model two server instances. */
 export interface AccountMemoryBacking {
   /** Keyed by the normalized email. */
@@ -62,10 +80,12 @@ export interface AccountMemoryBacking {
   readonly savedReports: Map<string, SavedReportRow>;
   /** Keyed by claim id. */
   readonly claims: Map<string, ClaimRow>;
+  /** Keyed by host. */
+  readonly published: Map<string, PublishedRow>;
 }
 
 export function createAccountMemoryBacking(): AccountMemoryBacking {
-  return { notify: new Map(), profiles: new Map(), savedReports: new Map(), claims: new Map() };
+  return { notify: new Map(), profiles: new Map(), savedReports: new Map(), claims: new Map(), published: new Map() };
 }
 
 let seq = 0;
@@ -89,7 +109,7 @@ const iso = (t: number | string) => new Date(t).toISOString();
  */
 export function createMemoryAccountData(options: MemoryAccountDataOptions = {}): AccountData {
   const clock = options.clock ?? systemClock;
-  const { notify, profiles, savedReports, claims } = options.backing ?? createAccountMemoryBacking();
+  const { notify, profiles, savedReports, claims, published } = options.backing ?? createAccountMemoryBacking();
   const accountClaims = (accountId: string) => [...claims.values()].filter((r) => r.claim.accountId === accountId).sort((x, y) => x.seq - y.seq);
   const pendingCount = (accountId: string) => accountClaims(accountId).filter((r) => r.claim.status === "pending").length;
   const copy = (claim: Claim): Claim => ({ ...claim });
@@ -110,6 +130,23 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
     if (row.claim.tokenHash !== tokenHash) return { done: { outcome: "stale", claim: copy(row.claim) } };
     return { row };
   };
+
+  /** The account's publication of the host, or undefined. */
+  const ownSite = (accountId: string, host: string): PublishedRow | undefined => {
+    const row = published.get(host);
+    return row?.accountId === accountId ? row : undefined;
+  };
+  /** The one public rule (AccountData getPublicSite; the database's site_is_public). */
+  const isPublic = (row: PublishedRow): boolean => {
+    const claim = claims.get(row.claimId)?.claim;
+    return claim !== undefined && claim.status === "verified" && claim.accountId === row.accountId && claim.host === row.host;
+  };
+  const publicRow = (host: string): PublishedRow | null => {
+    const row = published.get(host);
+    return row && isPublic(row) ? row : null;
+  };
+  const publicSite = (row: PublishedRow): PublicSite => ({ host: row.host, score: scoreOf(row.report), fetchedAt: row.fetchedAt, publishedAt: row.publishedAt, refreshedAt: row.refreshedAt });
+  const ownedSite = (row: PublishedRow): PublishedSite => ({ ...publicSite(row), claimId: row.claimId, lastRefreshError: row.lastRefreshError });
 
   async function op<R>(body: (now: number) => R): Promise<R> {
     await Promise.resolve();
@@ -208,6 +245,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       return op(() => {
         profiles.delete(accountId);
         for (const [id, row] of savedReports) if (row.accountId === accountId) savedReports.delete(id);
+        for (const [host, row] of published) if (row.accountId === accountId) published.delete(host);
         for (const [id, row] of claims) if (row.claim.accountId === accountId) claims.delete(id);
         // As the auth user's deletion does (superseded_by ... on delete set null).
         for (const row of claims.values()) if (row.supersededBy === accountId) row.supersededBy = null;
@@ -291,11 +329,12 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
         const movedFrom: string[] = [];
         for (const other of claims.values()) {
           if (other === row || other.claim.host !== row.claim.host || (other.claim.status !== "verified" && other.claim.status !== "lapsed")) continue;
-          // Phase 4: the published site of `other` is paused here (its claim is no longer verified).
           update(other, { status: "superseded", supersededAt: checkedAt });
           other.supersededBy = row.claim.accountId;
           movedFrom.push(other.claim.accountId);
         }
+        // The host moved: every publication under another claim ends (also one paused by a pending claim).
+        if (published.get(row.claim.host)?.claimId !== row.claim.id) published.delete(row.claim.host);
         const verifiedAt = row.claim.status === "verified" ? row.claim.verifiedAt : checkedAt;
         const claim = update(row, { status: "verified", verifiedAt, lapsedAt: null, lastCheckedAt: checkedAt, failures: 0, lastResult: "verified", lastDetail: null });
         return { outcome: "verified", claim, movedFrom };
@@ -327,8 +366,90 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       return op(() => {
         if (!ownRow(accountId, claimId)) return false;
         claims.delete(claimId);
+        // As published_sites.claim_id ... on delete cascade.
+        for (const [host, row] of published) if (row.claimId === claimId) published.delete(host);
         return true;
       });
+    },
+
+    async publishSite(rawId, input) {
+      const accountId = requireAccountId(rawId);
+      const { fetchedAt, now } = requirePublishInput(input);
+      const { host } = input;
+      return op((): PublishSiteResult => {
+        const claim = accountClaims(accountId).find((r) => r.claim.host === host)?.claim;
+        if (!claim) return { outcome: "no_claim" };
+        if (claim.status !== "verified") return { outcome: "not_verified" };
+        const mine = ownSite(accountId, host);
+        if (mine && Date.parse(mine.fetchedAt) >= Date.parse(fetchedAt)) return { outcome: "not_newer" };
+        const row: PublishedRow = {
+          host,
+          accountId,
+          claimId: claim.id,
+          snapshot: structuredClone(input.snapshot),
+          report: structuredClone(input.report),
+          fetchedAt,
+          publishedAt: mine?.publishedAt ?? now,
+          refreshedAt: now,
+          lastRefreshError: null,
+        };
+        published.set(host, row);
+        return { outcome: mine ? "refreshed" : "published", site: ownedSite(row) };
+      });
+    },
+
+    async recordRefreshError(accountId, host, code) {
+      requireRefreshError(code);
+      return op(() => {
+        const row = ownSite(accountId, host);
+        if (!row) return false;
+        row.lastRefreshError = code;
+        return true;
+      });
+    },
+
+    async unpublishSite(accountId, host) {
+      return op(() => ownSite(accountId, host) !== undefined && published.delete(host));
+    },
+
+    async listPublishedSites(accountId) {
+      return op(() =>
+        [...published.values()]
+          .filter((r) => r.accountId === accountId)
+          .sort((x, y) => (x.host < y.host ? -1 : 1))
+          .map(ownedSite),
+      );
+    },
+
+    async getPublicSite(host) {
+      return op(() => {
+        const row = publicRow(host);
+        return row && publicSite(row);
+      });
+    },
+
+    async getPublicReport(host) {
+      return op(() => {
+        const row = publicRow(host);
+        return row && { ...publicSite(row), report: structuredClone(row.report) };
+      });
+    },
+
+    async getPublicSnapshot(host) {
+      return op(() => {
+        const row = publicRow(host);
+        return row && { ...publicSite(row), snapshot: structuredClone(row.snapshot) };
+      });
+    },
+
+    async listPublicHosts(limit) {
+      return op(() =>
+        [...published.values()]
+          .filter(isPublic)
+          .sort((x, y) => Date.parse(y.refreshedAt) - Date.parse(x.refreshedAt) || (x.host < y.host ? -1 : 1))
+          .slice(0, Math.max(0, limit))
+          .map((r) => r.host),
+      );
     },
   };
 }

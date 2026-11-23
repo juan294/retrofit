@@ -119,7 +119,9 @@ export async function checkClaim(deps: ClaimCheckDeps, claim: Pick<Claim, "host"
  * Checks the claim and records the result (AccountData verifyClaim or recordClaimFailure), with
  * the time from deps.clock. Returns the claim as stored afterwards, and `checked: false` when
  * nothing was recorded: the claim is superseded, Start over replaced its token during the check,
- * or the check was deferred. A verification by another account moves the host (verifyClaim).
+ * or the check was deferred. A verification by another account moves the host and ends the old
+ * account's publication (verifyClaim); a lapse hides this account's (AccountData getPublicSite reads
+ * the claim's state), so no published page needs a write here.
  * Throws when the account data is unavailable.
  */
 export async function runClaimCheck(deps: ClaimCheckDeps & Pick<ServerDeps, "accounts">, claim: Claim, deadline?: CheckDeadline): Promise<{ claim: Claim; checked: boolean }> {
@@ -130,7 +132,6 @@ export async function runClaimCheck(deps: ClaimCheckDeps & Pick<ServerDeps, "acc
   const recorded = outcome.passed
     ? await deps.accounts.verifyClaim(claim.id, { tokenHash: claim.tokenHash, checkedAt })
     : await deps.accounts.recordClaimFailure(claim.id, { tokenHash: claim.tokenHash, result: outcome.result, detail: outcome.detail, checkedAt });
-  // Phase 4 hook: a verification with `movedFrom` pauses those accounts' published sites; a lapse pauses this one's.
   if (recorded.outcome === "missing") return { claim, checked: false };
   return { claim: recorded.claim, checked: recorded.outcome === "verified" || recorded.outcome === "updated" };
 }
