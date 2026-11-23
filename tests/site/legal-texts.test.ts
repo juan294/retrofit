@@ -36,6 +36,24 @@ describe("privacy notice draft", () => {
   });
 });
 
+describe("privacy notice accuracy", () => {
+  const privacy = text(PRIVACY);
+
+  // Fails if the free-AI line claims less than the ledger keeps (usage and cost) or implies the conversation is kept.
+  it("describes the free-AI records as usage and cost counts, never the conversation", () => {
+    expect(privacy).not.toContain("number of tokens");
+    expect(privacy).toContain("usage and cost counts");
+    expect(privacy).toContain("never stores the conversation");
+  });
+
+  // Fails if the notice says email is sent today (Phase 1 sends none) or drops the sign-in email it will send.
+  it("says Amazon SES will send email, starting with sign-in links, and that none is sent yet", () => {
+    expect(privacy).not.toContain("Amazon SES sends its email");
+    expect(privacy).toContain("Retrofit sends no email yet");
+    expect(privacy).toMatch(/Amazon SES will send Retrofit's email, starting with sign-in links/);
+  });
+});
+
 describe("terms draft", () => {
   // Fails if the terms lose the free judging period, the ownership rule for publishing or the contact address.
   it("states the free period, the claim rule for publishing and the contact address", () => {

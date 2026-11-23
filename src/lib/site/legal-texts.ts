@@ -57,7 +57,7 @@ export const PRIVACY: LegalDocument = {
       heading: "AI for the preview agent",
       body: [
         "With your own AI key, your browser sends the conversation straight to the provider you chose. The key stays in your browser and never reaches Retrofit's servers.",
-        "With Retrofit's free AI, Retrofit passes the conversation to its AI provider, Otari, and keeps only the number of tokens used.",
+        "With Retrofit's free AI, Retrofit passes the conversation to its AI provider, Otari. Retrofit keeps usage and cost counts (calls per session and money spent) and never stores the conversation.",
       ],
     },
     {
@@ -80,7 +80,7 @@ export const PRIVACY: LegalDocument = {
     {
       heading: "Services that receive data",
       body: [
-        "Vercel hosts Retrofit. Supabase stores its data. Amazon SES sends its email. Otari runs Retrofit's free AI. Stripe takes payments when paid plans start.",
+        "Vercel hosts Retrofit. Supabase stores its data. Otari runs Retrofit's free AI. Retrofit sends no email yet; Amazon SES will send Retrofit's email, starting with sign-in links. Stripe takes payments when paid plans start.",
         `Retrofit's source code is public: ${SOURCE_URL}.`,
       ],
     },

@@ -34,12 +34,14 @@ export default defineConfig({
     url: `${BASE_URL}/`,
     reuseExistingServer: false,
     timeout: 60_000,
-    // One client IP runs every spec, so the hourly analysis limit is raised for the test server only.
+    // One client IP runs every spec, so the hourly analysis and notify limits are raised for the test server only.
     // Free path: a mock upstream on the 3013 test server, a test server key and a test judge code.
     env: {
       RETROFIT_TEST_FIXTURES: "1",
       PUBLIC_ORIGIN: BASE_URL,
       ANALYSES_PER_CLIENT_HOUR: "1000",
+      // The notify limit (5 an hour per network) has unit tests; every spec shares one client IP here.
+      NOTIFY_PER_CLIENT_HOUR: "1000",
       FREE_UPSTREAM_URL: "http://127.0.0.1:3013/otari/v1",
       OTARI_API_KEY: "otk_server_e2e_only",
       JUDGE_CODE: "judge-code-e2e",

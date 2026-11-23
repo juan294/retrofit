@@ -20,6 +20,7 @@
     { "id": "analyze-own-site", "kind": "probe", "target": "analyze https://retrofit.thecreativetoken.com/: score ready, the three agentic-web checks pass, the preview answers one question on the free path" },
     { "id": "concurrent-analyses-five", "kind": "probe", "target": "five concurrent analyses of Retrofit's own pages, with timings and status latency" },
     { "id": "no-preview-deployments", "kind": "probe", "target": "vercel list shows no deployment with the preview target" },
-    { "id": "judge-path", "kind": "probe", "target": "/judges with the code gives pool: judge" }
+    { "id": "judge-path", "kind": "probe", "target": "/judges with the code gives pool: judge" },
+    { "id": "own-pages", "kind": "e2e-prod", "target": "/pricing, /privacy and /terms serve their headings, the pricing page shows the notify form with its privacy link, and sitemap.xml lists all three" }
   ]
 }

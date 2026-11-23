@@ -6171,36 +6171,6 @@
       "title": "getAccountData uses memory off Vercel without Supabase configuration"
     },
     {
-      "rule": "plans table",
-      "suite": "unit",
-      "file": "tests/billing/plans.test.ts",
-      "title": "plans table has Free, Pro and Agency in that order"
-    },
-    {
-      "rule": "plans table",
-      "suite": "unit",
-      "file": "tests/billing/plans.test.ts",
-      "title": "plans table matches the plan ids allowed by billing_customers.plan in the migration"
-    },
-    {
-      "rule": "plans table",
-      "suite": "unit",
-      "file": "tests/billing/plans.test.ts",
-      "title": "plans table each plan includes every feature of the plan before it, and every feature has a label"
-    },
-    {
-      "rule": "plans table",
-      "suite": "unit",
-      "file": "tests/billing/plans.test.ts",
-      "title": "plans table keeps publishing, the badge, saved reports and API keys out of Free"
-    },
-    {
-      "rule": "plans table",
-      "suite": "unit",
-      "file": "tests/billing/plans.test.ts",
-      "title": "plans table carries no amounts"
-    },
-    {
       "rule": "notify me",
       "suite": "unit",
       "file": "tests/api/notify.test.ts",
@@ -6288,49 +6258,175 @@
       "rule": "notify me",
       "suite": "unit",
       "file": "tests/api/unsubscribe.test.ts",
-      "title": "GET /unsubscribe?t=<token> unsubscribes once and gives the same answer on a second visit"
+      "title": "unsubscribeByToken unsubscribes once and gives the same answer on a second call"
     },
     {
       "rule": "notify me",
       "suite": "unit",
       "file": "tests/api/unsubscribe.test.ts",
-      "title": "GET /unsubscribe?t=<token> answers invalid for undefined"
+      "title": "unsubscribeByToken answers invalid for undefined"
     },
     {
       "rule": "notify me",
       "suite": "unit",
       "file": "tests/api/unsubscribe.test.ts",
-      "title": "GET /unsubscribe?t=<token> answers invalid for \"\""
+      "title": "unsubscribeByToken answers invalid for \"\""
     },
     {
       "rule": "notify me",
       "suite": "unit",
       "file": "tests/api/unsubscribe.test.ts",
-      "title": "GET /unsubscribe?t=<token> answers invalid for \"0123456789abcdef0123456789abcdef\""
+      "title": "unsubscribeByToken answers invalid for \"0123456789abcdef0123456789abcdef\""
     },
     {
       "rule": "notify me",
       "suite": "unit",
       "file": "tests/api/unsubscribe.test.ts",
-      "title": "GET /unsubscribe?t=<token> answers invalid for \"../etc\""
+      "title": "unsubscribeByToken answers invalid for \"../etc\""
     },
     {
       "rule": "notify me",
       "suite": "unit",
       "file": "tests/api/unsubscribe.test.ts",
-      "title": "GET /unsubscribe?t=<token> answers invalid for [\"a\",\"b\"]"
+      "title": "unsubscribeByToken answers invalid for [\"a\",\"b\"]"
     },
     {
       "rule": "notify me",
       "suite": "unit",
       "file": "tests/api/unsubscribe.test.ts",
-      "title": "GET /unsubscribe?t=<token> answers invalid for \"0123456789ABCDEF0123456789ABCDEF\""
+      "title": "unsubscribeByToken answers invalid for \"0123456789ABCDEF0123456789ABCDEF\""
     },
     {
       "rule": "notify me",
       "suite": "unit",
       "file": "tests/api/unsubscribe.test.ts",
-      "title": "GET /unsubscribe?t=<token> answers unavailable when account data fails and never logs the token"
+      "title": "unsubscribeByToken answers unavailable when account data fails and never logs the token"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> renders the confirm form and does not unsubscribe"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> renders the result text with no form"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> page state for {\"t\":\"0123456789abcdef0123456789abcdef\"}"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> page state for {\"t\":\"../x\"}"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> page state for {}"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> page state for {\"t\":[\"0123456789abcdef0123456789abcdef\",\"0123456789abcdef0123456789abcdef\"]}"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> page state for {\"result\":\"done\"}"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> page state for {\"result\":\"invalid\"}"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> page state for {\"result\":\"unavailable\"}"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> page state for {\"result\":\"<script>\"}"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "POST /api/unsubscribe a confirm form post unsubscribes once and redirects 303 to the result page"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "POST /api/unsubscribe redirects an unknown token to the invalid-link result and changes nothing"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "POST /api/unsubscribe accepts an RFC 8058 one-click post from another origin, idempotent, with one answer for known and unknown tokens"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "POST /api/unsubscribe accepts a multipart one-click body"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "POST /api/unsubscribe answers 413 over 2 KB and 400 for a body that is neither the confirm form nor one-click"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "POST /api/unsubscribe answers 503 to one-click and redirects the form to the unavailable result when account data fails"
+    },
+    {
+      "rule": "plans table",
+      "suite": "unit",
+      "file": "tests/billing/plans.test.ts",
+      "title": "plans table has Free, Pro and Agency in that order"
+    },
+    {
+      "rule": "plans table",
+      "suite": "unit",
+      "file": "tests/billing/plans.test.ts",
+      "title": "plans table matches the plan ids allowed by billing_customers.plan in the migration"
+    },
+    {
+      "rule": "plans table",
+      "suite": "unit",
+      "file": "tests/billing/plans.test.ts",
+      "title": "plans table each plan includes every feature of the plan before it, and every feature has a label"
+    },
+    {
+      "rule": "plans table",
+      "suite": "unit",
+      "file": "tests/billing/plans.test.ts",
+      "title": "plans table keeps publishing, the badge, saved reports and API keys out of Free"
+    },
+    {
+      "rule": "plans table",
+      "suite": "unit",
+      "file": "tests/billing/plans.test.ts",
+      "title": "plans table carries no amounts"
     },
     {
       "rule": "privacy and terms drafts",
@@ -6354,6 +6450,18 @@
       "rule": "privacy and terms drafts",
       "suite": "unit",
       "file": "tests/site/legal-texts.test.ts",
+      "title": "privacy notice accuracy describes the free-AI records as usage and cost counts, never the conversation"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "privacy notice accuracy says Amazon SES will send email, starting with sign-in links, and that none is sent yet"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
       "title": "terms draft states the free period, the claim rule for publishing and the contact address"
     },
     {
@@ -6361,6 +6469,12 @@
       "suite": "unit",
       "file": "tests/site/notify-form.test.ts",
       "title": "NotifyForm renders an email field, an unticked consent box and the privacy link"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/site/notify-form.test.ts",
+      "title": "NotifyForm posts to /api/notify and keeps its button disabled until the page is hydrated"
     },
     {
       "rule": "notify me",
@@ -6465,10 +6579,106 @@
       "title": "accounts access: anon and authenticated are denied on every account table, service_role works, account rows cascade"
     },
     {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/pricing fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/privacy fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/terms fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/unsubscribe?t=0123456789abcdef0123456789abcdef fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/unsubscribe?t=not-a-token fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /pricing page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /privacy page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /terms page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /unsubscribe?t=0123456789abcdef0123456789abcdef page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /unsubscribe?t=not-a-token page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /pricing page text is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /privacy page text is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /terms page text is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /unsubscribe?t=0123456789abcdef0123456789abcdef page text is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /unsubscribe?t=not-a-token page text is readable in dark mode"
+    },
+    {
       "rule": "notify me",
       "suite": "playwright",
       "file": "pricing.spec.ts",
       "title": "pricing and notify me the pricing page shows the plans, the free-period note, an unticked consent box and the privacy link"
+    },
+    {
+      "rule": "notify me",
+      "suite": "playwright",
+      "file": "pricing.spec.ts",
+      "title": "pricing and notify me the notify button is enabled once the page is hydrated"
     },
     {
       "rule": "notify me",
@@ -6498,61 +6708,13 @@
       "rule": "own pages",
       "suite": "playwright",
       "file": "pricing.spec.ts",
-      "title": "privacy, terms and unsubscribe an unknown unsubscribe link shows the invalid-link text and is not indexed"
+      "title": "privacy, terms and unsubscribe an unsubscribe link shows a confirm button; confirming an unknown link shows the invalid-link text"
     },
     {
-      "rule": "phone layout",
+      "rule": "own pages",
       "suite": "playwright",
-      "file": "phone-width.spec.ts",
-      "title": "/pricing fits a 320 px phone screen without sideways scrolling"
-    },
-    {
-      "rule": "phone layout",
-      "suite": "playwright",
-      "file": "phone-width.spec.ts",
-      "title": "/privacy fits a 320 px phone screen without sideways scrolling"
-    },
-    {
-      "rule": "phone layout",
-      "suite": "playwright",
-      "file": "phone-width.spec.ts",
-      "title": "/terms fits a 320 px phone screen without sideways scrolling"
-    },
-    {
-      "rule": "preview readable in both color schemes",
-      "suite": "playwright",
-      "file": "preview-theme.spec.ts",
-      "title": "the /pricing page text is readable in light mode"
-    },
-    {
-      "rule": "preview readable in both color schemes",
-      "suite": "playwright",
-      "file": "preview-theme.spec.ts",
-      "title": "the /privacy page text is readable in light mode"
-    },
-    {
-      "rule": "preview readable in both color schemes",
-      "suite": "playwright",
-      "file": "preview-theme.spec.ts",
-      "title": "the /terms page text is readable in light mode"
-    },
-    {
-      "rule": "preview readable in both color schemes",
-      "suite": "playwright",
-      "file": "preview-theme.spec.ts",
-      "title": "the /pricing page text is readable in dark mode"
-    },
-    {
-      "rule": "preview readable in both color schemes",
-      "suite": "playwright",
-      "file": "preview-theme.spec.ts",
-      "title": "the /privacy page text is readable in dark mode"
-    },
-    {
-      "rule": "preview readable in both color schemes",
-      "suite": "playwright",
-      "file": "preview-theme.spec.ts",
-      "title": "the /terms page text is readable in dark mode"
+      "file": "pricing.spec.ts",
+      "title": "privacy, terms and unsubscribe a malformed unsubscribe link shows the invalid-link text and no button"
     }
   ],
   "repairs": {
