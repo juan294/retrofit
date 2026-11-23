@@ -68,7 +68,7 @@ export function ClaimsSection({ claims, options }: { claims: readonly ClaimView[
       <h2 className="mt-10 text-xl font-semibold">{T.heading}</h2>
       <p className="mt-2">{T.intro}</p>
       {options.length === 0 ? (
-        <p className="mt-2">{T.noSources}</p>
+        <p className="mt-2">{claims.length === 0 ? T.noSources : T.noMoreSources}</p>
       ) : (
         <form method="post" action="/api/claims" onSubmit={onCreate} className="mt-4 flex flex-col items-start gap-3">
           <label className="flex w-full flex-col gap-1">

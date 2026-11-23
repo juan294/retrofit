@@ -81,5 +81,9 @@ describe("claim panels before hydration", () => {
     expect(html).toContain(CLAIMS_TEXT.noSources);
     expect(html).toContain(CLAIMS_TEXT.noClaims);
     expect(html).not.toContain("<form");
+    // With claims but nothing left to claim, it says how to add another site.
+    const claimedAll = render([base], []);
+    expect(claimedAll).toContain(CLAIMS_TEXT.noMoreSources);
+    expect(claimedAll).not.toContain(CLAIMS_TEXT.noSources);
   });
 });

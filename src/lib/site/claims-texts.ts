@@ -22,6 +22,8 @@ export const CLAIMS_TEXT = {
   heading: "Your sites",
   intro: "Claim a site you own to publish its agent on Retrofit and show the badge. Retrofit checks for a tag on the home page or a DNS record.",
   noSources: "Analyze your site first, or save one of its reports. Then you can claim it here.",
+  /** Every analyzed or saved host is already claimed. */
+  noMoreSources: "To claim another site, analyze it first, or save one of its reports.",
   noClaims: "No claimed sites yet.",
   sourceLabel: "Site",
   sourceFromReport: (host: string) => `${host} (saved report)`,
