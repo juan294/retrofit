@@ -1,5 +1,6 @@
 import type { Browser, Page } from "@playwright/test";
 import { expect } from "../fixtures/csp";
+import { KEY_ITEM } from "@/lib/keys/storage";
 import { PUBLISH_TEXT } from "@/lib/site/publish-texts";
 import { newEmail, signIn } from "./account";
 import { OTARI } from "./agent";
@@ -55,12 +56,22 @@ export async function connectOwnKey(page: Page): Promise<void> {
   await expect(page.getByText(/Connected to Otari/)).toBeVisible();
 }
 
-/** Refreshes with no new analysis, so the panel shows the failed refresh. */
+/** Refreshes after the analysis expired (7 days; the clock goes back afterwards), so the panel shows the failed refresh. */
 export async function failRefresh(page: Page, host: string): Promise<void> {
   const panel = claimPanel(page, host);
-  await panel.getByRole("button", { name: PUBLISH_TEXT.refresh, exact: true }).click();
-  await expect(panel.getByTestId("publish-error")).toBeVisible();
+  try {
+    await setClockOffset(page.request, 8 * 24 * 3600_000);
+    await panel.getByRole("button", { name: PUBLISH_TEXT.refresh, exact: true }).click();
+    await expect(panel.getByTestId("publish-error")).toBeVisible();
+  } finally {
+    await setClockOffset(page.request, 0);
+  }
   await expect(panel.getByRole("button", { name: PUBLISH_TEXT.tryAgain, exact: true })).toBeEnabled();
+}
+
+/** Turns the account data outage on or off (fixtures mode). */
+export async function setOutage(page: Page, on: boolean): Promise<void> {
+  expect((await page.request.post("/test-fixtures/outage", { data: { on } })).status()).toBe(200);
 }
 
 /**
@@ -87,4 +98,11 @@ export async function publishStates(page: Page, browser: Browser, label: string)
     },
     close: () => context.close(),
   };
+}
+
+/** Saves the Otari test key in this tab, as the key panel does after a connect elsewhere on Retrofit. */
+export async function saveTestKey(page: Page, store: "sessionStorage" | "localStorage" = "sessionStorage"): Promise<void> {
+  await page.goto("/bot");
+  const value = JSON.stringify({ provider: "Otari", router: OTARI.routerBase, model: OTARI.model, key: OTARI.key });
+  await page.evaluate(({ store, item, value }) => window[store].setItem(item, value), { store, item: KEY_ITEM, value });
 }

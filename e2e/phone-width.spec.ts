@@ -2,10 +2,10 @@ import { test, expect } from "./fixtures/csp";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture, mockOtari } from "./support/agent";
-import { claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockCheckLimit } from "./support/claims";
+import { CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockCheckLimit } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
-import { connectOwnKey, mockPublishLimit, publishStates, verifiedOwner } from "./support/publish";
+import { connectOwnKey, mockPublishLimit, publishedOwner, publishStates, saveTestKey, setOutage, verifiedOwner, pageUrl } from "./support/publish";
 
 test.use({ viewport: { width: 320, height: 640 } });
 
@@ -124,4 +124,22 @@ test("the Publish offer and a limit answer fit a 320 px phone screen", async ({ 
   await panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }).click();
   await expect(panel.getByRole("alert")).toBeVisible();
   await fits(page);
+});
+
+// Phase 4 review. Fails if the saved key offer or the outage page of a published site scrolls sideways at 320 px.
+test("the saved key offer and the outage page of a published site fit a 320 px phone screen", async ({ page }) => {
+  test.setTimeout(60_000);
+  await publishedOwner(page, CLAIM_HOST, "phone-outage");
+  await saveTestKey(page);
+  await page.goto(pageUrl(CLAIM_HOST));
+  await expect(page.getByTestId("saved-key")).toBeVisible();
+  await fits(page);
+  try {
+    await setOutage(page, true);
+    await page.goto(pageUrl(CLAIM_HOST));
+    await expect(page.getByRole("heading", { level: 1, name: PUBLISHED_PAGE_TEXT.unavailableTitle })).toBeVisible();
+    await fits(page);
+  } finally {
+    await setOutage(page, false);
+  }
 });

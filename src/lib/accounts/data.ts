@@ -168,8 +168,11 @@ export type VerifyClaimResult =
   | { readonly outcome: "stale" | "superseded"; readonly claim: Claim }
   | { readonly outcome: "missing" };
 
-/** Why a refresh of a published site failed: a code, never page text (the page's copy names it). */
-export const REFRESH_ERRORS = ["no_analysis", "not_newer", "generation_failed", "too_large"] as const;
+/**
+ * Why a refresh of a published site failed: a code, never page text (the page's copy names it). A refresh
+ * without a newer read is not a failed refresh, so it has no code here.
+ */
+export const REFRESH_ERRORS = ["no_analysis", "generation_failed", "too_large"] as const;
 export type RefreshError = (typeof REFRESH_ERRORS)[number];
 
 export interface PublishSiteInput {

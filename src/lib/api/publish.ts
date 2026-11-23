@@ -1,4 +1,4 @@
-import { PUBLISH_PER_HOUR } from "@/lib/accounts/limits";
+import { PUBLISH_PER_HOUR, PUBLISH_TRIES_PER_HOUR } from "@/lib/accounts/limits";
 import { countClientWindow } from "@/lib/fetch/limits";
 import { exactHost } from "@/lib/publish/host";
 import { publishHost, type PublishHostDeps, type PublishHostResult } from "@/lib/publish/publish";
@@ -17,20 +17,23 @@ import { json, limitOr429 } from "./json";
 export type PublishDeps = PublishHostDeps;
 
 const PUBLISH_WINDOW = "publish";
+const TRY_WINDOW = "publish-try";
 
 const hostOf = (fields: Fields): string | null => (typeof fields.host === "string" ? exactHost(fields.host) : null);
 const invalid = () => json(400, { error: "invalid", message: T.invalid });
 const noClaim = (host: string) => json(403, { error: "not_yours", message: T.noClaim(host) });
 const notVerified = (host: string) => json(409, { error: "not_verified", message: T.notVerified(host) });
 
-/** 422: the analysis itself cannot be published; 409: a newer (or any) analysis is needed. */
-const FAILED_STATUS = { no_analysis: 409, not_newer: 409, generation_failed: 422, too_large: 422 } as const;
+/** 422: the analysis itself cannot be published; 409: an analysis is needed first. */
+const FAILED_STATUS = { no_analysis: 409, generation_failed: 422, too_large: 422 } as const;
 
 /**
  * POST /api/publish `{host}` -> 200 `{site, message}`: publishes the account's newest ready analysis of
  * the host, or refreshes the published copy. 403 not_yours without a claim by the account, 409
- * not_verified, 409 no_analysis or not_newer, 422 generation_failed or too_large (a published copy stays
- * as it was), 429 limit `{retryAt}` past PUBLISH_PER_HOUR publishes and refreshes of the account in the hour.
+ * not_verified, 409 no_analysis, 422 generation_failed or too_large (a published copy stays as it was),
+ * 409 not_newer (no newer read than the published one: not counted and not a failed refresh; `retryAt` is when
+ * a new read of the site is possible, when that is still to come), 429 limit `{retryAt}` past PUBLISH_PER_HOUR
+ * publishes and refreshes, or PUBLISH_TRIES_PER_HOUR tries, of the account in the hour.
  */
 export function handlePublish(request: Request, deps: PublishDeps): Promise<Response> {
   return accountPost("/api/publish", T, request, deps, async ({ accountId }, fields) => {
@@ -39,9 +42,10 @@ export function handlePublish(request: Request, deps: PublishDeps): Promise<Resp
     const claim = (await deps.accounts.listClaims(accountId)).find((c) => c.host === host);
     if (!claim) return noClaim(host);
     if (claim.status !== "verified") return notVerified(host);
-    const limited = limitOr429(await countClientWindow(deps.store, PUBLISH_WINDOW, PUBLISH_PER_HOUR, accountId, deps.clock()), T.limit);
-    if (limited) return limited;
-    return answer(await publishHost(deps, accountId, host), host, deps);
+    const count = (window: string, limit: number) => countClientWindow(deps.store, window, limit, accountId, deps.clock());
+    const tooMany = limitOr429(await count(TRY_WINDOW, PUBLISH_TRIES_PER_HOUR), T.tries);
+    if (tooMany) return tooMany;
+    return answer(await publishHost(deps, accountId, host, () => count(PUBLISH_WINDOW, PUBLISH_PER_HOUR)), host, deps);
   });
 }
 
@@ -55,6 +59,17 @@ function answer(result: PublishHostResult, host: string, deps: PublishDeps): Res
       return noClaim(host);
     case "not_verified":
       return notVerified(host);
+    case "limited":
+      return limitOr429({ ok: false, retryAt: result.retryAt }, T.limit)!;
+    case "not_newer": {
+      const from = result.newReadAt === null ? null : new Date(result.newReadAt);
+      return json(409, {
+        error: "not_newer",
+        message: from ? T.sameRead(host, Math.round(deps.config.crawlCacheTtlS / 360) / 10, from) : T.notNewer(host),
+        ...(from ? { retryAt: from.toISOString() } : {}),
+        site: result.site && publishedView(result.site, deps.config),
+      });
+    }
     default:
       return json(FAILED_STATUS[result.outcome], {
         error: result.outcome,

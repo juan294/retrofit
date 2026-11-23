@@ -16,6 +16,7 @@ import { createSupabaseStore } from "@/lib/store/supabase";
 import { createServiceClient, type ServiceClient } from "@/lib/supabase/client";
 import { createFixtureAuth, type FixtureAuth } from "@/lib/test-fixtures/auth";
 import { fixtureClock } from "@/lib/test-fixtures/clock";
+import { fixtureOutage } from "@/lib/test-fixtures/outage";
 import { fixtureTxtResolver } from "@/lib/test-fixtures/txt";
 import { systemClock, type Clock, type Store } from "@/lib/store/types";
 
@@ -166,7 +167,8 @@ export function getServerDeps(): ServerDeps {
       store: getStore(config),
       // Built on first use, so routes that never read account data do not create it.
       get accounts() {
-        return getAccountData(config);
+        // Browser tests can turn on an outage (fixtures mode only).
+        return config.fixturesEnabled ? fixtureOutage(getAccountData(config)) : getAccountData(config);
       },
       get auth() {
         return getAuthGateway(config);

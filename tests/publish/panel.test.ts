@@ -98,6 +98,8 @@ describe("the published agent panel", () => {
   it("renders the own-key notice with no free AI, no unofficial label and no inference route", () => {
     const html = renderToStaticMarkup(createElement(PublishedAgent, { host: HOST }));
     expect(html).toContain(HOST);
+    // P4-R6. True to the code: the browser sends the key to the chosen provider only.
+    expect(html).toContain("Your key goes only to that provider, never to Retrofit.");
     expect(html).not.toMatch(/free AI|unofficial|\/api\/inference/i);
   });
 

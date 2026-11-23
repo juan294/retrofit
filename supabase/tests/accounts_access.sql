@@ -536,6 +536,7 @@ begin
   reset role;
 
   perform pg_temp.expect_error('service_role', $q$update public.published_sites set last_refresh_error = '<b>page text</b>' where host = 'r.example'$q$, '23514');
+  perform pg_temp.expect_error('service_role', $q$update public.published_sites set last_refresh_error = 'not_newer' where host = 'r.example'$q$, '23514');
   perform pg_temp.expect_error('service_role', $q$update public.published_sites set host = 'R.example' where host = 'r.example'$q$, '23514');
   perform pg_temp.expect_error('service_role', $q$update public.published_sites set report = pg_catalog.jsonb_build_object('pad', repeat('x', 600000)) where host = 'r.example'$q$, '23514');
   perform pg_temp.expect_error('service_role', $q$update public.published_sites set snapshot = pg_catalog.jsonb_build_object('pad', repeat('x', 4200000)) where host = 'r.example'$q$, '23514');

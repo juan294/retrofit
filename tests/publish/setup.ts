@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Claim } from "@/lib/accounts/data";
 import { CLAIM_LAPSE_AFTER } from "@/lib/accounts/limits";
 import { addAccountAnalyses } from "@/lib/analysis/account-list";
-import { accountListTtl, EXPIRED_GRACE_S, type Analysis } from "@/lib/analysis/record";
+import { accountListTtl, analysisKey, EXPIRED_GRACE_S, storeTtl, type Analysis } from "@/lib/analysis/record";
 import { scoreSnapshot } from "@/lib/score/score";
 import { sha256Hex } from "@/lib/security/tokens";
 import type { Snapshot } from "@/lib/snapshot/types";
@@ -59,6 +59,8 @@ export async function listedAnalysis(
   const inputOrigin = o.inputOrigin ?? `https://${o.snapshot?.host ?? HOST}`;
   const ready = o.snapshot ? { snapshot: o.snapshot, score: scoreSnapshot(o.snapshot), readyAt: Date.parse(o.snapshot.fetchedAt) } : {};
   const a = await storeAnalysis(d, { id: randomBytes(16).toString("hex"), inputOrigin, accountId, expiresAt: d.clock() + d.config.analysisTtlS * 1000, ...ready, ...o.over });
+  // As storeTtl: the record outlives the analysis, so a test may move its clock by days.
+  await d.store.set(analysisKey(a.id), a, storeTtl(a, d.clock()));
   await addAccountAnalyses(d.store, accountId, [{ id: a.id, host: o.listedHost ?? new URL(inputOrigin).host, keptUntil: a.expiresAt + EXPIRED_GRACE_S * 1000 }], accountListTtl(d.config));
   return a;
 }

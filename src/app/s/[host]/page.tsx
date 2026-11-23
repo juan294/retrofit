@@ -17,9 +17,10 @@ const load = cache((rawHost: string) => readPublishedPage(getServerDeps(), rawHo
 
 type Props = { params: Promise<{ host: string }> };
 
-/** Indexable (no robots rule) while it is public; the 404 below adds noindex. */
+/** Indexable (no robots rule) while it is public; the 404 below adds noindex, and so does an outage (the page then throws). */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const site = await load((await params).host);
+  const site = await load((await params).host).catch(() => "unavailable" as const);
+  if (site === "unavailable") return { title: `${T.unavailableTitle} · Retrofit`, robots: { index: false } };
   if (!site) return { title: `${T.notFoundTitle} · Retrofit` };
   return { title: T.metaTitle(site.host), description: T.metaDescription(site.host), alternates: { canonical: publishedUrl(getServerDeps().config.publicOrigin, site.host) } };
 }
@@ -41,7 +42,7 @@ export default async function PublishedPage({ params }: Props) {
         {T.publishedBy(site.host, saved)}
       </p>
       <ScoreReport report={storedReportView(site.report)} readOn={saved}>
-        <PublishedAgent host={site.host} />
+        <PublishedAgent key={site.host} host={site.host} />
       </ScoreReport>
     </main>
   );

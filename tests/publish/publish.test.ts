@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { AccountData, RefreshError } from "@/lib/accounts/data";
 import { AccountDataUnavailable, MAX_PUBLISHED_SNAPSHOT_BYTES } from "@/lib/accounts/data";
-import { PUBLISH_PER_HOUR } from "@/lib/accounts/limits";
+import { PUBLISH_PER_HOUR, PUBLISH_TRIES_PER_HOUR } from "@/lib/accounts/limits";
 import { handlePublish, handleUnpublish, type PublishDeps } from "@/lib/api/publish";
 import type { PublishedView } from "@/lib/publish/view";
 import { PUBLISH_TEXT } from "@/lib/site/publish-texts";
@@ -135,6 +135,16 @@ describe("the analysis that is published", () => {
     expect((await d.accounts.getPublicReport(HOST))?.report).toMatchObject({ status: "ready", scoreVersion: "score/v1", host: HOST, fetchedAt: T2 });
   });
 
+  // P4-R3. Fails if the last started analysis wins over one with a newer read (it can use an older cached read of another typed address).
+  it("among ready analyses of the host the newest read wins, not the last started", async () => {
+    const { d, clock, publish, marker } = await setup();
+    await verifiedClaim(d);
+    await listedAnalysis(d, { snapshot: snapshotOf(HOST, T2, "newest read"), over: { expiresAt: clock.now() + 1000 } });
+    for (let n = 2; n < 12; n++) await listedAnalysis(d, { snapshot: snapshotOf(HOST, T1, "older read"), over: { expiresAt: clock.now() + n * 1000 } });
+    expect((await publish()).status).toBe(200);
+    expect(await marker()).toBe("newest read");
+  });
+
   // Fails if a network the vendored validator refuses is written, or page text reaches the answer.
   it("a network the validator refuses is not published (422), and nothing is stored", async () => {
     const { d, publish } = await setup();
@@ -177,7 +187,6 @@ describe("refresh", () => {
   // Fails if a failed refresh changes the public snapshot, stores anything but a code, or does not tell the owner why.
   it.each([
     ["no_analysis", 409, PUBLISH_TEXT.noAnalysis(HOST), async (_d: TestDeps) => {}, {}],
-    ["not_newer", 409, PUBLISH_TEXT.notNewer(HOST), async (d: TestDeps) => void (await listedAnalysis(d, { snapshot: snapshotOf(HOST, T1, "same read") })), {}],
     ["generation_failed", 422, PUBLISH_TEXT.generationFailed(HOST), async (d: TestDeps) => void (await listedAnalysis(d, { snapshot: snapshotOf(HOST, T2, "bad") })), { validate: () => ["page text <script>"] }],
     ["too_large", 422, PUBLISH_TEXT.tooLargeSite(HOST), async (d: TestDeps) => void (await listedAnalysis(d, { snapshot: snapshotOf(HOST, T2, "y".repeat(MAX_PUBLISHED_SNAPSHOT_BYTES)) })), {}],
   ] satisfies RefreshCase[])("a refresh that fails with %s keeps the published snapshot and stores the code", async (code, status, message, arrange, over) => {
@@ -198,11 +207,77 @@ describe("refresh", () => {
     await listedAnalysis(d, { over: { jobId: "failed-job", expiresAt: clock.now() + 2000 } });
     expect((await publish()).body.error).toBe("not_newer");
     expect(await marker()).toBe("published");
-    expect(await error()).toBe("not_newer");
+    expect(await error()).toBeNull();
     await listedAnalysis(d, { snapshot: snapshotOf(HOST, T2, "after the crawl worked"), over: { expiresAt: clock.now() + 3000 } });
     expect((await publish()).status).toBe(200);
     expect(await marker()).toBe("after the crawl worked");
     expect(await error()).toBeNull();
+  });
+});
+
+// P4-R1. Retrofit reuses one read of a site for CRAWL_CACHE_TTL_S, so a second analysis inside it brings no newer read.
+describe("a refresh inside the crawl cache window", () => {
+  const READ = "2026-11-21T09:15:30.000Z";
+  async function publishedFromRead() {
+    const s = await setup("2026-11-21T10:00:00.000Z");
+    await verifiedClaim(s.d);
+    await listedAnalysis(s.d, { snapshot: snapshotOf(HOST, READ, "one read") });
+    expect((await s.publish()).status).toBe(200);
+    // A second analysis within the window copies the same read.
+    s.clock.advance(60_000);
+    await listedAnalysis(s.d, { snapshot: snapshotOf(HOST, READ, "one read") });
+    return s;
+  }
+
+  // Fails if the owner is told only to analyze again (which cannot work yet), or the time is not when the cached read ends.
+  it("says that one read is reused and from when a new one is possible, with the time as retryAt", async () => {
+    const { publish, marker, d } = await publishedFromRead();
+    const r = await publish();
+    // The read ended at 09:15:30, so a new one is possible 24 hours later, shown as the next whole minute.
+    const at = new Date("2026-11-22T09:16:00.000Z");
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ error: "not_newer", message: PUBLISH_TEXT.sameRead(HOST, 24, at), retryAt: at.toISOString(), site: { error: null } });
+    expect(r.body.message).toMatch(/reuses one read of a site for 24 hours.*09:16 UTC/);
+    expect(await marker()).toBe("one read");
+    expect((await d.accounts.listPublishedSites(OWNER))[0]?.lastRefreshError).toBeNull();
+  });
+
+  // Fails if the window is the 24-hour default and not the configured one.
+  it("uses the configured window", async () => {
+    const { d, publish } = await publishedFromRead();
+    const deps = { ...d, config: { ...d.config, crawlCacheTtlS: 2 * 3600 } };
+    const at = new Date("2026-11-21T11:16:00.000Z");
+    expect((await publish({ deps })).body).toMatchObject({ message: PUBLISH_TEXT.sameRead(HOST, 2, at), retryAt: at.toISOString() });
+  });
+
+  // Fails if the answer counts as a failed refresh: it would overwrite a real error or use up the hourly limit.
+  it("is not a failed refresh: it keeps an earlier error and does not count against the hourly limit", async () => {
+    const { d, publish, error } = await publishedFromRead();
+    await d.accounts.recordRefreshError(OWNER, HOST, "too_large");
+    for (let n = 0; n < PUBLISH_PER_HOUR + 5; n++) expect((await publish()).status).toBe(409);
+    expect(await error()).toBe("too_large");
+    await listedAnalysis(d, { snapshot: snapshotOf(HOST, "2026-11-21T10:01:00.000Z", "a newer read") });
+    expect((await publish()).status).toBe(200);
+  });
+
+  // Fails if a refresh after the window, from a new analysis, does not work, or without one still gives a past time.
+  it("after the window it says to analyze again, and a new analysis refreshes the page", async () => {
+    const { d, clock, publish, marker } = await publishedFromRead();
+    clock.set(Date.parse("2026-11-22T09:16:00.000Z"));
+    const r = await publish();
+    expect(r.body).toMatchObject({ error: "not_newer", message: PUBLISH_TEXT.notNewer(HOST) });
+    expect(r.body.retryAt).toBeUndefined();
+    await listedAnalysis(d, { snapshot: snapshotOf(HOST, "2026-11-22T09:16:20.000Z", "a new read") });
+    expect((await publish()).status).toBe(200);
+    expect(await marker()).toBe("a new read");
+  });
+
+  // Fails if checking for a newer read is unlimited (each try reads the account's analyses).
+  it(`answers 429 after ${PUBLISH_TRIES_PER_HOUR} tries in an hour`, async () => {
+    const { publish } = await publishedFromRead();
+    for (let n = 1; n < PUBLISH_TRIES_PER_HOUR; n++) expect((await publish()).status, String(n)).toBe(409);
+    const r = await publish();
+    expect(r).toEqual({ status: 429, body: { error: "limit", message: PUBLISH_TEXT.tries(new Date("2026-11-21T11:00:00.000Z")), retryAt: "2026-11-21T11:00:00.000Z" } });
   });
 });
 

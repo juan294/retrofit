@@ -9,15 +9,16 @@ import { addClaimTag, checkAgain, claimHostOf, claimPanel, CLAIM_HOST, FLAKY_HOS
 import { expectInert, hostileScript, IMG, injectHostileContent, JS_LINK, SCRIPT } from "./support/extra-hostile";
 import { recordRequests, RETROFIT_ORIGIN } from "./support/extra-requests";
 import { fixtureOrigin } from "./support/global-setup";
-import { badgeUrl, connectOwnKey, failRefresh, ORIGIN, pageUrl, publishedByDns, publishedOwner } from "./support/publish";
+import { badgeUrl, connectOwnKey, failRefresh, ORIGIN, pageUrl, publishedByDns, publishedOwner, saveTestKey, setOutage } from "./support/publish";
 
 // Publishing and the badge (phase-4.md; parent success criteria 5 and 6).
 
 const networkUrl = (host: string) => `${pageUrl(host)}/${networkNameFor(claimHostOf(host))}`;
 
 test.describe("published sites", () => {
-  test.afterEach(async ({ request }) => {
+  test.afterEach(async ({ page, request }) => {
     await setClockOffset(request, 0);
+    await setOutage(page, false);
   });
 
   // Fails if a visitor without cookies cannot read the report or use the agent with their own key, the page uses Retrofit's free AI or
@@ -120,7 +121,7 @@ test.describe("published sites", () => {
     await publishedOwner(page, FLAKY_HOST, "lapse");
     const panel = claimPanel(page, FLAKY_HOST);
     await failRefresh(page, FLAKY_HOST);
-    await expect(panel.getByTestId("publish-error")).toHaveText(`${PUBLISH_TEXT.lastRefreshFailed} ${PUBLISH_TEXT.refreshError.not_newer(claimHostOf(FLAKY_HOST))}`);
+    await expect(panel.getByTestId("publish-error")).toHaveText(`${PUBLISH_TEXT.lastRefreshFailed} ${PUBLISH_TEXT.refreshError.no_analysis(claimHostOf(FLAKY_HOST))}`);
     expect((await request.get(pageUrl(FLAKY_HOST))).status()).toBe(200);
     await page.reload();
     await expect(panel.getByTestId("publish-error")).toBeVisible();
@@ -245,6 +246,101 @@ test.describe("published sites", () => {
     expect(result.catalog).toEqual({ id: 1, ok: true, value: [] });
     expect(result.execute).toMatchObject({ ok: false });
     expect(result.readable).toBe(false);
+  });
+
+  // P4-R1. Fails if a refresh inside the crawl cache window is shown as a failed refresh, or does not say (in the owner's own time) when a
+  // new read is possible; or a new analysis inside the window changes that.
+  test("a refresh inside the read's 24 hours says when a new read is possible, and is not a failed refresh", async ({ page }) => {
+    test.setTimeout(60_000);
+    await publishedOwner(page, CLAIM_HOST, "window");
+    await analyzeFixture(page, CLAIM_HOST);
+    await page.goto("/account");
+    const panel = claimPanel(page, CLAIM_HOST);
+    const answered = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/publish");
+    await panel.getByRole("button", { name: PUBLISH_TEXT.refresh, exact: true }).click();
+    const response = await answered;
+    expect(response.status()).toBe(409);
+    const { retryAt } = (await response.json()) as { retryAt: string };
+    const ahead = Date.parse(retryAt) - Date.now();
+    expect(ahead).toBeGreaterThan(0);
+    expect(ahead).toBeLessThanOrEqual(24 * 3600_000 + 60_000);
+    const local = await page.evaluate((iso) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }), retryAt);
+    await expect(panel.getByTestId("claim-message")).toHaveText(new RegExp(`Retrofit reuses one read of a site for 24 hours, so a new analysis brings nothing newer before ${local}\\. Analyze it again after that, then refresh\\.$`));
+    await expect(panel.getByTestId("publish-error")).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: PUBLISH_TEXT.refresh, exact: true })).toBeEnabled();
+    await page.reload();
+    await expect(panel.getByTestId("publish-error")).toHaveCount(0);
+  });
+
+  // P4-R4. Fails if an outage answers below 500, as a 404, cached, indexable, without the text and the retry, or with any internal detail.
+  test("an account data outage answers 5xx with the unavailable text and a retry that recovers", async ({ page }) => {
+    await publishedOwner(page, CLAIM_HOST, "outage");
+    await setOutage(page, true);
+    const raw = await page.request.get(pageUrl(CLAIM_HOST));
+    expect(raw.status()).toBeGreaterThanOrEqual(500);
+    expect(raw.headers()["cache-control"]).toMatch(/no-store/);
+    expect(await raw.text()).toMatch(/<meta name="robots" content="noindex/);
+    expect(await raw.text()).not.toMatch(/fixture_outage|AccountDataUnavailable|getPublicReport|published by/i);
+    const response = await page.goto(pageUrl(CLAIM_HOST));
+    expect(response?.status()).toBeGreaterThanOrEqual(500);
+    await expect(page.getByRole("heading", { level: 1, name: PUBLISHED_PAGE_TEXT.unavailableTitle })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: PUBLISHED_PAGE_TEXT.unavailable })).toBeVisible();
+    await expect(page.locator('meta[name="robots"][content*="noindex"]').first()).toBeAttached();
+    await expect(page.locator("body")).not.toContainText(/fixture_outage|AccountDataUnavailable|digest/i);
+    for (const url of [`${pageUrl(CLAIM_HOST)}/agent-manifest.json`, badgeUrl(CLAIM_HOST)]) {
+      const res = await page.request.get(url);
+      expect(res.status(), url).toBe(503);
+      expect(res.headers()["cache-control"], url).toMatch(/no-store/);
+    }
+    expect((await page.request.get("/sitemap.xml")).status()).toBe(200);
+    await setOutage(page, false);
+    await page.getByRole("button", { name: PUBLISHED_PAGE_TEXT.tryAgain }).click();
+    await expect(page.getByTestId("published-by")).toBeVisible();
+  });
+
+  // P4 review, item 7. Fails if a key saved elsewhere on Retrofit (in this tab or on this device) connects on a published page without a
+  // click, reaches any provider before it, or a click on one host counts for another host or a later load.
+  test("a saved key is used on a published page only after a click, on every load and every host", async ({ page, browser }) => {
+    test.setTimeout(90_000);
+    await publishedOwner(page, CLAIM_HOST, "saved-a");
+    await publishedByDns(page, "plain.fixture.test", "saved-b");
+    for (const store of ["sessionStorage", "localStorage"] as const) {
+      const context = await browser.newContext();
+      const visitor = await context.newPage();
+      const router = await mockOtari(visitor);
+      const log = recordRequests(context);
+      await saveTestKey(visitor, store);
+      const quiet = async () => {
+        await expect(visitor.getByRole("button", { name: "Use your saved key" })).toBeVisible();
+        // Give a connection by itself the time it would need.
+        await visitor.waitForTimeout(1_000);
+        await expect(visitor.getByTestId("preview-mount")).toHaveCount(0);
+        await expect(visitor.getByText(/Connected to/)).toHaveCount(0);
+        expect(await visitor.evaluate(() => (window as { __nsweb?: unknown }).__nsweb === undefined)).toBe(true);
+        expect(await visitor.locator("body").innerHTML()).not.toContain(OTARI.key);
+      };
+      const providerRequests = async () => (await log.all()).filter((r) => r.origin !== RETROFIT_ORIGIN).map((r) => r.url);
+
+      await visitor.goto(pageUrl(CLAIM_HOST));
+      await quiet();
+      expect(await providerRequests(), store).toEqual([]);
+      expect([router.modelRequests, router.probes.length, router.bodies.length]).toEqual([0, 0, 0]);
+
+      await visitor.getByRole("button", { name: "Use your saved key" }).click();
+      await expect(visitor.getByText(/Connected to Otari/)).toBeVisible();
+      await expect(visitor.getByTestId("preview-mount").locator('[data-ns-slot="chat"]')).toBeVisible();
+      await expect(visitor.getByRole("button", { name: "Use your saved key" })).toHaveCount(0);
+      expect(router.probes.length).toBeGreaterThan(0);
+
+      // Another host, and the same host again, ask again.
+      for (const host of ["plain.fixture.test", CLAIM_HOST]) {
+        const before = (await providerRequests()).length;
+        await visitor.goto(pageUrl(host));
+        await quiet();
+        expect((await providerRequests()).length, host).toBe(before);
+      }
+      await context.close();
+    }
   });
 
   // Fails if an expired analysis can be published, the owner is not told to analyze again, or a newer analysis does not refresh the page.

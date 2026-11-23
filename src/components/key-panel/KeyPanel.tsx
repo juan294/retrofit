@@ -21,6 +21,11 @@ export type KeyPanelProps = {
   freePathActive?: boolean;
   /** Retrofit's free AI is starting: the key form stays closed, so it does not flash open first. */
   freePathStarting?: boolean;
+  /**
+   * A saved key waits for a click on "Use your saved key", on every page load, instead of connecting by itself.
+   * For pages whose agent another site's owner published: a key saved elsewhere on Retrofit must not run there unasked.
+   */
+  askForSavedKey?: boolean;
 };
 
 type Connected = { provider: string; price: string; note: string | null };
@@ -28,7 +33,7 @@ type Connected = { provider: string; price: string; note: string | null };
 const field = { borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" };
 const muted = { color: "var(--color-muted)" };
 
-export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, freePathStarting = false }: KeyPanelProps) {
+export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, freePathStarting = false, askForSavedKey = false }: KeyPanelProps) {
   const ids = useId();
   const keyRef = useRef<HTMLInputElement>(null);
   const attempt = useRef(0);
@@ -43,7 +48,10 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, f
   const advancedProvider = router ? providerForRouter(router) : null;
   const keyPage = advancedProvider ?? detected;
 
-  // Restore a key saved earlier in this tab (or remembered on this device) once on mount.
+  // The provider of a saved key that waits for the visitor's click (askForSavedKey). Never the key itself.
+  const [offered, setOffered] = useState<string | null>(null);
+
+  // Restore a key saved earlier in this tab (or remembered on this device) once on mount, or only offer it.
   const restored = useRef(false);
   useEffect(() => {
     if (restored.current) return;
@@ -52,9 +60,23 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, f
     const provider = saved ? providerForRouter(saved.router) : null;
     if (!saved || !provider) return;
     setRemember(saved.remembered);
+    if (askForSavedKey) return setOffered(provider.name);
     setConnected({ provider: provider.name, price: priceText(undefined), note: null });
     onConnect({ provider: provider.name, router: provider.router, model: saved.model, key: saved.key });
-  }, [onConnect]);
+  }, [onConnect, askForSavedKey]);
+
+  /** The visitor chose the saved key: read it from storage now and connect. */
+  function takeSavedKey() {
+    const saved = loadKey();
+    const provider = saved ? providerForRouter(saved.router) : null;
+    setOffered(null);
+    if (!saved || !provider) return;
+    attempt.current += 1;
+    setBusy(false);
+    setError(null);
+    setConnected({ provider: provider.name, price: priceText(undefined), note: null });
+    onConnect({ provider: provider.name, router: provider.router, model: saved.model, key: saved.key });
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,6 +96,7 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, f
       return;
     }
     saveKey(result.connection, { remember });
+    setOffered(null);
     setConnected({ provider: result.connection.provider, price: result.price, note: result.note });
     onConnect(result.connection);
   }
@@ -105,6 +128,17 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, f
           {connected.note ? <p className="text-sm">{connected.note}</p> : null}
           <p className="text-sm" style={muted}>
             {connected.price}
+          </p>
+        </div>
+      ) : null}
+
+      {offered ? (
+        <div className="flex flex-col items-start gap-1" data-testid="saved-key">
+          <button type="button" onClick={takeSavedKey} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
+            Use your saved key
+          </button>
+          <p className="text-sm" style={muted}>
+            A key for {offered} is saved in this browser. This page does not use it unless you choose to.
           </p>
         </div>
       ) : null}

@@ -9,7 +9,8 @@ import { PUBLISHED_PAGE_TEXT as T } from "@/lib/site/publish-texts";
 
 /**
  * The agent on /s/<host>: the key panel and the runtime on the visitor's own key. It is not AgentPanel,
- * because a published page never uses Retrofit's free AI: nothing here imports the free session.
+ * because a published page never uses Retrofit's free AI: nothing here imports the free session. A key
+ * saved elsewhere on Retrofit connects only after a click, on every page load: the page's owner is not the visitor.
  */
 export function PublishedAgent({ host }: { host: string }) {
   const { ownKey, originUrl, onConnect, onForget } = useOwnKey(`/s/${host}`);
@@ -26,7 +27,7 @@ export function PublishedAgent({ host }: { host: string }) {
       </p>
       {guard ? (
         <div id="key-panel" className="mt-3">
-          <KeyPanel guard={guard} onConnect={onConnect} onForget={onForget} />
+          <KeyPanel guard={guard} onConnect={onConnect} onForget={onForget} askForSavedKey />
         </div>
       ) : null}
       {ownKey && originUrl ? <Preview originUrl={originUrl} inference={ownKey} /> : null}

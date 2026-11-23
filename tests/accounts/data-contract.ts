@@ -567,11 +567,14 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         await publish(a, owner, input("err", "kept", 20));
         expect(await b.recordRefreshError(await newAccount(), host("err"), "no_analysis")).toBe(false);
         expect((await a.listPublishedSites(owner))[0]?.lastRefreshError).toBeNull();
-        for (const code of ["no_analysis", "not_newer", "generation_failed", "too_large"] as const) {
+        for (const code of ["no_analysis", "generation_failed", "too_large"] as const) {
           expect(await b.recordRefreshError(owner, host("err"), code)).toBe(true);
           expect((await a.listPublishedSites(owner))[0]?.lastRefreshError).toBe(code);
         }
         await expect(a.recordRefreshError(owner, host("err"), "<b>page text</b>" as "no_analysis")).rejects.toThrow(RangeError);
+        // P4-R1. A refresh without a newer read is not a failed refresh.
+        await expect(a.recordRefreshError(owner, host("err"), "not_newer" as "no_analysis")).rejects.toThrow(RangeError);
+        expect((await b.listPublishedSites(owner))[0]?.lastRefreshError).toBe("too_large");
         expect(await marker(a, "err")).toBe("kept");
       });
 

@@ -12,6 +12,9 @@
 -- it verifies one. A superseded claim is terminal, so its publication could not come back anyway;
 -- a publication paused by a lapsed claim that was started over (pending, not superseded) could.
 --
+-- Lock order, the same in publish_site, verify_claim and delete_account_data (replaced here), so they
+-- never deadlock: the host's advisory lock when used, then site_claims, then published_sites.
+--
 -- Access contract, as for delete_account_data: security invoker with an empty search_path,
 -- EXECUTE for service_role only.
 
@@ -19,7 +22,7 @@ alter table public.published_sites
   -- When Retrofit read the site: a refresh must be newer. publish_site always sets it; a column, so no read opens the snapshot for it.
   add column fetched_at timestamptz not null default now(),
   -- The code of the last failed refresh, never page text.
-  add constraint published_sites_refresh_error check (last_refresh_error in ('no_analysis', 'not_newer', 'generation_failed', 'too_large')),
+  add constraint published_sites_refresh_error check (last_refresh_error in ('no_analysis', 'generation_failed', 'too_large')),
   add constraint published_sites_host check (host = lower(host) and length(host) between 1 and 253),
   -- Twice the application's limits (MAX_PUBLISHED_SNAPSHOT_BYTES, MAX_REPORT_BYTES): jsonb text has extra spaces.
   add constraint published_sites_snapshot_size check (octet_length(snapshot::text) <= 4194304),
@@ -181,11 +184,34 @@ begin
 end;
 $$;
 
+-- As in *_delete_account_data.sql, with the claims deleted before the publications (their lock order above).
+create or replace function public.delete_account_data(p_account_id uuid)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if p_account_id is null then
+    raise exception 'delete_account_data: account id is required' using errcode = '22004';
+  end if;
+  -- The claims go first; their publications go with them (claim_id ... on delete cascade), then any other of the account's.
+  delete from public.site_claims where account_id = p_account_id;
+  delete from public.published_sites where account_id = p_account_id;
+  delete from public.saved_reports where account_id = p_account_id;
+  delete from public.api_keys where account_id = p_account_id;
+  delete from public.billing_customers where account_id = p_account_id;
+  delete from public.account_profiles where account_id = p_account_id;
+end;
+$$;
+
 revoke all on function public.site_is_public(uuid, uuid, text) from public, anon, authenticated;
 revoke all on function public.public_site(text, text) from public, anon, authenticated;
 revoke all on function public.public_hosts(integer) from public, anon, authenticated;
 revoke all on function public.publish_site(uuid, text, jsonb, jsonb, timestamptz, timestamptz) from public, anon, authenticated;
 revoke all on function public.verify_claim(uuid, text, timestamptz) from public, anon, authenticated;
+revoke all on function public.delete_account_data(uuid) from public, anon, authenticated;
+grant execute on function public.delete_account_data(uuid) to service_role;
 grant execute on function public.site_is_public(uuid, uuid, text) to service_role;
 grant execute on function public.public_site(text, text) to service_role;
 grant execute on function public.public_hosts(integer) to service_role;

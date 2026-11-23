@@ -8,7 +8,7 @@ import { analyzeFixture, mockOtari } from "./support/agent";
 import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockCheckLimit } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
-import { connectOwnKey, mockPublishLimit, publishStates, verifiedOwner } from "./support/publish";
+import { connectOwnKey, mockPublishLimit, pageUrl, publishedOwner, publishStates, saveTestKey, setOutage, verifiedOwner } from "./support/publish";
 
 type Locator = import("@playwright/test").Locator;
 
@@ -270,5 +270,28 @@ for (const colorScheme of ["light", "dark"] as const) {
     await mockPublishLimit(page);
     await panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }).click();
     await readable({ limit: panel.getByRole("alert") });
+  });
+}
+
+// Phase 4 review. Fails if the saved key offer or the outage page of a published site is unreadable in either scheme.
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`the saved key offer and the outage page of a published site are readable in ${colorScheme} mode`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.emulateMedia({ colorScheme });
+    await publishedOwner(page, CLAIM_HOST, `theme-outage-${colorScheme}`);
+    await saveTestKey(page);
+    await page.goto(pageUrl(CLAIM_HOST));
+    await readable({ use: page.getByRole("button", { name: "Use your saved key" }), note: page.getByTestId("saved-key").locator("p") });
+    try {
+      await setOutage(page, true);
+      await page.goto(pageUrl(CLAIM_HOST));
+      await readable({
+        heading: page.getByRole("heading", { level: 1, name: PUBLISHED_PAGE_TEXT.unavailableTitle }),
+        text: page.getByText(PUBLISHED_PAGE_TEXT.unavailable),
+        retry: page.getByRole("button", { name: PUBLISHED_PAGE_TEXT.tryAgain }),
+      });
+    } finally {
+      await setOutage(page, false);
+    }
   });
 }

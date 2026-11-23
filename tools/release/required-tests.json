@@ -8814,12 +8814,6 @@
       "rule": "publishing",
       "suite": "unit",
       "file": "tests/publish/publish.test.ts",
-      "title": "refresh a refresh that fails with not_newer keeps the published snapshot and stores the code"
-    },
-    {
-      "rule": "publishing",
-      "suite": "unit",
-      "file": "tests/publish/publish.test.ts",
       "title": "refresh a refresh that fails with generation_failed keeps the published snapshot and stores the code"
     },
     {
@@ -9247,6 +9241,186 @@
       "suite": "playwright",
       "file": "preview-theme.spec.ts",
       "title": "the Publish offer and a limit answer are readable in dark mode"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/outage.test.ts",
+      "title": "fixtures account data outage the route answers 404 outside fixtures mode"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/outage.test.ts",
+      "title": "fixtures account data outage every operation fails closed while it is on, and works when it is off"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "the analysis that is published among ready analyses of the host the newest read wins, not the last started"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "a refresh inside the crawl cache window says that one read is reused and from when a new one is possible, with the time as retryAt"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "a refresh inside the crawl cache window uses the configured window"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "a refresh inside the crawl cache window is not a failed refresh: it keeps an earlier error and does not count against the hourly limit"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "a refresh inside the crawl cache window after the window it says to analyze again, and a new analysis refreshes the page"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "a refresh inside the crawl cache window answers 429 after 60 tries in an hour"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/x%2f..%2f..%2faccount.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/x%2F..%2F..%2Faccount.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/x%5c..%5caccount.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/shop.example.com%00.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/shop.example.com;a.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/SHOP.example.com.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/%2e%2e.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/..account.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/x%2f..%2f../bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/x%2f..%2f..%2faccount/bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/..x/bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/SHOP.example.com/bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/x;y/bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/shop.example.com/bridge/x%2f..%2f..%2faccount"
+    },
+    {
+      "rule": "publishing",
+      "suite": "playwright",
+      "file": "publish.spec.ts",
+      "title": "published sites a refresh inside the read's 24 hours says when a new read is possible, and is not a failed refresh"
+    },
+    {
+      "rule": "publishing",
+      "suite": "playwright",
+      "file": "publish.spec.ts",
+      "title": "published sites an account data outage answers 5xx with the unavailable text and a retry that recovers"
+    },
+    {
+      "rule": "publishing",
+      "suite": "playwright",
+      "file": "publish.spec.ts",
+      "title": "published sites a saved key is used on a published page only after a click, on every load and every host"
+    },
+    {
+      "rule": "publishing",
+      "suite": "db",
+      "file": "tests/db/publish-race.db.test.ts",
+      "title": "account deletion and a publish of the same account never deadlock; the deletion wins or the publish finds no claim"
+    },
+    {
+      "rule": "publishing",
+      "suite": "db",
+      "file": "tests/db/publish-race.db.test.ts",
+      "title": "account deletion and another account's verification of its host never deadlock"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the saved key offer and the outage page of a published site fit a 320 px phone screen"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the saved key offer and the outage page of a published site are readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the saved key offer and the outage page of a published site are readable in dark mode"
     }
   ],
   "repairs": {
