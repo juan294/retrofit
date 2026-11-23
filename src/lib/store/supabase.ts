@@ -37,7 +37,8 @@ export function keyPrefix(key: string): string {
   return head.length > 48 ? `${head.slice(0, 48)}...` : head;
 }
 
-function withTimeout(base: typeof fetch, ms: number): typeof fetch {
+/** Wraps `base` so every request is aborted after `ms`. */
+export function withTimeout(base: typeof fetch, ms: number): typeof fetch {
   return (input, init) => {
     const timeout = AbortSignal.timeout(ms);
     const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout;

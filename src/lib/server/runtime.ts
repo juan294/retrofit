@@ -1,5 +1,8 @@
 import { createHmac } from "node:crypto";
 import { after } from "next/server";
+import type { AccountData } from "@/lib/accounts/data";
+import { createMemoryAccountData } from "@/lib/accounts/memory";
+import { createSupabaseAccountData } from "@/lib/accounts/supabase";
 import { getConfig, type Config } from "@/lib/config";
 import { createFetchContext } from "@/lib/fetch/context";
 import type { FetchContext } from "@/lib/fetch/http";
@@ -17,6 +20,8 @@ import { systemClock, type Clock, type Store } from "@/lib/store/types";
 export interface ServerDeps {
   readonly config: Config;
   readonly store: Store;
+  /** Relational account data (notify signups; accounts, claims, publishing and billing in later phases). */
+  readonly accounts: AccountData;
   readonly clock: Clock;
   readonly fetch: FetchContext;
   /** Keeps background work (crawl workers) alive after the response. `after()` in production. */
@@ -54,6 +59,7 @@ export function selfKick(config: Config): () => Promise<void> {
 
 interface Singletons {
   store?: Store;
+  accounts?: AccountData;
   fetch?: FetchContext;
   deps?: ServerDeps;
 }
@@ -81,6 +87,22 @@ export function getStore(config: Config = getConfig()): Store {
   return singletons.store;
 }
 
+/**
+ * The process-wide AccountData, chosen like the Store: Supabase when it is
+ * configured, memory off Vercel without it, and a refusal on Vercel without it.
+ */
+export function getAccountData(config: Config = getConfig()): AccountData {
+  if (singletons.accounts) return singletons.accounts;
+  if (config.supabase) {
+    singletons.accounts = createSupabaseAccountData(config.supabase);
+  } else if (config.onVercel) {
+    throw new Error("Supabase account data not configured");
+  } else {
+    singletons.accounts = createMemoryAccountData();
+  }
+  return singletons.accounts;
+}
+
 export function getFetchContext(config: Config = getConfig()): FetchContext {
   singletons.fetch ??= createFetchContext({ config, store: getStore(config) });
   return singletons.fetch;
@@ -101,6 +123,7 @@ export function getServerDeps(): ServerDeps {
     singletons.deps = {
       config,
       store: getStore(config),
+      accounts: getAccountData(config),
       // Fixtures mode only: e2e tests may offset the server clock (src/lib/test-fixtures/clock.ts).
       clock: config.fixturesEnabled ? fixtureClock : systemClock,
       fetch: getFetchContext(config),

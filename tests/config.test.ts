@@ -130,3 +130,26 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "not a url", SUPABASE_SERVICE_ROLE_KEY: "k" })).toThrow(/SUPABASE_URL/);
   });
 });
+
+describe("billing start and notify limit", () => {
+  // Fails if billing could start before judging ends (the brief's free-access rule) or the default moves.
+  it("defaults BILLING_START to 2027-01-19T00:00:00Z and NOTIFY_PER_CLIENT_HOUR to 5", () => {
+    const c = loadConfig({ SESSION_SECRET: secret });
+    expect(c.billingStart).toBe(Date.parse("2027-01-19T00:00:00Z"));
+    expect(c.notifyPerClientHour).toBe(5);
+  });
+
+  // Fails if BILLING_START is ignored or a bad value falls back to the default instead of refusing.
+  it("reads BILLING_START as an ISO date and time and refuses anything else", () => {
+    expect(loadConfig({ SESSION_SECRET: secret, BILLING_START: "2027-02-01T12:00:00Z" }).billingStart).toBe(Date.parse("2027-02-01T12:00:00Z"));
+    for (const bad of ["soon", "2027-13-45"]) {
+      expect(() => loadConfig({ SESSION_SECRET: secret, BILLING_START: bad })).toThrow(/BILLING_START/);
+    }
+  });
+
+  // Fails if the notify limit cannot be set or a bad value is accepted.
+  it("reads NOTIFY_PER_CLIENT_HOUR as a positive number", () => {
+    expect(loadConfig({ SESSION_SECRET: secret, NOTIFY_PER_CLIENT_HOUR: "9" }).notifyPerClientHour).toBe(9);
+    expect(() => loadConfig({ SESSION_SECRET: secret, NOTIFY_PER_CLIENT_HOUR: "0" })).toThrow(/NOTIFY_PER_CLIENT_HOUR/);
+  });
+});

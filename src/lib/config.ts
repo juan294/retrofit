@@ -23,6 +23,8 @@ export interface Config {
   readonly crawlMaxHostsPerDay: number;
   readonly queueMaxWaitS: number;
   readonly analysesPerClientHour: number;
+  /** "Notify me" signups per network per hour (POST /api/notify). */
+  readonly notifyPerClientHour: number;
   readonly staleAfterS: number;
   readonly analysisTtlS: number;
   readonly scoreWaitMs: number;
@@ -30,6 +32,11 @@ export interface Config {
   readonly sessionSecret: string;
   readonly onVercel: boolean;
   readonly fixturesEnabled: boolean;
+  /**
+   * The instant billing and the free-analysis limit start (ms since epoch; BILLING_START, default
+   * 2027-01-19T00:00:00Z, the day after judging ends). Before it every visitor keeps open access.
+   */
+  readonly billingStart: number;
   /** Phase 6: Retrofit's free inference path. */
   readonly free: FreeConfig;
   /** Phase 7: the Supabase store. Required on Vercel; null off Vercel without it (memory store). */
@@ -91,6 +98,7 @@ const NUMBERS = {
   crawlMaxHostsPerDay: ["CRAWL_MAX_HOSTS_PER_DAY", 1000],
   queueMaxWaitS: ["QUEUE_MAX_WAIT_S", 120],
   analysesPerClientHour: ["ANALYSES_PER_CLIENT_HOUR", 20],
+  notifyPerClientHour: ["NOTIFY_PER_CLIENT_HOUR", 5],
   staleAfterS: ["STALE_AFTER_S", 90],
   analysisTtlS: ["ANALYSIS_TTL_S", 604800],
   scoreWaitMs: ["SCORE_WAIT_MS", 25000],
@@ -170,7 +178,9 @@ export function loadConfig(env: Env): Config {
 
   const supabase = loadSupabaseConfig(env, onVercel);
 
-  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, free, supabase });
+  const billingStart = parseInstant(env, "BILLING_START", "2027-01-19T00:00:00Z");
+
+  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, free, supabase });
 }
 
 /** SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY: required on Vercel (https); off Vercel both or neither. */
@@ -185,6 +195,13 @@ function loadSupabaseConfig(env: Env, onVercel: boolean): SupabaseConfig | null 
   const url = parseOrigin("SUPABASE_URL", rawUrl);
   if (onVercel && !url.startsWith("https:")) throw new ConfigError("SUPABASE_URL", "must use https on Vercel");
   return Object.freeze({ url, serviceRoleKey: key });
+}
+
+/** An ISO 8601 date and time in ms since the epoch; `fallback` when unset. */
+function parseInstant(env: Env, name: string, fallback: string): number {
+  const ms = Date.parse(env[name] ?? fallback);
+  if (!Number.isFinite(ms)) throw new ConfigError(name, "must be an ISO date and time");
+  return ms;
 }
 
 function parseNonNegative(env: Env, name: string, fallback: number): number {
@@ -216,9 +233,7 @@ export function loadFreeConfig(env: Env, onVercel: boolean): FreeConfig {
   const judgeReserveUsd = required("JUDGE_RESERVE_USD");
   if (judgeReserveUsd >= creditUsd) throw new ConfigError("JUDGE_RESERVE_USD", "must be less than FREE_CREDIT_USD");
 
-  const serviceEndRaw = env.FREE_SERVICE_END ?? "2027-01-18T23:59:59Z";
-  const serviceEndMs = Date.parse(serviceEndRaw);
-  if (!Number.isFinite(serviceEndMs)) throw new ConfigError("FREE_SERVICE_END", "must be an ISO date and time");
+  const serviceEndMs = parseInstant(env, "FREE_SERVICE_END", "2027-01-18T23:59:59Z");
 
   const thresholds = (env.CREDIT_ALERT_THRESHOLDS ?? "0.5,0.8,0.95").split(",").map((x) => Number(x.trim()));
   if (!thresholds.length || thresholds.some((t, i) => !(t > 0 && t < 1) || (i > 0 && t <= thresholds[i - 1]!))) {
