@@ -23,7 +23,7 @@ async function waitReady(deadline: number): Promise<void> {
 export default async function setup() {
   if (!existsSync(".next/BUILD_ID")) throw new Error("Run pnpm build before pnpm test:perf.");
   const child: ChildProcess = spawn("node_modules/.bin/next", ["start", "--port", String(PERF_PORT), "--hostname", "127.0.0.1"], {
-    env: { ...process.env, RETROFIT_TEST_FIXTURES: "1", PUBLIC_ORIGIN: PERF_ORIGIN, NODE_ENV: "production" },
+    env: { ...process.env, RETROFIT_TEST_FIXTURES: "1", BILLING_START: "2036-01-19T00:00:00Z", PUBLIC_ORIGIN: PERF_ORIGIN, NODE_ENV: "production" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   mkdirSync(".local", { recursive: true });

@@ -75,9 +75,9 @@ describe("billing data unreadable", () => {
 describe("the default start", () => {
   // Fails if an unset BILLING_START off Vercel, or the fixtures, start billing earlier than the plan's instant.
   it("is the plan's instant without configuration", async () => {
-    const d = testDeps({ clock: () => START - 1 });
-    expect(billingStarted(d)).toBe(false);
-    expect(billingStarted(testDeps({ clock: () => START }))).toBe(true);
+    const unset = { BILLING_START: undefined };
+    expect(billingStarted(testDeps({ clock: () => START - 1, env: unset }))).toBe(false);
+    expect(billingStarted(testDeps({ clock: () => START, env: unset }))).toBe(true);
     expect(BILLING_ENV.BILLING_START).toBe("2027-01-19T00:00:00Z");
   });
 });

@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 export const BASE_URL = "http://127.0.0.1:3010";
+/** BILLING_START of the test server: far ahead, so no spec meets billing by the date it runs on. Billing specs move the server clock there. */
+export const E2E_BILLING_START = "2036-01-19T00:00:00Z";
 
 export default defineConfig({
   testDir: "e2e",
@@ -50,6 +52,7 @@ export default defineConfig({
       JUDGE_CODE: "judge-code-e2e",
       FREE_CALLS_PER_SESSION: "12",
       FREE_SESSIONS_PER_CLIENT_HOUR: "1000",
+      BILLING_START: E2E_BILLING_START,
       // Fixtures mode uses the fixtures gateway and never contacts Stripe; these are placeholders in the required form.
       STRIPE_SECRET_KEY: "sk_test_e2e_only",
       STRIPE_WEBHOOK_SECRET: "whsec_e2e_only",

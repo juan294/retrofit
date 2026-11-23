@@ -106,7 +106,8 @@ export interface TestDeps extends ServerDeps {
 }
 
 export function testDeps(o: TestDepsOptions = {}): TestDeps {
-  const config = loadConfig({ SESSION_SECRET: "s".repeat(32), RETROFIT_TEST_FIXTURES: "1", PUBLIC_ORIGIN, ...o.env });
+  // BILLING_START far ahead: no test meets billing by the date it runs on. Billing tests set their own (tests/billing/setup.ts).
+  const config = loadConfig({ SESSION_SECRET: "s".repeat(32), RETROFIT_TEST_FIXTURES: "1", PUBLIC_ORIGIN, BILLING_START: "2036-01-19T00:00:00Z", ...o.env });
   const clock = o.clock ?? Date.now;
   const backing = o.backing ?? createMemoryBacking();
   const store = o.store ?? createMemoryStore({ clock, backing, instrument: o.instrument });

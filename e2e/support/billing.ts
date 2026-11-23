@@ -5,17 +5,17 @@ import { visitorTexts } from "@/lib/analysis/texts";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { PRICING_TEXT } from "@/lib/site/pricing-texts";
 import { PUBLISH_TEXT } from "@/lib/site/publish-texts";
+import { E2E_BILLING_START } from "../../playwright.config";
 import { newEmail, signIn } from "./account";
 import { analyzeFixture } from "./agent";
 import { claimPanel, setClockOffset, verifyByDns } from "./claims";
 
 /** The fixture site that only specs after BILLING_START analyze. */
 export const BILLING_HOST = "billing.fixture.test";
-const BILLING_START = Date.parse("2027-01-19T00:00:00Z");
 
 /** Moves the server clock one hour past BILLING_START (fixtures mode). The caller sets it back to zero. */
 export async function startBilling(request: APIRequestContext): Promise<void> {
-  await setClockOffset(request, BILLING_START + 3600_000 - Date.now());
+  await setClockOffset(request, Date.parse(E2E_BILLING_START) + 3600_000 - Date.now());
 }
 
 /** On /pricing, opens the checkout of a plan; ends on the fixtures checkout page. */

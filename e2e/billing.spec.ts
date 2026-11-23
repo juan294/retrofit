@@ -45,7 +45,7 @@ test.describe("plans after BILLING_START", () => {
     await expect(page.getByRole("status").filter({ hasText: BILLING_TEXT.cancelled })).toHaveText("Checkout was cancelled. Nothing was charged.");
 
     await buyPlan(page, "Pro");
-    await expect(page.getByTestId("plan-detail")).toHaveText(/ ?Renews on \d+ February 2027\./);
+    await expect(page.getByTestId("plan-detail")).toHaveText(/ ?Renews on \d+ February 2036\./);
     await expect(page.getByTestId("plan-activating")).toHaveCount(0);
     await publishOn(page, BILLING_HOST);
     expect((await page.request.get(pageUrl(BILLING_HOST))).status()).toBe(200);
