@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { VISITOR_COOKIE, VISITOR_MAX_AGE_S } from "@/lib/analysis/visitor";
 import { EXPIRED_GRACE_S } from "@/lib/analysis/record";
+import { FREE_ANALYSES, FREE_WINDOW_S } from "@/lib/billing/free-limit";
 import { loadConfig } from "@/lib/config";
 import { SESSION_COOKIE, SESSION_TTL_S } from "@/lib/inference/session";
 import { ACCOUNT_COOKIE, ACCOUNT_SESSION_TTL_S } from "@/lib/accounts/session";
@@ -137,5 +138,44 @@ describe("publishing in the privacy notice and the terms", () => {
     expect(terms).toContain("Retrofit pauses a published page and its badge when the claim stops verifying, and ends them when you unpublish, remove the claim or delete your account, or when another account verifies the site.");
     expect(terms).toContain("Publish only a site you own or have permission to publish.");
     expect(terms).toContain("shows a saved copy with its date");
+  });
+});
+
+// Phase 5. The facts come from src/lib/billing/*, the billing migration and account deletion; the numbers from the code.
+describe("payments, the free limit and API keys in the privacy notice and the terms", () => {
+  const privacy = text(PRIVACY);
+  const terms = text(TERMS);
+
+  // Fails if the notice leaves out something billing stores or sends, or lets a visitor think Retrofit sees the card.
+  it("says what Stripe receives, what Retrofit stores, and that card details go only to Stripe", () => {
+    expect(privacy).toContain("When you open checkout, Stripe receives your email address and your Retrofit account id.");
+    expect(privacy).toContain("your Stripe customer id, your plan and its status, the subscription id, the end of the paid period, whether the plan ends then, and when Retrofit last checked");
+    expect(privacy).toContain("the ids, types and times of the payment events it has handled");
+    expect(privacy).toContain("Card details go only to Stripe.");
+  });
+
+  // Fails if the drafts hide that payments are in test mode while the configuration accepts test keys only.
+  it("says payments run in Stripe's test mode, as the configuration requires", () => {
+    expect(() => loadConfig({ SESSION_SECRET: "s".repeat(32), STRIPE_SECRET_KEY: "sk_live_x", STRIPE_WEBHOOK_SECRET: "whsec_x" })).toThrow(/test-mode/);
+    for (const t of [privacy, terms]) expect(t).toContain("Stripe's test mode: no real payment is taken");
+  });
+
+  // Fails if the long-lived network hash of the free limit goes unmentioned, or its period drifts from the code.
+  it("states the free-analysis count, its hash and its period", () => {
+    expect(privacy).toContain(`counts the ${FREE_ANALYSES} free analyses of visitors without an account per browser and per network, with a keyed hash of your IP address, for up to ${FREE_WINDOW_S / 86400} days`);
+    expect(terms).toContain(`${FREE_ANALYSES} free analyses in ${FREE_WINDOW_S / 86400} days`);
+  });
+
+  // Fails if the notice hides what is kept of an API key.
+  it("says what is kept of an API key", () => {
+    expect(privacy).toContain("Retrofit shows an API key once and stores a hash of it, its last four characters and its dates.");
+  });
+
+  // Fails if the drafts are wrong about the end of a plan or about account deletion, or promise refunds or tax terms nobody decided.
+  it("says what the end of a plan and account deletion do, and promises nothing about refunds or tax", () => {
+    expect(terms).toContain("When a plan ends, pages you already published stay public until you unpublish them, and reports you saved stay in your account.");
+    for (const t of [privacy, terms]) expect(t).toContain("cancels a paid plan at once");
+    expect(privacy).toContain("Stripe keeps its customer and payment records.");
+    for (const t of [privacy, terms]) expect(t).not.toMatch(/refund|\bVAT\b|\btax/i);
   });
 });

@@ -5,6 +5,11 @@
 // they make no legal claims. Juan owns the final wording.
 // ============================================================================
 //
+// OWNER REVIEW, billing (Phase 5): the lines about Stripe, test mode, the free-analysis count, API
+// keys, the end of a plan and cancellation at account deletion are new. They state only what the code
+// does. Refunds, taxes, invoices and the switch to live payments are not decided, so the texts promise
+// nothing about them; Juan decides and adds them before live payments start.
+//
 // Facts come from the code: cookie names and lifetimes from their modules,
 // retention from the configuration defaults. tests/site/legal-texts.test.ts
 // fails when one of them drifts from the text.
@@ -15,6 +20,7 @@ import { EXPIRED_GRACE_S } from "@/lib/analysis/record";
 import { VISITOR_COOKIE, VISITOR_MAX_AGE_S } from "@/lib/analysis/visitor";
 import { SIGN_IN_COOKIE, SIGN_IN_TTL_S } from "@/lib/api/sign-in";
 import { BADGE_MAX_AGE_S } from "@/lib/badge/handler";
+import { FREE_ANALYSES, FREE_WINDOW_S } from "@/lib/billing/free-limit";
 import { SESSION_COOKIE, SESSION_TTL_S } from "@/lib/inference/session";
 import { LEAD_EMAIL, SOURCE_URL } from "./own-site";
 
@@ -56,6 +62,7 @@ export const PRIVACY: LegalDocument = {
         `The pages it read are kept for ${CRAWL_CACHE_HOURS} hours and shared between visitors who analyze the same site.`,
         `Your analysis (a copy of those pages and the score) is private to the browser that ran it and to the signed-in account it is attached to. It is kept for ${ANALYSIS_DAYS} days, then shown as expired for ${days(EXPIRED_GRACE_S)} more days, then deleted.`,
         "To limit use, Retrofit counts requests per network with a hash of your IP address that changes every day. It does not store the address itself.",
+        `From the day paid plans start, Retrofit counts the ${FREE_ANALYSES} free analyses of visitors without an account per browser and per network, with a keyed hash of your IP address, for up to ${days(FREE_WINDOW_S)} days. It does not store the address itself.`,
       ],
     },
     {
@@ -84,7 +91,10 @@ export const PRIVACY: LegalDocument = {
         `Unpublish on your account page deletes the published copy and ends the page, its files and the badge. Other sites and search engines may keep their own copies, and a badge image can stay in a browser's cache for up to ${hours(BADGE_MAX_AGE_S)} hour.`,
         `After ${CLAIM_LAPSE_AFTER} failed daily checks of your claim, the page, its files and the badge are hidden until a check passes; the copy is kept. If you remove the claim, or another account verifies the site, the copy is deleted.`,
         "A published agent works only with the visitor's own AI key, never with Retrofit's free AI. A published page and a badge set no cookie.",
-        "Payments go through Stripe when paid plans start. Retrofit stores your Stripe customer id, your plan and its renewal date. Card details go only to Stripe.",
+        "Payments go through Stripe's own checkout and billing pages when paid plans start, for now in Stripe's test mode: no real payment is taken. When you open checkout, Stripe receives your email address and your Retrofit account id.",
+        "Retrofit stores your Stripe customer id, your plan and its status, the subscription id, the end of the paid period, whether the plan ends then, and when Retrofit last checked. It also keeps the ids, types and times of the payment events it has handled. Card details go only to Stripe.",
+        "Retrofit shows an API key once and stores a hash of it, its last four characters and its dates. Calls with a key are counted per account, not per network.",
+        "Deleting your account cancels a paid plan at once, before anything else. Stripe keeps its customer and payment records.",
         "Deleting your account: Retrofit deletes the account and its data (claims, published pages, saved reports, API keys and sign-in sessions). The sign-in provider may keep security logs for a limited time.",
       ],
     },
@@ -124,7 +134,10 @@ export const TERMS: LegalDocument = {
       heading: "Free period and paid plans",
       body: [
         "Retrofit is free for everyone, including the hackathon judges, until 2027-01-18. Paid plans start after that date.",
-        "Prices are shown on the pricing page before you can buy. Payments go through Stripe.",
+        `From that day a visitor without an account has ${FREE_ANALYSES} free analyses in ${days(FREE_WINDOW_S)} days. An account is free.`,
+        "Prices are shown on the pricing page before you can buy. Payments go through Stripe, for now in Stripe's test mode: no real payment is taken.",
+        "Manage billing on your account page opens Stripe's billing page, where you can cancel a plan. Deleting your account cancels a paid plan at once.",
+        "When a plan ends, pages you already published stay public until you unpublish them, and reports you saved stay in your account. Publishing, refreshing, saving new reports, Retrofit's AI and API keys need a plan.",
       ],
     },
     {

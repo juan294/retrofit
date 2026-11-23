@@ -35,6 +35,20 @@ Machine-readable selection and gaps are in `.rpi/release-profile.json`.
    - Deployment identity: `/api/version` names only a commit, and two deployments of one commit can differ. `tools/release/production-evidence.mjs` therefore runs `vercel inspect <target> --format json` for the deployment URL, `retrofit.thecreativetoken.com` and `demo-harbor.thecreativetoken.com` (the `aliases` of the `alias-binding` case in `tools/release/required-production-cases.json`) before the first case and again after the last. Each must name the candidate deployment id both times. A host bound to another deployment, or one that Vercel cannot inspect, fails `alias-binding`; when this happens before the suites, the script stops and runs no suite. The analyzer rejects a binding case without this identity and any case recorded outside the two checks.
 5. Juan's final acceptance, then the release tag last through `rpi-release`.
 
+### Production variables for accounts and billing
+
+`loadConfig` (`src/lib/config.ts`) refuses a Vercel start without these, so a missing one fails the production evidence before acceptance. Values are never written to the repository, logs or evidence. The free-path, store and origin variables are in `docs/plans/2026-11-15-retrofit-url-to-preview-phases/phase-7.md`.
+
+| Variable | Rule on Vercel |
+| --- | --- |
+| `SUPABASE_ANON_KEY` | Required. Sign-in through Supabase Auth, server side only. |
+| `BILLING_START` | Required: `2027-01-19T00:00:00Z`. An earlier instant is refused (judges have free access until 2027-01-18). |
+| `STRIPE_SECRET_KEY` | Required, test mode only (`sk_test_` or `rk_test_`). A live key is refused; the live switch is a separate authorized release with its own webhook, prices and cleared test-mode billing rows. |
+| `STRIPE_WEBHOOK_SECRET` | Required (`whsec_`): the signing secret of the test webhook endpoint `/api/billing/webhook` for `checkout.session.completed`, `customer.subscription.updated` and `customer.subscription.deleted`. |
+| `STRIPE_PRICE_PRO`, `STRIPE_PRICE_AGENCY` | Optional until Juan sets the amounts; two different Stripe price ids (`price_`). A plan without one shows no amount and no upgrade button. Replacing the id of a price with subscribers stops recognizing their plan. |
+
+Stripe's customer portal needs a saved test configuration (update the card, cancel, and switch between the two prices) before "Manage billing" works. Apply `supabase/migrations/20261123170000_billing.sql` with the release.
+
 ## Required ordering
 
 1. Confirm the exact release scope with Juan. Confirm a clean candidate, the integration and production refs, and the retained-resource state. Do not publish working branches.
