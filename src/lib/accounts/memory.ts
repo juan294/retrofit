@@ -2,14 +2,19 @@ import { randomUUID } from "node:crypto";
 import { systemClock, type Clock } from "@/lib/store/types";
 import { newToken, sha256Hex, SHA256_HEX_PATTERN } from "@/lib/security/tokens";
 import {
+  CLAIM_LAPSE_AFTER,
   isUuid,
+  MAX_PENDING_CLAIMS,
   MAX_SAVED_REPORTS,
   normalizeEmail,
   requireAccountId,
+  requireClaimInput,
   requireEmail,
   requireSaveInput,
   scoreOf,
   type AccountData,
+  type Claim,
+  type ClaimStatus,
   type NotifySignup,
   type SaveReportResult,
   type SavedReport,
@@ -35,6 +40,14 @@ interface SavedReportRow {
   readonly seq: number;
 }
 
+interface ClaimRow {
+  claim: Claim;
+  /** The account that took the host over; null after that account's data is deleted. Never returned. */
+  supersededBy: string | null;
+  /** Insertion order, for oldest-first lists. */
+  readonly seq: number;
+}
+
 /** Shared state. Two adapters over one backing model two server instances. */
 export interface AccountMemoryBacking {
   /** Keyed by the normalized email. */
@@ -43,10 +56,12 @@ export interface AccountMemoryBacking {
   readonly profiles: Map<string, number>;
   /** Keyed by report id. */
   readonly savedReports: Map<string, SavedReportRow>;
+  /** Keyed by claim id. */
+  readonly claims: Map<string, ClaimRow>;
 }
 
 export function createAccountMemoryBacking(): AccountMemoryBacking {
-  return { notify: new Map(), profiles: new Map(), savedReports: new Map() };
+  return { notify: new Map(), profiles: new Map(), savedReports: new Map(), claims: new Map() };
 }
 
 let seq = 0;
@@ -69,7 +84,23 @@ const iso = (ms: number) => new Date(ms).toISOString();
  */
 export function createMemoryAccountData(options: MemoryAccountDataOptions = {}): AccountData {
   const clock = options.clock ?? systemClock;
-  const { notify, profiles, savedReports } = options.backing ?? createAccountMemoryBacking();
+  const { notify, profiles, savedReports, claims } = options.backing ?? createAccountMemoryBacking();
+  const accountClaims = (accountId: string) => [...claims.values()].filter((r) => r.claim.accountId === accountId).sort((x, y) => x.seq - y.seq);
+  const pendingCount = (accountId: string) => accountClaims(accountId).filter((r) => r.claim.status === "pending").length;
+  const copy = (claim: Claim): Claim => ({ ...claim });
+  const update = (row: ClaimRow, change: Partial<Claim>): Claim => {
+    row.claim = { ...row.claim, ...change };
+    return copy(row.claim);
+  };
+  /** The checks of verifyClaim and recordClaimFailure: missing, terminal or a replaced token. */
+  const checkable = (claimId: string, tokenHash: string): { row: ClaimRow } | { done: { outcome: "missing" } | { outcome: "stale" | "superseded"; claim: Claim } } => {
+    const row = isUuid(claimId) ? claims.get(claimId) : undefined;
+    if (!row) return { done: { outcome: "missing" } };
+    if (row.claim.status === "superseded") return { done: { outcome: "superseded", claim: copy(row.claim) } };
+    if (row.claim.tokenHash !== tokenHash) return { done: { outcome: "stale", claim: copy(row.claim) } };
+    return { row };
+  };
+  const iso8601 = (at: string) => new Date(at).toISOString();
 
   async function op<R>(body: (now: number) => R): Promise<R> {
     await Promise.resolve();
@@ -161,6 +192,117 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       return op(() => {
         profiles.delete(accountId);
         for (const [id, row] of savedReports) if (row.accountId === accountId) savedReports.delete(id);
+        for (const [id, row] of claims) if (row.claim.accountId === accountId) claims.delete(id);
+        // As the auth user's deletion does (superseded_by ... on delete set null).
+        for (const row of claims.values()) if (row.supersededBy === accountId) row.supersededBy = null;
+      });
+    },
+
+    async createClaim(rawId, input) {
+      const accountId = requireAccountId(rawId);
+      requireClaimInput(input);
+      return op((now) => {
+        const same = accountClaims(accountId).find((r) => r.claim.host === input.host);
+        if (same) return { outcome: "exists", claim: copy(same.claim) };
+        if (pendingCount(accountId) >= MAX_PENDING_CLAIMS) return { outcome: "full" };
+        const claim: Claim = {
+          id: randomUUID(),
+          accountId,
+          host: input.host,
+          method: input.method,
+          tokenHash: input.tokenHash,
+          status: "pending",
+          createdAt: iso(now),
+          verifiedAt: null,
+          lastCheckedAt: null,
+          failures: 0,
+          supersededAt: null,
+          lastResult: null,
+          lastDetail: null,
+        };
+        claims.set(claim.id, { claim, supersededBy: null, seq: ++seq });
+        return { outcome: "created", claim: copy(claim) };
+      });
+    },
+
+    async listClaims(accountId) {
+      return op(() => accountClaims(accountId).map((r) => copy(r.claim)));
+    },
+
+    async getClaim(accountId, claimId) {
+      return op(() => {
+        const row = isUuid(claimId) ? claims.get(claimId) : undefined;
+        return row && row.claim.accountId === accountId ? copy(row.claim) : null;
+      });
+    },
+
+    async restartClaim(rawId, claimId, input) {
+      const accountId = requireAccountId(rawId);
+      requireClaimInput(input, false);
+      return op(() => {
+        const row = isUuid(claimId) ? claims.get(claimId) : undefined;
+        if (!row || row.claim.accountId !== accountId) return { outcome: "missing" };
+        const { status } = row.claim;
+        if (status === "verified" || status === "superseded") return { outcome: status, claim: copy(row.claim) };
+        if (status !== "pending" && pendingCount(accountId) >= MAX_PENDING_CLAIMS) return { outcome: "full" };
+        const claim = update(row, { method: input.method, tokenHash: input.tokenHash, status: "pending", verifiedAt: null, lastCheckedAt: null, failures: 0, lastResult: null, lastDetail: null });
+        return { outcome: "restarted", claim };
+      });
+    },
+
+    async recordClaimFailure(claimId, input) {
+      const checkedAt = iso8601(input.checkedAt);
+      return op(() => {
+        const found = checkable(claimId, input.tokenHash);
+        if ("done" in found) return found.done;
+        const { row } = found;
+        const failures = row.claim.failures + 1;
+        const lapses = (row.claim.status === "verified" || row.claim.status === "lapsed") && failures >= CLAIM_LAPSE_AFTER;
+        const status: ClaimStatus = lapses ? "lapsed" : row.claim.status;
+        return { outcome: "updated", claim: update(row, { failures, status, lastCheckedAt: checkedAt, lastResult: input.result, lastDetail: input.detail }) };
+      });
+    },
+
+    async verifyClaim(claimId, input) {
+      const checkedAt = iso8601(input.checkedAt);
+      return op(() => {
+        const found = checkable(claimId, input.tokenHash);
+        if ("done" in found) return found.done;
+        const { row } = found;
+        const movedFrom: string[] = [];
+        for (const other of claims.values()) {
+          if (other === row || other.claim.host !== row.claim.host || (other.claim.status !== "verified" && other.claim.status !== "lapsed")) continue;
+          // Phase 4: the published site of `other` is paused here (its claim is no longer verified).
+          update(other, { status: "superseded", supersededAt: checkedAt });
+          other.supersededBy = row.claim.accountId;
+          movedFrom.push(other.claim.accountId);
+        }
+        const verifiedAt = row.claim.status === "verified" ? row.claim.verifiedAt : checkedAt;
+        const claim = update(row, { status: "verified", verifiedAt, lastCheckedAt: checkedAt, failures: 0, lastResult: "verified", lastDetail: null });
+        return { outcome: "verified", claim, movedFrom };
+      });
+    },
+
+    async listClaimsDueForRecheck(checkedBefore, limit) {
+      const cutoff = Date.parse(checkedBefore);
+      // Never checked sorts first, as in the database (nulls first).
+      const checked = (c: Claim) => (c.lastCheckedAt === null ? 0 : Date.parse(c.lastCheckedAt));
+      return op(() =>
+        [...claims.values()]
+          .map((r) => r.claim)
+          .filter((c) => (c.status === "verified" || c.status === "lapsed") && checked(c) < cutoff)
+          .sort((x, y) => checked(x) - checked(y))
+          .slice(0, Math.max(0, limit))
+          .map(copy),
+      );
+    },
+
+    async deleteClaim(accountId, claimId) {
+      return op(() => {
+        const row = isUuid(claimId) ? claims.get(claimId) : undefined;
+        if (!row || row.claim.accountId !== accountId) return false;
+        claims.delete(claimId);
+        return true;
       });
     },
   };

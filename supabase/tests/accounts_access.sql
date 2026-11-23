@@ -295,6 +295,105 @@ begin
 end;
 $$;
 
+-- Claim functions (*_claims.sql): the pending limit, Start over, failures that lapse, the host moving in
+-- one transaction, a superseded claim staying terminal, stale checks, and the grants of every account function.
+insert into auth.users (id) values ('00000000-0000-4000-8000-0000000000b1'), ('00000000-0000-4000-8000-0000000000b2');
+do $$
+declare
+  v jsonb;
+  v_first uuid;
+  v_second uuid;
+  v_bad text;
+  v_fn text;
+begin
+  foreach v_fn in array array[
+    $q$select public.create_claim('00000000-0000-4000-8000-0000000000b1', 'fn.example', 'meta', repeat('1', 64), 10)$q$,
+    $q$select public.restart_claim('00000000-0000-4000-8000-0000000000c9', '00000000-0000-4000-8000-0000000000b1', 'meta', repeat('1', 64), 10)$q$,
+    $q$select public.record_claim_failure('00000000-0000-4000-8000-0000000000c9', repeat('1', 64), 'tag_missing', null, now(), 3)$q$,
+    $q$select public.verify_claim('00000000-0000-4000-8000-0000000000c9', repeat('1', 64), now())$q$
+  ] loop
+    perform pg_temp.expect_denied('anon', v_fn);
+    perform pg_temp.expect_denied('authenticated', v_fn);
+  end loop;
+
+  set local role service_role;
+  -- One claim per account and host; at most p_max_pending pending claims.
+  v := public.create_claim('00000000-0000-4000-8000-0000000000b1', 'fn.example', 'meta', repeat('1', 64), 1);
+  if v ->> 'outcome' <> 'created' or v -> 'claim' ->> 'status' <> 'pending' or v -> 'claim' ? 'superseded_by' then
+    raise exception 'accounts_access: create_claim did not create a pending claim without superseded_by: %', v;
+  end if;
+  v_first := (v -> 'claim' ->> 'id')::uuid;
+  if public.create_claim('00000000-0000-4000-8000-0000000000b1', 'fn.example', 'dns', repeat('2', 64), 1) ->> 'outcome' <> 'exists' then
+    raise exception 'accounts_access: create_claim stored a second claim for one account and host';
+  end if;
+  if public.create_claim('00000000-0000-4000-8000-0000000000b1', 'fn2.example', 'meta', repeat('2', 64), 1) ->> 'outcome' <> 'full' then
+    raise exception 'accounts_access: create_claim stored past p_max_pending';
+  end if;
+  -- Start over: a new token and method, pending, no result; a check against the old token is stale.
+  perform public.record_claim_failure(v_first, repeat('1', 64), 'tag_missing', null, now(), 3);
+  v := public.restart_claim(v_first, '00000000-0000-4000-8000-0000000000b1', 'dns', repeat('3', 64), 1);
+  if v ->> 'outcome' <> 'restarted' or v -> 'claim' ->> 'token_hash' <> repeat('3', 64) or v -> 'claim' ->> 'method' <> 'dns'
+     or (v -> 'claim' ->> 'failures')::int <> 0 or v -> 'claim' ->> 'last_result' is not null then
+    raise exception 'accounts_access: restart_claim did not reset the claim: %', v;
+  end if;
+  if public.restart_claim(v_first, '00000000-0000-4000-8000-0000000000b2', 'dns', repeat('4', 64), 1) ->> 'outcome' <> 'missing' then
+    raise exception 'accounts_access: restart_claim changed another account''s claim';
+  end if;
+  if public.verify_claim(v_first, repeat('1', 64), now()) ->> 'outcome' <> 'stale'
+     or public.record_claim_failure(v_first, repeat('1', 64), 'tag_missing', null, now(), 3) ->> 'outcome' <> 'stale' then
+    raise exception 'accounts_access: a check against a replaced token was applied';
+  end if;
+  -- Verified, then three failures lapse it.
+  v := public.verify_claim(v_first, repeat('3', 64), '2026-11-23T09:00:00Z');
+  if v ->> 'outcome' <> 'verified' or v -> 'claim' ->> 'status' <> 'verified' or v -> 'moved_from' <> '[]'::jsonb then
+    raise exception 'accounts_access: verify_claim did not verify: %', v;
+  end if;
+  perform public.record_claim_failure(v_first, repeat('3', 64), 'tag_missing', null, '2026-11-24T09:00:00Z', 3);
+  perform public.record_claim_failure(v_first, repeat('3', 64), 'http_status', 500, '2026-11-25T09:00:00Z', 3);
+  v := public.record_claim_failure(v_first, repeat('3', 64), 'record_missing', null, '2026-11-26T09:00:00Z', 3);
+  if v -> 'claim' ->> 'status' <> 'lapsed' or (v -> 'claim' ->> 'failures')::int <> 3 then
+    raise exception 'accounts_access: three failures did not lapse the claim: %', v;
+  end if;
+  -- A second account verifies: the lapsed claim is superseded in the same call and stays terminal.
+  v := public.create_claim('00000000-0000-4000-8000-0000000000b2', 'fn.example', 'meta', repeat('5', 64), 10);
+  v_second := (v -> 'claim' ->> 'id')::uuid;
+  v := public.verify_claim(v_second, repeat('5', 64), '2026-11-27T09:00:00Z');
+  if v ->> 'outcome' <> 'verified' or v -> 'moved_from' <> '["00000000-0000-4000-8000-0000000000b1"]'::jsonb then
+    raise exception 'accounts_access: verify_claim did not move the host: %', v;
+  end if;
+  if (select status from public.site_claims where id = v_first) <> 'superseded'
+     or (select superseded_by from public.site_claims where id = v_first) <> '00000000-0000-4000-8000-0000000000b2'
+     or (select superseded_at from public.site_claims where id = v_first) <> '2026-11-27T09:00:00Z' then
+    raise exception 'accounts_access: the first claim was not superseded by the second account';
+  end if;
+  if public.verify_claim(v_first, repeat('3', 64), now()) ->> 'outcome' <> 'superseded'
+     or public.record_claim_failure(v_first, repeat('3', 64), 'tag_missing', null, now(), 3) ->> 'outcome' <> 'superseded'
+     or public.restart_claim(v_first, '00000000-0000-4000-8000-0000000000b1', 'meta', repeat('6', 64), 10) ->> 'outcome' <> 'superseded'
+     or (select status from public.site_claims where id = v_first) <> 'superseded' then
+    raise exception 'accounts_access: a superseded claim changed';
+  end if;
+  reset role;
+  perform pg_temp.expect_error('service_role', $q$update public.site_claims set last_result = 'found' where host = 'fn.example'$q$, '23514');
+  perform pg_temp.expect_error('service_role', $q$select public.record_claim_failure('00000000-0000-4000-8000-0000000000c9', repeat('1', 64), 'verified', null, now(), 3)$q$, '22023');
+
+  -- Every account function: security invoker, empty search_path, EXECUTE for service_role only.
+  select pg_catalog.string_agg(p.proname, ', ') into v_bad
+  from pg_catalog.pg_proc p
+  where p.pronamespace = 'public'::regnamespace
+    and p.proname in ('save_report', 'delete_account_data', 'claim_json', 'create_claim', 'restart_claim', 'record_claim_failure', 'verify_claim')
+    and (p.prosecdef
+      or not ('search_path=""' = any (coalesce(p.proconfig, '{}')))
+      or pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+      or pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+      or exists (select 1 from pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) a where a.grantee = 0)
+      or not pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE'));
+  if v_bad is not null or (select count(*) from pg_catalog.pg_proc where pronamespace = 'public'::regnamespace
+      and proname in ('save_report', 'delete_account_data', 'claim_json', 'create_claim', 'restart_claim', 'record_claim_failure', 'verify_claim')) <> 7 then
+    raise exception 'accounts_access: account functions missing, security definer, without search_path = '''', or with wrong EXECUTE: %', coalesce(v_bad, 'missing');
+  end if;
+end;
+$$;
+
 -- Static checks: privileges, RLS and foreign keys.
 do $$
 declare

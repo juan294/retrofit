@@ -2,14 +2,20 @@ import { sha256Hex, newToken, SHA256_HEX_PATTERN } from "@/lib/security/tokens";
 import { serviceCall, serviceClient, type ServiceClientSource } from "@/lib/supabase/client";
 import {
   AccountDataUnavailable,
+  CLAIM_LAPSE_AFTER,
   isUuid,
+  MAX_PENDING_CLAIMS,
   MAX_SAVED_REPORTS,
   normalizeEmail,
   requireAccountId,
+  requireClaimInput,
   requireEmail,
   requireSaveInput,
   scoreOf,
   type AccountData,
+  type Claim,
+  type ClaimResult,
+  type ClaimStatus,
   type NotifySignup,
   type SavedReportSummary,
 } from "./data";
@@ -42,7 +48,50 @@ interface SavedReportRow {
   report?: Record<string, unknown>;
 }
 
+interface ClaimRow {
+  id: string;
+  account_id: string;
+  host: string;
+  method: "meta" | "dns";
+  token_hash: string;
+  status: ClaimStatus;
+  created_at: string;
+  verified_at: string | null;
+  last_checked_at: string | null;
+  failures: number;
+  superseded_at: string | null;
+  last_result: ClaimResult | null;
+  last_detail: number | null;
+}
+
+/** The answer of the claim functions (supabase/migrations/*_claims.sql). */
+interface ClaimAnswer {
+  outcome: string;
+  claim?: ClaimRow;
+  moved_from?: string[];
+}
+
 const iso = (t: string) => new Date(t).toISOString();
+const isoOrNull = (t: string | null) => (t === null ? null : iso(t));
+const CLAIM_COLUMNS = "id, account_id, host, method, token_hash, status, created_at, verified_at, last_checked_at, failures, superseded_at, last_result, last_detail";
+
+function claimOf(row: ClaimRow): Claim {
+  return {
+    id: row.id,
+    accountId: row.account_id,
+    host: row.host,
+    method: row.method,
+    tokenHash: row.token_hash,
+    status: row.status,
+    createdAt: iso(row.created_at),
+    verifiedAt: isoOrNull(row.verified_at),
+    lastCheckedAt: isoOrNull(row.last_checked_at),
+    failures: row.failures,
+    supersededAt: isoOrNull(row.superseded_at),
+    lastResult: row.last_result,
+    lastDetail: row.last_detail,
+  };
+}
 const SUMMARY = "id, host, fetched_at, created_at, score:report->score";
 
 function summary(row: SavedReportRow, score: unknown): SavedReportSummary {
@@ -54,8 +103,20 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
   const notify = () => client.from("notify_signups");
   const profiles = () => client.from("account_profiles");
   const reports = () => client.from("saved_reports");
+  const claims = () => client.from("site_claims");
   const call = <T>(operation: string, request: () => PromiseLike<{ data: T | null; error: { code?: string } | null }>) =>
     serviceCall<T>({ service: "accounts", operation }, request, (code) => new AccountDataUnavailable(operation, code));
+  /** One claim function call; the claim it answers with, when the outcome carries one. */
+  async function claimRpc(operation: string, fn: string, args: Record<string, unknown>): Promise<{ outcome: string; claim: Claim | null; movedFrom: string[] }> {
+    const answer = await call<ClaimAnswer>(operation, () => client.rpc(fn, args));
+    if (!answer || typeof answer.outcome !== "string") throw new AccountDataUnavailable(operation, "no_answer");
+    return { outcome: answer.outcome, claim: answer.claim ? claimOf(answer.claim) : null, movedFrom: answer.moved_from ?? [] };
+  }
+  /** The claim of an outcome that must carry one. */
+  const withClaim = (operation: string, claim: Claim | null): Claim => {
+    if (!claim) throw new AccountDataUnavailable(operation, "no_claim");
+    return claim;
+  };
 
   return {
     async addNotifySignup(rawEmail, consent = false) {
@@ -137,6 +198,83 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
       const accountId = requireAccountId(rawId);
       // One database function, one transaction (supabase/migrations/*_delete_account_data.sql).
       await call("deleteAccountData", () => client.rpc("delete_account_data", { p_account_id: accountId }));
+    },
+
+    async createClaim(rawId, input) {
+      const accountId = requireAccountId(rawId);
+      requireClaimInput(input);
+      const r = await claimRpc("createClaim", "create_claim", { p_account_id: accountId, p_host: input.host, p_method: input.method, p_token_hash: input.tokenHash, p_max_pending: MAX_PENDING_CLAIMS });
+      if (r.outcome === "full") return { outcome: "full" };
+      if (r.outcome === "created" || r.outcome === "exists") return { outcome: r.outcome, claim: withClaim("createClaim", r.claim) };
+      throw new AccountDataUnavailable("createClaim", "bad_outcome");
+    },
+
+    async listClaims(accountId) {
+      if (!isUuid(accountId)) return [];
+      const rows = await call<ClaimRow[]>("listClaims", () => claims().select(CLAIM_COLUMNS).eq("account_id", accountId).order("created_at", { ascending: true }).order("id", { ascending: true }));
+      return (rows ?? []).map(claimOf);
+    },
+
+    async getClaim(accountId, claimId) {
+      if (!isUuid(accountId) || !isUuid(claimId)) return null;
+      const row = await call<ClaimRow>("getClaim", () => claims().select(CLAIM_COLUMNS).eq("account_id", accountId).eq("id", claimId).maybeSingle());
+      return row ? claimOf(row) : null;
+    },
+
+    async restartClaim(rawId, claimId, input) {
+      const accountId = requireAccountId(rawId);
+      requireClaimInput(input, false);
+      if (!isUuid(claimId)) return { outcome: "missing" };
+      const r = await claimRpc("restartClaim", "restart_claim", { p_claim_id: claimId, p_account_id: accountId, p_method: input.method, p_token_hash: input.tokenHash, p_max_pending: MAX_PENDING_CLAIMS });
+      if (r.outcome === "full" || r.outcome === "missing") return { outcome: r.outcome };
+      if (r.outcome === "restarted" || r.outcome === "verified" || r.outcome === "superseded") return { outcome: r.outcome, claim: withClaim("restartClaim", r.claim) };
+      throw new AccountDataUnavailable("restartClaim", "bad_outcome");
+    },
+
+    async recordClaimFailure(claimId, input) {
+      if (!isUuid(claimId)) return { outcome: "missing" };
+      const r = await claimRpc("recordClaimFailure", "record_claim_failure", {
+        p_claim_id: claimId,
+        p_token_hash: input.tokenHash,
+        p_result: input.result,
+        p_detail: input.detail,
+        p_now: iso(input.checkedAt),
+        p_lapse_after: CLAIM_LAPSE_AFTER,
+      });
+      if (r.outcome === "missing") return { outcome: "missing" };
+      if (r.outcome === "updated" || r.outcome === "stale" || r.outcome === "superseded") return { outcome: r.outcome, claim: withClaim("recordClaimFailure", r.claim) };
+      throw new AccountDataUnavailable("recordClaimFailure", "bad_outcome");
+    },
+
+    async verifyClaim(claimId, input) {
+      if (!isUuid(claimId)) return { outcome: "missing" };
+      // One database function, one transaction: the host moves with the verification (supabase/migrations/*_claims.sql).
+      const r = await claimRpc("verifyClaim", "verify_claim", { p_claim_id: claimId, p_token_hash: input.tokenHash, p_now: iso(input.checkedAt) });
+      if (r.outcome === "missing") return { outcome: "missing" };
+      if (r.outcome === "verified") return { outcome: "verified", claim: withClaim("verifyClaim", r.claim), movedFrom: r.movedFrom };
+      if (r.outcome === "stale" || r.outcome === "superseded") return { outcome: r.outcome, claim: withClaim("verifyClaim", r.claim) };
+      throw new AccountDataUnavailable("verifyClaim", "bad_outcome");
+    },
+
+    async listClaimsDueForRecheck(checkedBefore, limit) {
+      const cutoff = iso(checkedBefore);
+      const rows = await call<ClaimRow[]>("listClaimsDueForRecheck", () =>
+        claims()
+          .select(CLAIM_COLUMNS)
+          .in("status", ["verified", "lapsed"])
+          .or(`last_checked_at.is.null,last_checked_at.lt.${cutoff}`)
+          .order("last_checked_at", { ascending: true, nullsFirst: true })
+          .order("id", { ascending: true })
+          .limit(Math.max(0, limit)),
+      );
+      return (rows ?? []).map(claimOf);
+    },
+
+    async deleteClaim(accountId, claimId) {
+      if (!isUuid(accountId) || !isUuid(claimId)) return false;
+      // published_sites rows of the claim go with it (claim_id ... on delete cascade).
+      const rows = await call<{ id: string }[]>("deleteClaim", () => claims().delete().eq("account_id", accountId).eq("id", claimId).select("id"));
+      return (rows ?? []).length > 0;
     },
   };
 }

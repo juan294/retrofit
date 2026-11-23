@@ -70,6 +70,98 @@ export interface AccountProfile {
   readonly createdAt: string;
 }
 
+/** How an owner proves control of a host (parent plan, "Ownership claims"). */
+export type ClaimMethod = "meta" | "dns";
+/** `superseded`: another account verified the host later; terminal (supabase/migrations/*_accounts.sql). */
+export type ClaimStatus = "pending" | "verified" | "lapsed" | "superseded";
+
+/** What the latest check found (src/lib/claims/verify.ts); null before the first check. */
+export const CLAIM_RESULTS = [
+  "verified",
+  "tag_missing",
+  "tag_mismatch",
+  "robots_blocked",
+  "robots_unavailable",
+  "redirected",
+  "http_status",
+  "not_html",
+  "timeout",
+  "not_public",
+  "fetch_failed",
+  "record_missing",
+  "record_mismatch",
+  "dns_failed",
+] as const;
+export type ClaimResult = (typeof CLAIM_RESULTS)[number];
+
+/** One ownership claim as server code reads it. Never sent to a browser as is: the page shows a view without the hash. */
+export interface Claim {
+  /** UUID. */
+  readonly id: string;
+  readonly accountId: string;
+  /** The exact host (src/lib/claims/host.ts claimHost). */
+  readonly host: string;
+  readonly method: ClaimMethod;
+  /** SHA-256 hex of the current token. The raw token is never stored. */
+  readonly tokenHash: string;
+  readonly status: ClaimStatus;
+  /** ISO 8601. */
+  readonly createdAt: string;
+  /** ISO 8601: the latest move to verified, or null. */
+  readonly verifiedAt: string | null;
+  /** ISO 8601, or null before the first check. */
+  readonly lastCheckedAt: string | null;
+  /** Consecutive failed checks since the last pass. */
+  readonly failures: number;
+  /** ISO 8601: when another account took the host over, or null. */
+  readonly supersededAt: string | null;
+  readonly lastResult: ClaimResult | null;
+  /** The HTTP status (http_status) or the number of tags or records found (tag_mismatch, record_mismatch). */
+  readonly lastDetail: number | null;
+}
+
+export interface NewClaimInput {
+  readonly host: string;
+  readonly method: ClaimMethod;
+  readonly tokenHash: string;
+}
+
+/** `exists`: the account already has a claim for the host (returned). `full`: MAX_PENDING_CLAIMS pending claims. */
+export type CreateClaimResult = { readonly outcome: "created" | "exists"; readonly claim: Claim } | { readonly outcome: "full" };
+
+/**
+ * `restarted`: a new token (and method), back to pending. `verified` or `superseded`: refused, unchanged.
+ * `full`: a lapsed claim would become the account's eleventh pending one. `missing`: not this account's claim.
+ */
+export type RestartClaimResult = { readonly outcome: "restarted"; readonly claim: Claim } | { readonly outcome: "verified" | "superseded"; readonly claim: Claim } | { readonly outcome: "full" | "missing" };
+
+export interface ClaimCheckInput {
+  /** The token hash the check compared with: a check against a token that Start over replaced is not applied. */
+  readonly tokenHash: string;
+  /** ISO 8601, from the server clock. */
+  readonly checkedAt: string;
+}
+
+export interface ClaimFailureInput extends ClaimCheckInput {
+  readonly result: Exclude<ClaimResult, "verified">;
+  readonly detail: number | null;
+}
+
+/**
+ * `updated` (or `verified` for verifyClaim): applied. `stale`: the token changed after the check started; nothing
+ * applied. `superseded`: the claim is terminal; nothing applied. `missing`: no such claim.
+ */
+export type ClaimFailureResult = { readonly outcome: "updated" | "stale" | "superseded"; readonly claim: Claim } | { readonly outcome: "missing" };
+export type VerifyClaimResult =
+  | {
+      readonly outcome: "verified";
+      readonly claim: Claim;
+      /** Accounts whose verified or lapsed claim for the host this verification superseded (Phase 4 pauses their published sites). */
+      readonly movedFrom: readonly string[];
+    }
+  | { readonly outcome: "stale" | "superseded"; readonly claim: Claim }
+  | { readonly outcome: "missing" };
+
 export interface AccountData {
   /**
    * Stores a signup for `email` (trimmed, lower case) with `consent` (default
@@ -107,9 +199,40 @@ export interface AccountData {
    * it before it deletes the Supabase Auth user.
    */
   deleteAccountData(accountId: string): Promise<void>;
+
+  /**
+   * Creates a pending claim for the account and host with the token hash. Atomic per account: the
+   * account keeps at most MAX_PENDING_CLAIMS pending claims, and one claim per host (a second create
+   * answers `exists` with the first). Throws RangeError for invalid input before any write.
+   */
+  createClaim(accountId: string, input: NewClaimInput): Promise<CreateClaimResult>;
+  /** The account's claims, oldest first. Empty for an id that is not a UUID. */
+  listClaims(accountId: string): Promise<Claim[]>;
+  /** One claim of the account, or null for another account's, an unknown or a malformed id. */
+  getClaim(accountId: string, claimId: string): Promise<Claim | null>;
+  /**
+   * Start over: replaces the token hash and method of a pending or lapsed claim and makes it pending,
+   * with no check result. Atomic per account, under the same pending limit as createClaim.
+   */
+  restartClaim(accountId: string, claimId: string, input: Omit<NewClaimInput, "host">): Promise<RestartClaimResult>;
+  /**
+   * Records a failed check: one more consecutive failure, the result and the time. A verified or
+   * lapsed claim with CLAIM_LAPSE_AFTER failures is lapsed; a pending claim stays pending.
+   */
+  recordClaimFailure(claimId: string, input: ClaimFailureInput): Promise<ClaimFailureResult>;
+  /**
+   * Records a passed check: the claim becomes verified with no failures. In the same transaction every
+   * other account's verified or lapsed claim for the host becomes superseded (by this account, now), so
+   * the host moves and the change is recorded. A superseded claim is never verified again.
+   */
+  verifyClaim(claimId: string, input: ClaimCheckInput): Promise<VerifyClaimResult>;
+  /** Verified and lapsed claims last checked before `checkedBefore` (ISO 8601), least recently checked first, at most `limit`. */
+  listClaimsDueForRecheck(checkedBefore: string, limit: number): Promise<Claim[]>;
+  /** Withdraws one claim of the account (a published site of the claim goes with it). False when there was none. */
+  deleteClaim(accountId: string, claimId: string): Promise<boolean>;
 }
 
-export { MAX_SAVED_REPORTS } from "./limits";
+export { CLAIM_LAPSE_AFTER, MAX_PENDING_CLAIMS, MAX_SAVED_REPORTS } from "./limits";
 /** A score/v1 report is a few kilobytes; this bound only refuses something that is not one. */
 export const MAX_REPORT_BYTES = 256 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -122,6 +245,15 @@ export function isUuid(id: string): boolean {
 export function requireAccountId(accountId: string): string {
   if (!isUuid(accountId)) throw new RangeError("accountId must be a UUID");
   return accountId;
+}
+
+const CLAIM_HOST = /^[a-z0-9.-]{1,253}(:[0-9]{1,5})?$/;
+
+/** The claim rule of the contract above: a lower-case host (with an optional port), a known method and a SHA-256 hex hash. */
+export function requireClaimInput(input: Partial<NewClaimInput>, needHost = true): void {
+  if (needHost && (typeof input.host !== "string" || !CLAIM_HOST.test(input.host))) throw new RangeError("host must be a lower-case host name");
+  if (input.method !== "meta" && input.method !== "dns") throw new RangeError("method must be meta or dns");
+  if (typeof input.tokenHash !== "string" || !/^[0-9a-f]{64}$/.test(input.tokenHash)) throw new RangeError("tokenHash must be SHA-256 hex");
 }
 
 /** The save rule of the contract above. Returns the normalized fetch time (ISO 8601). */
