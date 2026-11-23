@@ -3,7 +3,7 @@ import { getServerDeps } from "@/lib/server/runtime";
 
 export const dynamic = "force-dynamic";
 
-/** The link in the sign-in email (src/lib/api/confirm.ts). */
-export function GET(request: Request): Promise<Response> {
+/** The "Sign in" button of /auth/confirm (src/lib/api/confirm.ts). Under /auth so the retrofit_signin cookie (Path=/auth) is sent. */
+export function POST(request: Request): Promise<Response> {
   return handleConfirm(request, getServerDeps());
 }

@@ -1,6 +1,7 @@
 // Copy for /account, the saved report view and the "Save this report" button, in one module so a
 // UI pass can restyle these pages without touching their logic.
 
+import { MAX_SAVED_REPORTS } from "@/lib/accounts/limits";
 import { LEAD_EMAIL } from "./own-site";
 
 export const ACCOUNT_TEXT = {
@@ -16,7 +17,8 @@ export const ACCOUNT_TEXT = {
   deleteConfirm: "Yes, delete my account and everything in it",
   deleteButton: "Delete my account",
   deleteNeedsConfirm: "Tick the box to confirm, then choose Delete my account.",
-  deleteFailed: `We could not delete your account. Nothing was deleted. Try again or email ${LEAD_EMAIL}.`,
+  /** A failure before the data deletion; the account's other sessions may already be ended (src/lib/accounts/delete.ts). */
+  deleteFailed: `We could not delete your account. Your data was not deleted, but you may have been signed out on other devices. Try again or email ${LEAD_EMAIL}.`,
   deletePartial: `We deleted your saved reports and other data, but could not finish deleting your account. Try again or email ${LEAD_EMAIL}.`,
   unavailable: "Retrofit could not load your account right now. Try again in a few minutes.",
   crossOrigin: "Open Retrofit at its own address to change your account.",
@@ -34,6 +36,8 @@ export const SAVE_REPORT_TEXT = {
   signIn: "Sign in to save this report",
   busy: "Saving…",
   saved: "Saved. Open it from your account.",
+  alreadySaved: "Already saved. Open it from your account.",
+  full: `Your account keeps at most ${MAX_SAVED_REPORTS} saved reports, and it is full. Email ${LEAD_EMAIL} to remove old ones.`,
   openAccount: "Open your account",
   signedOut: "Sign in again to save this report.",
   notReady: "This report is not ready to save yet.",

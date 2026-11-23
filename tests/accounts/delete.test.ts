@@ -6,6 +6,7 @@ import { handleAccountDelete } from "@/lib/api/account-delete";
 import type { AuthGateway } from "@/lib/auth/gateway";
 import { createFixtureAuth } from "@/lib/test-fixtures/auth";
 import { createAccountMemoryBacking, createMemoryAccountData } from "@/lib/accounts/memory";
+import { ACCOUNT_TEXT } from "@/lib/site/account-texts";
 import { fakeClock, PUBLIC_ORIGIN, testDeps } from "../helpers/server-deps";
 
 const REPORT = { host: "d.example", report: { score: 12, host: "d.example" }, fetchedAt: "2026-11-22T08:00:00.000Z" };
@@ -41,7 +42,7 @@ async function signedIn(o: { failData?: boolean } = {}) {
   const d = testDeps({ clock: clock.clock, auth, accounts });
   await accounts.ensureProfile(userId);
   await accounts.saveReport(userId, REPORT);
-  await accounts.saveReport(userId, REPORT);
+  await accounts.saveReport(userId, { ...REPORT, fetchedAt: "2026-11-23T08:00:00.000Z" });
   const here = (await createAccountSession(d, { userId, email: "gone@example.test" })).token;
   const elsewhere = (await createAccountSession(d, { userId, email: "gone@example.test" })).token;
   const account = (await readAccountByToken(here, d))!;
@@ -137,5 +138,17 @@ describe("POST /api/account/delete", () => {
     expect(res.headers.get("location")).toBe(`${PUBLIC_ORIGIN}/account?delete=failed`);
     expect(res.headers.get("set-cookie")).toBeNull();
     expect(await readAccount(new Request(PUBLIC_ORIGIN, { headers: { cookie: `${ACCOUNT_COOKIE}=${s.here}` } }), s.d)).not.toBeNull();
+  });
+});
+
+describe("deletion failure text", () => {
+  // Fails if the failure text says nothing was deleted although the account's other sessions may already be ended.
+  it("says the data was not deleted and that other devices may be signed out", async () => {
+    const s = await signedIn({ failData: true });
+    expect(await deleteAccount(s.d, s.account)).toBe("nothing_deleted");
+    expect(await readAccountByToken(s.elsewhere, s.d)).toBeNull();
+    expect(ACCOUNT_TEXT.deleteFailed).toContain("Your data was not deleted");
+    expect(ACCOUNT_TEXT.deleteFailed).toContain("you may have been signed out on other devices");
+    expect(ACCOUNT_TEXT.deleteFailed).not.toContain("Nothing was deleted");
   });
 });

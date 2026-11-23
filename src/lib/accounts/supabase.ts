@@ -3,7 +3,7 @@ import { serviceCall, serviceClient, type ServiceClientSource } from "@/lib/supa
 import {
   AccountDataUnavailable,
   isUuid,
-  MAX_SAVED_REPORTS_LISTED,
+  MAX_SAVED_REPORTS,
   normalizeEmail,
   requireAccountId,
   requireEmail,
@@ -108,15 +108,20 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
     async saveReport(rawId, input) {
       const accountId = requireAccountId(rawId);
       const fetchedAt = requireSaveInput(input);
-      const row = await call<SavedReportRow>("saveReport", () => reports().insert({ account_id: accountId, host: input.host, report: input.report, fetched_at: fetchedAt }).select(SUMMARY).single());
+      // One database function serializes the account's saves (supabase/migrations/*_saved_reports_once.sql).
+      const rows = await call<(SavedReportRow & { outcome: "created" | "existing" | "full" })[]>("saveReport", () =>
+        client.rpc("save_report", { p_account_id: accountId, p_host: input.host, p_report: input.report, p_fetched_at: fetchedAt, p_max: MAX_SAVED_REPORTS }),
+      );
+      const row = rows?.[0];
       if (!row) throw new AccountDataUnavailable("saveReport", "no_row");
-      return summary(row, row.score);
+      if (row.outcome === "full") return { outcome: "full" };
+      return { outcome: row.outcome, report: summary(row, row.score) };
     },
 
     async listSavedReports(accountId) {
       if (!isUuid(accountId)) return [];
       const rows = await call<SavedReportRow[]>("listSavedReports", () =>
-        reports().select(SUMMARY).eq("account_id", accountId).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(MAX_SAVED_REPORTS_LISTED),
+        reports().select(SUMMARY).eq("account_id", accountId).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(MAX_SAVED_REPORTS),
       );
       return (rows ?? []).map((r) => summary(r, r.score));
     },

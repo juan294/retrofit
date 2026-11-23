@@ -3,6 +3,7 @@ import { ACCOUNT_COOKIE, createAccountSession } from "@/lib/accounts/session";
 import { getAnalysis, readAnalysisView, reportBody } from "@/lib/analysis/record";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { handleSaveReport } from "@/lib/api/saved-reports";
+import { MAX_SAVED_REPORTS } from "@/lib/accounts/data";
 import { SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { readyBakeryPreview, type ReadyPreview } from "../generate/preview-setup";
 import { analyzeRequest, holdAllSlots, postRequest, testDeps } from "../helpers/server-deps";
@@ -68,5 +69,34 @@ describe("POST /api/account/reports (Save this report)", () => {
     const res = await handleSaveReport(save(id, `${visitor}; ${session}`), d);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "not_ready", message: SAVE_REPORT_TEXT.notReady });
+  });
+});
+
+describe("saving twice and the saved report limit (P2-R5)", () => {
+  // Fails if a second click stores a second copy, or answers differently from the first beyond the "already saved" text.
+  it("a second save of the same report answers 200 with the first id and the already-saved text", async () => {
+    preview = await readyBakeryPreview();
+    const { d, id, cookie } = preview;
+    const session = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OWNER)).token}`;
+    const first = (await (await handleSaveReport(save(id, `${cookie}; ${session}`), d)).json()) as { id: string };
+    const second = await handleSaveReport(save(id, `${cookie}; ${session}`), d);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual({ id: first.id, message: SAVE_REPORT_TEXT.alreadySaved, href: `/account/reports/${first.id}` });
+    expect(await d.accounts.listSavedReports(OWNER.userId)).toHaveLength(1);
+  });
+
+  // Fails if a full account silently drops the save, or the visitor is not told what to do.
+  it("answers 409 full with the limit text when the account already keeps the most reports", async () => {
+    preview = await readyBakeryPreview();
+    const { d, id, cookie } = preview;
+    for (let n = 0; n < MAX_SAVED_REPORTS; n++) {
+      await d.accounts.saveReport(OWNER.userId, { host: "other.example", report: { score: n }, fetchedAt: new Date(Date.UTC(2026, 0, 1) + n * 1000).toISOString() });
+    }
+    const session = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OWNER)).token}`;
+    const res = await handleSaveReport(save(id, `${cookie}; ${session}`), d);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "full", message: SAVE_REPORT_TEXT.full });
+    expect(SAVE_REPORT_TEXT.full).toContain(String(MAX_SAVED_REPORTS));
+    expect(await d.accounts.listSavedReports(OWNER.userId)).toHaveLength(MAX_SAVED_REPORTS);
   });
 });

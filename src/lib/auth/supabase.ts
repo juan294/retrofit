@@ -39,6 +39,17 @@ function unavailable(operation: string, error: unknown): AuthUnavailable {
   return new AuthUnavailable(operation, code);
 }
 
+/**
+ * Supabase answers 429 `over_email_send_rate_limit` both for an address that asks again within its
+ * frequency ("... only request this after 42 seconds.") and for the project-wide hourly email
+ * limit ("Email rate limit exceeded"); only the first names a wait. The message is read for that
+ * number only and never logged.
+ */
+function rateLimited(message: string): AuthRateLimited {
+  const seconds = /\bafter (\d{1,5}) seconds?\b/i.exec(message)?.[1];
+  return seconds === undefined ? new AuthRateLimited("project") : new AuthRateLimited("address", Number(seconds));
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function createSupabaseAuthGateway(options: SupabaseAuthOptions): AuthGateway {
@@ -60,7 +71,7 @@ export function createSupabaseAuthGateway(options: SupabaseAuthOptions): AuthGat
         error = e;
       }
       if (!error) return;
-      if (isAuthApiError(error) && error.status === 429) throw new AuthRateLimited();
+      if (isAuthApiError(error) && error.status === 429) throw rateLimited(error.message);
       throw unavailable("signInWithOtp", error);
     },
 

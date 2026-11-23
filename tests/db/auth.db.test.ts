@@ -47,7 +47,7 @@ async function latestMessage(email: string, seen?: Mail): Promise<Mail> {
 
 // Fails if the provider does not email a link to Retrofit's confirm route with the token hash, if the
 // token does not verify to the same account, if a used token verifies again, or if the provider's
-// resend refusal is not mapped to AuthRateLimited.
+// per-address resend refusal is not mapped to AuthRateLimited with scope "address".
 it("a real sign-in email reaches the mail catcher and its link's token verifies exactly once", async () => {
   const email = `auth-${randomUUID()}@example.test`;
   await gateway.signInWithOtp(email, "http://127.0.0.1:3010/auth/confirm");
@@ -64,7 +64,10 @@ it("a real sign-in email reaches the mail catcher and its link's token verifies 
 
   // An immediate resend is refused by the provider's per-address frequency (max_frequency, 1 s on the
   // local stacks, 60 s by default in production) as AuthRateLimited, which sign-in shows as a short wait.
-  await expect(gateway.signInWithOtp(email, "http://127.0.0.1:3010/auth/confirm")).rejects.toBeInstanceOf(AuthRateLimited);
+  const refused = await gateway.signInWithOtp(email, "http://127.0.0.1:3010/auth/confirm").catch((e: unknown) => e);
+  expect(refused).toBeInstanceOf(AuthRateLimited);
+  // The real provider names its wait, so the gateway reports the per-address scope (not the project-wide limit).
+  expect(refused).toMatchObject({ scope: "address", retryAfterSeconds: expect.any(Number) });
   // After that wait the same address signs in again to the same account (no second user).
   await new Promise((r) => setTimeout(r, 1500));
   await gateway.signInWithOtp(email, "http://127.0.0.1:3010/auth/confirm");

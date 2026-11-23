@@ -83,6 +83,18 @@ describe("POST /api/auth/sign-in", () => {
     expect(await res.json()).toEqual({ error: "wait", message: SIGN_IN_TEXT.wait(retryAt), retryAt: retryAt.toISOString() });
   });
 
+  // P2-R2. Fails if the project-wide email limit is shown as a one-minute wait, or the visitor loses the fallback address.
+  it("answers the project-wide email limit with try-again-later text and the lead address, without a retry time", async () => {
+    const d = testDeps();
+    d.fixtureAuth.fail("signInWithOtp", "project_limited");
+    const res = await handleSignIn(signIn({ email: "a@example.test" }), d);
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({ error: "mail_busy", message: SIGN_IN_TEXT.mailBusy });
+    expect(SIGN_IN_TEXT.mailBusy).toContain("retrofit@thecreativetoken.com");
+    expect(SIGN_IN_TEXT.mailBusy).not.toMatch(/minute/);
+  });
+
   // Fails if another site can make Retrofit email people, or a bad body reaches the provider.
   it("refuses a cross-origin post, an invalid address and a large body before sending anything", async () => {
     const d = testDeps();

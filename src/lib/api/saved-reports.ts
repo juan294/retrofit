@@ -21,7 +21,9 @@ function analysisIdFrom(text: string): string | null {
  * results page. Same-origin only (403). The visitor must be signed in (401 signed_out) and own the
  * analysis (its visitor cookie or attached account; else 404 not_found). The ready report (the
  * contract's ScoreReport, as `?include=result` returns it) is copied to the account's saved
- * reports, so it outlives the analysis. 409 not_ready before the score exists; 503 unavailable.
+ * reports, so it outlives the analysis; saving it again answers the first copy with the
+ * already-saved text. 409 not_ready before the score exists, 409 full past MAX_SAVED_REPORTS;
+ * 503 unavailable.
  */
 export async function handleSaveReport(request: Request, deps: Pick<ServerDeps, "config" | "store" | "accounts" | "clock">): Promise<Response> {
   if (!isSameOrigin(request, deps.config)) return json(403, { error: "cross_origin", message: SAVE_REPORT_TEXT.crossOrigin });
@@ -39,7 +41,9 @@ export async function handleSaveReport(request: Request, deps: Pick<ServerDeps, 
     const host = typeof report.host === "string" ? report.host : new URL(a.inputOrigin).host;
     const fetchedAt = typeof report.fetchedAt === "string" ? report.fetchedAt : new Date(a.readyAt).toISOString();
     const saved = await deps.accounts.saveReport(account.accountId, { host, report, fetchedAt });
-    return json(200, { id: saved.id, message: SAVE_REPORT_TEXT.saved, href: `/account/reports/${saved.id}` });
+    if (saved.outcome === "full") return json(409, { error: "full", message: SAVE_REPORT_TEXT.full });
+    const message = saved.outcome === "created" ? SAVE_REPORT_TEXT.saved : SAVE_REPORT_TEXT.alreadySaved;
+    return json(200, { id: saved.report.id, message, href: `/account/reports/${saved.report.id}` });
   } catch (e) {
     console.error("POST /api/account/reports failed:", e instanceof Error ? e.name : "unknown error");
     return json(503, { error: "unavailable", message: SAVE_REPORT_TEXT.unavailable });

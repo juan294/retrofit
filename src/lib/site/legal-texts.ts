@@ -52,7 +52,7 @@ export const PRIVACY: LegalDocument = {
       body: [
         "When you ask Retrofit to score a website, RetrofitBot reads its public pages and follows its robots rules. It skips sign-in, account, cart and checkout pages.",
         `The pages it read are kept for ${CRAWL_CACHE_HOURS} hours and shared between visitors who analyze the same site.`,
-        `Your analysis (a copy of those pages and the score) is private to your browser. It is kept for ${ANALYSIS_DAYS} days, then shown as expired for ${days(EXPIRED_GRACE_S)} more days, then deleted.`,
+        `Your analysis (a copy of those pages and the score) is private to the browser that ran it and to the signed-in account it is attached to. It is kept for ${ANALYSIS_DAYS} days, then shown as expired for ${days(EXPIRED_GRACE_S)} more days, then deleted.`,
         "To limit use, Retrofit counts requests per network with a hash of your IP address that changes every day. It does not store the address itself.",
       ],
     },
@@ -71,20 +71,23 @@ export const PRIVACY: LegalDocument = {
       ],
     },
     {
-      heading: "Accounts, claims, publishing and billing (when available)",
+      heading: "Accounts, claims, publishing and billing",
       body: [
-        "An account is your email address, kept by Supabase Auth. Retrofit stores no password. When you sign in, the analyses this browser started are added to your account.",
+        "An account is your email address, kept by Supabase Auth. Retrofit stores no password.",
+        "When you sign in, the analyses this browser started are added to your account, but only in the browser that asked for the sign-in link.",
+        "To limit sign-in emails, Retrofit keeps a keyed hash of your email address for about an hour. It does not keep the address for that.",
         "A report you save is kept until you delete your account.",
         "If you claim a site, Retrofit stores the host, the method (a meta tag or a DNS record), a hash of the verification token and the results of its checks.",
-        "If you publish a site's agent on Retrofit, the copy of its public pages and its score are kept until you unpublish it, and they are public.",
-        "Payments go through Stripe. Retrofit stores your Stripe customer id, your plan and its renewal date. Card details go only to Stripe.",
-        "Deleting your account deletes your claims, published pages, saved reports and API keys.",
+        "If you publish a site's agent on Retrofit (when publishing is available), the copy of its public pages and its score are kept until you unpublish it, and they are public.",
+        "Payments go through Stripe when paid plans start. Retrofit stores your Stripe customer id, your plan and its renewal date. Card details go only to Stripe.",
+        "Deleting your account: Retrofit deletes the account and its data (claims, published pages, saved reports, API keys and sign-in sessions). The sign-in provider may keep security logs for a limited time.",
       ],
     },
     {
       heading: "Services that receive data",
       body: [
-        "Vercel hosts Retrofit. Supabase stores its data. Otari runs Retrofit's free AI. Retrofit sends no email yet; Amazon SES will send Retrofit's email, starting with sign-in links. Stripe takes payments when paid plans start.",
+        "Vercel hosts Retrofit. Supabase stores its data. Otari runs Retrofit's free AI. Stripe takes payments when paid plans start.",
+        "Retrofit sends sign-in email through Supabase Auth, which uses Amazon SES. Both receive your email address. Retrofit sends no other email yet.",
         `Retrofit's source code is public: ${SOURCE_URL}.`,
       ],
     },
@@ -106,7 +109,7 @@ export const TERMS: LegalDocument = {
     {
       heading: "Previews, files and publishing",
       body: [
-        "A preview agent for a site you have not claimed is private to your browser and labelled unofficial. It does not speak for the site's owner.",
+        "A preview agent for a site you have not claimed is private to the browser that made it and to your account when you are signed in, and labelled unofficial. It does not speak for the site's owner.",
         "You may download the files and install them on a site you own or have permission to change.",
         "Publishing an agent on Retrofit and the badge need a verified ownership claim for the site, by a meta tag or a DNS record. Retrofit pauses a published page when the claim stops verifying.",
       ],

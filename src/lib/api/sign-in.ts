@@ -20,7 +20,7 @@ import { json } from "./json";
  */
 export const SIGN_IN_COOKIE = "retrofit_signin";
 export const SIGN_IN_TTL_S = 3600;
-/** How long the page waits when Supabase refuses to send another link so soon. */
+/** How long the page waits when Supabase refuses to send another link so soon and names no wait. */
 export const PROVIDER_WAIT_S = 60;
 
 export interface SignInIntent {
@@ -71,7 +71,8 @@ function parse(text: string): { email: string | null; returnTo: unknown } | null
  * address, known or not (parent plan `signIn`). Same-origin only (403). Counts every valid request
  * against SIGNIN_PER_CLIENT_HOUR per network and SIGNIN_PER_EMAIL_HOUR per address (the window is
  * keyed by emailKey), then asks the provider for a link to PUBLIC_ORIGIN/auth/confirm. Errors: 400
- * invalid_email, 413 too_large, 429 limit or wait `{error, message, retryAt}`, 503 mail_unavailable
+ * invalid_email, 413 too_large, 429 limit or wait `{error, message, retryAt}`, 429 mail_busy (the
+ * provider's project-wide email limit; no retry time is known), 503 mail_unavailable
  * (the provider failed) or unavailable (the Store failed). The address is never logged or stored.
  */
 export async function handleSignIn(request: Request, deps: Pick<ServerDeps, "config" | "store" | "auth" | "clock">): Promise<Response> {
@@ -99,8 +100,9 @@ export async function handleSignIn(request: Request, deps: Pick<ServerDeps, "con
     try {
       await deps.auth.signInWithOtp(email, `${deps.config.publicOrigin}/auth/confirm`);
     } catch (e) {
+      if (e instanceof AuthRateLimited && e.scope === "project") return json(429, { error: "mail_busy", message: SIGN_IN_TEXT.mailBusy });
       if (e instanceof AuthRateLimited) {
-        const retryAt = new Date(now + PROVIDER_WAIT_S * 1000);
+        const retryAt = new Date(now + (e.retryAfterSeconds ?? PROVIDER_WAIT_S) * 1000);
         return json(429, { error: "wait", message: SIGN_IN_TEXT.wait(retryAt), retryAt: retryAt.toISOString() });
       }
       if (e instanceof AuthUnavailable) return json(503, { error: "mail_unavailable", message: SIGN_IN_TEXT.mailUnavailable });

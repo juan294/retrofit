@@ -77,6 +77,17 @@ describe("Supabase auth gateway", () => {
     await expect(fakeProvider({ "POST /auth/v1/otp": new TypeError("fetch failed") }).gateway.signInWithOtp("a@example.test", "https://r.test/auth/confirm")).rejects.toBeInstanceOf(AuthUnavailable);
   });
 
+  // P2-R2. Fails if the per-address resend wait and the project-wide email limit are not told apart (one has a
+  // known wait, the other does not), or the wait seconds are lost.
+  it("signInWithOtp tells the per-address resend wait from the project-wide email limit", async () => {
+    const wait = fakeProvider({ "POST /auth/v1/otp": { status: 429, body: { code: "over_email_send_rate_limit", message: "For security purposes, you can only request this after 42 seconds." } } });
+    const perAddress = await wait.gateway.signInWithOtp("a@example.test", "https://r.test/auth/confirm").catch((e: unknown) => e);
+    expect(perAddress).toBeInstanceOf(AuthRateLimited);
+    expect(perAddress).toMatchObject({ scope: "address", retryAfterSeconds: 42 });
+    const busy = fakeProvider({ "POST /auth/v1/otp": { status: 429, body: { code: "over_email_send_rate_limit", message: "Email rate limit exceeded" } } });
+    expect(await busy.gateway.signInWithOtp("a@example.test", "https://r.test/auth/confirm").catch((e: unknown) => e)).toMatchObject({ scope: "project" });
+  });
+
   // Fails if verifyOtp returns, or lets anything log, the provider's access or refresh token.
   it("verifyOtp answers only the user id and the lower-case email, and drops the session tokens", async () => {
     const { gateway, calls } = fakeProvider({ "POST /auth/v1/verify": { status: 200, body: session } });
@@ -127,7 +138,14 @@ describe("Supabase tokens never leave the gateway", () => {
     const d = testDeps({ auth });
     const visitor = `retrofit_visitor=${"a".repeat(32)}`;
     const sent = await handleSignIn(postRequest("/api/auth/sign-in", { email: "person@example.test" }, { cookie: visitor }), d);
-    const res = await handleConfirm(new Request(`${PUBLIC_ORIGIN}/auth/confirm?token_hash=0123456789abcdef0123456789abcdef&type=email`, { headers: { cookie: `${visitor}; ${cookieFrom(sent)}` } }), d);
+    const res = await handleConfirm(
+      new Request(`${PUBLIC_ORIGIN}/auth/verify`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", "sec-fetch-site": "same-origin", cookie: `${visitor}; ${cookieFrom(sent)}` },
+        body: "token_hash=0123456789abcdef0123456789abcdef&type=email",
+      }),
+      d,
+    );
     expect(res.status).toBe(303);
     expect(res.headers.getSetCookie().some((c: string) => c.startsWith(`${ACCOUNT_COOKIE}=`))).toBe(true);
     const seen = [...sent.headers.entries(), ...res.headers.entries()].flat().join("\n") + (await sent.text()) + (await res.text()) + storeDump(d.backing) + lines.join("\n") + JSON.stringify([...d.accountsBacking.profiles]);

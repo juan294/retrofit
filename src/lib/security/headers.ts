@@ -83,6 +83,8 @@ const PUBLIC_AGENT_FILES = [
 export function staticSecurityHeaders(): HeaderRule[] {
   return [
     { source: "/:path*", headers: BASE_HEADERS.map((h) => ({ ...h })) },
+    // The sign-in link's page carries the token in its URL: no Referer leaves it (a later rule wins).
+    { source: "/auth/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
     ...PUBLIC_AGENT_FILES.map((source) => ({ source, headers: [{ key: "Access-Control-Allow-Origin", value: "*" }] })),
     { source: "/bridge/:path*", headers: [{ key: "Content-Security-Policy", value: BRIDGE_CSP }] },
     { source: "/p/:id/bridge/:path*", headers: [{ key: "Content-Security-Policy", value: BRIDGE_CSP }] },

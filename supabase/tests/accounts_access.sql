@@ -257,6 +257,44 @@ begin
 end;
 $$;
 
+-- save_report (saved reports once each, at most p_max per account), and every account function's grants.
+insert into auth.users (id) values ('00000000-0000-4000-8000-0000000000f1');
+do $$
+declare
+  v_bad text;
+begin
+  perform pg_temp.expect_denied('anon', $q$select * from public.save_report('00000000-0000-4000-8000-0000000000f1', 's.example', '{}', now(), 100)$q$);
+  perform pg_temp.expect_denied('authenticated', $q$select * from public.save_report('00000000-0000-4000-8000-0000000000f1', 's.example', '{}', now(), 100)$q$);
+  perform pg_temp.expect_allowed('service_role', $q$select * from public.save_report('00000000-0000-4000-8000-0000000000f1', 's.example', '{"score": 3}', '2026-11-23T10:00:00Z', 2)$q$);
+  if (select outcome from public.save_report('00000000-0000-4000-8000-0000000000f1', 's.example', '{}', '2026-11-23T10:00:00Z', 2)) <> 'existing' then
+    raise exception 'accounts_access: save_report stored the same report twice';
+  end if;
+  perform pg_temp.expect_allowed('service_role', $q$select * from public.save_report('00000000-0000-4000-8000-0000000000f1', 's.example', '{}', '2026-11-23T11:00:00Z', 2)$q$);
+  if (select outcome from public.save_report('00000000-0000-4000-8000-0000000000f1', 's.example', '{}', '2026-11-23T12:00:00Z', 2)) <> 'full' then
+    raise exception 'accounts_access: save_report stored past p_max';
+  end if;
+  if (select count(*) from public.saved_reports where account_id = '00000000-0000-4000-8000-0000000000f1') <> 2 then
+    raise exception 'accounts_access: save_report kept the wrong number of reports';
+  end if;
+  -- The unique constraint holds even for a direct insert.
+  perform pg_temp.expect_error('service_role', $q$insert into public.saved_reports (account_id, host, report, fetched_at) values ('00000000-0000-4000-8000-0000000000f1', 's.example', '{}', '2026-11-23T10:00:00Z')$q$, '23505');
+
+  -- Every account function: security invoker, empty search_path, EXECUTE for service_role only.
+  select pg_catalog.string_agg(p.proname, ', ') into v_bad
+  from pg_catalog.pg_proc p
+  where p.pronamespace = 'public'::regnamespace and p.proname in ('save_report', 'delete_account_data')
+    and (p.prosecdef
+      or not ('search_path=""' = any (coalesce(p.proconfig, '{}')))
+      or pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+      or pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+      or exists (select 1 from pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) a where a.grantee = 0)
+      or not pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE'));
+  if v_bad is not null or (select count(*) from pg_catalog.pg_proc where pronamespace = 'public'::regnamespace and proname in ('save_report', 'delete_account_data')) <> 2 then
+    raise exception 'accounts_access: account functions missing, security definer, without search_path = '''', or with wrong EXECUTE: %', coalesce(v_bad, 'missing');
+  end if;
+end;
+$$;
+
 -- Static checks: privileges, RLS and foreign keys.
 do $$
 declare

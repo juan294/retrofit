@@ -63,6 +63,8 @@ export interface SaveReportInput {
   readonly fetchedAt: string;
 }
 
+export type SaveReportResult = { readonly outcome: "created" | "existing"; readonly report: SavedReportSummary } | { readonly outcome: "full" };
+
 export interface AccountProfile {
   /** ISO 8601. */
   readonly createdAt: string;
@@ -86,9 +88,14 @@ export interface AccountData {
   /** The profile, or null (also for an id that is not a UUID). */
   getProfile(accountId: string): Promise<AccountProfile | null>;
 
-  /** Stores a copy of a report for the account. Throws RangeError for invalid input before any write. */
-  saveReport(accountId: string, input: SaveReportInput): Promise<SavedReportSummary>;
-  /** The account's saved reports, newest first, at most MAX_SAVED_REPORTS_LISTED. Empty for an id that is not a UUID. */
+  /**
+   * Stores a copy of a report for the account, once per (host, fetchedAt): saving the same report
+   * again answers `existing` with the first copy. An account keeps at most MAX_SAVED_REPORTS; past
+   * that a new report answers `full` and nothing is stored. Atomic across instances. Throws
+   * RangeError for invalid input before any write.
+   */
+  saveReport(accountId: string, input: SaveReportInput): Promise<SaveReportResult>;
+  /** The account's saved reports, newest first, at most MAX_SAVED_REPORTS. Empty for an id that is not a UUID. */
   listSavedReports(accountId: string): Promise<SavedReportSummary[]>;
   /** One saved report of the account, or null for another account's, an unknown or a malformed id. */
   getSavedReport(accountId: string, reportId: string): Promise<SavedReport | null>;
@@ -102,7 +109,7 @@ export interface AccountData {
   deleteAccountData(accountId: string): Promise<void>;
 }
 
-export const MAX_SAVED_REPORTS_LISTED = 100;
+export { MAX_SAVED_REPORTS } from "./limits";
 /** A score/v1 report is a few kilobytes; this bound only refuses something that is not one. */
 export const MAX_REPORT_BYTES = 256 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

@@ -51,11 +51,36 @@ describe("privacy notice accuracy", () => {
     expect(privacy).toContain("never stores the conversation");
   });
 
-  // Fails if the notice says email is sent today (Phase 1 sends none) or drops the sign-in email it will send.
-  it("says Amazon SES will send email, starting with sign-in links, and that none is sent yet", () => {
-    expect(privacy).not.toContain("Amazon SES sends its email");
-    expect(privacy).toContain("Retrofit sends no email yet");
-    expect(privacy).toMatch(/Amazon SES will send Retrofit's email, starting with sign-in links/);
+  // P2-R3. Fails if the notice hides the sign-in email (sent through Supabase Auth with Amazon SES) or says other email is sent.
+  it("says sign-in email goes through Supabase Auth and Amazon SES, which receive the address, and no other email is sent yet", () => {
+    expect(privacy).not.toContain("Retrofit sends no email yet");
+    expect(privacy).toContain("Retrofit sends sign-in email through Supabase Auth, which uses Amazon SES. Both receive your email address.");
+    expect(privacy).toContain("Retrofit sends no other email yet.");
+  });
+});
+
+describe("privacy notice for accounts", () => {
+  const privacy = text(PRIVACY);
+
+  // P2-R3. Fails if the sign-in limit's keyed hash of the address goes unmentioned or its lifetime drifts from about an hour.
+  it("states the keyed hash of the address kept about an hour for sign-in limits", () => {
+    expect(privacy).toContain("a keyed hash of your email address for about an hour");
+  });
+
+  // P2-R3. Fails if the notice says an analysis is private to the browser only, or hides when analyses join an account.
+  it("says who can open an analysis and when analyses attach to an account", () => {
+    expect(privacy).toContain("private to the browser that ran it and to the signed-in account it is attached to");
+    expect(privacy).toContain("only in the browser that asked for the sign-in link");
+    expect(privacy).not.toContain("is private to your browser.");
+    expect(text(TERMS)).toContain("private to the browser that made it and to your account");
+  });
+
+  // P2-R3. Fails if the account section still says accounts are not available, or deletion claims the provider keeps nothing.
+  it("describes accounts as available and deletion without claiming the sign-in provider keeps nothing", () => {
+    expect(PRIVACY.sections.map((x) => x.heading)).toContain("Accounts, claims, publishing and billing");
+    expect(privacy).not.toContain("(when available)");
+    expect(privacy).toContain("Deleting your account: Retrofit deletes the account and its data");
+    expect(privacy).toContain("may keep security logs for a limited time");
   });
 });
 

@@ -9,7 +9,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { AccountData } from "@/lib/accounts/data";
+import { MAX_SAVED_REPORTS, type AccountData, type SaveReportInput, type SavedReportSummary } from "@/lib/accounts/data";
 import { sha256Hex } from "@/lib/security/tokens";
 
 export interface AccountDataClients {
@@ -137,6 +137,12 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
       });
     });
 
+    /** Saves and returns the stored summary (the save must create or find a row). */
+    const saved = async (data: AccountData, id: string, input: SaveReportInput): Promise<SavedReportSummary> => {
+      const r = await data.saveReport(id, input);
+      if (r.outcome === "full") throw new Error("unexpected full");
+      return r.report;
+    };
     const report = (score: number | null, host: string) => ({ status: "ready", scoreVersion: "score/v1", host, score, summary: "s", webmcp: "none", fetchedAt: "2026-11-23T10:00:00.000Z", checks: [{ id: "disc.robots", result: "pass" }] });
 
     describe("profiles", () => {
@@ -162,8 +168,8 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
       // Fails if a saved report is not readable by its account from another instance, or loses its host, score or fetch time.
       it("saves a report and lists it newest first with its host, score and fetch time", async () => {
         const id = await newAccount();
-        const first = await a.saveReport(id, { host: "one.example", report: report(40, "one.example"), fetchedAt: "2026-11-20T08:00:00.000Z" });
-        const second = await a.saveReport(id, { host: "two.example", report: report(null, "two.example"), fetchedAt: "2026-11-21T08:00:00.000Z" });
+        const first = await saved(a, id, { host: "one.example", report: report(40, "one.example"), fetchedAt: "2026-11-20T08:00:00.000Z" });
+        const second = await saved(a, id, { host: "two.example", report: report(null, "two.example"), fetchedAt: "2026-11-21T08:00:00.000Z" });
         const list = await b.listSavedReports(id);
         expect(list.map((r) => r.id)).toEqual([second.id, first.id]);
         expect(list[1]).toEqual({ id: first.id, host: "one.example", score: 40, fetchedAt: "2026-11-20T08:00:00.000Z", savedAt: first.savedAt });
@@ -175,13 +181,38 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
       it("getSavedReport returns the whole report to its account only", async () => {
         const owner = await newAccount();
         const other = await newAccount();
-        const saved = await a.saveReport(owner, { host: "three.example", report: report(77, "three.example"), fetchedAt: "2026-11-22T08:00:00.000Z" });
-        const read = await b.getSavedReport(owner, saved.id);
+        const kept = await saved(a, owner, { host: "three.example", report: report(77, "three.example"), fetchedAt: "2026-11-22T08:00:00.000Z" });
+        const read = await b.getSavedReport(owner, kept.id);
         expect(read?.report).toEqual(report(77, "three.example"));
         expect(read?.host).toBe("three.example");
-        expect(await b.getSavedReport(other, saved.id)).toBeNull();
+        expect(await b.getSavedReport(other, kept.id)).toBeNull();
         expect(await b.listSavedReports(other)).toEqual([]);
       });
+
+      // P2-R5. Fails if saving the same report twice (two clicks, two tabs, two instances) stores it twice.
+      it("saving the same host and fetch time again answers existing with the first id, also when two saves race", async () => {
+        const id = await newAccount();
+        const input = { host: "same.example", report: report(10, "same.example"), fetchedAt: "2026-11-22T08:00:00.000Z" };
+        const first = await a.saveReport(id, input);
+        expect(first.outcome).toBe("created");
+        const again = await b.saveReport(id, { ...input, fetchedAt: "2026-11-22T08:00:00Z" });
+        expect(again).toEqual({ outcome: "existing", report: first.outcome === "full" ? null : first.report });
+        const raced = await Promise.all([a.saveReport(id, { ...input, host: "race.example" }), b.saveReport(id, { ...input, host: "race.example" })]);
+        expect(raced.map((r) => r.outcome).sort()).toEqual(["created", "existing"]);
+        expect(await a.listSavedReports(id)).toHaveLength(2);
+        // Another account saving the same report gets its own copy.
+        expect((await a.saveReport(await newAccount(), input)).outcome).toBe("created");
+      });
+
+      // P2-R5. Fails if an account can store more than MAX_SAVED_REPORTS reports, or a duplicate is refused as full.
+      it(`keeps at most ${MAX_SAVED_REPORTS} reports per account and answers full past that`, async () => {
+        const id = await newAccount();
+        const at = (n: number) => new Date(Date.UTC(2026, 10, 1) + n * 60_000).toISOString();
+        for (let n = 0; n < MAX_SAVED_REPORTS; n++) expect((await a.saveReport(id, { host: "cap.example", report: report(n, "cap.example"), fetchedAt: at(n) })).outcome).toBe("created");
+        expect(await b.saveReport(id, { host: "cap.example", report: report(1, "cap.example"), fetchedAt: at(MAX_SAVED_REPORTS) })).toEqual({ outcome: "full" });
+        expect((await b.saveReport(id, { host: "cap.example", report: report(0, "cap.example"), fetchedAt: at(0) })).outcome).toBe("existing");
+        expect(await a.listSavedReports(id)).toHaveLength(MAX_SAVED_REPORTS);
+      }, 60_000);
 
       // Fails if a malformed or unknown report id throws or reveals anything.
       it("getSavedReport answers null for an unknown or malformed id", async () => {
@@ -209,7 +240,7 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         const kept = await newAccount();
         for (const id of [gone, kept]) {
           await a.ensureProfile(id);
-          await a.saveReport(id, { host: "d.example", report: report(5, "d.example"), fetchedAt: "2026-11-22T08:00:00.000Z" });
+          await saved(a, id, { host: "d.example", report: report(5, "d.example"), fetchedAt: "2026-11-22T08:00:00.000Z" });
         }
         await b.deleteAccountData(gone);
         expect(await a.getProfile(gone)).toBeNull();

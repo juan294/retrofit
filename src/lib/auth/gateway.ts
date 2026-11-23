@@ -22,7 +22,7 @@ export interface AuthGateway {
   /**
    * Asks the provider to email a sign-in link to `email` (creating the account when it is new).
    * `redirectTo` is the page the link opens. Throws AuthRateLimited when the provider refuses
-   * to send again so soon, and AuthUnavailable for every other failure.
+   * to send (per address or project-wide), and AuthUnavailable for every other failure.
    */
   signInWithOtp(email: string, redirectTo: string): Promise<void>;
   /** Verifies the link's token hash once. Throws AuthUnavailable when the provider cannot answer. */
@@ -44,10 +44,17 @@ export class AuthUnavailable extends Error {
   }
 }
 
-/** The provider refused to send another email this soon. */
+/**
+ * The provider refused to send. `address`: this address asked again too soon (Supabase's
+ * per-address frequency); `retryAfterSeconds` is the provider's wait. `project`: the project's
+ * email limit for all addresses is used up, and no wait time is known.
+ */
 export class AuthRateLimited extends Error {
-  constructor() {
-    super("auth signInWithOtp rate limited");
+  constructor(
+    public readonly scope: "address" | "project",
+    public readonly retryAfterSeconds: number | null = null,
+  ) {
+    super(`auth signInWithOtp rate limited (${scope})`);
     this.name = "AuthRateLimited";
   }
 }

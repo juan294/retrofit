@@ -3,7 +3,7 @@ import { systemClock, type Clock } from "@/lib/store/types";
 import { newToken, sha256Hex, SHA256_HEX_PATTERN } from "@/lib/security/tokens";
 import {
   isUuid,
-  MAX_SAVED_REPORTS_LISTED,
+  MAX_SAVED_REPORTS,
   normalizeEmail,
   requireAccountId,
   requireEmail,
@@ -11,6 +11,7 @@ import {
   scoreOf,
   type AccountData,
   type NotifySignup,
+  type SaveReportResult,
   type SavedReport,
   type SavedReportSummary,
 } from "./data";
@@ -125,10 +126,14 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
     async saveReport(rawId, input) {
       const accountId = requireAccountId(rawId);
       const fetchedAt = requireSaveInput(input);
-      return op((now) => {
+      return op((now): SaveReportResult => {
+        const mine = [...savedReports.values()].filter((r) => r.accountId === accountId);
+        const same = mine.find((r) => r.host === input.host && r.fetchedAt === fetchedAt);
+        if (same) return { outcome: "existing", report: summary(same) };
+        if (mine.length >= MAX_SAVED_REPORTS) return { outcome: "full" };
         const row: SavedReportRow = { id: randomUUID(), accountId, host: input.host, report: structuredClone(input.report), fetchedAt, createdAt: now, seq: ++seq };
         savedReports.set(row.id, row);
-        return summary(row);
+        return { outcome: "created", report: summary(row) };
       });
     },
 
@@ -137,7 +142,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
         [...savedReports.values()]
           .filter((r) => r.accountId === accountId)
           .sort((x, y) => y.createdAt - x.createdAt || y.seq - x.seq)
-          .slice(0, MAX_SAVED_REPORTS_LISTED)
+          .slice(0, MAX_SAVED_REPORTS)
           .map(summary),
       );
     },

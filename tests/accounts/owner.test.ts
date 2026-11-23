@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ACCOUNT_COOKIE, createAccountSession } from "@/lib/accounts/session";
-import { attachVisitorAnalyses, ownsAnalysis } from "@/lib/analysis/owner";
+import { attachVisitorAnalyses, ownsAnalysis, resultsPageAccess } from "@/lib/analysis/owner";
 import { getAnalysis, readAnalysisView } from "@/lib/analysis/record";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { handleAnalyze } from "@/lib/api/analyze";
@@ -95,5 +95,31 @@ describe("analyses started while signed in", () => {
     const { id } = (await res.json()) as { id: string };
     expect((await getAnalysis(d.store, id))?.accountId).toBeUndefined();
     expect(storeDump(d.backing)).toContain(`visitor-analyses:${sha256Hex("c".repeat(32))}`);
+  });
+});
+
+describe("results page access (P2-R10)", () => {
+  // Fails if the results page reads the account session more than once, or decides ownership or "signed in" wrongly.
+  it("reads the session once and answers the analysis with whether the visitor is signed in", async () => {
+    let sessionReads = 0;
+    const d = testDeps({ instrument: (op, key) => void (op === "get" && key.startsWith("account-session:") && sessionReads++) });
+    await holdAllSlots(d);
+    const visitor = "c".repeat(32);
+    const token = (await createAccountSession(d, OWNER)).token;
+    const { id } = (await (await handleAnalyze(analyzeRequest({ url: "https://bakery.example.com" }, { cookie: `retrofit_visitor=${visitor}; ${ACCOUNT_COOKIE}=${token}` }), d)).json()) as { id: string };
+    const other = (await createAccountSession(d, OTHER)).token;
+    sessionReads = 0;
+
+    const byAccount = await resultsPageAccess(id, { visitorToken: null, accountToken: token }, d);
+    expect(byAccount?.analysis.id).toBe(id);
+    expect(byAccount?.signedIn).toBe(true);
+    expect(sessionReads).toBe(1);
+
+    sessionReads = 0;
+    expect((await resultsPageAccess(id, { visitorToken: visitor, accountToken: other }, d))?.signedIn).toBe(true);
+    expect(sessionReads).toBe(1);
+    expect(await resultsPageAccess(id, { visitorToken: "d".repeat(32), accountToken: other }, d)).toBeNull();
+    expect((await resultsPageAccess(id, { visitorToken: visitor, accountToken: null }, d))?.signedIn).toBe(false);
+    expect(await resultsPageAccess("not-an-id", { visitorToken: visitor, accountToken: null }, d)).toBeNull();
   });
 });

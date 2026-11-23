@@ -1,9 +1,9 @@
-import { readAccountByToken, readAccountToken } from "@/lib/accounts/session";
+import { readAccountByToken, readAccountToken, type Account } from "@/lib/accounts/session";
 import type { Config } from "@/lib/config";
 import { sha256Hex } from "@/lib/security/tokens";
 import { appendBounded, readIdList, updateIdList } from "@/lib/store/id-list";
 import type { Clock, Store } from "@/lib/store/types";
-import { analysisKey, EXPIRED_GRACE_S, getAnalysis, storeTtl, type Analysis } from "./record";
+import { analysisKey, EXPIRED_GRACE_S, getAnalysis, isAnalysisId, storeTtl, type Analysis } from "./record";
 import { readVisitorToken, sameHash } from "./visitor";
 
 /**
@@ -33,12 +33,30 @@ export function requesterOf(request: Request): Requester {
   return { visitorToken: readVisitorToken(request), accountToken: readAccountToken(request) };
 }
 
-/** True when the requester owns the analysis: the visitor cookie, or the attached account's session. */
-export async function ownsAnalysis(analysis: Pick<Analysis, "ownerHash" | "accountId">, who: Requester, deps: Deps): Promise<boolean> {
-  if (who.visitorToken && sameHash(analysis.ownerHash, sha256Hex(who.visitorToken))) return true;
+type Owned = Pick<Analysis, "ownerHash" | "accountId">;
+
+const ownedByVisitor = (analysis: Owned, visitorToken: string | null) => visitorToken !== null && sameHash(analysis.ownerHash, sha256Hex(visitorToken));
+const ownedByAccount = (analysis: Owned, account: Pick<Account, "accountId"> | null) => !!analysis.accountId && account !== null && sameHash(account.accountId, analysis.accountId);
+
+/** True when the requester owns the analysis: the visitor cookie, or the attached account's session (read only when needed). */
+export async function ownsAnalysis(analysis: Owned, who: Requester, deps: Deps): Promise<boolean> {
+  if (ownedByVisitor(analysis, who.visitorToken)) return true;
   if (!analysis.accountId || !who.accountToken) return false;
-  const account = await readAccountByToken(who.accountToken, deps);
-  return account !== null && sameHash(account.accountId, analysis.accountId);
+  return ownedByAccount(analysis, await readAccountByToken(who.accountToken, deps));
+}
+
+/**
+ * The results page's check (/r/<id>): the analysis when the requester owns it, and whether the
+ * visitor is signed in (for "Save this report"). The account session is read once, or not at all
+ * without an account cookie. Null for another visitor's or account's analysis and an unknown id.
+ */
+export async function resultsPageAccess(id: string, who: Requester, deps: Deps): Promise<{ analysis: Analysis; signedIn: boolean } | null> {
+  if ((!who.visitorToken && !who.accountToken) || !isAnalysisId(id)) return null;
+  const analysis = await getAnalysis(deps.store, id);
+  if (!analysis) return null;
+  const account = who.accountToken ? await readAccountByToken(who.accountToken, deps) : null;
+  if (!ownedByVisitor(analysis, who.visitorToken) && !ownedByAccount(analysis, account)) return null;
+  return { analysis, signedIn: account !== null };
 }
 
 /** Lists a new anonymous analysis under its visitor, for attaching at sign-in. Lives as long as the analysis record. */
