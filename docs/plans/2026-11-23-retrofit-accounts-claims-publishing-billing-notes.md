@@ -130,7 +130,7 @@ Phase 4 passed all 15 local checks on `7e3e9222bbaeeca6c04ea6b7e6070b3763ec37a9`
 
 ## Phase 5
 
-Commits `bba098c` to `c54d18d` added the billing gateway (the `stripe` package 23.2.0, exact pin, no install scripts, API version pinned, loaded lazily), the billing migration, entitlements from one plan table, the free-analysis limit, checkout, portal, webhook, reconciliation, API keys, the account and pricing changes and the deletion step that cancels first. No check contacted Stripe; the tests use an in-memory Stripe API and a fixtures gateway. Unit modules failed first on missing code; the database contract and race tests, a store case, `runtime.test.ts` and all browser specs were first seen green. Of 81 mutations in this first round, three survived at first: dropping the explicit API version (the package default is the same), a field the memory adapter never stores, and one signature check whose test was then strengthened.
+Commits `bba098c` to `c54d18d` added the billing gateway (the `stripe` package 23.2.0, exact pin, no install scripts, API version pinned, loaded lazily), the billing migration, entitlements from one plan table, the free-analysis limit, checkout, portal, webhook, reconciliation, API keys, the account and pricing changes and the deletion step that cancels first. No check contacted Stripe; the tests use an in-memory Stripe API and a fixtures gateway. Unit modules failed first on missing code; the database contract and race tests, a store case, `runtime.test.ts` and all browser specs were first seen green. Of 81 mutations in this first round, two stayed uncaught (dropping the explicit API version, because the package default is the same, and a field the memory adapter never stores); the signature-error cause and the wrong-key check survived first and were caught after their tests were strengthened.
 
 Independent review returned CHANGES REQUIRED with fourteen findings; a second reviewer checked the repairs and returned CHANGES REQUIRED with eight. Dispositions:
 
@@ -149,3 +149,9 @@ Choices that need Juan: the start instant; the required Stripe test variables on
 Open risks: two checkouts paid in the same second can both charge, and nothing cancels one (INFERRED); a deletion stopped at the auth user shows the general text on retry; test-mode billing rows must be cleared before live mode; `deleted_customers` is kept on purpose; no check used the real Stripe API, Amazon SES or a hosted Supabase project.
 
 Pending external actions: the production migrations; SES production access and SMTP credentials; Supabase Auth settings and both email templates; the Stripe test account, products, webhook and portal configuration; the production variables; release. Owner manual checks 1 to 5 are pending. The phase gate runs on the commit containing this entry; the integrated result is verified again on `develop`.
+
+Phase 5 passed all 15 local checks on `1b6c4c4` (full identity in the receipt). The analyzer accepted 2,123 unit, 3 performance, 120 database and 171 browser tests (2,006 required). Coverage was 92.93% for statements and 86.49% for branches. The gate database teardown completed. The receipt is under `.local/runs/2026-11-23-accounts/phase5/`.
+
+## Integration
+
+`develop` had not moved since the base, so `feat/accounts` merged without conflicts and the merged tree equaled the branch. The full gate runs again on `develop` with this entry; its receipt is kept under `.local/runs/2026-11-23-accounts/integrated/`. Nothing was pushed.
