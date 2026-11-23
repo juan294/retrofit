@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ClaimsSection } from "@/components/claims/ClaimsSection";
 import { SitePage } from "@/components/SitePage";
 import type { SavedReportSummary } from "@/lib/accounts/data";
+import { claimOptions, type ClaimOption } from "@/lib/claims/sources";
+import { claimView, type ClaimView } from "@/lib/claims/view";
 import { signInHref } from "@/lib/accounts/return-to";
 import { ACCOUNT_COOKIE, readAccountByToken, type Account } from "@/lib/accounts/session";
 import { getServerDeps } from "@/lib/server/runtime";
@@ -22,9 +25,16 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   const deps = getServerDeps();
   let account: Account | null = null;
   let reports: SavedReportSummary[] | null = null;
+  let claims: ClaimView[] = [];
+  let options: ClaimOption[] = [];
   try {
     account = await readAccountByToken((await cookies()).get(ACCOUNT_COOKIE)?.value, deps);
-    if (account) reports = await deps.accounts.listSavedReports(account.accountId);
+    if (account) {
+      const [saved, held] = await Promise.all([deps.accounts.listSavedReports(account.accountId), deps.accounts.listClaims(account.accountId)]);
+      reports = saved;
+      claims = held.map((c) => claimView(c, deps.config));
+      options = await claimOptions(deps, account.accountId, saved, held);
+    }
   } catch (e) {
     console.error("GET /account failed:", e instanceof Error ? e.name : "unknown error");
     return (
@@ -72,6 +82,8 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
           ))}
         </ul>
       )}
+
+      <ClaimsSection claims={claims} options={options} />
 
       <h2 className="mt-10 text-xl font-semibold">{T.deleteHeading}</h2>
       <p className="mt-2">{T.deleteIntro}</p>
