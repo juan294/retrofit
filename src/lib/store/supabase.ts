@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { serviceCall, serviceClient, ServiceUnavailable, type ServiceClientOptions, type ServiceClientSource } from "@/lib/supabase/client";
 import { type LeasedClaim, type Store, type Versioned, requireNextVersion, requirePositive } from "./types";
 
 /**
@@ -13,20 +13,12 @@ import { type LeasedClaim, type Store, type Versioned, requireNextVersion, requi
  * StoreUnavailable. There is no fallback: callers fail closed.
  */
 
-export interface SupabaseStoreOptions {
-  readonly url: string;
-  readonly serviceRoleKey: string;
-  /** Per-request timeout. Default 10 s. */
-  readonly timeoutMs?: number;
-}
+/** Options for a client of its own (tests, tools); the runtime passes its shared client instead. */
+export type SupabaseStoreOptions = ServiceClientOptions;
 
-export class StoreUnavailable extends Error {
-  constructor(
-    public readonly operation: string,
-    /** PostgREST or Postgres error code, or "request_failed" for a transport failure. */
-    public readonly code: string,
-  ) {
-    super(`store ${operation} failed (${code})`);
+export class StoreUnavailable extends ServiceUnavailable {
+  constructor(operation: string, code: string) {
+    super(operation, code, `store ${operation} failed (${code})`);
     this.name = "StoreUnavailable";
   }
 }
@@ -37,32 +29,12 @@ export function keyPrefix(key: string): string {
   return head.length > 48 ? `${head.slice(0, 48)}...` : head;
 }
 
-/** Wraps `base` so every request is aborted after `ms`. */
-export function withTimeout(base: typeof fetch, ms: number): typeof fetch {
-  return (input, init) => {
-    const timeout = AbortSignal.timeout(ms);
-    const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
-    return base(input, { ...init, signal });
-  };
-}
+export function createSupabaseStore(source: ServiceClientSource): Store & Required<Pick<Store, "cleanup">> {
+  const client = serviceClient(source);
 
-export function createSupabaseStore(options: SupabaseStoreOptions): Store & Required<Pick<Store, "cleanup">> {
-  const client = createClient(options.url, options.serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    global: { fetch: withTimeout(fetch, options.timeoutMs ?? 10_000) },
-  });
-
-  async function call<R>(operation: string, key: string, fn: string, args: Record<string, unknown>): Promise<R> {
-    let code: string;
-    try {
-      const { data, error } = await client.rpc(fn, args);
-      if (!error) return data as R;
-      code = error.code || "request_failed";
-    } catch {
-      code = "request_failed";
-    }
-    console.error(`[TABLE_FALLBACK] store ${operation} failed (key prefix "${keyPrefix(key)}", ${code})`);
-    throw new StoreUnavailable(operation, code);
+  function call<R>(operation: string, key: string, fn: string, args: Record<string, unknown>): Promise<R> {
+    const label = { service: "store", operation, detail: `key prefix "${keyPrefix(key)}"` };
+    return serviceCall<R>(label, () => client.rpc(fn, args), (code) => new StoreUnavailable(operation, code)) as Promise<R>;
   }
 
   return {

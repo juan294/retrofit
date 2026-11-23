@@ -4,7 +4,8 @@ import { getAnalysis, isAnalysisId, readAnalysisView } from "@/lib/analysis/reco
 import { bundleFiles } from "@/lib/bundle/files";
 import { writeZip } from "@/lib/bundle/zip";
 import { visitorTexts } from "@/lib/analysis/texts";
-import { hashVisitor, readVisitorToken, sameHash } from "@/lib/analysis/visitor";
+import { readVisitorToken, sameHash } from "@/lib/analysis/visitor";
+import { sha256Hex } from "@/lib/security/tokens";
 import type { JobDeps } from "@/lib/crawl/jobs";
 import { GenerationFailed, generateNetwork, type GeneratedPreview, type NetworkValidator } from "@/lib/generate/network";
 
@@ -93,7 +94,7 @@ export async function handlePreviewFile(request: Request, deps: PreviewDeps, id:
   let generated: GeneratedPreview;
   try {
     const analysis = await getAnalysis(deps.store, id);
-    if (!analysis || !sameHash(analysis.ownerHash, hashVisitor(token))) return otherBrowser();
+    if (!analysis || !sameHash(analysis.ownerHash, sha256Hex(token))) return otherBrowser();
     const view = await readAnalysisView(deps, analysis);
     if (view.status === "expired") return jsonResponse(410, { error: "expired", message: view.failure?.message ?? visitorTexts.expired(new Date(analysis.expiresAt)) });
     const snapshot = view.analysis.snapshot;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AccountDataUnavailable, type AccountData } from "@/lib/accounts/data";
 import { createMemoryAccountData } from "@/lib/accounts/memory";
-import { handleNotify, NOTIFY_MAX_BODY_BYTES } from "@/lib/api/notify";
+import { handleNotify } from "@/lib/api/notify";
 import { captureConsole, fakeClock, postRequest, PUBLIC_ORIGIN, testDeps, type RequestOptions } from "../helpers/server-deps";
 
 const notifyRequest = (body: unknown, o: RequestOptions = {}) => postRequest("/api/notify", body, o);
@@ -37,7 +37,6 @@ describe("POST /api/notify", () => {
       const head = JSON.stringify({ email: "big@example.test", pad: "" });
       return head.replace('"pad":""', `"pad":"${"x".repeat(n - head.length)}"`);
     };
-    expect(NOTIFY_MAX_BODY_BYTES).toBe(2048);
     const over = await handleNotify(notifyRequest(exact(2049)), d);
     expect(over.status).toBe(413);
     expect(await over.json()).toEqual({ error: "too_large", message: "That request is too large." });
@@ -121,7 +120,7 @@ describe("POST /api/notify", () => {
     for (const accounts of [failing, unexpected]) {
       const res = await handleNotify(notifyRequest({ email: "private.person@example.test" }), testDeps({ accounts }));
       expect(res.status).toBe(503);
-      expect(await res.json()).toEqual({ error: "unavailable", message: "Retrofit could not save your address. Try again in a few minutes." });
+      expect(await res.json()).toEqual({ error: "unavailable", message: "Retrofit could not save this right now. Try again in a few minutes." });
     }
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.join("\n")).not.toContain("private.person");

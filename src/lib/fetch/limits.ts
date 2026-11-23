@@ -55,13 +55,19 @@ export function clientWindow(now: number): { bucket: number; endsAt: number } {
 
 export type LimitResult = { readonly ok: true } | { readonly ok: false; readonly retryAt: number };
 
-const windowKey = (clientId: string, bucket: number) => `client-window:${clientId}:${bucket}`;
+const ANALYSIS_WINDOW = "client-window";
+const windowKey = (clientId: string, bucket: number, prefix = ANALYSIS_WINDOW) => `${prefix}:${clientId}:${bucket}`;
+
+/** Counts one call in the client's hourly window under `prefix`: every call counts; more than `limit` is refused until the hour ends. */
+export async function countClientWindow(store: Store, prefix: string, limit: number, clientId: string, now: number): Promise<LimitResult> {
+  const { bucket, endsAt } = clientWindow(now);
+  const count = await store.incrementWindow(windowKey(clientId, bucket, prefix), ttlUntil(endsAt, now));
+  return count > limit ? { ok: false, retryAt: endsAt } : { ok: true };
+}
 
 /** Counts one analysis (visitor route): every call counts. */
-export async function countClientAnalysis(store: Store, config: Pick<Config, "analysesPerClientHour">, clientId: string, now: number): Promise<LimitResult> {
-  const { bucket, endsAt } = clientWindow(now);
-  const count = await store.incrementWindow(windowKey(clientId, bucket), ttlUntil(endsAt, now));
-  return count > config.analysesPerClientHour ? { ok: false, retryAt: endsAt } : { ok: true };
+export function countClientAnalysis(store: Store, config: Pick<Config, "analysesPerClientHour">, clientId: string, now: number): Promise<LimitResult> {
+  return countClientWindow(store, ANALYSIS_WINDOW, config.analysesPerClientHour, clientId, now);
 }
 
 /**

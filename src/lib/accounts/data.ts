@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { ServiceUnavailable } from "@/lib/supabase/client";
 
 /**
  * AccountData: Retrofit's relational account data (supabase/migrations/*_accounts.sql),
@@ -26,7 +26,7 @@ export interface NotifySignupResult {
   readonly created: boolean;
   /**
    * The raw unsubscribe token, only on a new signup, so the first message can
-   * carry the link (unsubscribeUrl). Null on a repeat: the stored hash cannot be
+   * carry the link (GET /unsubscribe?t=<token>, and /api/unsubscribe?t=<token> for one-click). Null on a repeat: the stored hash cannot be
    * turned back into a token. Never shown to the visitor, so a repeat signup
    * answers exactly like a new one.
    */
@@ -51,13 +51,9 @@ export interface AccountData {
 }
 
 /** A failed AccountData call in an adapter that depends on a service. Callers fail closed. */
-export class AccountDataUnavailable extends Error {
-  constructor(
-    public readonly operation: string,
-    /** PostgREST or Postgres error code, or "request_failed" for a transport failure. */
-    public readonly code: string,
-  ) {
-    super(`account data ${operation} failed (${code})`);
+export class AccountDataUnavailable extends ServiceUnavailable {
+  constructor(operation: string, code: string) {
+    super(operation, code, `account data ${operation} failed (${code})`);
     this.name = "AccountDataUnavailable";
   }
 }
@@ -86,35 +82,4 @@ export function requireEmail(raw: string): string {
   const email = normalizeEmail(raw);
   if (email === null) throw new RangeError("email must be a valid email address");
   return email;
-}
-
-/** 128 random bits in lower-case hex: the unsubscribe token (and later one-time tokens). */
-export const TOKEN_PATTERN = /^[0-9a-f]{32}$/;
-export const TOKEN_HASH_PATTERN = /^[0-9a-f]{64}$/;
-
-export function newToken(): string {
-  return randomBytes(16).toString("hex");
-}
-
-export function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-function requireToken(token: string): void {
-  if (!TOKEN_PATTERN.test(token)) throw new RangeError("token must be 32 lower-case hex characters");
-}
-
-/** The unsubscribe link every message to a signup carries: GET /unsubscribe?t=<token> (a confirm page; opening it changes nothing). */
-export function unsubscribeUrl(origin: string, token: string): string {
-  requireToken(token);
-  return `${origin}/unsubscribe?t=${token}`;
-}
-
-/**
- * The RFC 8058 one-click target for the `List-Unsubscribe` header (with
- * `List-Unsubscribe-Post: List-Unsubscribe=One-Click`): POST /api/unsubscribe?t=<token>.
- */
-export function oneClickUnsubscribeUrl(origin: string, token: string): string {
-  requireToken(token);
-  return `${origin}/api/unsubscribe?t=${token}`;
 }

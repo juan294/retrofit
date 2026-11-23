@@ -1,7 +1,8 @@
 import { dispatchQueued } from "@/lib/analysis/capacity";
 import { getAnalysis, isAnalysisId, readAnalysisView, reportBody, type AnalysisView } from "@/lib/analysis/record";
 import { visitorTexts } from "@/lib/analysis/texts";
-import { hashVisitor, readVisitorToken, sameHash } from "@/lib/analysis/visitor";
+import { readVisitorToken, sameHash } from "@/lib/analysis/visitor";
+import { sha256Hex } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { generateNetwork, GenerationFailed } from "@/lib/generate/network";
 import type { Snapshot } from "@/lib/snapshot/types";
@@ -62,7 +63,7 @@ export async function handleAnalysisStatus(request: Request, deps: ServerDeps, i
   if (!token || !isAnalysisId(id)) return notFound();
   try {
     const analysis = await getAnalysis(deps.store, id);
-    if (!analysis || !sameHash(analysis.ownerHash, hashVisitor(token))) return notFound();
+    if (!analysis || !sameHash(analysis.ownerHash, sha256Hex(token))) return notFound();
     // Only the owner's poll moves the queue: a request without the cookie, with an invalid id or for
     // another visitor's analysis starts no store work beyond that one read.
     const dispatchDeps = measure?.dispatchDeps ?? deps;

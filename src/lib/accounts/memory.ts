@@ -1,5 +1,6 @@
 import { systemClock, type Clock } from "@/lib/store/types";
-import { hashToken, newToken, normalizeEmail, requireEmail, TOKEN_HASH_PATTERN, type AccountData, type NotifySignup } from "./data";
+import { newToken, sha256Hex, SHA256_HEX_PATTERN } from "@/lib/security/tokens";
+import { normalizeEmail, requireEmail, type AccountData, type NotifySignup } from "./data";
 
 interface NotifyRow {
   readonly email: string;
@@ -46,7 +47,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       return op((now) => {
         if (notify.has(email)) return { created: false, unsubscribeToken: null };
         const token = newToken();
-        notify.set(email, { email, marketingConsent: consent === true, unsubscribeTokenHash: hashToken(token), createdAt: now, unsubscribedAt: null });
+        notify.set(email, { email, marketingConsent: consent === true, unsubscribeTokenHash: sha256Hex(token), createdAt: now, unsubscribedAt: null });
         return { created: true, unsubscribeToken: token };
       });
     },
@@ -62,7 +63,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
 
     async unsubscribe(tokenHash) {
       return op((now) => {
-        if (!TOKEN_HASH_PATTERN.test(tokenHash)) return "unknown";
+        if (!SHA256_HEX_PATTERN.test(tokenHash)) return "unknown";
         for (const row of notify.values()) {
           if (row.unsubscribeTokenHash !== tokenHash) continue;
           if (row.unsubscribedAt !== null) return "already";

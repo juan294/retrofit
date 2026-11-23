@@ -1,5 +1,6 @@
-// Forbids importing a Supabase adapter (store or account data) from tests outside tests/db/**,
-// except the listed files that use a closed port and need no database.
+// Forbids importing a Supabase adapter (any lib/<dir>/supabase module) or the shared service client
+// (lib/supabase/client) from tests outside tests/db/**, except the listed files that use a closed
+// port and need no database.
 const ALLOWED = ["tests/store/supabase-failure.test.ts", "tests/accounts/supabase-failure.test.ts"];
 
 export default {
@@ -9,7 +10,7 @@ export default {
     const rel = file.slice(file.lastIndexOf("/tests/") + 1);
     if (!rel.startsWith("tests/") || rel.startsWith("tests/db/") || ALLOWED.includes(rel)) return {};
     const check = (node, source) => {
-      if (typeof source === "string" && /(^|\/)(store|accounts)\/supabase(\/index)?(\.[cm]?[jt]sx?)?$/.test(source)) context.report({ node, messageId: "forbidden" });
+      if (typeof source === "string" && /(^|\/)lib\/([^/]+\/supabase(\/index)?|supabase\/client)(\.[cm]?[jt]sx?)?$/.test(source)) context.report({ node, messageId: "forbidden" });
     };
     return {
       ImportDeclaration(node) { check(node, node.source.value); },

@@ -1,3 +1,6 @@
+/** Small form and JSON bodies (notify, unsubscribe). */
+const SMALL_BODY_BYTES = 2048;
+
 /** Reads at most `maxBytes` of the request body; "too large" past that, whatever Content-Length said. */
 export async function readLimitedBody(request: Request, maxBytes: number): Promise<string | "too large"> {
   const declared = Number(request.headers.get("content-length"));
@@ -17,4 +20,9 @@ export async function readLimitedBody(request: Request, maxBytes: number): Promi
     chunks.push(value);
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+/** Reads at most 2 KB, the limit for the notify and unsubscribe endpoints. */
+export function readSmallBody(request: Request): Promise<string | "too large"> {
+  return readLimitedBody(request, SMALL_BODY_BYTES);
 }

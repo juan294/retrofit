@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { isSameOrigin } from "@/lib/analysis/run";
-import { hashVisitor, isSecureRequest, sameHash } from "@/lib/analysis/visitor";
+import { isSecureRequest, sameHash } from "@/lib/analysis/visitor";
+import { sha256Hex } from "@/lib/security/tokens";
 import { json } from "@/lib/api/json";
 import { clientIdFromRequest, clientWindow, nextUtcMidnight, ttlUntil, utcDay } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
@@ -175,7 +176,7 @@ export async function handleJudgeUpgrade(request: Request, deps: ServerDeps): Pr
     const requester0 = clientIdFromRequest(request, deps.config, now0);
     const attempts = await deps.store.incrementWindow(judgeAttemptsKey(requester0, Math.floor(now0 / 3_600_000)), 3600);
     if (attempts > JUDGE_ATTEMPTS_PER_CLIENT_HOUR) return json(429, { error: "too_many_codes", message: sessionTexts.tooManyCodes });
-    if (!sameHash(hashVisitor(code), hashVisitor(expected))) return json(403, { error: "invalid_code", message: sessionTexts.invalidCode });
+    if (!sameHash(sha256Hex(code), sha256Hex(expected))) return json(403, { error: "invalid_code", message: sessionTexts.invalidCode });
 
     const { sid, client } = session.claims;
     if (session.claims.pool !== "judge") {

@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { AnalysisView } from "@/components/analysis/AnalysisView";
 import { getAnalysis, isAnalysisId } from "@/lib/analysis/record";
-import { VISITOR_COOKIE, hashVisitor, sameHash } from "@/lib/analysis/visitor";
+import { VISITOR_COOKIE, sameHash } from "@/lib/analysis/visitor";
+import { sha256Hex } from "@/lib/security/tokens";
 import { getServerDeps } from "@/lib/server/runtime";
 
 export const metadata: Metadata = { title: "Your analysis · Retrofit", robots: { index: false, follow: false } };
@@ -14,7 +15,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   if (!token || !isAnalysisId(id)) notFound();
   const analysis = await getAnalysis(getServerDeps().store, id);
   // Same page for another visitor's analysis and for an id that does not exist.
-  if (!analysis || !sameHash(analysis.ownerHash, hashVisitor(token))) notFound();
+  if (!analysis || !sameHash(analysis.ownerHash, sha256Hex(token))) notFound();
   return (
     <main className="mx-auto max-w-3xl px-4 py-12">
       <p>

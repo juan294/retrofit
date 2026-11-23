@@ -1,27 +1,22 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { NotifyForm } from "@/components/NotifyForm";
+import { SitePage } from "@/components/SitePage";
 import { FEATURE_LABELS, PLANS } from "@/lib/billing/plans";
-import { getServerDeps } from "@/lib/server/runtime";
-import { PRICING_TEXT, pricingNotice } from "@/lib/site/pricing-texts";
+import { getConfig } from "@/lib/config";
+import { serverClock } from "@/lib/server/runtime";
+import { PRICING_TEXT } from "@/lib/site/pricing-texts";
 
 export const metadata: Metadata = { title: "Pricing · Retrofit" };
 
 export default function PricingPage() {
-  const { config, clock } = getServerDeps();
-  const notice = pricingNotice(clock(), config.billingStart);
+  const config = getConfig();
+  const free = serverClock(config)() < config.billingStart;
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12 leading-relaxed [overflow-wrap:anywhere]">
-      <p>
-        <Link href="/" className="underline">
-          Retrofit
-        </Link>
-      </p>
-      <h1 className="mt-4 text-3xl font-semibold">{PRICING_TEXT.title}</h1>
+    <SitePage title={PRICING_TEXT.title}>
       <p className="mt-4">{PRICING_TEXT.intro}</p>
-      {notice ? (
+      {free ? (
         <p className="mt-4 rounded border p-3" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
-          <strong>{notice}.</strong> {PRICING_TEXT.freeNoticeDetail}
+          {PRICING_TEXT.freeNotice}
         </p>
       ) : null}
       <ul className="mt-8 flex flex-col gap-4">
@@ -41,6 +36,6 @@ export default function PricingPage() {
       </ul>
       <h2 className="mt-10 text-xl font-semibold">{PRICING_TEXT.notifyHeading}</h2>
       <NotifyForm privacyHref="/privacy" />
-    </main>
+    </SitePage>
   );
 }

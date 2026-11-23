@@ -9,7 +9,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { hashToken, type AccountData } from "@/lib/accounts/data";
+import type { AccountData } from "@/lib/accounts/data";
+import { sha256Hex } from "@/lib/security/tokens";
 
 export interface AccountDataClients {
   a: AccountData;
@@ -97,7 +98,7 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
       // Fails if the token does not unsubscribe its own row, or the time is not recorded.
       it("unsubscribes once by the token hash and records the time", async () => {
         const { unsubscribeToken } = await a.addNotifySignup(email("u"), true);
-        expect(await b.unsubscribe(hashToken(unsubscribeToken as string))).toBe("unsubscribed");
+        expect(await b.unsubscribe(sha256Hex(unsubscribeToken as string))).toBe("unsubscribed");
         const row = await a.findNotifySignup(email("u"));
         expect(row?.unsubscribedAt).toEqual(expect.any(String));
         expect(Number.isFinite(Date.parse(row?.unsubscribedAt as string))).toBe(true);
@@ -106,7 +107,7 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
       // Fails if a second click moves the recorded time or reports an error.
       it("is idempotent: a second unsubscribe answers already and keeps the first time", async () => {
         const { unsubscribeToken } = await a.addNotifySignup(email("u2"), false);
-        const hash = hashToken(unsubscribeToken as string);
+        const hash = sha256Hex(unsubscribeToken as string);
         await a.unsubscribe(hash);
         const first = (await a.findNotifySignup(email("u2")))?.unsubscribedAt;
         expect(await b.unsubscribe(hash)).toBe("already");
@@ -116,7 +117,7 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
       // Fails if an unknown or malformed hash unsubscribes anything or throws.
       it("answers unknown for a hash that matches no signup, or is not a SHA-256 hex digest", async () => {
         const { unsubscribeToken } = await a.addNotifySignup(email("keep"), false);
-        expect(await a.unsubscribe(hashToken(`${unsubscribeToken}x`))).toBe("unknown");
+        expect(await a.unsubscribe(sha256Hex(`${unsubscribeToken}x`))).toBe("unknown");
         expect(await a.unsubscribe("not-a-hash")).toBe("unknown");
         expect(await a.unsubscribe(unsubscribeToken as string)).toBe("unknown");
         expect((await b.findNotifySignup(email("keep")))?.unsubscribedAt).toBeNull();
@@ -125,7 +126,7 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
       // Fails if a repeat signup re-subscribes an address that unsubscribed (anyone could re-subscribe someone else).
       it("a signup after unsubscribing stays unsubscribed", async () => {
         const { unsubscribeToken } = await a.addNotifySignup(email("back"), false);
-        await a.unsubscribe(hashToken(unsubscribeToken as string));
+        await a.unsubscribe(sha256Hex(unsubscribeToken as string));
         expect((await b.addNotifySignup(email("back"), true)).created).toBe(false);
         const row = await a.findNotifySignup(email("back"));
         expect(row?.unsubscribedAt).not.toBeNull();

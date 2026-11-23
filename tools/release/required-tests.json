@@ -6024,109 +6024,97 @@
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"Ana@Example.com\") -> \"ana@example.com\""
+      "title": "email addresses normalizeEmail(\"Ana@Example.com\") -> \"ana@example.com\""
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"  b.c+tag@sub.example.org \") -> \"b.c+tag@sub.example.org\""
+      "title": "email addresses normalizeEmail(\"  b.c+tag@sub.example.org \") -> \"b.c+tag@sub.example.org\""
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"o'neil@example.ie\") -> \"o'neil@example.ie\""
+      "title": "email addresses normalizeEmail(\"o'neil@example.ie\") -> \"o'neil@example.ie\""
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"\") -> null"
+      "title": "email addresses normalizeEmail(\"\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"plain\") -> null"
+      "title": "email addresses normalizeEmail(\"plain\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"@example.com\") -> null"
+      "title": "email addresses normalizeEmail(\"@example.com\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"a@\") -> null"
+      "title": "email addresses normalizeEmail(\"a@\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"a@b\") -> null"
+      "title": "email addresses normalizeEmail(\"a@b\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"a b@example.com\") -> null"
+      "title": "email addresses normalizeEmail(\"a b@example.com\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"a@@example.com\") -> null"
+      "title": "email addresses normalizeEmail(\"a@@example.com\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"a@exa mple.com\") -> null"
+      "title": "email addresses normalizeEmail(\"a@exa mple.com\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"a@example..com\") -> null"
+      "title": "email addresses normalizeEmail(\"a@example..com\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"a@.example.com\") -> null"
+      "title": "email addresses normalizeEmail(\"a@.example.com\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"<a>@example.com\") -> null"
+      "title": "email addresses normalizeEmail(\"<a>@example.com\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"lllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll@example.com\") -> null"
+      "title": "email addresses normalizeEmail(\"lllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll@example.com\") -> null"
     },
     {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers normalizeEmail(\"a@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.com\") -> null"
-    },
-    {
-      "rule": "accounts data",
-      "suite": "unit",
-      "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers unsubscribeUrl builds the link every message carries"
-    },
-    {
-      "rule": "accounts data",
-      "suite": "unit",
-      "file": "tests/accounts/data.memory.test.ts",
-      "title": "email and token helpers hashToken is SHA-256 in hex"
+      "title": "email addresses normalizeEmail(\"a@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.com\") -> null"
     },
     {
       "rule": "accounts data",
@@ -6483,12 +6471,6 @@
       "title": "NotifyForm renders nothing without a privacy link"
     },
     {
-      "rule": "notify me",
-      "suite": "unit",
-      "file": "tests/site/notify-form.test.ts",
-      "title": "pricing notice shows the free judging period note only before BILLING_START"
-    },
-    {
       "rule": "own pages",
       "suite": "unit",
       "file": "tests/site/own-site.test.ts",
@@ -6499,6 +6481,18 @@
       "suite": "unit",
       "file": "tests/site/own-site.test.ts",
       "title": "pricing, privacy and terms pages are allowed by robots while unsubscribe links are not"
+    },
+    {
+      "rule": "tokens",
+      "suite": "unit",
+      "file": "tests/security/tokens.test.ts",
+      "title": "tokens newToken is 32 lower-case hex characters and differs each call"
+    },
+    {
+      "rule": "tokens",
+      "suite": "unit",
+      "file": "tests/security/tokens.test.ts",
+      "title": "tokens sha256Hex is SHA-256 in hex"
     },
     {
       "rule": "accounts data",

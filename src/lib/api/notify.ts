@@ -1,20 +1,17 @@
 import { normalizeEmail } from "@/lib/accounts/data";
 import { isSameOrigin } from "@/lib/analysis/run";
 import { hhmmUtc } from "@/lib/analysis/texts";
-import { clientIdFromRequest, clientWindow, ttlUntil } from "@/lib/fetch/limits";
+import { clientIdFromRequest, countClientWindow } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
-import { readLimitedBody } from "./body";
+import { REQUEST_TEXT } from "@/lib/site/pricing-texts";
+import { readSmallBody } from "./body";
 import { json } from "./json";
-
-export const NOTIFY_MAX_BODY_BYTES = 2048;
 
 export const notifyTexts = {
   onTheList: "You're on the list. We will email you when paid plans start.",
   crossOrigin: "Open Retrofit at its own address to join the list.",
-  tooLarge: "That request is too large.",
   invalidEmail: "Enter a valid email address.",
   limit: (limit: number, retryAt: Date) => `You reached the limit of ${limit} signups per hour. Try again at ${hhmmUtc(retryAt)} UTC.`,
-  unavailable: "Retrofit could not save your address. Try again in a few minutes.",
 } as const;
 
 interface NotifyBody {
@@ -46,17 +43,15 @@ function parse(text: string): NotifyBody | null {
 export async function handleNotify(request: Request, deps: Pick<ServerDeps, "config" | "store" | "accounts" | "clock">): Promise<Response> {
   if (!isSameOrigin(request, deps.config)) return json(403, { error: "cross_origin", message: notifyTexts.crossOrigin });
   try {
-    const text = await readLimitedBody(request, NOTIFY_MAX_BODY_BYTES);
-    if (text === "too large") return json(413, { error: "too_large", message: notifyTexts.tooLarge });
+    const text = await readSmallBody(request);
+    if (text === "too large") return json(413, { error: "too_large", message: REQUEST_TEXT.tooLarge });
     const body = parse(text);
     if (body === null) return json(400, { error: "invalid_email", message: notifyTexts.invalidEmail });
 
     const now = deps.clock();
-    const { bucket, endsAt } = clientWindow(now);
-    const clientId = clientIdFromRequest(request, deps.config, now);
-    const count = await deps.store.incrementWindow(`notify-window:${clientId}:${bucket}`, ttlUntil(endsAt, now));
-    if (count > deps.config.notifyPerClientHour) {
-      const retryAt = new Date(endsAt);
+    const limit = await countClientWindow(deps.store, "notify-window", deps.config.notifyPerClientHour, clientIdFromRequest(request, deps.config, now), now);
+    if (!limit.ok) {
+      const retryAt = new Date(limit.retryAt);
       return json(429, { error: "limit", message: notifyTexts.limit(deps.config.notifyPerClientHour, retryAt), retryAt: retryAt.toISOString() });
     }
 
@@ -65,6 +60,6 @@ export async function handleNotify(request: Request, deps: Pick<ServerDeps, "con
   } catch (e) {
     // The error name only: a database message can quote the address.
     console.error("POST /api/notify failed:", e instanceof Error ? e.name : "unknown error");
-    return json(503, { error: "unavailable", message: notifyTexts.unavailable });
+    return json(503, { error: "unavailable", message: REQUEST_TEXT.unavailable });
   }
 }

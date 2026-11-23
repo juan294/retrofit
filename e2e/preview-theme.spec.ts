@@ -1,4 +1,6 @@
 import { test, expect } from "./fixtures/csp";
+import { PRIVACY, TERMS } from "@/lib/site/legal-texts";
+import { PRICING_TEXT, UNSUBSCRIBE_TEXT } from "@/lib/site/pricing-texts";
 import { analyzeFixture, mockOtari } from "./support/agent";
 
 type Locator = import("@playwright/test").Locator;
@@ -64,23 +66,37 @@ for (const colorScheme of ["light", "dark"] as const) {
   });
 }
 
-// The pricing, privacy, terms and unsubscribe pages (confirm and invalid-link states) use the page tokens only; every text kind on them must stay readable in both schemes.
+type Page = import("@playwright/test").Page;
+
+// The pricing, privacy, terms and unsubscribe pages (confirm and invalid-link states) use the page tokens only;
+// every text kind on them must stay readable in both schemes. Each page adds its own targets to the shared ones.
+const TEXT_PAGES: Record<string, (page: Page) => Record<string, Locator>> = {
+  "/pricing": (page) => ({
+    text: page.getByText(PRICING_TEXT.intro),
+    notice: page.getByText(PRICING_TEXT.freeNotice),
+    plan: page.getByRole("heading", { level: 2, name: "Pro", exact: true }),
+    button: page.getByRole("button", { name: "Notify me" }),
+    privacy: page.getByRole("link", { name: "privacy notice" }),
+  }),
+  "/privacy": (page) => ({ text: page.getByText(PRIVACY.intro) }),
+  "/terms": (page) => ({ text: page.getByText(TERMS.intro) }),
+  "/unsubscribe?t=0123456789abcdef0123456789abcdef": (page) => ({
+    text: page.getByText(UNSUBSCRIBE_TEXT.confirm),
+    button: page.getByRole("button", { name: UNSUBSCRIBE_TEXT.confirmButton }),
+  }),
+  "/unsubscribe?t=not-a-token": (page) => ({ text: page.getByText(UNSUBSCRIBE_TEXT.invalid) }),
+};
+
 for (const colorScheme of ["light", "dark"] as const) {
-  for (const path of ["/pricing", "/privacy", "/terms", "/unsubscribe?t=0123456789abcdef0123456789abcdef", "/unsubscribe?t=not-a-token"] as const) {
+  for (const [path, extra] of Object.entries(TEXT_PAGES)) {
     test(`the ${path} page text is readable in ${colorScheme} mode`, async ({ page }) => {
       await page.emulateMedia({ colorScheme });
       await page.goto(path);
       const targets: Record<string, Locator> = {
         heading: page.getByRole("heading", { level: 1 }),
-        text: page.locator("main p").nth(1),
         link: page.getByRole("link", { name: "Retrofit", exact: true }),
+        ...extra(page),
       };
-      if (path === "/unsubscribe?t=0123456789abcdef0123456789abcdef") targets.button = page.getByRole("button", { name: "Unsubscribe" });
-      if (path === "/pricing") {
-        targets.button = page.getByRole("button", { name: "Notify me" });
-        targets.privacy = page.getByRole("link", { name: "privacy notice" });
-        targets.plan = page.getByRole("heading", { level: 2, name: "Pro", exact: true });
-      }
       for (const [name, el] of Object.entries(targets)) {
         await expect(el, name).toBeVisible();
         const { ratio, color, background } = await contrastOf(el);
@@ -89,4 +105,3 @@ for (const colorScheme of ["light", "dark"] as const) {
     });
   }
 }
-

@@ -4,7 +4,7 @@
  * independent clients.
  */
 import { expect, it } from "vitest";
-import { hashToken } from "@/lib/accounts/data";
+import { sha256Hex } from "@/lib/security/tokens";
 import { createSupabaseAccountData } from "@/lib/accounts/supabase";
 import { runAccountDataContract } from "../accounts/data-contract";
 
@@ -27,7 +27,7 @@ it("records created and unsubscribed times close to now", async () => {
   const data = createSupabaseAccountData({ url, serviceRoleKey });
   const email = `clock-${Date.now()}@example.test`;
   const { unsubscribeToken } = await data.addNotifySignup(email, false);
-  await data.unsubscribe(hashToken(unsubscribeToken as string));
+  await data.unsubscribe(sha256Hex(unsubscribeToken as string));
   const row = await data.findNotifySignup(email);
   for (const t of [row?.createdAt, row?.unsubscribedAt]) expect(Math.abs(Date.parse(t as string) - Date.now())).toBeLessThan(60_000);
 });

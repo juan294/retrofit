@@ -1,15 +1,14 @@
-import { hashToken, TOKEN_PATTERN, type AccountData } from "@/lib/accounts/data";
+import type { AccountData } from "@/lib/accounts/data";
+import { sha256Hex, TOKEN_PATTERN } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
-import { UNSUBSCRIBE_TEXT } from "@/lib/site/pricing-texts";
-import { readLimitedBody } from "./body";
+import { REQUEST_TEXT, UNSUBSCRIBE_TEXT } from "@/lib/site/pricing-texts";
+import { readSmallBody } from "./body";
 import { json } from "./json";
 
+const OUTCOMES = ["done", "invalid", "unavailable"] as const;
+
 /** `done`: the address is unsubscribed (now or earlier). `invalid`: no signup has this link. `unavailable`: try later. */
-export type UnsubscribeOutcome = "done" | "invalid" | "unavailable";
-
-const OUTCOMES: readonly UnsubscribeOutcome[] = ["done", "invalid", "unavailable"];
-
-export const UNSUBSCRIBE_MAX_BODY_BYTES = 2048;
+export type UnsubscribeOutcome = (typeof OUTCOMES)[number];
 
 /**
  * Records the unsubscribe time once. A second call answers `done` again and
@@ -19,7 +18,7 @@ export const UNSUBSCRIBE_MAX_BODY_BYTES = 2048;
 export async function unsubscribeByToken(t: string | string[] | undefined | null, accounts: AccountData): Promise<UnsubscribeOutcome> {
   if (typeof t !== "string" || !TOKEN_PATTERN.test(t)) return "invalid";
   try {
-    return (await accounts.unsubscribe(hashToken(t))) === "unknown" ? "invalid" : "done";
+    return (await accounts.unsubscribe(sha256Hex(t))) === "unknown" ? "invalid" : "done";
   } catch (e) {
     console.error("unsubscribe failed:", e instanceof Error ? e.name : "unknown error");
     return "unavailable";
@@ -40,11 +39,22 @@ export function unsubscribePageState(params: Record<string, string | string[] | 
   return { kind: "result", outcome: "invalid" };
 }
 
-async function formFields(request: Request, text: string): Promise<FormData | null> {
+type Fields = (name: string) => string | null;
+
+/** The posted form fields, or null for a body that is neither urlencoded nor multipart. */
+async function formFields(request: Request, text: string): Promise<Fields | null> {
   const type = request.headers.get("content-type") ?? "";
-  if (!/^(application\/x-www-form-urlencoded|multipart\/form-data)\b/i.test(type)) return null;
+  if (/^application\/x-www-form-urlencoded\b/i.test(type)) {
+    const params = new URLSearchParams(text);
+    return (name) => params.get(name);
+  }
+  if (!/^multipart\/form-data\b/i.test(type)) return null;
   try {
-    return await new Response(text, { headers: { "content-type": type } }).formData();
+    const form = await new Response(text, { headers: { "content-type": type } }).formData();
+    return (name) => {
+      const value = form.get(name);
+      return typeof value === "string" ? value : null;
+    };
   } catch {
     return null;
   }
@@ -61,17 +71,17 @@ async function formFields(request: Request, text: string): Promise<FormData | nu
  * token is the authorization. Idempotent. Body at most 2 KB (413); any other body 400.
  */
 export async function handleUnsubscribePost(request: Request, deps: Pick<ServerDeps, "config" | "accounts">): Promise<Response> {
-  const text = await readLimitedBody(request, UNSUBSCRIBE_MAX_BODY_BYTES);
-  if (text === "too large") return json(413, { error: "too_large", message: "That request is too large." });
-  const form = await formFields(request, text);
-  const formToken = form?.get("t");
-  if (typeof formToken === "string") {
+  const text = await readSmallBody(request);
+  if (text === "too large") return json(413, { error: "too_large", message: REQUEST_TEXT.tooLarge });
+  const field = await formFields(request, text);
+  const formToken = field?.("t") ?? null;
+  if (formToken !== null) {
     const outcome = await unsubscribeByToken(formToken, deps.accounts);
     return new Response(null, { status: 303, headers: { location: `${deps.config.publicOrigin}/unsubscribe?result=${outcome}`, "cache-control": "no-store" } });
   }
-  if (form?.get("List-Unsubscribe") === "One-Click") {
+  if (field?.("List-Unsubscribe") === "One-Click") {
     const outcome = await unsubscribeByToken(new URL(request.url).searchParams.get("t"), deps.accounts);
-    if (outcome === "unavailable") return json(503, { error: "unavailable", message: UNSUBSCRIBE_TEXT.unavailable });
+    if (outcome === "unavailable") return json(503, { error: "unavailable", message: REQUEST_TEXT.unavailable });
     return json(200, { ok: true, message: UNSUBSCRIBE_TEXT.oneClick });
   }
   return json(400, { error: "bad_request", message: "Use the unsubscribe button on the page the link opens." });

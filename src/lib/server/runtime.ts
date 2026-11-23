@@ -3,13 +3,14 @@ import { after } from "next/server";
 import type { AccountData } from "@/lib/accounts/data";
 import { createMemoryAccountData } from "@/lib/accounts/memory";
 import { createSupabaseAccountData } from "@/lib/accounts/supabase";
-import { getConfig, type Config } from "@/lib/config";
+import { getConfig, type Config, type SupabaseConfig } from "@/lib/config";
 import { createFetchContext } from "@/lib/fetch/context";
 import type { FetchContext } from "@/lib/fetch/http";
 import { scoreSnapshot } from "@/lib/score/score";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { createMemoryStore } from "@/lib/store/memory";
 import { createSupabaseStore } from "@/lib/store/supabase";
+import { createServiceClient, type ServiceClient } from "@/lib/supabase/client";
 import { fixtureClock } from "@/lib/test-fixtures/clock";
 import { systemClock, type Clock, type Store } from "@/lib/store/types";
 
@@ -58,6 +59,8 @@ export function selfKick(config: Config): () => Promise<void> {
 }
 
 interface Singletons {
+  /** One service client per Supabase project, shared by the Store and AccountData adapters. */
+  supabase?: { readonly url: string; readonly serviceRoleKey: string; readonly client: ServiceClient };
   store?: Store;
   accounts?: AccountData;
   fetch?: FetchContext;
@@ -68,39 +71,42 @@ interface Singletons {
 const g = globalThis as typeof globalThis & { __retrofitRuntime?: Singletons };
 const singletons: Singletons = (g.__retrofitRuntime ??= {});
 
-/**
- * The process-wide Store: Supabase when SUPABASE_URL and
- * SUPABASE_SERVICE_ROLE_KEY are set, memory for tests and local development
- * without them. On Vercel without them it throws, so production never falls
- * back to a per-instance memory store (loadConfig already refuses that
- * configuration on Vercel).
- */
-export function getStore(config: Config = getConfig()): Store {
-  if (singletons.store) return singletons.store;
-  if (config.supabase) {
-    singletons.store = createSupabaseStore(config.supabase);
-  } else if (config.onVercel) {
-    throw new Error("Supabase store not configured");
-  } else {
-    singletons.store = createMemoryStore();
-  }
-  return singletons.store;
+function sharedServiceClient(supabase: SupabaseConfig): ServiceClient {
+  const cached = singletons.supabase;
+  if (cached?.url === supabase.url && cached.serviceRoleKey === supabase.serviceRoleKey) return cached.client;
+  const client = createServiceClient(supabase);
+  singletons.supabase = { url: supabase.url, serviceRoleKey: supabase.serviceRoleKey, client };
+  return client;
 }
 
 /**
- * The process-wide AccountData, chosen like the Store: Supabase when it is
- * configured, memory off Vercel without it, and a refusal on Vercel without it.
+ * A process-wide data adapter: Supabase when SUPABASE_URL and
+ * SUPABASE_SERVICE_ROLE_KEY are set, memory for tests and local development
+ * without them. On Vercel without them it throws, so production never falls
+ * back to a per-instance memory adapter (loadConfig already refuses that
+ * configuration on Vercel).
  */
+function dataAdapter<T>(config: Config, name: string, supabase: (client: ServiceClient) => T, memory: () => T): T {
+  if (config.supabase) return supabase(sharedServiceClient(config.supabase));
+  if (config.onVercel) throw new Error(`Supabase ${name} not configured`);
+  return memory();
+}
+
+/** The process-wide Store (dataAdapter). */
+export function getStore(config: Config = getConfig()): Store {
+  singletons.store ??= dataAdapter(config, "store", createSupabaseStore, createMemoryStore);
+  return singletons.store;
+}
+
+/** The process-wide AccountData (dataAdapter). */
 export function getAccountData(config: Config = getConfig()): AccountData {
-  if (singletons.accounts) return singletons.accounts;
-  if (config.supabase) {
-    singletons.accounts = createSupabaseAccountData(config.supabase);
-  } else if (config.onVercel) {
-    throw new Error("Supabase account data not configured");
-  } else {
-    singletons.accounts = createMemoryAccountData();
-  }
+  singletons.accounts ??= dataAdapter(config, "account data", createSupabaseAccountData, createMemoryAccountData);
   return singletons.accounts;
+}
+
+/** The server clock. Fixtures mode only: e2e tests may offset it (src/lib/test-fixtures/clock.ts). */
+export function serverClock(config: Pick<Config, "fixturesEnabled">): Clock {
+  return config.fixturesEnabled ? fixtureClock : systemClock;
 }
 
 export function getFetchContext(config: Config = getConfig()): FetchContext {
@@ -123,9 +129,11 @@ export function getServerDeps(): ServerDeps {
     singletons.deps = {
       config,
       store: getStore(config),
-      accounts: getAccountData(config),
-      // Fixtures mode only: e2e tests may offset the server clock (src/lib/test-fixtures/clock.ts).
-      clock: config.fixturesEnabled ? fixtureClock : systemClock,
+      // Built on first use, so routes that never read account data do not create it.
+      get accounts() {
+        return getAccountData(config);
+      },
+      clock: serverClock(config),
       fetch: getFetchContext(config),
       waitUntil: runtimeWaitUntil,
       score: scoreSnapshot,

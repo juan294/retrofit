@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { hashToken, normalizeEmail, unsubscribeUrl } from "@/lib/accounts/data";
+import { normalizeEmail } from "@/lib/accounts/data";
 import { createAccountMemoryBacking, createMemoryAccountData } from "@/lib/accounts/memory";
+import { sha256Hex } from "@/lib/security/tokens";
 import { fakeClock } from "../helpers/server-deps";
 import { runAccountDataContract } from "./data-contract";
 
@@ -21,7 +22,7 @@ describe("memory AccountData specifics", () => {
     const { unsubscribeToken } = await data.addNotifySignup("raw@example.test", false);
     const dump = JSON.stringify([...backing.notify.values()]);
     expect(dump).not.toContain(unsubscribeToken as string);
-    expect(dump).toContain(hashToken(unsubscribeToken as string));
+    expect(dump).toContain(sha256Hex(unsubscribeToken as string));
   });
 
   // Fails if the recorded times do not come from the injected clock.
@@ -30,7 +31,7 @@ describe("memory AccountData specifics", () => {
     const data = createMemoryAccountData({ clock: clock.now });
     const { unsubscribeToken } = await data.addNotifySignup("time@example.test", false);
     clock.advance(60_000);
-    await data.unsubscribe(hashToken(unsubscribeToken as string));
+    await data.unsubscribe(sha256Hex(unsubscribeToken as string));
     expect(await data.findNotifySignup("time@example.test")).toEqual({
       email: "time@example.test",
       marketingConsent: false,
@@ -49,7 +50,7 @@ describe("memory AccountData specifics", () => {
   });
 });
 
-describe("email and token helpers", () => {
+describe("email addresses", () => {
   // Fails if a valid address is refused, an invalid one accepted, or the address is not trimmed and lower-cased.
   it.each([
     ["Ana@Example.com", "ana@example.com"],
@@ -65,16 +66,4 @@ describe("email and token helpers", () => {
       expect(normalizeEmail(input)).toBeNull();
     },
   );
-
-  // Fails if the link does not reach GET /unsubscribe on the public origin with the raw token, or the token is not URL-safe checked.
-  it("unsubscribeUrl builds the link every message carries", () => {
-    const token = "0123456789abcdef0123456789abcdef";
-    expect(unsubscribeUrl("https://retrofit.thecreativetoken.com", token)).toBe(`https://retrofit.thecreativetoken.com/unsubscribe?t=${token}`);
-    expect(() => unsubscribeUrl("https://retrofit.test", "../x")).toThrow(RangeError);
-  });
-
-  // Fails if the hash is not SHA-256 hex of the token (the stored hash would never match the link).
-  it("hashToken is SHA-256 in hex", () => {
-    expect(hashToken("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-  });
 });

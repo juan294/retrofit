@@ -11,6 +11,9 @@ export const OWN_PAGES: readonly { path: string; title: string; summary: string 
   { path: "/terms", title: "Terms", summary: "The terms for using Retrofit, its preview agents and its files." },
 ];
 
+/** Visitor-owned pages that crawlers have no reason to request (robots.txt disallows them). */
+export const PRIVATE_PATHS: readonly string[] = ["/r/", "/p/", "/judges", "/unsubscribe"];
+
 export const LEAD_EMAIL = "retrofit@thecreativetoken.com";
 export const CONTACT_URL = "https://github.com/juan294/retrofit/issues";
 export const SOURCE_URL = "https://github.com/juan294/retrofit";

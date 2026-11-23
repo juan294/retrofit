@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { SitePage } from "@/components/SitePage";
 
 export const metadata: Metadata = { title: "RetrofitBot · Retrofit" };
 
@@ -8,13 +8,7 @@ const ENDPOINT_DESCRIPTION =
 
 export default function BotPage() {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12 leading-relaxed [overflow-wrap:anywhere]">
-      <p>
-        <Link href="/" className="underline">
-          Retrofit
-        </Link>
-      </p>
-      <h1 className="mt-4 text-3xl font-semibold">RetrofitBot</h1>
+    <SitePage title="RetrofitBot">
       <p className="mt-4">
         RetrofitBot reads a public website when someone asks Retrofit to score it. It identifies itself with the user agent{" "}
         <code>RetrofitBot/0.1</code> and a link to this page.
@@ -42,6 +36,6 @@ export default function BotPage() {
       <p className="mt-2" id="score-api">
         {ENDPOINT_DESCRIPTION}
       </p>
-    </main>
+    </SitePage>
   );
 }

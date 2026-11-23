@@ -1,9 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AccountDataUnavailable, hashToken, oneClickUnsubscribeUrl, type AccountData } from "@/lib/accounts/data";
+import { AccountDataUnavailable, type AccountData } from "@/lib/accounts/data";
 import { createMemoryAccountData } from "@/lib/accounts/memory";
-import { handleUnsubscribePost, UNSUBSCRIBE_MAX_BODY_BYTES, unsubscribeByToken, unsubscribePageState } from "@/lib/api/unsubscribe";
+import { handleUnsubscribePost, unsubscribeByToken, unsubscribePageState } from "@/lib/api/unsubscribe";
+import { sha256Hex } from "@/lib/security/tokens";
 import { getAccountData } from "@/lib/server/runtime";
 import UnsubscribePage from "@/app/unsubscribe/page";
 import { captureConsole, PUBLIC_ORIGIN, testDeps } from "../helpers/server-deps";
@@ -73,7 +74,7 @@ describe("GET /unsubscribe?t=<token>", () => {
     expect(form).toMatch(/action="\/api\/unsubscribe"/);
     expect(html).toContain(`name="t" value="${token}"`);
     expect((await accounts.findNotifySignup(email))?.unsubscribedAt).toBeNull();
-    expect(await accounts.unsubscribe(hashToken(token))).toBe("unsubscribed");
+    expect(await accounts.unsubscribe(sha256Hex(token))).toBe("unsubscribed");
   });
 
   // Fails if the result page shows anything but the fixed text for a fixed outcome.
@@ -127,7 +128,6 @@ describe("POST /api/unsubscribe", () => {
   it("accepts an RFC 8058 one-click post from another origin, idempotent, with one answer for known and unknown tokens", async () => {
     const d = testDeps();
     const token = await signup(d, "oneclick@example.test");
-    expect(oneClickUnsubscribeUrl(PUBLIC_ORIGIN, token)).toBe(`${PUBLIC_ORIGIN}/api/unsubscribe?t=${token}`);
     const bodies: string[] = [];
     for (const t of [token, token, UNKNOWN]) {
       const res = await handleUnsubscribePost(oneClick(t), d);
@@ -153,7 +153,6 @@ describe("POST /api/unsubscribe", () => {
   it("answers 413 over 2 KB and 400 for a body that is neither the confirm form nor one-click", async () => {
     const d = testDeps();
     const token = await signup(d, "edge@example.test");
-    expect(UNSUBSCRIBE_MAX_BODY_BYTES).toBe(2048);
     expect((await handleUnsubscribePost(formPost({ t: token, pad: "x".repeat(2100) }), d)).status).toBe(413);
     for (const req of [formPost({}, { query: `?t=${token}` }), formPost({}, { query: `?t=${token}`, contentType: "application/json", body: JSON.stringify({ t: token }) })]) {
       expect((await handleUnsubscribePost(req, d)).status).toBe(400);

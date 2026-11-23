@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore, type FormEvent } from "react";
-import { NOTIFY_FORM_TEXT as T } from "@/lib/site/pricing-texts";
+import { NOTIFY_FORM_TEXT as T, REQUEST_TEXT } from "@/lib/site/pricing-texts";
 import { localizeRetry } from "./analysis/retry-time";
 
 type Status = { readonly ok: boolean; readonly text: string } | null;
@@ -44,12 +44,12 @@ export function NotifyForm({ privacyHref }: { privacyHref: string }) {
         body: JSON.stringify({ email, consent: data.get("consent") === "yes" }),
       });
       const body = (await res.json().catch(() => null)) as { message?: unknown; retryAt?: unknown } | null;
-      const message = typeof body?.message === "string" ? body.message : T.unavailable;
+      const message = typeof body?.message === "string" ? body.message : REQUEST_TEXT.unavailable;
       const retryAt = typeof body?.retryAt === "string" ? body.retryAt : undefined;
       setStatus({ ok: res.ok, text: res.ok ? message : localizeRetry(message, retryAt) });
       if (res.ok) form.reset();
     } catch {
-      setStatus({ ok: false, text: T.unavailable });
+      setStatus({ ok: false, text: REQUEST_TEXT.unavailable });
     }
     setBusy(false);
   }
