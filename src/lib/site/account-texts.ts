@@ -14,12 +14,14 @@ export const ACCOUNT_TEXT = {
   readOn: "read on",
   signOut: "Sign out",
   deleteHeading: "Delete your account",
-  deleteIntro: "This deletes your saved reports, claims, published pages and API keys, and then your sign-in. It cannot be undone.",
+  deleteIntro: "This deletes your saved reports, claims, published pages and API keys, and then your sign-in. It cannot be undone. If you have a paid plan, it is cancelled at once.",
   deleteConfirm: "Yes, delete my account and everything in it",
   deleteButton: "Delete my account",
   deleteNeedsConfirm: "Tick the box to confirm, then choose Delete my account.",
   /** A failure before the data deletion; the account's other sessions may already be ended (src/lib/accounts/delete.ts). */
   deleteFailed: `We could not delete your account. Your data was not deleted, but you may have been signed out on other devices. Try again or email ${LEAD_EMAIL}.`,
+  /** The parent plan's stuck-state text: Stripe refused the cancellation, which comes before anything else. */
+  deleteSubscriptionKept: `We could not cancel your subscription. Nothing was deleted. Try again or email ${LEAD_EMAIL}.`,
   deletePartial: `We deleted your saved reports and other data, but could not finish deleting your account. Try again or email ${LEAD_EMAIL}.`,
   unavailable: "Retrofit could not load your account right now. Try again in a few minutes.",
   crossOrigin: "Open Retrofit at its own address to change your account.",

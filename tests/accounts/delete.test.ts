@@ -162,3 +162,83 @@ describe("deletion failure text", () => {
     expect(ACCOUNT_TEXT.deleteFailed).not.toContain("Nothing was deleted");
   });
 });
+
+// Phase 5: a paid plan. The customer's subscription ends first, at once; nothing is deleted while it cannot.
+describe("account deletion with a subscription", () => {
+  async function subscribed() {
+    const s = await signedIn();
+    const customer = await s.d.billing.createCustomer({ accountId: s.userId, email: "gone@example.test" });
+    await s.accounts.linkBillingCustomer(s.userId, customer);
+    s.d.fixtureBilling.subscribe(customer, { priceIds: ["price_x"] });
+    const statuses = async () => (await s.d.billing.getSubscriptions(customer)).map((x) => x.status);
+    return { ...s, customer, statuses };
+  }
+
+  // Fails if the deletion leaves the subscription charging, or cancels it only after data is deleted.
+  it("cancels the subscription before anything is deleted", async () => {
+    const s = await subscribed();
+    s.d.fixtureBilling.before("cancelSubscriptions", () => void s.log.push("stripe.cancel"));
+    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect(s.log).toEqual(["auth.getUser", "stripe.cancel", "accounts.deleteAccountData", "auth.deleteUser", "stripe.cancel"]);
+    expect(await s.statuses()).toEqual(["canceled"]);
+    expect(await s.accounts.getBilling(s.userId)).toBeNull();
+  });
+
+  // Fails if a refused cancellation deletes anything, ends a session, or hides why (the plan's stuck-state text, word for word).
+  it("deletes nothing and says so when Stripe refuses; a retry finishes", async () => {
+    const s = await subscribed();
+    s.d.fixtureBilling.fail(true, "cancelSubscriptions");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await deleteAccount(s.d, s.account)).toBe("subscription_kept");
+    expect(s.log).toEqual(["auth.getUser"]);
+    expect(await s.accounts.getProfile(s.userId)).not.toBeNull();
+    expect(await s.accounts.listSavedReports(s.userId)).toHaveLength(2);
+    expect(await readAccountByToken(s.elsewhere, s.d)).not.toBeNull();
+    expect(s.fixture.userIdOf("gone@example.test")).toBe(s.userId);
+    const res = await handleAccountDelete(new Request(`${PUBLIC_ORIGIN}/api/account/delete`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", cookie: `${ACCOUNT_COOKIE}=${s.here}`, "sec-fetch-site": "same-origin" }, body: "confirm=yes" }), s.d);
+    expect(res.headers.get("location")).toBe(`${PUBLIC_ORIGIN}/account?delete=subscription`);
+    expect(ACCOUNT_TEXT.deleteSubscriptionKept).toBe("We could not cancel your subscription. Nothing was deleted. Try again or email retrofit@thecreativetoken.com.");
+    s.d.fixtureBilling.fail(false);
+    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect(await s.statuses()).toEqual(["canceled"]);
+  });
+
+  // Fails if a failure after the cancellation cannot be retried, or the retry cancels nothing that was bought since.
+  it("a retry after a partial failure is safe", async () => {
+    const s = await subscribed();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    s.fixture.fail("deleteUser");
+    expect(await deleteAccount(s.d, s.account)).toBe("partial");
+    expect(await s.statuses()).toEqual(["canceled"]);
+    s.fixture.heal();
+    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect(s.fixture.userIdOf("gone@example.test")).toBeNull();
+  });
+
+  // Fails if an unreadable billing record lets the deletion run past a live subscription.
+  it("deletes nothing when the billing record cannot be read", async () => {
+    const s = await subscribed();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const broken = { ...s.d, accounts: { ...s.accounts, getBilling: async () => { throw new Error("down"); } } };
+    expect(await deleteAccount(broken, s.account)).toBe("nothing_deleted");
+    expect(await s.statuses()).toEqual(["active"]);
+    expect(await s.accounts.getProfile(s.userId)).not.toBeNull();
+  });
+
+  // Fails if a failing last check turns a finished deletion into a failure, or nobody is told.
+  it("a failed last cancellation is logged and the account is deleted", async () => {
+    const s = await subscribed();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    let calls = 0;
+    s.d.fixtureBilling.before("cancelSubscriptions", () => {
+      if (++calls === 2) s.d.fixtureBilling.fail(true, "cancelSubscriptions");
+    });
+    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect(errors.mock.calls.flat().join(" ")).toContain("subscription");
+  });
+
+  // Fails if the visitor is not told, before confirming, that a plan ends at once.
+  it("says before the confirmation that a paid plan is cancelled at once", () => {
+    expect(ACCOUNT_TEXT.deleteIntro).toContain("If you have a paid plan, it is cancelled at once.");
+  });
+});

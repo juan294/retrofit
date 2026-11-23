@@ -22,5 +22,7 @@ export const PUBLISH_PER_HOUR = 10;
 export const PUBLISH_TRIES_PER_HOUR = 60;
 /** The most active API keys one account holds. */
 export const MAX_API_KEYS = 5;
+/** Checkouts and portal visits of one account per hour (each one calls Stripe). */
+export const BILLING_ACTIONS_PER_HOUR = 20;
 /** API key creations of one account per hour. */
 export const API_KEY_CREATES_PER_HOUR = 20;

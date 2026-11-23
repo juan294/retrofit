@@ -15,7 +15,7 @@ import { ACCOUNT_TEXT as T, dateText } from "@/lib/site/account-texts";
 
 export const metadata: Metadata = { title: "Your account · Retrofit", robots: { index: false, follow: false } };
 
-const DELETE_NOTICES = { confirm: T.deleteNeedsConfirm, failed: T.deleteFailed, partial: T.deletePartial } as const;
+const DELETE_NOTICES = { confirm: T.deleteNeedsConfirm, failed: T.deleteFailed, subscription: T.deleteSubscriptionKept, partial: T.deletePartial } as const;
 
 const buttonStyle = { background: "var(--color-accent)", color: "var(--color-accent-text)" };
 const borderStyle = { borderColor: "var(--color-border)" };

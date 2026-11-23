@@ -8,13 +8,16 @@ import { ACCOUNT_TEXT } from "@/lib/site/account-texts";
 import { readSmallBody } from "./body";
 import { json, seeOther } from "./json";
 
+const FAILURE = { subscription_kept: "subscription", nothing_deleted: "failed", partial: "partial" } as const;
+
 /**
  * POST /api/account/delete (the account page's form, urlencoded `confirm=yes`) -> 303.
  * Same-origin only (403). Signed out -> /sign-in?returnTo=/account. Without the ticked box ->
  * /account?delete=confirm. Deleted -> /sign-in?account=deleted with the cookie cleared. A failure ->
- * /account?delete=failed (nothing deleted) or ?delete=partial, and the visitor stays signed in.
+ * /account?delete=subscription (a paid plan could not be cancelled, nothing deleted), ?delete=failed
+ * (nothing deleted) or ?delete=partial, and the visitor stays signed in.
  */
-export async function handleAccountDelete(request: Request, deps: Pick<ServerDeps, "config" | "store" | "accounts" | "auth" | "clock">): Promise<Response> {
+export async function handleAccountDelete(request: Request, deps: Pick<ServerDeps, "config" | "store" | "accounts" | "auth" | "billing" | "clock">): Promise<Response> {
   if (!isSameOrigin(request, deps.config)) return json(403, { error: "cross_origin", message: ACCOUNT_TEXT.crossOrigin });
   let account;
   try {
@@ -30,5 +33,5 @@ export async function handleAccountDelete(request: Request, deps: Pick<ServerDep
 
   const outcome = await deleteAccount(deps, account);
   if (outcome === "deleted") return seeOther(deps, "/sign-in?account=deleted", [accountClearCookie(isSecureRequest(request, deps.config))]);
-  return seeOther(deps, `/account?delete=${outcome === "partial" ? "partial" : "failed"}`);
+  return seeOther(deps, `/account?delete=${FAILURE[outcome]}`);
 }

@@ -2,7 +2,7 @@
 // can restyle them without touching their logic. The plans and their features live in
 // src/lib/billing/plans.ts; amounts come from Stripe.
 
-import { API_KEY_CREATES_PER_HOUR, MAX_API_KEYS } from "@/lib/accounts/limits";
+import { API_KEY_CREATES_PER_HOUR, BILLING_ACTIONS_PER_HOUR, MAX_API_KEYS } from "@/lib/accounts/limits";
 import { hhmmUtc } from "@/lib/analysis/texts";
 import type { Feature } from "@/lib/billing/plans";
 import { LEAD_EMAIL } from "./own-site";
@@ -19,6 +19,19 @@ export const PLAN_TEXT = {
   } satisfies Record<GatedFeature, string>,
   unavailable: "Retrofit could not check your plan right now. Nothing was changed. Try again in a few minutes.",
   seePlans: "See the plans",
+} as const;
+
+export const BILLING_TEXT = {
+  notStarted: "Paid plans have not started yet. Every feature is free until they do.",
+  noPrice: "This plan has no price yet. Join the list to hear when it does.",
+  subscribed: "Your account already has a plan. Change or cancel it with Manage billing on your account page.",
+  noCustomer: "Your account has no plan to manage yet.",
+  invalid: "Choose one of the plans on the pricing page.",
+  limit: (retryAt: Date) => `You can open checkout or billing ${BILLING_ACTIONS_PER_HOUR} times an hour. Try again at ${hhmmUtc(retryAt)} UTC.`,
+  signedOut: "Sign in to choose a plan.",
+  tooLarge: "This request is too large.",
+  unavailable: `Retrofit could not reach the payment service right now. Nothing was charged. Try again in a few minutes, or email ${LEAD_EMAIL}.`,
+  crossOrigin: "Open Retrofit at its own address to choose a plan.",
 } as const;
 
 export const API_KEY_TEXT = {
