@@ -121,20 +121,27 @@ describe("GET /api/score with an API key", () => {
     expect(await accepted(d, `Bearer ${key}`, limit + 1)).toBe(limit);
   });
 
-  // Fails if a key takes more than the anonymous limit before the start (the crawl capacity belongs to everybody, judges included).
-  it("before the start a key counts with the anonymous limit, per account", async () => {
-    const { d, cookie } = await setup(-60_000);
+  // P5-R3. Fails if a key gives anybody new capacity before the start: more than its network has as an anonymous caller, or more by
+  // changing networks or keys (the crawl capacity belongs to everybody, judges included).
+  it("before the start a key counts against the network exactly as an anonymous call, and also per account", async () => {
+    const { d, cookie } = await setup(-600_000);
     const { key } = (await create(d, cookie)).body;
-    expect(await accepted(d, `Bearer ${key}`, 6)).toBe(3);
+    expect(await accepted(d, undefined, 2)).toBe(2);
+    // One place is left for this network, with or without a key.
+    expect(await accepted(d, `Bearer ${key}`, 4)).toBe(1);
+    expect(await accepted(d, undefined, 2)).toBe(0);
+    // Other networks do not give the account more than its own window.
+    expect(await accepted(d, `Bearer ${key}`, 6, { ip: "198.51.100.50" })).toBe(2);
+    expect(await accepted(d, `Bearer ${key}`, 2, { ip: "198.51.100.51" })).toBe(0);
+    expect(await accepted(d, undefined, 5, { ip: "198.51.100.52" })).toBe(3);
   });
 
   // Fails if a revoked, unknown or malformed key runs a score (also as anonymous), or the answer has no way out.
   it.each([
     ["an unknown key", `Bearer rk_retrofit_${"0".repeat(32)}`],
     ["a short key", "Bearer rk_retrofit_0"],
-    ["another product's key", "Bearer sk_test_51abc"],
-    ["an empty bearer", "Bearer "],
-    ["a bare scheme", "Bearer"],
+    ["another product's restricted key", "Bearer rk_live_51abc"],
+    ["a key prefix alone", "Bearer rk_"],
     ["a lower-case scheme", `bearer rk_retrofit_${"0".repeat(32)}`],
     ["a key without its scheme", `rk_retrofit_${"0".repeat(32)}`],
     ["two keys", `Bearer rk_retrofit_${"0".repeat(32)} rk_retrofit_${"1".repeat(32)}`],
@@ -179,7 +186,9 @@ describe("GET /api/score with an API key", () => {
     await withBilling(healthy.d, OWNER);
     const { key } = (await create(healthy.d, healthy.cookie)).body;
     const noPlan = await setup(0, { accounts: brokenBilling(data) });
-    expect(await accepted(noPlan.d, `Bearer ${key}`, 6)).toBe(3);
+    expect(await accepted(noPlan.d, undefined, 2)).toBe(2);
+    expect(await accepted(noPlan.d, `Bearer ${key}`, 6)).toBe(1);
+    expect(await accepted(noPlan.d, `Bearer ${key}`, 6, { ip: "198.51.100.50" })).toBe(2);
     const noKeys = await setup(0, { accounts: brokenBilling(data, ["findApiKeyAccount"]) });
     expect(await score(noKeys.d, `Bearer ${key}`)).toMatchObject({ status: 503, body: { error: "unavailable" } });
   });
@@ -190,7 +199,33 @@ describe("GET /api/score with an API key", () => {
     const { d } = await setup(0, { accounts: spy.accounts });
     expect((await score(d)).status).toBe(202);
     expect((await score(d, "Basic dXNlcjpwYXNz")).status).toBe(202);
+    for (const other of ["Bearer sk_test_51abc", "Bearer eyJhbGciOi.J9.x", "Bearer ", "Bearer", "bearer abc rk_retrofit_x"]) expect((await score(d, other, { ip: "198.51.100.60", url: "https://same.example.com" })).status, other).toBe(202);
     expect(spy.calls).toEqual([]);
+  });
+
+  // P5-R3. Fails if one account can use the shared daily crawl cap with its key, repeats of one site count again, or the cap of one
+  // account stops others.
+  it("caps the sites of an account per day, whatever its hourly limit, and leaves the shared cap to others", async () => {
+    const { d, cookie, clock } = await setup(0, { env: { ACCOUNT_SITES_PER_DAY_PRO: "8" } });
+    await withBilling(d, OWNER);
+    const { key } = (await create(d, cookie)).body;
+    expect(await accepted(d, `Bearer ${key}`, 12)).toBe(8);
+    const over = await score(d, `Bearer ${key}`);
+    expect([over.status, over.body.error]).toEqual([429, "client_limit"]);
+    expect(over.body.message).toContain("limit of 8 sites per day");
+    expect(over.headers.get("retry-after")).toBeTruthy();
+    expect(await accepted(d, undefined, 3)).toBe(3);
+    clock.advance(24 * 3600_000);
+    expect(await accepted(d, `Bearer ${key}`, 2, { url: "https://repeat.example.com" })).toBe(2);
+    expect(await accepted(d, `Bearer ${key}`, 12)).toBe(7);
+  });
+
+  it("the cap of an account is at most half of the shared daily cap", async () => {
+    const { d, cookie } = await setup(0, { env: { CRAWL_MAX_HOSTS_PER_DAY: "12" } });
+    await withBilling(d, OWNER, { plan: "agency" });
+    const { key } = (await create(d, cookie)).body;
+    expect(await accepted(d, `Bearer ${key}`, 12)).toBe(6);
+    expect(await accepted(d, undefined, 3, { ip: "198.51.100.70" })).toBe(3);
   });
 
   // Fails if the CORS contract changes (a key is for a server, never for a page).

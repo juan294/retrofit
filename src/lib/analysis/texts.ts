@@ -35,6 +35,8 @@ export const visitorTexts = {
   clientLimit: (limit: number, retryAt: Date) => `You reached the limit of ${limit} analyses per hour. Try again at ${hhmmUtc(retryAt)} UTC.`,
   // The accounts plan's stuck-state text: the sixth free analysis after BILLING_START (src/lib/billing/free-limit.ts).
   freeLimit: "You've used your 5 free analyses. Sign in to keep going.",
+  // After BILLING_START: a signed-in account's sites of the day (src/lib/billing/daily-sites.ts).
+  accountLimit: (limit: number) => `Your account reached today's limit of ${limit} ${limit === 1 ? "site" : "sites"}. Try again tomorrow.`,
   queued: "Retrofit is busy. Your analysis starts in a moment.",
   dailyLimit: "Retrofit reached today's analysis limit. Try again tomorrow.",
   queueExpired: "Retrofit is too busy right now. Try again in a few minutes.",
@@ -119,6 +121,11 @@ export const agentTexts = {
   client_limit: (limit: number, retryAfterSeconds: number, retryAt: Date) => {
     const r = retryParts(retryAfterSeconds, retryAt);
     return `This client reached the limit of ${limit} site scores per hour. Call again after ${r.time} UTC (in ${r.minutes} minutes).`;
+  },
+  // Not in the contract table: a `client_limit` of an API key's account and UTC day.
+  account_limit: (limit: number, retryAfterSeconds: number, retryAt: Date) => {
+    const r = retryParts(retryAfterSeconds, retryAt);
+    return `The account of this API key reached its limit of ${limit} sites per day. Call again after ${r.time} UTC (in ${r.minutes} minutes).`;
   },
   daily_limit: "Retrofit reached today's analysis limit. Try again tomorrow.",
   unavailable: "Retrofit is having trouble. Try again in a few minutes.",

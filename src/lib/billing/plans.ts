@@ -38,7 +38,7 @@ export const FEATURE_LABELS: Readonly<Record<Feature, string>> = {
   publish: "Publish the agent on Retrofit for a site you have claimed",
   badge: "Embed the agent-ready badge on your site",
   saved_reports: "Keep reports after the analysis expires",
-  free_ai_preview: "Try the preview agent on Retrofit's AI, without a key",
+  free_ai_preview: "Try the preview agent on Retrofit's AI while you are signed in, without a key",
   api_keys: "API keys for the score API",
   api_high_volume: "Higher score API limits for checking many sites",
 };

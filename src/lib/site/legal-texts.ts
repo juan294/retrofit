@@ -62,7 +62,7 @@ export const PRIVACY: LegalDocument = {
         `The pages it read are kept for ${CRAWL_CACHE_HOURS} hours and shared between visitors who analyze the same site.`,
         `Your analysis (a copy of those pages and the score) is private to the browser that ran it and to the signed-in account it is attached to. It is kept for ${ANALYSIS_DAYS} days, then shown as expired for ${days(EXPIRED_GRACE_S)} more days, then deleted.`,
         "To limit use, Retrofit counts requests per network with a hash of your IP address that changes every day. It does not store the address itself.",
-        `From the day paid plans start, Retrofit counts the ${FREE_ANALYSES} free analyses of visitors without an account per browser and per network, with a keyed hash of your IP address, for up to ${days(FREE_WINDOW_S)} days. It does not store the address itself.`,
+        `From the day paid plans start, Retrofit counts the ${FREE_ANALYSES} free analyses of visitors without an account per browser and per network, with a keyed hash of your IP address (for an IPv6 address, of its first half), for up to ${days(FREE_WINDOW_S)} days. It does not store the address itself.`,
       ],
     },
     {
@@ -94,7 +94,7 @@ export const PRIVACY: LegalDocument = {
         "Payments go through Stripe's own checkout and billing pages when paid plans start, for now in Stripe's test mode: no real payment is taken. When you open checkout, Stripe receives your email address and your Retrofit account id.",
         "Retrofit stores your Stripe customer id, your plan and its status, the subscription id, the end of the paid period, whether the plan ends then, and when Retrofit last checked. It also keeps the ids, types and times of the payment events it has handled. Card details go only to Stripe.",
         "Retrofit shows an API key once and stores a hash of it, its last four characters and its dates. Calls with a key are counted per account, not per network.",
-        "Deleting your account cancels a paid plan at once, before anything else. Stripe keeps its customer and payment records.",
+        "Deleting your account cancels a paid plan at once, before anything else. Stripe keeps its customer and payment records. Retrofit keeps only a hash of the deleted account's Stripe customer id and the time, so that a payment that arrives late is cancelled.",
         "Deleting your account: Retrofit deletes the account and its data (claims, published pages, saved reports, API keys and sign-in sessions). The sign-in provider may keep security logs for a limited time.",
       ],
     },
@@ -137,7 +137,8 @@ export const TERMS: LegalDocument = {
         `From that day a visitor without an account has ${FREE_ANALYSES} free analyses in ${days(FREE_WINDOW_S)} days. An account is free.`,
         "Prices are shown on the pricing page before you can buy. Payments go through Stripe, for now in Stripe's test mode: no real payment is taken.",
         "Manage billing on your account page opens Stripe's billing page, where you can cancel a plan. Deleting your account cancels a paid plan at once.",
-        "When a plan ends, pages you already published stay public until you unpublish them, and reports you saved stay in your account. Publishing, refreshing, saving new reports, Retrofit's AI and API keys need a plan.",
+        "When a plan ends, pages you already published stay public until you unpublish them, and reports you saved stay in your account. Publishing, refreshing, saving new reports and API keys need a plan.",
+        "While you are signed in, Retrofit's AI in the preview needs a plan. Without an account it works within its free limits. Your own AI key always works.",
       ],
     },
     {

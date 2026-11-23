@@ -26,7 +26,7 @@ function urlFrom(text: string): string | null {
 /**
  * POST /api/analyze `{url}` -> 200 `{id}`. Same-origin only (403 otherwise).
  * Sets the visitor cookie when absent. A signed-in visitor's analysis is attached to the account. Errors: 400 not_public, 413 too_large,
- * 429 client_limit or daily_limit (`{error, message, retryAt?}`), 403 free_limit (after BILLING_START, a visitor
+ * 429 client_limit, account_limit (after BILLING_START, an account past its sites of the day) or daily_limit (`{error, message, retryAt?}`), 403 free_limit (after BILLING_START, a visitor
  * without an account past the free analyses: the page shows the sign-in form), 503 unavailable,
  * and 503 counting (`{error, message, retryAfterSeconds}` with Retry-After) while
  * the site's daily count is undecided: no analysis is created, so the page retries.

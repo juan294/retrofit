@@ -45,9 +45,10 @@ Machine-readable selection and gaps are in `.rpi/release-profile.json`.
 | `BILLING_START` | Required: `2027-01-19T00:00:00Z`. An earlier instant is refused (judges have free access until 2027-01-18). |
 | `STRIPE_SECRET_KEY` | Required, test mode only (`sk_test_` or `rk_test_`). A live key is refused; the live switch is a separate authorized release with its own webhook, prices and cleared test-mode billing rows. |
 | `STRIPE_WEBHOOK_SECRET` | Required (`whsec_`): the signing secret of the test webhook endpoint `/api/billing/webhook` for `checkout.session.completed`, `customer.subscription.updated` and `customer.subscription.deleted`. |
-| `STRIPE_PRICE_PRO`, `STRIPE_PRICE_AGENCY` | Optional until Juan sets the amounts; two different Stripe price ids (`price_`). A plan without one shows no amount and no upgrade button. Replacing the id of a price with subscribers stops recognizing their plan. |
+| `STRIPE_PRICE_PRO`, `STRIPE_PRICE_AGENCY` | Optional until Juan sets the amounts; a Stripe price id (`price_`) or a comma-separated list. The first id is for sale; every id of the list is recognised as its plan. To change a price, put the new id first and keep the old one in the list while it has subscribers. The two lists share no id. A plan without one, or whose amount cannot be read, has no upgrade button. |
+| `ACCOUNT_SITES_PER_DAY_FREE`, `ACCOUNT_SITES_PER_DAY_PRO`, `ACCOUNT_SITES_PER_DAY_AGENCY` | Optional (50, 100, 300). Distinct sites one account may analyze and score per UTC day from `BILLING_START`; never more than half of `CRAWL_MAX_HOSTS_PER_DAY`. |
 
-Stripe's customer portal needs a saved test configuration (update the card, cancel, and switch between the two prices) before "Manage billing" works. Apply `supabase/migrations/20261123170000_billing.sql` with the release.
+Stripe's customer portal needs a saved test configuration (update the card, cancel, and switch between the two prices) before "Manage billing" works. Apply `supabase/migrations/20261123170000_billing.sql` with the release. A log line `[BILLING_ALERT]` names a customer of this Retrofit without a billing record and without a deletion mark (for example after restoring a database): nothing was cancelled; check it in Stripe.
 
 ## Required ordering
 

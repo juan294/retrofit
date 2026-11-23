@@ -58,7 +58,7 @@ export async function billingStates(page: Page, label: string, check: (texts: Re
   await page.unroute("**/api/analyze");
 
   await page.goto("/pricing?checkout=cancelled");
-  await check({ cancelled: page.getByText(BILLING_TEXT.cancelled), price: page.getByTestId("price-pro"), intro: page.getByText(PRICING_TEXT.intro), upgrade: page.getByRole("button", { name: BILLING_TEXT.upgrade("Pro") }) });
+  await check({ cancelled: page.getByText(BILLING_TEXT.cancelled), price: page.getByTestId("price-pro"), intro: page.getByText(PRICING_TEXT.intro), aiNote: page.getByText(PRICING_TEXT.aiNote), upgrade: page.getByRole("button", { name: BILLING_TEXT.upgrade("Pro") }) });
   await page.getByRole("button", { name: BILLING_TEXT.upgrade("Pro") }).click();
   await check({ signedOut: page.getByTestId("billing-message"), link: page.getByRole("link", { name: BILLING_TEXT.signIn }) });
 
@@ -95,4 +95,8 @@ export async function billingStates(page: Page, label: string, check: (texts: Re
   await check({ outage: page.getByTestId("billing-message") });
   await page.goto("/account?delete=subscription");
   await check({ kept: page.getByText(ACCOUNT_TEXT.deleteSubscriptionKept), deleteIntro: page.getByText(ACCOUNT_TEXT.deleteIntro) });
+  await page.goto("/account?delete=cancelled");
+  await check({ cancelled: page.getByText(ACCOUNT_TEXT.deleteFailedCancelled) });
+  await page.goto("/account?delete=partial-cancelled");
+  await check({ partial: page.getByText(ACCOUNT_TEXT.deletePartialCancelled) });
 }

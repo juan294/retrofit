@@ -6,7 +6,8 @@ import { VISITOR_COOKIE } from "@/lib/analysis/visitor";
 import { isQueueExpired, readJobMarkingStale, type CrawlJob } from "@/lib/crawl/jobs";
 import { readApiKey } from "@/lib/billing/api-keys";
 import { accountPlan, billingStarted } from "@/lib/billing/entitlements";
-import { planOf } from "@/lib/billing/plans";
+import { countAccountSite } from "@/lib/billing/daily-sites";
+import { planOf, type PlanId } from "@/lib/billing/plans";
 import { NotPublicError } from "@/lib/fetch/errors";
 import { clientIdFromRequest, countClientOrigin, nextUtcMidnight } from "@/lib/fetch/limits";
 import { validateUrl } from "@/lib/fetch/url";
@@ -98,33 +99,41 @@ export function handleScoreMethodNotAllowed(): Response {
 }
 
 /** Whom rule 6 counts, and its hourly limit. */
-interface ScoreClient {
+interface ScoreWindow {
   readonly id: string;
   readonly limit: number;
+}
+
+/** The hourly windows a call counts in, and with a key from BILLING_START on the account whose daily sites it counts in. */
+interface ScoreCaller {
+  readonly windows: readonly ScoreWindow[];
+  readonly daily?: { readonly accountId: string; readonly plan: PlanId | null };
 }
 
 /**
  * The caller of rule 6. Without a key: the network, with the anonymous limit, and no read. With a key of
  * an account: the account (all its keys together) with its plan's limit. A key that is malformed, unknown
  * or revoked is refused (401), and so is one whose account's plan has no API keys any more (403): a key
- * never becomes an anonymous call. Before BILLING_START, and when the plan cannot be read, a key counts
- * with the anonymous limit. Throws when the key cannot be looked up.
+ * never becomes an anonymous call. Before BILLING_START, and when the plan cannot be read, a key gives no
+ * capacity: the call counts against its network exactly as an anonymous one, and also per account with
+ * the anonymous limit. Throws when the key cannot be looked up.
  */
-async function scoreClient(request: Request, deps: ServerDeps, now: number): Promise<ScoreClient | Response> {
-  const anonymous = deps.config.analysesPerClientHour;
+async function scoreCaller(request: Request, deps: ServerDeps, now: number): Promise<ScoreCaller | Response> {
+  const network: ScoreWindow = { id: clientIdFromRequest(request, deps.config, now), limit: deps.config.analysesPerClientHour };
   const key = readApiKey(request);
-  if (key.kind === "none") return { id: clientIdFromRequest(request, deps.config, now), limit: anonymous };
+  if (key.kind === "none") return { windows: [network] };
   const accountId = key.kind === "key" ? await deps.accounts.findApiKeyAccount(key.hash) : null;
   if (accountId === null) {
     const refused = fixed("invalid_key");
     refused.headers.set("www-authenticate", "Bearer");
     return refused;
   }
-  const id = `account-${accountId}`;
-  const plan = billingStarted(deps) ? await accountPlan(deps, accountId) : null;
-  if (plan === null) return { id, limit: anonymous };
+  const account = (limit: number): ScoreWindow => ({ id: `account-${accountId}`, limit });
+  if (!billingStarted(deps)) return { windows: [network, account(network.limit)] };
+  const plan = await accountPlan(deps, accountId);
+  if (plan === null) return { windows: [network, account(network.limit)], daily: { accountId, plan } };
   const limit = planOf(plan).scoresPerHour;
-  return limit === null ? fixed("plan_required") : { id, limit };
+  return limit === null ? fixed("plan_required") : { windows: [account(limit)], daily: { accountId, plan } };
 }
 
 export async function handleScore(request: Request, deps: ServerDeps): Promise<Response> {
@@ -154,15 +163,24 @@ export async function handleScore(request: Request, deps: ServerDeps): Promise<R
   try {
     // Rule 6: client limit, each origin counted once per client per window.
     const now = deps.clock();
-    const client = await scoreClient(request, deps, now);
-    if (client instanceof Response) return client;
-    const limit = await countClientOrigin(deps.store, { analysesPerClientHour: client.limit }, client.id, origin, now);
+    const caller = await scoreCaller(request, deps, now);
+    if (caller instanceof Response) return caller;
     // Another call for this origin by this client is still being counted: retry in a moment.
-    if (!limit.ok && "undecided" in limit) return error("unavailable", agentTexts.counting, { retryAfterSeconds: COUNTING_RETRY_S });
-    if (!limit.ok) {
-      const retryAfterSeconds = secondsUntil(limit.retryAt, now);
-      const retryAt = new Date(limit.retryAt);
-      return error("client_limit", agentTexts.client_limit(client.limit, retryAfterSeconds, retryAt), { retryAfterSeconds, retryAt });
+    const counting = () => error("unavailable", agentTexts.counting, { retryAfterSeconds: COUNTING_RETRY_S });
+    const limited = (at: number, text: (retryAfterSeconds: number, retryAt: Date) => string) => {
+      const retryAfterSeconds = secondsUntil(at, now);
+      const retryAt = new Date(at);
+      return error("client_limit", text(retryAfterSeconds, retryAt), { retryAfterSeconds, retryAt });
+    };
+    for (const window of caller.windows) {
+      const limit = await countClientOrigin(deps.store, { analysesPerClientHour: window.limit }, window.id, origin, now);
+      if (!limit.ok && "undecided" in limit) return counting();
+      if (!limit.ok) return limited(limit.retryAt, (s, at) => agentTexts.client_limit(window.limit, s, at));
+    }
+    if (caller.daily) {
+      const sites = await countAccountSite(deps, caller.daily.accountId, caller.daily.plan, origin, now);
+      if (!sites.ok && "undecided" in sites) return counting();
+      if (!sites.ok) return limited(sites.retryAt, (s, at) => agentTexts.account_limit(sites.limit, s, at));
     }
 
     // Rule 7: start or join, capacity and daily cap, then dispatch.

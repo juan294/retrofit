@@ -14,15 +14,15 @@ export function newApiKey(): { readonly key: string; readonly stored: NewApiKey 
 }
 
 /**
- * The key of a request: `none` without an Authorization header, or with one of another scheme (as
- * before keys existed); `malformed` for a Bearer value (or a bare key) that is no Retrofit key; else
- * the key's hash.
+ * The key of a request: `none` without an Authorization header, or with one that does not start like a
+ * key (another scheme, another service's bearer token: ignored, as before keys existed); `malformed` for a
+ * value that starts like one (`rk_`) but is no Retrofit key; else the key's hash.
  */
 export function readApiKey(request: Request): { readonly kind: "none" | "malformed" } | { readonly kind: "key"; readonly hash: string } {
   const header = request.headers.get("authorization")?.trim();
   if (!header) return { kind: "none" };
-  const bearer = /^bearer(?:\s+(.*))?$/i.exec(header);
-  if (!bearer) return { kind: header.startsWith("rk_") ? "malformed" : "none" };
-  const key = bearer[1] ?? "";
+  const key = /^bearer\s+(.*)$/i.exec(header)?.[1] ?? null;
+  if (key === null) return { kind: header.startsWith("rk_") ? "malformed" : "none" };
+  if (!key.startsWith("rk_")) return { kind: "none" };
   return API_KEY.test(key) ? { kind: "key", hash: sha256Hex(key) } : { kind: "malformed" };
 }

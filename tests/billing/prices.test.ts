@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatAmount, planAmounts } from "@/lib/billing/prices";
+import { formatAmount, planAmounts, planOffer } from "@/lib/billing/prices";
 import { captureConsole, type TestDeps } from "../helpers/server-deps";
 import { billingDeps, PRICES } from "./setup";
 
@@ -58,7 +58,22 @@ describe("plan amounts", () => {
     expect(formatAmount(price)).toBe(text);
   });
 
-  it("names the configured prices only", () => {
-    expect(Object.values(PRICES)).toHaveLength(2);
+  // P5-R11. Fails if a plan can be bought before the start, without a price, or without its amount on the page.
+  it.each([
+    [{ started: false, priced: true, amount: "$11.00 per month" }, { amount: "$11.00 per month", upgrade: false, unavailable: false }],
+    [{ started: true, priced: true, amount: "$11.00 per month" }, { amount: "$11.00 per month", upgrade: true, unavailable: false }],
+    [{ started: true, priced: true, amount: undefined }, { amount: null, upgrade: false, unavailable: true }],
+    [{ started: true, priced: false, amount: undefined }, { amount: null, upgrade: false, unavailable: false }],
+    [{ started: false, priced: true, amount: undefined }, { amount: null, upgrade: false, unavailable: false }],
+  ])("a plan's offer for %j", (o, expected) => {
+    expect(planOffer(o)).toEqual(expected);
+  });
+
+  // P5-R5. Fails if the page shows the amount of a price that is no longer for sale.
+  it("shows the price for sale, the first of the list", async () => {
+    const { d } = billingDeps(0, { env: { STRIPE_PRICE_PRO: `price_unit_new,${PRICES.pro}` } });
+    const asked: string[] = [];
+    await planAmounts({ ...d, billing: { ...d.billing, getPrice: async (id) => { asked.push(id); return null; } } });
+    expect(asked.sort()).toEqual([PRICES.agency, "price_unit_new"].sort());
   });
 });

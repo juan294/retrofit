@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { VISITOR_COOKIE, VISITOR_MAX_AGE_S } from "@/lib/analysis/visitor";
 import { EXPIRED_GRACE_S } from "@/lib/analysis/record";
+import { FEATURE_LABELS } from "@/lib/billing/plans";
+import { PLAN_TEXT } from "@/lib/site/billing-texts";
+import { PRICING_TEXT } from "@/lib/site/pricing-texts";
 import { FREE_ANALYSES, FREE_WINDOW_S } from "@/lib/billing/free-limit";
 import { loadConfig } from "@/lib/config";
 import { SESSION_COOKIE, SESSION_TTL_S } from "@/lib/inference/session";
@@ -162,13 +165,32 @@ describe("payments, the free limit and API keys in the privacy notice and the te
 
   // Fails if the long-lived network hash of the free limit goes unmentioned, or its period drifts from the code.
   it("states the free-analysis count, its hash and its period", () => {
-    expect(privacy).toContain(`counts the ${FREE_ANALYSES} free analyses of visitors without an account per browser and per network, with a keyed hash of your IP address, for up to ${FREE_WINDOW_S / 86400} days`);
+    expect(privacy).toContain(`counts the ${FREE_ANALYSES} free analyses of visitors without an account per browser and per network, with a keyed hash of your IP address (for an IPv6 address, of its first half), for up to ${FREE_WINDOW_S / 86400} days`);
     expect(terms).toContain(`${FREE_ANALYSES} free analyses in ${FREE_WINDOW_S / 86400} days`);
   });
 
   // Fails if the notice hides what is kept of an API key.
   it("says what is kept of an API key", () => {
     expect(privacy).toContain("Retrofit shows an API key once and stores a hash of it, its last four characters and its dates.");
+  });
+
+  // P5-R1. Fails if the notice hides the mark that a deletion leaves of the Stripe customer.
+  it("says what is kept of a deleted account's Stripe customer, and why", () => {
+    expect(privacy).toContain("Retrofit keeps only a hash of the deleted account's Stripe customer id and the time, so that a payment that arrives late is cancelled.");
+  });
+
+  // P5-R11. Fails if a text says that Retrofit's AI needs a plan for everybody (visitors without an account keep it), or that it needs none.
+  it("is true about Retrofit's AI for visitors without an account, Free accounts and plans", () => {
+    expect(terms).toContain("While you are signed in, Retrofit's AI in the preview needs a plan. Without an account it works within its free limits. Your own AI key always works.");
+    expect(terms).not.toMatch(/Retrofit's AI and API keys need a plan/);
+    expect(FEATURE_LABELS.free_ai_preview).toContain("while you are signed in");
+    expect(PLAN_TEXT.required.free_ai_preview).toMatch(/^While you are signed in/);
+    expect(PRICING_TEXT.aiNote).toContain("Without an account");
+  });
+
+  // P5-R13. Fails if the notice hides that an IPv6 address counts as its network part.
+  it("says that an IPv6 address counts by its network part", () => {
+    expect(privacy).toContain("for an IPv6 address, of its first half");
   });
 
   // Fails if the drafts are wrong about the end of a plan or about account deletion, or promise refunds or tax terms nobody decided.

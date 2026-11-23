@@ -59,3 +59,16 @@ export async function planAmounts(deps: Pick<ServerDeps, "config" | "clock" | "b
   const texts = await Promise.all(prices.map(async ([plan, priceId]) => [plan, await textOf(priceId)] as const));
   return Object.fromEntries(texts.filter(([, text]) => text !== null));
 }
+
+export interface PlanOffer {
+  readonly amount: string | null;
+  /** The Upgrade button shows: billing started and the amount is on the page. */
+  readonly upgrade: boolean;
+  /** The plan has a price that could not be read: the page says so. */
+  readonly unavailable: boolean;
+}
+
+/** What /pricing shows for one paid plan. Nobody is offered a plan without seeing what it costs. */
+export function planOffer(o: { readonly started: boolean; readonly priced: boolean; readonly amount: string | undefined }): PlanOffer {
+  return { amount: o.amount ?? null, upgrade: o.started && o.amount !== undefined, unavailable: o.started && o.priced && o.amount === undefined };
+}

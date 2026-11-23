@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryAccountData } from "@/lib/accounts/memory";
 import { handleAnalyze } from "@/lib/api/analyze";
-import { FREE_ANALYSES, FREE_WINDOW_S } from "@/lib/billing/free-limit";
+import { FREE_ANALYSES, FREE_WINDOW_S, networkOf } from "@/lib/billing/free-limit";
 import { createMemoryBacking, createMemoryStore } from "@/lib/store/memory";
 import type { Store } from "@/lib/store/types";
 import { accountCookie, analyzeRequest, cookieFrom, holdAllSlots, storeDump, type TestDeps } from "../helpers/server-deps";
-import { billingDeps, spiedAccounts, START } from "./setup";
+import { billingDeps, brokenBilling, OWNER, spiedAccounts, START, withBilling } from "./setup";
 
 const LIMIT_TEXT = "You've used your 5 free analyses. Sign in to keep going.";
 const DAY_MS = 24 * 3600_000;
@@ -91,6 +91,58 @@ describe("the free-analysis limit", () => {
   it("a joined analysis counts like any start", async () => {
     const { d } = await ready(0);
     expect(await statuses(d, 6, { url: "https://same.example.com" })).toEqual([...FIVE, 403]);
+  });
+
+  // Review nit. Fails if a visitor whose own count is full takes places of the network while being refused, so that another visitor of
+  // the network below the limit is refused.
+  it("parallel refused starts of one visitor never refuse another visitor on the network", async () => {
+    const { d } = await ready(0);
+    // The first visitor is full (its five came from other networks); this network has used one.
+    for (let i = 0; i < 5; i++) expect((await analyze(d, { ip: `198.51.100.${i}` })).status).toBe(200);
+    for (let round = 0; round < 4; round++) {
+      const ip = `203.0.113.${100 + round}`;
+      expect(await statuses(d, 4, { cookie: "", ip })).toEqual([200, 200, 200, 200]);
+      const results = await Promise.all([analyze(d, { ip }), analyze(d, { ip }), analyze(d, { ip }), analyze(d, { cookie: OTHER_VISITOR, ip }), analyze(d, { ip }), analyze(d, { ip })]);
+      expect(results.map((r) => r.status)).toEqual([403, 403, 403, 200, 403, 403]);
+    }
+  });
+
+  // Review nit. Fails if a place given back by a failed start in the same moment stays lost to the visitor who waits for it.
+  it("a place given back while another start is refused is found again", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const backing = createMemoryBacking();
+    const base = createMemoryStore({ clock: () => START, backing });
+    let fail = false;
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const store: Store = { ...base, enqueue: async (...a) => { if (fail) { fail = false; await held; throw new Error("queue down"); } return base.enqueue(...a); } };
+    const { d } = await ready(0, { store, backing });
+    const ip = "203.0.113.200";
+    expect(await statuses(d, 4, { cookie: "", ip })).toEqual([200, 200, 200, 200]);
+    fail = true;
+    // Takes the fifth place, then fails after the next visitor was refused once.
+    const failing = analyze(d, { cookie: "", ip, url: "https://failing.example.com" });
+    await new Promise((r) => setTimeout(r, 5));
+    const waiting = analyze(d, { cookie: OTHER_VISITOR, ip });
+    await new Promise((r) => setTimeout(r, 2));
+    release();
+    expect([(await failing).status, (await waiting).status]).toEqual([503, 200]);
+    expect((await analyze(d, { cookie: "", ip })).status).toBe(403);
+  });
+
+  // P5-R13. Fails if an IPv6 visitor gets a new count with each address of the home's /64, or two homes share one; IPv4 stays exact.
+  it("an IPv6 network is its /64", async () => {
+    expect(networkOf("2001:db8:1:2:3:4:5:6")).toBe(networkOf("2001:0DB8:0001:0002:ffff::1"));
+    expect(networkOf("2001:db8:1:2::1")).not.toBe(networkOf("2001:db8:1:3::1"));
+    expect(networkOf("::ffff:203.0.113.9")).toBe("203.0.113.9");
+    expect(networkOf("203.0.113.9")).not.toBe(networkOf("203.0.113.10"));
+    expect(networkOf("2001:db8:1:2::1%eth0")).toBe(networkOf("2001:db8:1:2::1"));
+    expect([networkOf("unknown"), networkOf("not an address")]).toEqual(["unknown", "not an address"]);
+    const { d } = await ready(0);
+    const out: number[] = [];
+    for (let i = 0; i < 6; i++) out.push((await analyze(d, { cookie: "", ip: `2001:db8:1:2::${i + 1}` })).status);
+    expect(out).toEqual([...FIVE, 403]);
+    expect((await analyze(d, { cookie: "", ip: "2001:db8:1:3::1" })).status).toBe(200);
   });
 
   // Fails if a start that did not happen uses up a free analysis: a bad address, the hourly cap, the daily cap, an undecided
@@ -186,6 +238,45 @@ describe("the analysis start before billing", () => {
 });
 
 describe("signed-in accounts after the start", () => {
+  // P5-R3. Fails if one account can use the shared daily crawl cap, the cap differs by plan from the configuration, an outage of the
+  // plan stops analyses, or the cap exists before the start.
+  it("the sites an account analyzes per day are capped by plan, never by more than half of the shared cap", async () => {
+    const day = async (plan: "free" | "pro" | "agency", env: Record<string, string>, tries: number, offset = 0) => {
+      const { d } = await ready(offset, { env });
+      if (plan !== "free") await withBilling(d, OWNER, { plan });
+      const cookie = await accountCookie(d);
+      const out = [];
+      for (let i = 0; i < tries; i++) out.push(await analyze(d, { cookie, ip: `198.51.${i % 200}.9` }));
+      return { d, ok: out.filter((r) => r.status === 200).length, last: out.at(-1)! };
+    };
+    const caps = { ACCOUNT_SITES_PER_DAY_FREE: "3", ACCOUNT_SITES_PER_DAY_PRO: "5", ACCOUNT_SITES_PER_DAY_AGENCY: "9" };
+    expect((await day("free", caps, 12)).ok).toBe(3);
+    expect((await day("pro", caps, 12)).ok).toBe(5);
+    expect((await day("agency", caps, 12)).ok).toBe(9);
+    expect((await day("free", caps, 12, -600_000)).ok).toBe(12);
+    const shared = await day("agency", { CRAWL_MAX_HOSTS_PER_DAY: "10" }, 10);
+    expect(shared.ok).toBe(5);
+    expect(shared.last.status).toBe(429);
+    expect(shared.last.body).toMatchObject({ error: "account_limit", message: "Your account reached today's limit of 5 sites. Try again tomorrow." });
+    // The other half is there for everybody else.
+    expect(await statuses(shared.d, 5, { cookie: "", ip: "203.0.113.50" })).toEqual(FIVE);
+  });
+
+  // Fails if analyzing the same site again uses up another of the day's sites.
+  it("a site counts once a day for its account", async () => {
+    const { d } = await ready(0, { env: { ACCOUNT_SITES_PER_DAY_FREE: "1" } });
+    const cookie = await accountCookie(d);
+    expect(await statuses(d, 3, { cookie, url: "https://again.example.com" })).toEqual([200, 200, 200]);
+    expect((await analyze(d, { cookie })).status).toBe(429);
+  });
+
+  // Fails if a billing outage stops a signed-in visitor's analysis.
+  it("an unreadable plan does not stop an analysis", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { d } = await ready(0, { accounts: brokenBilling(createMemoryAccountData()), env: { ACCOUNT_SITES_PER_DAY_FREE: "1", ACCOUNT_SITES_PER_DAY_PRO: "1" } });
+    expect(await statuses(d, 3, { cookie: await accountCookie(d) })).toEqual([200, 200, 200]);
+  });
+
   // Fails if one account passes its hourly cap by changing networks, or the cap applies before the start.
   it("the hourly analysis cap also counts per account", async () => {
     const { d } = await ready(0, { env: { ANALYSES_PER_CLIENT_HOUR: "3" } });
