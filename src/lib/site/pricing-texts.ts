@@ -28,6 +28,9 @@ export const NOTIFY_FORM_TEXT = {
 
 export const UNSUBSCRIBE_TEXT = {
   title: "Unsubscribe",
+  confirm: "Unsubscribe this address from Retrofit's email?",
+  confirmButton: "Unsubscribe",
+  oneClick: "If this link belongs to a Retrofit signup, that address is unsubscribed.",
   done: "You are unsubscribed. Retrofit will not email this address again.",
   invalid: "This unsubscribe link is not valid. Email retrofit@thecreativetoken.com and we will remove your address.",
   unavailable: "Retrofit could not unsubscribe you right now. Open the link again in a few minutes.",

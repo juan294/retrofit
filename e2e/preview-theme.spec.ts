@@ -64,9 +64,9 @@ for (const colorScheme of ["light", "dark"] as const) {
   });
 }
 
-// The pricing, privacy and terms pages use the page tokens only; every text kind on them must stay readable in both schemes.
+// The pricing, privacy, terms and unsubscribe pages (confirm and invalid-link states) use the page tokens only; every text kind on them must stay readable in both schemes.
 for (const colorScheme of ["light", "dark"] as const) {
-  for (const path of ["/pricing", "/privacy", "/terms"] as const) {
+  for (const path of ["/pricing", "/privacy", "/terms", "/unsubscribe?t=0123456789abcdef0123456789abcdef", "/unsubscribe?t=not-a-token"] as const) {
     test(`the ${path} page text is readable in ${colorScheme} mode`, async ({ page }) => {
       await page.emulateMedia({ colorScheme });
       await page.goto(path);
@@ -75,6 +75,7 @@ for (const colorScheme of ["light", "dark"] as const) {
         text: page.locator("main p").nth(1),
         link: page.getByRole("link", { name: "Retrofit", exact: true }),
       };
+      if (path === "/unsubscribe?t=0123456789abcdef0123456789abcdef") targets.button = page.getByRole("button", { name: "Unsubscribe" });
       if (path === "/pricing") {
         targets.button = page.getByRole("button", { name: "Notify me" });
         targets.privacy = page.getByRole("link", { name: "privacy notice" });

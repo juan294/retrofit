@@ -15,6 +15,16 @@ describe("NotifyForm", () => {
     expect(html).toContain('href="/privacy"');
   });
 
+  // Fails if a click before hydration can submit the form as GET (the address would land in the page URL,
+  // history and logs): the form must post to the API and its button must start disabled.
+  it("posts to /api/notify and keeps its button disabled until the page is hydrated", () => {
+    const html = renderToStaticMarkup(createElement(NotifyForm, { privacyHref: "/privacy" }));
+    const form = /<form[^>]*>/.exec(html)?.[0] ?? "";
+    expect(form).toMatch(/method="post"/);
+    expect(form).toMatch(/action="\/api\/notify"/);
+    expect(/<button[^>]*type="submit"[^>]*>/.exec(html)?.[0]).toMatch(/disabled=""/);
+  });
+
   // Fails if the form can be shown without a privacy link (the plan refuses the form then).
   it("renders nothing without a privacy link", () => {
     expect(renderToStaticMarkup(createElement(NotifyForm, { privacyHref: "" }))).toBe("");

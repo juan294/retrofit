@@ -100,8 +100,21 @@ export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-/** The unsubscribe link every message to a signup carries: GET /unsubscribe?t=<token>. */
-export function unsubscribeUrl(origin: string, token: string): string {
+function requireToken(token: string): void {
   if (!TOKEN_PATTERN.test(token)) throw new RangeError("token must be 32 lower-case hex characters");
+}
+
+/** The unsubscribe link every message to a signup carries: GET /unsubscribe?t=<token> (a confirm page; opening it changes nothing). */
+export function unsubscribeUrl(origin: string, token: string): string {
+  requireToken(token);
   return `${origin}/unsubscribe?t=${token}`;
+}
+
+/**
+ * The RFC 8058 one-click target for the `List-Unsubscribe` header (with
+ * `List-Unsubscribe-Post: List-Unsubscribe=One-Click`): POST /api/unsubscribe?t=<token>.
+ */
+export function oneClickUnsubscribeUrl(origin: string, token: string): string {
+  requireToken(token);
+  return `${origin}/api/unsubscribe?t=${token}`;
 }

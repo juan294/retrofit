@@ -11,6 +11,12 @@ test.describe("pricing and notify me", () => {
     await expect(page.getByRole("link", { name: "privacy notice" })).toHaveAttribute("href", "/privacy");
   });
 
+  // Fails if the button stays disabled after hydration (it is disabled in the server HTML so an early click cannot submit).
+  test("the notify button is enabled once the page is hydrated", async ({ page }) => {
+    await page.goto("/pricing");
+    await expect(page.getByRole("button", { name: "Notify me" })).toBeEnabled();
+  });
+
   // Fails if the form does not post the address with consent false for an unticked box, or the confirmation does not show.
   test("notify me posts the address with consent false and shows the confirmation", async ({ page }) => {
     await page.goto("/pricing");
@@ -61,10 +67,23 @@ test.describe("privacy, terms and unsubscribe", () => {
     }
   });
 
-  // Fails if an unknown unsubscribe link answers like a valid one or the page is indexable.
-  test("an unknown unsubscribe link shows the invalid-link text and is not indexed", async ({ page }) => {
+  // Fails if opening a link unsubscribes (mail scanners open links), the confirm button does not post, or an
+  // unknown link answers like a valid one, or the page is indexable.
+  test("an unsubscribe link shows a confirm button; confirming an unknown link shows the invalid-link text", async ({ page }) => {
     await page.goto("/unsubscribe?t=0123456789abcdef0123456789abcdef");
-    await expect(page.locator("main").getByRole("alert")).toHaveText("This unsubscribe link is not valid. Email retrofit@thecreativetoken.com and we will remove your address.");
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+    await expect(page.getByText("Unsubscribe this address from Retrofit's email?")).toBeVisible();
+    const posted = page.waitForRequest((r) => r.url().endsWith("/api/unsubscribe") && r.method() === "POST");
+    await page.getByRole("button", { name: "Unsubscribe" }).click();
+    expect((await posted).postData()).toBe("t=0123456789abcdef0123456789abcdef");
+    await expect(page).toHaveURL(/\/unsubscribe\?result=invalid$/);
+    await expect(page.locator("main").getByRole("alert")).toHaveText("This unsubscribe link is not valid. Email retrofit@thecreativetoken.com and we will remove your address.");
+  });
+
+  // Fails if a malformed link gets a confirm form instead of the invalid-link text.
+  test("a malformed unsubscribe link shows the invalid-link text and no button", async ({ page }) => {
+    await page.goto("/unsubscribe?t=not-a-token");
+    await expect(page.locator("main").getByRole("alert")).toHaveText("This unsubscribe link is not valid. Email retrofit@thecreativetoken.com and we will remove your address.");
+    await expect(page.getByRole("button", { name: "Unsubscribe" })).toHaveCount(0);
   });
 });

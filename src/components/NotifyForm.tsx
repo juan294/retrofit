@@ -1,18 +1,28 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { NOTIFY_FORM_TEXT as T } from "@/lib/site/pricing-texts";
 import { localizeRetry } from "./analysis/retry-time";
 
 type Status = { readonly ok: boolean; readonly text: string } | null;
 
+const noSubscription = () => () => {};
+
+/** False in the server HTML and until hydration, true after it. */
+function useHydrated(): boolean {
+  return useSyncExternalStore(noSubscription, () => true, () => false);
+}
+
 /**
  * "Notify me": an email field, an unticked product-news box and the privacy link.
  * Without a privacy link the form is not shown (the plan refuses it then).
+ * Before hydration the button is disabled (so is implicit submission with Enter), and the form is
+ * a POST to the API, so the address can never reach a page URL.
  */
 export function NotifyForm({ privacyHref }: { privacyHref: string }) {
   const [status, setStatus] = useState<Status>(null);
   const [busy, setBusy] = useState(false);
+  const hydrated = useHydrated();
   if (!privacyHref) return null;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -45,7 +55,7 @@ export function NotifyForm({ privacyHref }: { privacyHref: string }) {
   }
 
   return (
-    <form onSubmit={submit} className="mt-4 flex flex-col gap-3" noValidate>
+    <form method="post" action="/api/notify" onSubmit={submit} className="mt-4 flex flex-col gap-3" noValidate>
       <label htmlFor="notify-email" className="font-medium">
         {T.emailLabel}
       </label>
@@ -61,7 +71,7 @@ export function NotifyForm({ privacyHref }: { privacyHref: string }) {
         />
         <button
           type="submit"
-          disabled={busy}
+          disabled={busy || !hydrated}
           className="rounded px-4 py-2 font-medium"
           style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}
         >

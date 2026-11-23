@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { unsubscribeByToken } from "@/lib/api/unsubscribe";
-import { getServerDeps } from "@/lib/server/runtime";
+import { unsubscribePageState } from "@/lib/api/unsubscribe";
 import { UNSUBSCRIBE_TEXT } from "@/lib/site/pricing-texts";
 
 export const metadata: Metadata = {
@@ -9,21 +8,33 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-/** GET /unsubscribe?t=<token>: the link every message carries (unsubscribeUrl). */
+/**
+ * GET /unsubscribe?t=<token>: the link every message carries (unsubscribeUrl). Opening it changes
+ * nothing; the button posts the token to /api/unsubscribe, which redirects back with ?result=.
+ */
 export default async function UnsubscribePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { t } = await searchParams;
-  const outcome = await unsubscribeByToken(t, getServerDeps().accounts);
+  const state = unsubscribePageState(await searchParams);
   return (
-    <main className="mx-auto max-w-2xl px-4 py-16">
-      <h1 className="text-3xl font-semibold">{UNSUBSCRIBE_TEXT.title}</h1>
-      <p className="mt-4" role={outcome === "done" ? "status" : "alert"}>
-        {UNSUBSCRIBE_TEXT[outcome]}
-      </p>
-      <p className="mt-6">
+    <main className="mx-auto max-w-2xl px-4 py-12 leading-relaxed [overflow-wrap:anywhere]">
+      <p>
         <Link href="/" className="underline">
-          {UNSUBSCRIBE_TEXT.home}
+          Retrofit
         </Link>
       </p>
+      <h1 className="mt-4 text-3xl font-semibold">{UNSUBSCRIBE_TEXT.title}</h1>
+      {state.kind === "confirm" ? (
+        <form method="post" action="/api/unsubscribe" className="mt-4 flex flex-col items-start gap-3">
+          <p>{UNSUBSCRIBE_TEXT.confirm}</p>
+          <input type="hidden" name="t" value={state.token} />
+          <button type="submit" className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
+            {UNSUBSCRIBE_TEXT.confirmButton}
+          </button>
+        </form>
+      ) : (
+        <p className="mt-4" role={state.outcome === "done" ? "status" : "alert"}>
+          {UNSUBSCRIBE_TEXT[state.outcome]}
+        </p>
+      )}
     </main>
   );
 }
