@@ -2,6 +2,8 @@ import { test, expect } from "./fixtures/csp";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture } from "./support/agent";
+import { claimPanel, claimStates } from "./support/claims";
+import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 
 test.use({ viewport: { width: 320, height: 640 } });
 
@@ -64,4 +66,21 @@ test("the save button's error fits a 320 px phone screen", async ({ page }) => {
   await page.getByRole("button", { name: SAVE_REPORT_TEXT.button }).click();
   await expect(page.getByTestId("save-report").getByRole("alert")).toHaveText(SAVE_REPORT_TEXT.unavailable);
   await fits(page);
+});
+
+// Phase 3. Fails if a claim panel (lapsed, robots-blocked, superseded, a new DNS token, verified, a limit answer) scrolls sideways at 320 px.
+test("the claim panels fit a 320 px phone screen", async ({ page, browser }) => {
+  test.setTimeout(180_000);
+  const { other, close } = await claimStates(page, browser, "phone");
+  await expect(page.getByTestId("claim-token")).toBeVisible();
+  await fits(page);
+  await page.route("**/api/claims/check", (route) => route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: "limit", message: CLAIMS_TEXT.limit(new Date(Date.now() + 3600_000)), retryAt: new Date(Date.now() + 3600_000).toISOString() }) }));
+  await claimPanel(page, "agentified.fixture.test").getByRole("button", { name: CLAIMS_TEXT.checkAgain }).click();
+  await expect(claimPanel(page, "agentified.fixture.test").getByRole("alert")).toBeVisible();
+  await fits(page);
+  await other.setViewportSize({ width: 320, height: 640 });
+  await other.goto("/account");
+  await expect(other.getByTestId("claim-status")).toHaveText(/^Verified on /);
+  await fits(other);
+  await close();
 });

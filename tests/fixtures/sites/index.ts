@@ -71,6 +71,12 @@ export const bakery: FixtureSite = {
   "/account/settings": html(`<main>Account</main>`, "<title>Account</title>"),
 };
 
+/** `site` with an ownership tag (`<meta name="retrofit-site-verification">`) first in its home page head (e2e claims). */
+export function withClaimTag(site: FixtureSite, token: string): FixtureSite {
+  const home = site["/"];
+  return { ...site, "/": { ...home, body: home?.body?.replace("<head>", `<head><meta name="retrofit-site-verification" content="${token}">`) } };
+}
+
 export const spaOnly: FixtureSite = {
   "/robots.txt": text("User-agent: *\nDisallow:\n"),
   "/": html(`<div id="root"></div><script src="/app.js"></script>`, "<title>App</title>"),

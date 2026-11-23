@@ -50,6 +50,8 @@ export default defineConfig({
       JUDGE_CODE: "judge-code-e2e",
       FREE_CALLS_PER_SESSION: "12",
       FREE_SESSIONS_PER_CLIENT_HOUR: "1000",
+      // The claims spec calls the daily recheck (GET /api/cron/claims) with this test-only secret.
+      CRON_SECRET: "cron-secret-e2e-only-0123456789",
     },
   },
 });

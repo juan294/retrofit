@@ -5,6 +5,8 @@ import { ACCOUNT_TEXT, SAVE_REPORT_TEXT, SAVED_REPORT_TEXT } from "@/lib/site/ac
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
 import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture, mockOtari } from "./support/agent";
+import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST } from "./support/claims";
+import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 
 type Locator = import("@playwright/test").Locator;
 
@@ -183,5 +185,45 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.route("**/api/account/reports", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable", message: SAVE_REPORT_TEXT.unavailable }) }));
     await page.getByRole("button", { name: SAVE_REPORT_TEXT.button }).click();
     await readable({ alert: page.getByTestId("save-report").getByRole("alert") });
+  });
+}
+
+// Phase 3. Fails if any claim panel text (status, reason, token, last check, buttons, a limit answer) is unreadable in either scheme.
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`the claim panels are readable in ${colorScheme} mode`, async ({ page, browser }) => {
+    test.setTimeout(180_000);
+    await page.emulateMedia({ colorScheme });
+    const { other, close } = await claimStates(page, browser, `theme-${colorScheme}`);
+    const readable = async (targets: Record<string, Locator>) => {
+      for (const [name, el] of Object.entries(targets)) {
+        await expect(el, name).toBeVisible();
+        const { ratio, color, background } = await contrastOf(el);
+        expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
+      }
+    };
+    const fresh = claimPanel(page, "agentified.fixture.test");
+    await readable({
+      heading: page.getByRole("heading", { level: 2, name: CLAIMS_TEXT.heading }),
+      lapsed: claimPanel(page, FLAKY_HOST).getByTestId("claim-status"),
+      lapsedReason: claimPanel(page, FLAKY_HOST).getByTestId("claim-reason"),
+      blockedReason: claimPanel(page, BLOCKED_HOST).getByTestId("claim-reason"),
+      superseded: claimPanel(page, CLAIM_HOST).getByTestId("claim-status"),
+      host: claimPanel(page, CLAIM_HOST).getByText(/fixture\.test/).first(),
+      token: fresh.getByTestId("claim-token").locator("code"),
+      tokenNote: fresh.getByText(CLAIMS_TEXT.tokenOnce),
+      created: fresh.getByTestId("claim-message"),
+      lastChecked: claimPanel(page, BLOCKED_HOST).getByText(/^Last checked /),
+      checkAgain: fresh.getByRole("button", { name: CLAIMS_TEXT.checkAgain }),
+      startOver: fresh.getByRole("button", { name: CLAIMS_TEXT.startOver }),
+      source: page.getByLabel(CLAIMS_TEXT.sourceLabel),
+      claim: page.getByRole("button", { name: CLAIMS_TEXT.claimButton }),
+    });
+    await page.route("**/api/claims/check", (route) => route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: "limit", message: CLAIMS_TEXT.limit(new Date(Date.now() + 3600_000)), retryAt: new Date(Date.now() + 3600_000).toISOString() }) }));
+    await fresh.getByRole("button", { name: CLAIMS_TEXT.checkAgain }).click();
+    await readable({ limit: fresh.getByRole("alert") });
+    await other.emulateMedia({ colorScheme });
+    await other.goto("/account");
+    await readable({ verified: other.getByTestId("claim-status"), verifiedReason: other.getByTestId("claim-reason") });
+    await close();
   });
 }
