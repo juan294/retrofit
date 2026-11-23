@@ -164,6 +164,15 @@ describe("Stripe adapter", () => {
     expect((await gateway.getSubscriptions(customerId)).map((x) => x.status)).toEqual(["active"]);
   });
 
+  // Simplify 11. Fails if a checkout that Stripe's list does not show yet is taken for another caller's.
+  it("the checkout just created counts although the list does not show it yet", async () => {
+    const { stripe, gateway } = harness();
+    const customerId = await gateway.createCustomer({ accountId: ACCOUNT, email: "a@example.test" });
+    stripe.fail((c) => (c.method === "GET" && c.path === "/v1/checkout/sessions" ? new Response(JSON.stringify({ object: "list", data: [], has_more: false, url: "/v1/checkout/sessions" }), { status: 200, headers: { "content-type": "application/json" } }) : null));
+    const url = await gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId: "price_pro", successUrl: ORIGIN, cancelUrl: ORIGIN });
+    expect([...stripe.sessions.values()].map((x) => [x.url, x.status])).toEqual([[url, "open"]]);
+  });
+
   // P5-RR6. Fails if a checkout of an earlier click comes back closed, or for another plan, when plans alternate.
   it("alternating plans many times always gives an open checkout of the chosen plan, and one at a time", async () => {
     const { stripe, gateway } = harness();

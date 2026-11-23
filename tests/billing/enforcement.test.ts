@@ -5,7 +5,7 @@ import { handleSaveReport } from "@/lib/api/saved-reports";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { handleScore } from "@/lib/api/score";
 import { handleJudgeUpgrade, handleSession, sessionTexts } from "@/lib/inference/session";
-import { PLAN_TEXT } from "@/lib/site/billing-texts";
+import { PLAN_TEXT } from "@/lib/site/plan-texts";
 import { PUBLISH_TEXT } from "@/lib/site/publish-texts";
 import { accountCookie, analyzeRequest, cookieFrom, holdAllSlots, postRequest, scoreRequest, type TestDeps, type TestDepsOptions } from "../helpers/server-deps";
 import { HOST, listedAnalysis, snapshotOf, verifiedClaim } from "../publish/setup";

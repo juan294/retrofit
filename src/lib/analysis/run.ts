@@ -54,18 +54,20 @@ export async function startAnalysis(
     throw e;
   }
 
-  // 2. The per-client window, and from BILLING_START on a signed-in account's own.
+  // 2. The per-client window, and from BILLING_START on a signed-in account's own (its plan is read beside them).
+  const account = o.accountId && billingStarted(deps) ? o.accountId : null;
   const limits = [countClientAnalysis(deps.store, deps.config, o.clientId, deps.clock())];
-  if (o.accountId && billingStarted(deps)) limits.push(countAccountAnalysis(deps.store, deps.config, o.accountId, deps.clock()));
-  for (const limit of await Promise.all(limits)) {
+  if (account) limits.push(countAccountAnalysis(deps.store, deps.config, account, deps.clock()));
+  const [windows, plan] = await Promise.all([Promise.all(limits), account ? accountPlan(deps, account) : null]);
+  for (const limit of windows) {
     if (limit.ok) continue;
     const retryAt = new Date(limit.retryAt);
     return { ok: false, status: 429, code: "client_limit", message: visitorTexts.clientLimit(deps.config.analysesPerClientHour, retryAt), retryAt: retryAt.toISOString() };
   }
 
-  // 3. From BILLING_START on, the account's sites of the day, so that one account cannot use the shared cap.
-  if (o.accountId && billingStarted(deps)) {
-    const sites = await countAccountSite(deps, o.accountId, await accountPlan(deps, o.accountId), url.origin, deps.clock());
+  // 3. The account's sites of the day, so that one account cannot use the shared cap.
+  if (account) {
+    const sites = await countAccountSite(deps, account, plan, url.origin, deps.clock());
     if (!sites.ok && "undecided" in sites) return { ok: false, status: 503, code: "counting", message: visitorTexts.counting, retryAfterSeconds: COUNTING_RETRY_S };
     if (!sites.ok) return { ok: false, status: 429, code: "account_limit", message: visitorTexts.accountLimit(sites.limit), retryAt: new Date(sites.retryAt).toISOString() };
   }

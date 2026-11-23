@@ -5,10 +5,11 @@ import { handleCreateKey, handleRevokeKey } from "@/lib/api/api-keys";
 import { handleScore, handleScoreOptions } from "@/lib/api/score";
 import { agentTexts } from "@/lib/analysis/texts";
 import { planOf } from "@/lib/billing/plans";
-import { PLAN_TEXT, API_KEY_TEXT } from "@/lib/site/billing-texts";
+import { API_KEY_TEXT } from "@/lib/site/billing-texts";
+import { PLAN_TEXT } from "@/lib/site/plan-texts";
 import { sha256Hex } from "@/lib/security/tokens";
 import { billingDeps, brokenBilling, OWNER, spiedAccounts, withBilling } from "../billing/setup";
-import { accountCookie, captureConsole, holdAllSlots, OTHER_ACCOUNT, postRequest, PUBLIC_ORIGIN, storeDump, type TestDeps, type TestDepsOptions } from "../helpers/server-deps";
+import { accountCookie, captureConsole, holdAllSlots, OTHER_ACCOUNT, postRequest, scoreRequest, storeDump, type TestDeps, type TestDepsOptions } from "../helpers/server-deps";
 
 const lines: string[] = [];
 beforeEach(() => {
@@ -29,9 +30,7 @@ const create = async (d: TestDeps, cookie: string, o = {}) => {
 const revoke = (d: TestDeps, cookie: string, keyId: unknown) => handleRevokeKey(postRequest("/api/account/keys/revoke", { keyId }, { cookie }), d);
 let n = 0;
 const score = async (d: TestDeps, auth?: string, o: { ip?: string; url?: string } = {}) => {
-  const headers = new Headers({ "x-forwarded-for": o.ip ?? "198.51.100.9" });
-  if (auth !== undefined) headers.set("authorization", auth);
-  const res = await handleScore(new Request(`${PUBLIC_ORIGIN}/api/score?url=${encodeURIComponent(o.url ?? `https://k${++n}.example.com`)}`, { headers }), d);
+  const res = await handleScore(scoreRequest(`?url=${encodeURIComponent(o.url ?? `https://k${++n}.example.com`)}`, { auth, ip: o.ip }), d);
   return { status: res.status, headers: res.headers, body: (await res.json()) as { error?: string; message?: string; status?: string } };
 };
 const accepted = async (d: TestDeps, auth: string | undefined, tries: number, o = {}) => {
@@ -99,7 +98,7 @@ describe("GET /api/score with an API key", () => {
   it("applies the plan's hourly limit per account, not per key or network", async () => {
     const { d, cookie } = await setup();
     await withBilling(d, OWNER);
-    const limit = planOf("pro").scoresPerHour as number;
+    const limit = planOf("pro").limits.scoresPerHour as number;
     const keys = [(await create(d, cookie)).body.key, (await create(d, cookie)).body.key];
     let ok = 0;
     for (let i = 0; i < limit + 5; i++) if ((await score(d, `Bearer ${keys[i % 2]}`, { ip: `198.51.100.${i % 7}` })).status === 202) ok++;
@@ -115,8 +114,8 @@ describe("GET /api/score with an API key", () => {
   it("gives Agency its higher limit", async () => {
     const { d, cookie } = await setup();
     await withBilling(d, OWNER, { plan: "agency" });
-    const limit = planOf("agency").scoresPerHour as number;
-    expect(limit).toBeGreaterThan(planOf("pro").scoresPerHour as number);
+    const limit = planOf("agency").limits.scoresPerHour as number;
+    expect(limit).toBeGreaterThan(planOf("pro").limits.scoresPerHour as number);
     const { key } = (await create(d, cookie)).body;
     expect(await accepted(d, `Bearer ${key}`, limit + 1)).toBe(limit);
   });

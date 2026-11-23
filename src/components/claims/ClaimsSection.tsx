@@ -6,13 +6,12 @@ import type { ClaimOption } from "@/lib/claims/sources";
 import type { AccountClaimView, ClaimView } from "@/lib/claims/view";
 import type { PublishedView } from "@/lib/publish/view";
 import { PublishControls } from "../publish/PublishControls";
-import { PLAN_TEXT } from "@/lib/site/billing-texts";
 import { CLAIMS_TEXT as T } from "@/lib/site/claims-texts";
-import { localizeRetry } from "../analysis/retry-time";
+import { postJson, statusOf, type Status } from "../post";
+import { StatusMessage } from "../StatusMessage";
 import { useHydrated } from "../useHydrated";
 
-type Status = { readonly ok: boolean; readonly text: string; readonly href?: string } | null;
-type Answer = { message?: unknown; retryAt?: unknown; href?: unknown; token?: unknown; claim?: Partial<ClaimView>; site?: PublishedView | null };
+type Answer = { token?: unknown; claim?: Partial<ClaimView>; site?: PublishedView | null };
 
 /** The claim view of an answer, when it carries a whole one. */
 const viewOf = (answer: Answer | null): ClaimView | null => (typeof answer?.claim?.id === "string" && typeof answer.claim.statusText === "string" ? (answer.claim as ClaimView) : null);
@@ -36,7 +35,7 @@ export function ClaimsSection({ claims, options }: { claims: readonly AccountCla
   const hydrated = useHydrated();
   const [busy, setBusy] = useState<string | null>(null);
   const [tokens, setTokens] = useState<Record<string, string>>({});
-  const [statuses, setStatuses] = useState<Record<string, Status>>({});
+  const [statuses, setStatuses] = useState<Record<string, Status | null>>({});
   // The server's claims, with the claims and sites later answers carried; new server data (after a refresh) replaces them.
   const [views, setViews] = useState(claims);
   const [fromServer, setFromServer] = useState(claims);
@@ -52,28 +51,22 @@ export function ClaimsSection({ claims, options }: { claims: readonly AccountCla
   async function send(path: string, body: Record<string, string>, key: string): Promise<void> {
     setBusy(key);
     setStatuses((s) => ({ ...s, [key]: null }));
-    let status: Status;
-    try {
-      const res = await fetch(path, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      const answer = (await res.json().catch(() => null)) as Answer | null;
-      const message = typeof answer?.message === "string" ? answer.message : T.unavailable;
-      status = { ok: res.ok, text: res.ok ? message : localizeRetry(message, typeof answer?.retryAt === "string" ? answer.retryAt : undefined), ...(answer?.href === "/pricing" ? { href: answer.href } : {}) };
-      const view = viewOf(answer);
-      // A publish answer (`key` is the claim's id).
-      if (answer?.site !== undefined) merge(key, { site: answer.site });
-      if (res.ok && view && typeof answer?.token === "string") {
-        const token = answer.token;
-        setTokens((t) => ({ ...t, [view.id]: token }));
-      }
-      if (key === "new" || path === "/api/claims/remove") {
-        // A new claim shows its answer in its own panel.
-        if (res.ok && view && key === "new") key = view.id;
-        if (res.ok) router.refresh();
-      } else if (view) {
-        merge(view.id, view);
-      }
-    } catch {
-      status = { ok: false, text: T.unavailable };
+    const res = await postJson<Answer>(path, body);
+    const status = statusOf(res, T.unavailable);
+    const answer = res.body;
+    const view = viewOf(answer);
+    // A publish answer (`key` is the claim's id).
+    if (answer?.site !== undefined) merge(key, { site: answer.site });
+    if (res.ok && view && typeof answer?.token === "string") {
+      const token = answer.token;
+      setTokens((t) => ({ ...t, [view.id]: token }));
+    }
+    if (key === "new" || path === "/api/claims/remove") {
+      // A new claim shows its answer in its own panel.
+      if (res.ok && view && key === "new") key = view.id;
+      if (res.ok) router.refresh();
+    } else if (view) {
+      merge(view.id, view);
     }
     setStatuses((s) => ({ ...s, [key]: status }));
     setBusy(null);
@@ -119,7 +112,7 @@ export function ClaimsSection({ claims, options }: { claims: readonly AccountCla
           </button>
         </form>
       )}
-      <Message status={statuses.new ?? null} testId="claims-message" />
+      <StatusMessage status={statuses.new ?? null} testId="claims-message" className="mt-2" />
 
       {views.length === 0 ? (
         <p className="mt-4">{T.noClaims}</p>
@@ -134,24 +127,7 @@ export function ClaimsSection({ claims, options }: { claims: readonly AccountCla
   );
 }
 
-function Message({ status, testId }: { status: Status; testId: string }) {
-  if (!status) return null;
-  return (
-    <p className="mt-2" role={status.ok ? "status" : "alert"} data-testid={testId} style={status.ok ? undefined : danger}>
-      {status.text}
-      {status.href ? (
-        <>
-          {" "}
-          <a href={status.href} className="underline">
-            {PLAN_TEXT.seePlans}
-          </a>
-        </>
-      ) : null}
-    </p>
-  );
-}
-
-function ClaimPanel(p: { claim: AccountClaimView; token: string | null; status: Status; busy: boolean; disabled: boolean; send: (path: string, body?: Record<string, string>) => Promise<void> }) {
+function ClaimPanel(p: { claim: AccountClaimView; token: string | null; status: Status | null; busy: boolean; disabled: boolean; send: (path: string, body?: Record<string, string>) => Promise<void> }) {
   const { claim: c, token } = p;
   const action = (path: string, body: Record<string, string> = {}) => (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -200,7 +176,7 @@ function ClaimPanel(p: { claim: AccountClaimView; token: string | null; status: 
         {button(T.remove, "/api/claims/remove")}
       </div>
       <PublishControls verified={c.status === "verified"} site={c.site} button={(label, path, primary) => button(label, path, { host: c.host }, primary)} />
-      <Message status={p.status} testId="claim-message" />
+      <StatusMessage status={p.status} testId="claim-message" className="mt-2" />
     </li>
   );
 }

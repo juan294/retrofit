@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { PLANS, type PlanId } from "./billing/plans";
 import type { PlanPrices } from "./billing/state";
 
 export class ConfigError extends Error {
@@ -31,9 +32,7 @@ export interface Config {
   /** Sign-in links per email address per hour; the window is keyed by a keyed hash of the address. */
   readonly signInPerEmailHour: number;
   /** Distinct sites one account may analyze or score in a UTC day, by plan, from BILLING_START on (never more than half of CRAWL_MAX_HOSTS_PER_DAY). */
-  readonly accountSitesPerDayFree: number;
-  readonly accountSitesPerDayPro: number;
-  readonly accountSitesPerDayAgency: number;
+  readonly accountSitesPerDay: Readonly<Record<PlanId, number>>;
   readonly staleAfterS: number;
   readonly analysisTtlS: number;
   readonly scoreWaitMs: number;
@@ -128,9 +127,6 @@ const NUMBERS = {
   notifyPerClientHour: ["NOTIFY_PER_CLIENT_HOUR", 5],
   signInPerClientHour: ["SIGNIN_PER_CLIENT_HOUR", 5],
   signInPerEmailHour: ["SIGNIN_PER_EMAIL_HOUR", 3],
-  accountSitesPerDayFree: ["ACCOUNT_SITES_PER_DAY_FREE", 50],
-  accountSitesPerDayPro: ["ACCOUNT_SITES_PER_DAY_PRO", 100],
-  accountSitesPerDayAgency: ["ACCOUNT_SITES_PER_DAY_AGENCY", 300],
   staleAfterS: ["STALE_AFTER_S", 90],
   analysisTtlS: ["ANALYSIS_TTL_S", 604800],
   scoreWaitMs: ["SCORE_WAIT_MS", 25000],
@@ -218,8 +214,9 @@ export function loadConfig(env: Env): Config {
   // Judges have free access until 2027-01-18: no Vercel setting can start billing earlier.
   if (onVercel && billingStart < Date.parse(EARLIEST_BILLING_START)) throw new ConfigError("BILLING_START", `must not be before ${EARLIEST_BILLING_START} on Vercel`);
   const billing = loadBillingConfig(env, onVercel);
+  const accountSitesPerDay = Object.freeze(Object.fromEntries(PLANS.map(({ id, limits }) => [id, parsePositive(env, `ACCOUNT_SITES_PER_DAY_${id.toUpperCase()}`, limits.sitesPerDay)])) as Record<PlanId, number>);
 
-  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, billing, cronSecret, free, supabase });
+  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, billing, accountSitesPerDay, cronSecret, free, supabase });
 }
 
 /** The day after judging ends: the default and, on Vercel, the earliest BILLING_START. */

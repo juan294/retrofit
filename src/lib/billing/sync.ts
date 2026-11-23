@@ -18,7 +18,7 @@ export async function readStripe(deps: Deps, known: Pick<BillingRecord, "custome
   return { observed: { ...billingState(subscriptions, deps.config.billing?.prices ?? {}, now), observedAt: new Date(observedAt).toISOString() }, subscriptions };
 }
 
-/** Logs a billing failure: an operation and a code only, never an id, an address or a provider message. */
+/** Logs a failure: Stripe's operation and code, or the error's name; never an id, an address or a provider message. */
 export function logBillingFailure(where: string, e: unknown): void {
   console.error(`${where} failed:`, e instanceof BillingUnavailable ? `${e.operation} (${e.code})` : e instanceof Error ? e.name : "unknown error");
 }

@@ -42,6 +42,25 @@ describe("memory AccountData specifics", () => {
     });
   });
 
+  // Fails if pruning ignores its time or its bound.
+  it("prunes at most `limit` events received before the time", async () => {
+    const clock = fakeClock(Date.parse("2027-01-01T00:00:00.000Z"));
+    const backing = createAccountMemoryBacking();
+    const data = createMemoryAccountData({ clock: clock.now, backing });
+    const owner = randomUUID();
+    await data.ensureProfile(owner);
+    await data.linkBillingCustomer(owner, "cus_prune");
+    const state = { plan: "pro", status: "active", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, unpaidSince: null } as const;
+    for (let n = 0; n < 4; n++) {
+      await data.applyBillingEvent({ id: `evt_p${n}`, type: "customer.subscription.updated" }, "cus_prune", { ...state, observedAt: new Date(clock.now()).toISOString() });
+      clock.advance(86_400_000);
+    }
+    expect(await data.pruneStripeEvents("2027-01-04T00:00:00.000Z", 2)).toBe(2);
+    expect([...backing.stripeEvents.keys()]).toEqual(["evt_p2", "evt_p3"]);
+    expect(await data.pruneStripeEvents("2027-01-04T00:00:00.000Z", 2)).toBe(1);
+    expect([...backing.stripeEvents.keys()]).toEqual(["evt_p3"]);
+  });
+
   // Fails if an operation writes before yielding (concurrent callers would never interleave, hiding races).
   it("does not touch the backing before yielding", async () => {
     const backing = createAccountMemoryBacking();

@@ -2,6 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import { BILLING_TEXT as T } from "@/lib/site/billing-texts";
+import { postJson } from "../post";
+import { StatusMessage } from "../StatusMessage";
 import { useHydrated } from "../useHydrated";
 import { billingStep, type BillingStep } from "./answer";
 
@@ -20,13 +22,8 @@ export function BillingButton({ path, body = {}, label, returnTo, fixtureOrigin,
     event.preventDefault();
     setBusy(true);
     setNotice(null);
-    let step: BillingStep;
-    try {
-      const res = await fetch(path, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      step = billingStep(res.status, await res.json().catch(() => null), fixtureOrigin, returnTo);
-    } catch {
-      step = { text: T.unavailable };
-    }
+    const answer = await postJson(path, body);
+    const step = billingStep(answer.status, answer.body, fixtureOrigin, returnTo);
     if ("go" in step) {
       // Stays busy: the page is leaving.
       window.location.assign(step.go);
@@ -46,19 +43,7 @@ export function BillingButton({ path, body = {}, label, returnTo, fixtureOrigin,
       >
         {busy ? T.busy : label}
       </button>
-      {notice ? (
-        <p role="alert" data-testid="billing-message" style={{ color: "var(--color-danger)" }}>
-          {notice.text}
-          {notice.href ? (
-            <>
-              {" "}
-              <a href={notice.href} className="underline">
-                {notice.linkText}
-              </a>
-            </>
-          ) : null}
-        </p>
-      ) : null}
+      <StatusMessage status={notice && { ...notice, ok: false }} testId="billing-message" />
     </form>
   );
 }

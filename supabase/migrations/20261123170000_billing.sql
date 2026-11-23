@@ -206,6 +206,29 @@ begin
 end;
 $$;
 
+-- The oldest events received before p_before, at most p_limit (the daily cleanup). Returns how many it deleted.
+create index stripe_events_received_at on public.stripe_events (received_at);
+
+create function public.prune_stripe_events(p_before timestamptz, p_limit integer)
+returns integer
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_deleted integer;
+begin
+  if p_before is null or p_limit is null then
+    raise exception 'prune_stripe_events: every argument is required' using errcode = '22004';
+  end if;
+  delete from public.stripe_events e
+  where e.event_id in (select o.event_id from public.stripe_events o where o.received_at < p_before order by o.received_at limit greatest(p_limit, 0));
+  get diagnostics v_deleted = row_count;
+  return v_deleted;
+end;
+$$;
+
+-- A revoked key's row is deleted (AccountData revokeApiKey); revoked_at stays for a key that is revoked by hand.
 -- At most p_max active keys per account; one account's creations run one at a time.
 create function public.create_api_key(p_account_id uuid, p_key_hash text, p_hint text, p_max integer)
 returns jsonb
@@ -230,6 +253,8 @@ $$;
 
 revoke all on function public.delete_account_data(uuid) from public, anon, authenticated;
 grant execute on function public.delete_account_data(uuid) to service_role;
+revoke all on function public.prune_stripe_events(timestamptz, integer) from public, anon, authenticated;
+grant execute on function public.prune_stripe_events(timestamptz, integer) to service_role;
 revoke all on function public.customer_hash(text) from public, anon, authenticated;
 grant execute on function public.customer_hash(text) to service_role;
 revoke all on function public.billing_json(public.billing_customers) from public, anon, authenticated;

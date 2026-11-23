@@ -1,6 +1,7 @@
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import { expect } from "../fixtures/csp";
-import { API_KEY_TEXT, BILLING_TEXT, PLAN_TEXT } from "@/lib/site/billing-texts";
+import { API_KEY_TEXT, BILLING_TEXT } from "@/lib/site/billing-texts";
+import { PLAN_TEXT } from "@/lib/site/plan-texts";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { PRICING_TEXT } from "@/lib/site/pricing-texts";

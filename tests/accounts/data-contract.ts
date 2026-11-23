@@ -872,6 +872,15 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         expect(await a.isDeletedCustomer(customer("again"))).toBe(false);
       });
 
+      // Simplify 13. Fails if a recent event is pruned (its replay would be read again for nothing), or a bad time reaches the database.
+      it("pruning events before a time keeps the later ones and refuses a time that is not one", async () => {
+        await linked("prune");
+        await a.applyBillingEvent(event("recent"), customer("prune"), { ...pro, observedAt: AT });
+        expect(await b.pruneStripeEvents("2015-01-01T00:00:00.000Z", 1000)).toBe(0);
+        expect(await a.applyBillingEvent(event("recent"), customer("prune"), { ...none, observedAt: AFTER })).toEqual({ outcome: "duplicate" });
+        await expect(a.pruneStripeEvents("soon", 1)).rejects.toThrow(RangeError);
+      });
+
       // P5-R7. Fails if the start of the unpaid time moves with each new unpaid period (access would never end), or is kept for a
       // payment that succeeded or another subscription.
       it("keeps the first start of an unpaid time while the same subscription stays past due", async () => {
@@ -921,6 +930,15 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         expect(await a.revokeApiKey(owner, "../keys")).toBe(false);
         expect(await a.findApiKeyAccount(keyHash("never"))).toBeNull();
         expect(await a.findApiKeyAccount("not-a-hash")).toBeNull();
+      });
+
+      // Simplify 13. Fails if a revoked key's row (its hash and dates) stays, so revoking and creating would fill the table.
+      it("revoking deletes the key's row", async () => {
+        const owner = await newAccount();
+        const key = await create(a, owner, "row");
+        expect(await b.revokeApiKey(owner, key.id)).toBe(true);
+        // The hash is free again: only its row kept it unique.
+        expect((await a.createApiKey(owner, { keyHash: keyHash("row"), hint: "0a1b" })).outcome).toBe("created");
       });
 
       // Fails if an account can hold more than MAX_API_KEYS active keys (also when creates race), or a revoked key still counts.

@@ -76,7 +76,7 @@ describe("what ends and restores the public state", () => {
     if (how === "delete the account") {
       const account = await readAccountByToken(cookie.split("=")[1], d);
       const deps = { ...d, auth: { ...d.auth, getUser: async () => null, deleteUser: async () => {} } } as unknown as TestDeps;
-      expect(await deleteAccount(deps, account!)).toBe("deleted");
+      expect(await deleteAccount(deps, account!)).toMatchObject({ stage: "deleted" });
     }
     expect(await visible(d)).toBe("private");
   });

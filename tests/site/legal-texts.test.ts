@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { VISITOR_COOKIE, VISITOR_MAX_AGE_S } from "@/lib/analysis/visitor";
 import { EXPIRED_GRACE_S } from "@/lib/analysis/record";
+import { STRIPE_EVENTS_KEPT_MS } from "@/lib/api/cleanup";
 import { FEATURE_LABELS } from "@/lib/billing/plans";
-import { PLAN_TEXT } from "@/lib/site/billing-texts";
+import { PLAN_TEXT } from "@/lib/site/plan-texts";
 import { PRICING_TEXT } from "@/lib/site/pricing-texts";
 import { FREE_ANALYSES, FREE_WINDOW_S } from "@/lib/billing/free-limit";
 import { loadConfig } from "@/lib/config";
@@ -174,6 +175,12 @@ describe("payments, the free limit and API keys in the privacy notice and the te
     expect(privacy).toContain("Until paid plans start, calls with a key are counted per network and per account; after that, per account.");
     expect(privacy).not.toContain("are counted per account, not per network");
     expect(privacy).toContain("and, while a payment is missing, the day Retrofit first saw that");
+  });
+
+  // Simplify 13. Fails if the notice is wrong about how long payment events and revoked keys are kept.
+  it("says how long payment events are kept and that revoking a key deletes it", () => {
+    expect(privacy).toContain(`the payment events it has handled, for ${STRIPE_EVENTS_KEPT_MS / 86_400_000} days.`);
+    expect(privacy).toContain("Revoking a key deletes these.");
   });
 
   // Fails if the notice hides what is kept of an API key.

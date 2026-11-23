@@ -7,7 +7,8 @@ import { ApiKeysSection } from "@/components/billing/ApiKeysSection";
 import { BillingButton } from "@/components/billing/BillingButton";
 import { billingStep } from "@/components/billing/answer";
 import { billingView } from "@/lib/billing/view";
-import { BILLING_TEXT, PLAN_TEXT } from "@/lib/site/billing-texts";
+import { BILLING_TEXT } from "@/lib/site/billing-texts";
+import { PLAN_TEXT } from "@/lib/site/plan-texts";
 import { ACTIVE, OWNER } from "./setup";
 
 const record = (o: Partial<BillingRecord> = {}): BillingRecord => ({ ...ACTIVE, accountId: OWNER, customerId: "cus_secretview", stateAt: "2027-02-01T00:00:00.000Z", ...o });

@@ -1,7 +1,8 @@
 import { test, expect } from "./fixtures/csp";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { visitorTexts } from "@/lib/analysis/texts";
-import { API_KEY_TEXT, BILLING_TEXT, PLAN_TEXT } from "@/lib/site/billing-texts";
+import { API_KEY_TEXT, BILLING_TEXT } from "@/lib/site/billing-texts";
+import { PLAN_TEXT } from "@/lib/site/plan-texts";
 import { PRICING_TEXT } from "@/lib/site/pricing-texts";
 import { PUBLISH_TEXT } from "@/lib/site/publish-texts";
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";

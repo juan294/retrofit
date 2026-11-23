@@ -26,6 +26,7 @@ import {
   requirePublishInput,
   requireRefreshError,
   requireSaveInput,
+  requireTime,
   scoreOf,
   type AccountData,
   type ApiKey,
@@ -493,6 +494,11 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
       return row !== null;
     },
 
+    async pruneStripeEvents(rawBefore, limit) {
+      const before = requireTime("before", rawBefore);
+      return (await call<number>("pruneStripeEvents", () => client.rpc("prune_stripe_events", { p_before: before, p_limit: Math.max(0, limit) }))) ?? 0;
+    },
+
     async createApiKey(rawId, input) {
       const accountId = requireAccountId(rawId);
       requireApiKey(input);
@@ -514,9 +520,7 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
 
     async revokeApiKey(accountId, keyId) {
       if (!isUuid(accountId) || !isUuid(keyId)) return false;
-      const rows = await call<{ id: string }[]>("revokeApiKey", () =>
-        apiKeys().update({ revoked_at: new Date().toISOString() }).eq("account_id", accountId).eq("id", keyId).is("revoked_at", null).select("id"),
-      );
+      const rows = await call<{ id: string }[]>("revokeApiKey", () => apiKeys().delete().eq("account_id", accountId).eq("id", keyId).select("id"));
       return (rows ?? []).length > 0;
     },
 

@@ -4,22 +4,7 @@
 
 import { API_KEY_CREATES_PER_HOUR, BILLING_ACTIONS_PER_HOUR, MAX_API_KEYS } from "@/lib/accounts/limits";
 import { hhmmUtc } from "@/lib/analysis/texts";
-import type { Feature } from "@/lib/billing/plans";
 import { LEAD_EMAIL } from "./own-site";
-
-/** Why a feature needs a plan, for the features a route refuses. */
-export type GatedFeature = Extract<Feature, "publish" | "saved_reports" | "free_ai_preview" | "api_keys">;
-
-export const PLAN_TEXT = {
-  required: {
-    publish: "Publishing and refreshing need a paid plan. Pages you already published stay public.",
-    saved_reports: "Saving reports needs a paid plan. Reports you already saved stay in your account.",
-    free_ai_preview: "While you are signed in, Retrofit's AI needs a paid plan. Use your own AI key to continue.",
-    api_keys: "API keys need a paid plan.",
-  } satisfies Record<GatedFeature, string>,
-  unavailable: "Retrofit could not check your plan right now. Nothing was changed. Try again in a few minutes.",
-  seePlans: "See the plans",
-} as const;
 
 export const BILLING_TEXT = {
   heading: "Your plan",

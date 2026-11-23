@@ -54,7 +54,7 @@ describe("account deletion", () => {
   // Fails if any owned row or session survives, or the auth user is deleted before the data (a failure would orphan it).
   it("deletes the profile, saved reports and every session, and deletes the auth user last", async () => {
     const s = await signedIn();
-    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "deleted" });
     expect(s.log).toEqual(["auth.getUser", "accounts.deleteAccountData", "auth.deleteUser"]);
     expect(await s.accounts.getProfile(s.userId)).toBeNull();
     expect(await s.accounts.listSavedReports(s.userId)).toEqual([]);
@@ -69,7 +69,7 @@ describe("account deletion", () => {
     const s = await signedIn();
     await indexAccountAnalyses(s.d, s.userId, [await storeAnalysis(s.d, { inputOrigin: "https://gone.example.com", accountId: s.userId })]);
     expect([...s.d.backing.values.keys()]).toContain(`account-analyses:${s.userId}`);
-    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "deleted" });
     expect([...s.d.backing.values.keys()].filter((k) => k.startsWith("account-analyses:"))).toEqual([]);
   });
 
@@ -77,7 +77,7 @@ describe("account deletion", () => {
   it("deletes nothing when the provider is unavailable", async () => {
     const s = await signedIn();
     s.fixture.fail("getUser");
-    expect(await deleteAccount(s.d, s.account)).toBe("nothing_deleted");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "data", cancelled: false });
     expect(s.log).toEqual(["auth.getUser"]);
     expect(await s.accounts.listSavedReports(s.userId)).toHaveLength(2);
     expect(await readAccountByToken(s.here, s.d)).not.toBeNull();
@@ -88,7 +88,7 @@ describe("account deletion", () => {
   // Fails if a failed data deletion is followed by deleting the auth user, or loses any saved data.
   it("keeps the data, the auth user and this session when the data deletion fails", async () => {
     const s = await signedIn({ failData: true });
-    expect(await deleteAccount(s.d, s.account)).toBe("nothing_deleted");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "data", cancelled: false });
     expect(s.log).toEqual(["auth.getUser", "accounts.deleteAccountData"]);
     expect(await s.accounts.getProfile(s.userId)).not.toBeNull();
     expect(await s.accounts.listSavedReports(s.userId)).toHaveLength(2);
@@ -100,11 +100,11 @@ describe("account deletion", () => {
   it("reports a partial deletion when the auth user cannot be deleted, keeps this session, and a retry finishes", async () => {
     const s = await signedIn();
     s.fixture.fail("deleteUser");
-    expect(await deleteAccount(s.d, s.account)).toBe("partial");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "user", cancelled: false });
     expect(await s.accounts.listSavedReports(s.userId)).toEqual([]);
     expect(await readAccountByToken(s.here, s.d)).not.toBeNull();
     s.fixture.heal();
-    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "deleted" });
     expect(s.fixture.userIdOf("gone@example.test")).toBeNull();
     expect(await readAccountByToken(s.here, s.d)).toBeNull();
   });
@@ -155,7 +155,7 @@ describe("deletion failure text", () => {
   // Fails if the failure text says nothing was deleted although the account's other sessions may already be ended.
   it("says the data was not deleted and that other devices may be signed out", async () => {
     const s = await signedIn({ failData: true });
-    expect(await deleteAccount(s.d, s.account)).toBe("nothing_deleted");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "data", cancelled: false });
     expect(await readAccountByToken(s.elsewhere, s.d)).toBeNull();
     expect(ACCOUNT_TEXT.deleteFailed).toContain("Your data was not deleted");
     expect(ACCOUNT_TEXT.deleteFailed).toContain("you may have been signed out on other devices");
@@ -178,7 +178,7 @@ describe("account deletion with a subscription", () => {
   it("cancels the subscription before anything is deleted", async () => {
     const s = await subscribed();
     s.d.fixtureBilling.before("cancelSubscriptions", () => void s.log.push("stripe.cancel"));
-    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "deleted" });
     expect(s.log).toEqual(["auth.getUser", "stripe.cancel", "accounts.deleteAccountData", "auth.deleteUser", "stripe.cancel"]);
     expect(await s.statuses()).toEqual(["canceled"]);
     expect(await s.accounts.getBilling(s.userId)).toBeNull();
@@ -189,7 +189,7 @@ describe("account deletion with a subscription", () => {
     const s = await subscribed();
     s.d.fixtureBilling.fail(true, "cancelSubscriptions");
     vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(await deleteAccount(s.d, s.account)).toBe("subscription_kept");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "subscription", cancelled: false });
     expect(s.log).toEqual(["auth.getUser"]);
     expect(await s.accounts.getProfile(s.userId)).not.toBeNull();
     expect(await s.accounts.listSavedReports(s.userId)).toHaveLength(2);
@@ -199,7 +199,7 @@ describe("account deletion with a subscription", () => {
     expect(res.headers.get("location")).toBe(`${PUBLIC_ORIGIN}/account?delete=subscription`);
     expect(ACCOUNT_TEXT.deleteSubscriptionKept).toBe("We could not cancel your subscription. Nothing was deleted. Try again or email retrofit@thecreativetoken.com.");
     s.d.fixtureBilling.fail(false);
-    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "deleted" });
     expect(await s.statuses()).toEqual(["canceled"]);
   });
 
@@ -208,10 +208,10 @@ describe("account deletion with a subscription", () => {
     const s = await subscribed();
     vi.spyOn(console, "error").mockImplementation(() => {});
     s.fixture.fail("deleteUser");
-    expect(await deleteAccount(s.d, s.account)).toBe("partial_cancelled");
+    expect(await deleteAccount(s.d, s.account)).toEqual({ stage: "user", cancelled: true });
     expect(await s.statuses()).toEqual(["canceled"]);
     s.fixture.heal();
-    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "deleted" });
     expect(s.fixture.userIdOf("gone@example.test")).toBeNull();
   });
 
@@ -221,9 +221,9 @@ describe("account deletion with a subscription", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     let failData = true;
     const d = { ...s.d, accounts: { ...s.accounts, deleteAccountData: async (id: string) => { if (failData) throw new Error("down"); return s.accounts.deleteAccountData(id); } } };
-    expect(await deleteAccount(d, s.account)).toBe("cancelled_only");
+    expect(await deleteAccount(d, s.account)).toEqual({ stage: "data", cancelled: true });
     expect(await s.accounts.getBilling(s.userId)).toMatchObject({ status: "canceled" });
-    expect(await deleteAccount(d, s.account)).toBe("cancelled_only");
+    expect(await deleteAccount(d, s.account)).toEqual({ stage: "data", cancelled: true });
     const post = () => handleAccountDelete(new Request(`${PUBLIC_ORIGIN}/api/account/delete`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", cookie: `${ACCOUNT_COOKIE}=${s.here}`, "sec-fetch-site": "same-origin" }, body: "confirm=yes" }), d);
     expect((await post()).headers.get("location")).toBe(`${PUBLIC_ORIGIN}/account?delete=cancelled`);
     for (const text of [ACCOUNT_TEXT.deleteFailedCancelled, ACCOUNT_TEXT.deletePartialCancelled]) expect(text).toMatch(/^We cancelled your plan/);
@@ -238,7 +238,7 @@ describe("account deletion with a subscription", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const customer = await s.d.billing.createCustomer({ accountId: s.userId, email: "gone@example.test" });
     await s.accounts.linkBillingCustomer(s.userId, customer);
-    expect(await deleteAccount(s.d, s.account)).toBe("nothing_deleted");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "data", cancelled: false });
   });
 
   // Fails if an unreadable billing record lets the deletion run past a live subscription.
@@ -246,7 +246,7 @@ describe("account deletion with a subscription", () => {
     const s = await subscribed();
     vi.spyOn(console, "error").mockImplementation(() => {});
     const broken = { ...s.d, accounts: { ...s.accounts, getBilling: async () => { throw new Error("down"); } } };
-    expect(await deleteAccount(broken, s.account)).toBe("nothing_deleted");
+    expect(await deleteAccount(broken, s.account)).toMatchObject({ stage: "data", cancelled: false });
     expect(await s.statuses()).toEqual(["active"]);
     expect(await s.accounts.getProfile(s.userId)).not.toBeNull();
   });
@@ -259,7 +259,7 @@ describe("account deletion with a subscription", () => {
     s.d.fixtureBilling.before("cancelSubscriptions", () => {
       if (++calls === 2) s.d.fixtureBilling.fail(true, "cancelSubscriptions");
     });
-    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "deleted" });
     expect(errors.mock.calls.flat().join(" ")).toContain("subscription");
   });
 

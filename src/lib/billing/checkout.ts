@@ -11,8 +11,8 @@ import { isBillingUrl } from "./urls";
 
 type Deps = Pick<ServerDeps, "config" | "clock" | "store" | "accounts" | "billing" | "sleep">;
 
-/** `not_started`: before BILLING_START. `no_price`: the plan has no price yet. `subscribed`: a subscription is open (the portal changes it). `no_account`: the account was deleted meanwhile. `busy`: another checkout of the account is being opened. */
-export type CheckoutResult = { readonly ok: true; readonly url: string } | { readonly ok: false; readonly code: "not_started" | "no_price" | "subscribed" | "no_account" | "busy" };
+/** `subscribed`: a subscription is open (the portal changes it). `no_account`: the account was deleted meanwhile. `busy`: another checkout of the account is being opened. */
+export type CheckoutResult = { readonly ok: true; readonly url: string } | { readonly ok: false; readonly code: "subscribed" | "no_account" | "busy" };
 
 /** One checkout of an account is opened at a time; a second request waits this long for the first. */
 const LEASE_S = 60;
@@ -28,7 +28,7 @@ export function requireBillingUrl(deps: Pick<Deps, "config">, operation: string,
 /** The origin whose fixture pages may be navigated to: fixtures mode only, else null. */
 export const fixtureOriginOf = (config: Pick<ServerDeps["config"], "fixturesEnabled" | "publicOrigin">): string | null => (config.fixturesEnabled ? config.publicOrigin : null);
 
-/** The refusals that need no Stripe call and no read. */
+/** The plan's price for sale, or why there is none: `not_started` before BILLING_START, `no_price` while it has no price. No read, no Stripe call. */
 export function checkoutPrice(deps: Pick<Deps, "config" | "clock">, plan: PaidPlanId): { readonly priceId: string } | { readonly code: "not_started" | "no_price" } {
   if (!billingStarted(deps)) return { code: "not_started" };
   const priceId = deps.config.billing?.prices[plan]?.[0];
@@ -36,21 +36,18 @@ export function checkoutPrice(deps: Pick<Deps, "config" | "clock">, plan: PaidPl
 }
 
 /**
- * A hosted subscription checkout for the account (phase-5.md). The account has one Stripe customer: the
+ * A hosted subscription checkout of the price (checkoutPrice) for the account (phase-5.md). The account has one Stripe customer: the
  * stored one, or one created and bound now, before the checkout exists, so every later event finds its
  * account. An account with an open subscription is refused after asking Stripe, also before its webhook
  * arrives. A Store lease per account makes its requests take turns, so a customer has one payable
  * checkout. Throws when Stripe or the account data is unavailable.
  */
-export async function startCheckout(deps: Deps, account: Pick<Account, "accountId" | "email">, plan: PaidPlanId): Promise<CheckoutResult> {
-  const price = checkoutPrice(deps, plan);
-  if ("code" in price) return { ok: false, code: price.code };
-
+export async function startCheckout(deps: Deps, account: Pick<Account, "accountId" | "email">, priceId: string): Promise<CheckoutResult> {
   const leaseKey = `billing-checkout:${account.accountId}`;
   const token = await waitForLease(deps, leaseKey);
   if (token === null) return { ok: false, code: "busy" };
   try {
-    return await openCheckout(deps, account, price.priceId);
+    return await openCheckout(deps, account, priceId);
   } finally {
     await deps.store.releaseLease(leaseKey, token);
   }

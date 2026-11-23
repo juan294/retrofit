@@ -1,5 +1,6 @@
 import type { BillingView } from "@/lib/billing/view";
-import { BILLING_TEXT as T, PLAN_TEXT } from "@/lib/site/billing-texts";
+import { BILLING_TEXT as T } from "@/lib/site/billing-texts";
+import { PLAN_TEXT } from "@/lib/site/plan-texts";
 import { BillingButton } from "./BillingButton";
 
 /** "Your plan" on /account, from BILLING_START on. `view` is null when the plan could not be read. */

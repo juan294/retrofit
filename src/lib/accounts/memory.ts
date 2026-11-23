@@ -23,6 +23,7 @@ import {
   requirePublishInput,
   requireRefreshError,
   requireSaveInput,
+  requireTime,
   scoreOf,
   type AccountData,
   type ApiKey,
@@ -85,7 +86,6 @@ interface ApiKeyRow {
   readonly key: ApiKey;
   readonly accountId: string;
   readonly keyHash: string;
-  revoked: boolean;
 }
 
 /** Shared state. Two adapters over one backing model two server instances. */
@@ -102,8 +102,8 @@ export interface AccountMemoryBacking {
   readonly published: Map<string, PublishedRow>;
   /** Keyed by account id. */
   readonly billing: Map<string, BillingRecord>;
-  /** Recorded Stripe event ids and their types. */
-  readonly stripeEvents: Map<string, string>;
+  /** Recorded Stripe event ids, oldest first, with when they were received. */
+  readonly stripeEvents: Map<string, { readonly type: string; readonly receivedAt: number }>;
   /** SHA-256 of the customer ids of deleted accounts. */
   readonly deletedCustomers: Set<string>;
   /** Keyed by key id. */
@@ -534,12 +534,21 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       requireBillingEvent(event);
       const customerId = requireCustomerId(rawCustomer);
       const state = requireBillingState(rawState);
-      return op(() => {
+      return op((now) => {
         if (!byCustomer(customerId)) return { outcome: "unknown" };
         if (stripeEvents.has(event.id)) return { outcome: "duplicate" };
         const applied = applyState(customerId, state);
-        if (applied.outcome === "applied") stripeEvents.set(event.id, event.type);
+        if (applied.outcome === "applied") stripeEvents.set(event.id, { type: event.type, receivedAt: now });
         return applied;
+      });
+    },
+
+    async pruneStripeEvents(rawBefore, limit) {
+      const before = Date.parse(requireTime("before", rawBefore));
+      return op(() => {
+        const old = [...stripeEvents].filter(([, e]) => e.receivedAt < before).slice(0, Math.max(0, limit));
+        for (const [id] of old) stripeEvents.delete(id);
+        return old.length;
       });
     },
 
@@ -551,28 +560,26 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       const accountId = requireAccountId(rawId);
       requireApiKey(input);
       return op((now) => {
-        if ([...apiKeys.values()].filter((r) => r.accountId === accountId && !r.revoked).length >= MAX_API_KEYS) return { outcome: "full" };
+        if ([...apiKeys.values()].filter((r) => r.accountId === accountId).length >= MAX_API_KEYS) return { outcome: "full" };
         const key: ApiKey = { id: randomUUID(), hint: input.hint, createdAt: iso(now) };
-        apiKeys.set(key.id, { key, accountId, keyHash: input.keyHash, revoked: false });
+        apiKeys.set(key.id, { key, accountId, keyHash: input.keyHash });
         return { outcome: "created", key: { ...key } };
       });
     },
 
     async listApiKeys(accountId) {
-      return op(() => [...apiKeys.values()].filter((r) => r.accountId === accountId && !r.revoked).map((r) => ({ ...r.key })));
+      return op(() => [...apiKeys.values()].filter((r) => r.accountId === accountId).map((r) => ({ ...r.key })));
     },
 
     async revokeApiKey(accountId, keyId) {
       return op(() => {
-        const row = apiKeys.get(keyId);
-        if (!row || row.accountId !== accountId || row.revoked) return false;
-        row.revoked = true;
-        return true;
+        if (apiKeys.get(keyId)?.accountId !== accountId) return false;
+        return apiKeys.delete(keyId);
       });
     },
 
     async findApiKeyAccount(keyHash) {
-      return op(() => [...apiKeys.values()].find((r) => r.keyHash === keyHash && !r.revoked)?.accountId ?? null);
+      return op(() => [...apiKeys.values()].find((r) => r.keyHash === keyHash)?.accountId ?? null);
     },
   };
 }

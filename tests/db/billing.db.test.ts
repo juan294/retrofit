@@ -2,20 +2,17 @@
  * Billing races on the disposable gate stack that the memory adapter cannot show: a customer link for a
  * deleted auth user, and concurrent deliveries of many events for one customer.
  */
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
 import { expect, it } from "vitest";
 import { createSupabaseAccountData } from "@/lib/accounts/supabase";
 import { createServiceClient } from "@/lib/supabase/client";
 import { newAccount } from "./new-account";
+import { holdTransaction, query, waiterOf } from "./psql";
 
 const url = process.env.SUPABASE_GATE_URL;
 const serviceRoleKey = process.env.SUPABASE_GATE_SERVICE_ROLE_KEY;
-const dbUrl = process.env.SUPABASE_GATE_DB_URL;
-if (!url || !serviceRoleKey || !dbUrl) throw new Error("tests/db/billing.db.test.ts needs the disposable gate stack. Run it through pnpm test:db.");
+if (!url || !serviceRoleKey) throw new Error("tests/db/billing.db.test.ts needs the disposable gate stack. Run it through pnpm test:db.");
 
 const admin = createServiceClient({ url, serviceRoleKey });
-const query = async (sql: string) => (await promisify(execFile)("psql", [dbUrl, "-X", "-At", "-c", sql], { timeout: 10_000 })).stdout.trim();
 const data = () => createSupabaseAccountData({ url, serviceRoleKey });
 const tag = () => crypto.randomUUID().replaceAll("-", "").slice(0, 12);
 const at = (ms: number) => new Date(Date.UTC(2027, 1, 1) + ms).toISOString();
@@ -79,27 +76,24 @@ it("the data deletion waits for a link in progress and marks its customer", asyn
   const owner = await newAccount(admin);
   await a.ensureProfile(owner);
   const customer = `cus_${tag()}`;
-  const psql = spawn("psql", [dbUrl as string, "-X", "-At", "-v", "ON_ERROR_STOP=1"], { stdio: ["pipe", "pipe", "inherit"] });
-  const exited = new Promise<void>((resolve) => psql.once("exit", () => resolve()));
-  const held = new Promise<string>((resolve) => {
-    let out = "";
-    psql.stdout.on("data", (chunk) => {
-      out += String(chunk);
-      const pid = /held (\d+)/.exec(out)?.[1];
-      if (pid) resolve(pid);
-    });
-  });
-  psql.stdin.write(`begin;\nselect public.link_billing_customer('${owner}', '${customer}') ->> 'outcome';\nselect 'held ' || pg_backend_pid();\n`);
-  const pid = await held;
+  const held = await holdTransaction(`select public.link_billing_customer('${owner}', '${customer}')`);
   const deletion = a.deleteAccountData(owner);
-  const until = Date.now() + 8_000;
-  while (!(await query(`select pid from pg_stat_activity where ${pid} = any (pg_blocking_pids(pid)) limit 1`))) {
-    if (Date.now() > until) throw new Error("the deletion does not wait for the link");
-    await new Promise((r) => setTimeout(r, 25));
-  }
-  psql.stdin.end("commit;\n\\q\n");
-  await exited;
+  await waiterOf(held.pid);
+  await held.release();
   await deletion;
   expect(await a.getBillingByCustomer(customer)).toBeNull();
   expect(await a.isDeletedCustomer(customer)).toBe(true);
 }, 30_000);
+
+// Simplify 13. Fails if the daily cleanup deletes recent events, deletes without its bound, or the function's arguments are swapped.
+it("pruneStripeEvents deletes the oldest events before the time, at most the limit", async () => {
+  const a = data();
+  const id = tag();
+  await query(`insert into public.stripe_events (event_id, type, received_at) select 'evt_old_${id}_' || n, 't', '2016-01-01'::timestamptz + n * interval '1 day' from generate_series(1, 3) n`);
+  const left = async () => (await query(`select event_id from public.stripe_events where event_id like 'evt\\_old\\_${id}%' order by 1`)).split("\n").filter(Boolean).map((e) => e.at(-1));
+  expect(await a.pruneStripeEvents("2016-01-03T12:00:00.000Z", 1)).toBe(1);
+  expect(await left()).toEqual(["2", "3"]);
+  expect(await a.pruneStripeEvents("2016-01-03T12:00:00.000Z", 10)).toBe(1);
+  expect(await left()).toEqual(["3"]);
+  expect(await a.pruneStripeEvents("2016-06-01T00:00:00.000Z", 10)).toBe(1);
+});

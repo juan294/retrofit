@@ -2,6 +2,7 @@ import { PUBLISH_PER_HOUR, PUBLISH_TRIES_PER_HOUR } from "@/lib/accounts/limits"
 import { exactHost } from "@/lib/publish/host";
 import { isPublished, newReadFrom, publishHost, publishSource, type PublishHostDeps, type PublishSource } from "@/lib/publish/publish";
 import { publishedView } from "@/lib/publish/view";
+import type { ServerDeps } from "@/lib/server/runtime";
 import { PUBLISH_TEXT as T } from "@/lib/site/publish-texts";
 import { accountPost, type Fields } from "./account-post";
 import { refuseFeature } from "./entitled";
@@ -15,7 +16,7 @@ import { countIn } from "./limits";
  * it (publishedView), or null when there is none.
  */
 
-export type PublishDeps = PublishHostDeps;
+export type PublishDeps = PublishHostDeps & Pick<ServerDeps, "billing">;
 
 const PUBLISH_WINDOW = "publish";
 const TRY_WINDOW = "publish-try";

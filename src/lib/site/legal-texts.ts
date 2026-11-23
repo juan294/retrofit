@@ -18,6 +18,7 @@ import { ACCOUNT_COOKIE, ACCOUNT_SESSION_TTL_S } from "@/lib/accounts/session";
 import { CLAIM_LAPSE_AFTER } from "@/lib/accounts/limits";
 import { EXPIRED_GRACE_S } from "@/lib/analysis/record";
 import { VISITOR_COOKIE, VISITOR_MAX_AGE_S } from "@/lib/analysis/visitor";
+import { STRIPE_EVENTS_KEPT_MS } from "@/lib/api/cleanup";
 import { SIGN_IN_COOKIE, SIGN_IN_TTL_S } from "@/lib/api/sign-in";
 import { BADGE_MAX_AGE_S } from "@/lib/badge/handler";
 import { FREE_ANALYSES, FREE_WINDOW_S } from "@/lib/billing/free-limit";
@@ -92,8 +93,8 @@ export const PRIVACY: LegalDocument = {
         `After ${CLAIM_LAPSE_AFTER} failed daily checks of your claim, the page, its files and the badge are hidden until a check passes; the copy is kept. If you remove the claim, or another account verifies the site, the copy is deleted.`,
         "A published agent works only with the visitor's own AI key, never with Retrofit's free AI. A published page and a badge set no cookie.",
         "Payments go through Stripe's own checkout and billing pages when paid plans start, for now in Stripe's test mode: no real payment is taken. When you open checkout, Stripe receives your email address and your Retrofit account id.",
-        "Retrofit stores your Stripe customer id, your plan and its status, the subscription id, the end of the paid period, whether the plan ends then, and when Retrofit last checked, and, while a payment is missing, the day Retrofit first saw that. It also keeps the ids, types and times of the payment events it has handled. Card details go only to Stripe.",
-        "Retrofit shows an API key once and stores a hash of it, its last four characters and its dates. Until paid plans start, calls with a key are counted per network and per account; after that, per account.",
+        `Retrofit stores your Stripe customer id, your plan and its status, the subscription id, the end of the paid period, whether the plan ends then, and when Retrofit last checked, and, while a payment is missing, the day Retrofit first saw that. It also keeps the ids, types and times of the payment events it has handled, for ${STRIPE_EVENTS_KEPT_MS / 86_400_000} days. Card details go only to Stripe.`,
+        "Retrofit shows an API key once and stores a hash of it, its last four characters and its dates. Revoking a key deletes these. Until paid plans start, calls with a key are counted per network and per account; after that, per account.",
         "Deleting your account cancels a paid plan at once, before anything else. Stripe keeps its customer and payment records. Retrofit keeps only a hash of the deleted account's Stripe customer id and the time, so that a payment that arrives late is cancelled.",
         "Deleting your account: Retrofit deletes the account and its data (claims, published pages, saved reports, API keys and sign-in sessions). The sign-in provider may keep security logs for a limited time.",
       ],

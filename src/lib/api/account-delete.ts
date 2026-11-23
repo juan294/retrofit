@@ -8,7 +8,8 @@ import { ACCOUNT_TEXT } from "@/lib/site/account-texts";
 import { readSmallBody } from "./body";
 import { json, seeOther } from "./json";
 
-const FAILURE = { subscription_kept: "subscription", nothing_deleted: "failed", partial: "partial", cancelled_only: "cancelled", partial_cancelled: "partial-cancelled" } as const;
+/** The account page's notice (?delete=) for each stage that is not `deleted`, and after a cancelled plan. */
+const NOTICE = { subscription: ["subscription", "subscription"], data: ["failed", "cancelled"], user: ["partial", "partial-cancelled"] } as const;
 
 /**
  * POST /api/account/delete (the account page's form, urlencoded `confirm=yes`) -> 303.
@@ -32,7 +33,7 @@ export async function handleAccountDelete(request: Request, deps: Pick<ServerDep
   const confirmed = text !== "too large" && new URLSearchParams(text).get("confirm") === "yes";
   if (!confirmed) return seeOther(deps, "/account?delete=confirm");
 
-  const outcome = await deleteAccount(deps, account);
-  if (outcome === "deleted") return seeOther(deps, "/sign-in?account=deleted", [accountClearCookie(isSecureRequest(request, deps.config))]);
-  return seeOther(deps, `/account?delete=${FAILURE[outcome]}`);
+  const { stage, cancelled } = await deleteAccount(deps, account);
+  if (stage === "deleted") return seeOther(deps, "/sign-in?account=deleted", [accountClearCookie(isSecureRequest(request, deps.config))]);
+  return seeOther(deps, `/account?delete=${NOTICE[stage][cancelled ? 1 : 0]}`);
 }

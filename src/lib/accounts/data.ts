@@ -395,13 +395,19 @@ export interface AccountData {
    */
   isDeletedCustomer(customerId: string): Promise<boolean>;
 
+  /**
+   * Deletes recorded events received before `before` (ISO 8601), the oldest first, at most `limit`; returns how many. A replay of a
+   * pruned event is applied as what Stripe says then, read after the stored state, so it can never bring an old state back.
+   */
+  pruneStripeEvents(before: string, limit: number): Promise<number>;
+
   /** Stores a new API key's hash, at most MAX_API_KEYS active keys per account. Atomic across instances. Throws RangeError for invalid input. */
   createApiKey(accountId: string, input: NewApiKey): Promise<CreateApiKeyResult>;
   /** The account's active keys, oldest first. Empty for an id that is not a UUID. */
   listApiKeys(accountId: string): Promise<ApiKey[]>;
-  /** Revokes one active key of the account. False when there was none. */
+  /** Revokes one key of the account: its row is deleted, so the key is unknown from then on. False when there was none. */
   revokeApiKey(accountId: string, keyId: string): Promise<boolean>;
-  /** The account of an active key by its hash, or null (unknown, revoked or malformed). */
+  /** The account of a key by its hash, or null (unknown, revoked or malformed). */
   findApiKeyAccount(keyHash: string): Promise<string | null>;
 }
 
@@ -449,7 +455,7 @@ export function jsonBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value));
 }
 
-function requireTime(name: string, value: unknown): string {
+export function requireTime(name: string, value: unknown): string {
   const ms = typeof value === "string" ? Date.parse(value) : NaN;
   if (!Number.isFinite(ms)) throw new RangeError(`${name} must be an ISO date and time`);
   return new Date(ms).toISOString();

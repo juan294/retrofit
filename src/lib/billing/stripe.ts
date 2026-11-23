@@ -155,7 +155,7 @@ export function createStripeGateway(options: StripeGatewayOptions): BillingGatew
         await keepOnly(s, open, same);
         if (same) return hosted("createCheckout", same.url);
         // No idempotency key of ours: it would replay a checkout that is closed by now. The SDK keys its own retries.
-        await s.checkout.sessions.create({
+        const created = await s.checkout.sessions.create({
           mode: "subscription",
           customer: customerId,
           client_reference_id: accountId,
@@ -167,7 +167,9 @@ export function createStripeGateway(options: StripeGatewayOptions): BillingGatew
         });
         // Another caller may have opened one meanwhile. Every caller that sees the same list keeps the same one:
         // the newest price, and of it the oldest checkout.
-        const now = (await openSessions(s, customerId)).sort((x, y) => x.created - y.created || (x.id < y.id ? -1 : 1));
+        const listed = await openSessions(s, customerId);
+        // The list may not show the new one yet.
+        const now = (listed.some((x) => x.id === created.id) ? listed : [...listed, created]).sort((x, y) => x.created - y.created || (x.id < y.id ? -1 : 1));
         const newest = now.at(-1);
         const keeper = now.find((x) => newest && priceOf(x) === priceOf(newest));
         await keepOnly(s, now, keeper);

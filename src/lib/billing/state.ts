@@ -1,4 +1,4 @@
-import type { PaidPlanId, PlanId } from "./plans";
+import { isPaidPlan, PLANS, type PaidPlanId, type PlanId } from "./plans";
 
 /**
  * What a customer's Stripe subscriptions mean for Retrofit: the plan (by price id only, never by
@@ -91,14 +91,14 @@ export function entitledPlan(state: (Access & Pick<BillingState, "plan">) | null
   return state && givesAccess(state, now) ? state.plan : "free";
 }
 
-const RANK: Readonly<Record<PlanId, number>> = { free: 0, pro: 1, agency: 2 };
+/** The order of the plans table: a later plan includes everything of an earlier one. */
+const rankOf = (id: PlanId): number => PLANS.findIndex((p) => p.id === id);
 
 /** The price ids that mean each paid plan: the first is for sale, the others are kept for their subscribers. */
 export type PlanPrices = Readonly<Partial<Record<PaidPlanId, readonly string[]>>>;
 
 function planOfPrices(priceIds: readonly string[], prices: PlanPrices): PlanId {
-  const has = (plan: PaidPlanId) => prices[plan]?.some((id) => priceIds.includes(id)) ?? false;
-  return has("agency") ? "agency" : has("pro") ? "pro" : "free";
+  return PLANS.findLast(({ id }) => isPaidPlan(id) && prices[id]?.some((price) => priceIds.includes(price)))?.id ?? "free";
 }
 
 const NONE: BillingState = { plan: "free", status: "none", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, unpaidSince: null };
@@ -108,7 +108,7 @@ export function billingState(subscriptions: readonly StripeSubscription[], price
   const best = subscriptions
     .map((s) => ({ ...s, unpaidSince: s.status === "past_due" ? new Date(now).toISOString() : null }))
     .map((s) => ({ s, plan: planOfPrices(s.priceIds, prices), access: givesAccess(s, now) }))
-    .sort((x, y) => (y.access ? RANK[y.plan] : 0) - (x.access ? RANK[x.plan] : 0) || Number(y.access) - Number(x.access) || y.s.created - x.s.created)[0];
+    .sort((x, y) => (y.access ? rankOf(y.plan) : 0) - (x.access ? rankOf(x.plan) : 0) || Number(y.access) - Number(x.access) || y.s.created - x.s.created)[0];
   if (!best) return NONE;
   const { s, plan } = best;
   return { plan, status: s.status, currentPeriodEnd: s.currentPeriodEnd, cancelAtPeriodEnd: s.cancelAtPeriodEnd, subscriptionId: s.id, unpaidSince: s.unpaidSince };

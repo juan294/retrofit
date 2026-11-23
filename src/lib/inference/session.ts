@@ -4,12 +4,12 @@ import { isSameOrigin } from "@/lib/analysis/run";
 import { isSecureRequest, sameHash } from "@/lib/analysis/visitor";
 import { buildCookie, cookieValue } from "@/lib/security/cookies";
 import { sha256Hex } from "@/lib/security/tokens";
-import { billingStarted, entitlement } from "@/lib/billing/entitlements";
+import { billingStarted } from "@/lib/billing/entitlements";
+import { refuseFeature } from "@/lib/api/entitled";
 import { json } from "@/lib/api/json";
 import { clientIdFromRequest, clientWindow, nextUtcMidnight, ttlUntil, utcDay } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
 import type { Store } from "@/lib/store/types";
-import { PLAN_TEXT } from "@/lib/site/billing-texts";
 import { SESSION_TTL_MS, signSession, verifySession, type SessionClaims, type SessionPool } from "./token";
 
 /**
@@ -106,10 +106,8 @@ export async function handleSession(request: Request, deps: ServerDeps): Promise
     const existing = await readSession(request, deps);
     if (billingStarted(deps) && existing?.claims.pool !== "judge") {
       const account = await readAccount(request, deps);
-      const allowed = account ? await entitlement(deps, account.accountId, "free_ai_preview") : null;
-      if (allowed && !allowed.allowed) {
-        return allowed.reason === "unavailable" ? unavailable() : json(403, { error: "plan_required", message: PLAN_TEXT.required.free_ai_preview, href: "/pricing" });
-      }
+      const refused = account && (await refuseFeature(deps, account.accountId, "free_ai_preview", unavailable));
+      if (refused) return refused;
     }
     if (existing) {
       const renewed = await updateState(deps.store, existing.claims.sid, (s) => ({ pool: s.pool, createdAt: s.createdAt }));

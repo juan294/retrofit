@@ -93,9 +93,9 @@ describe("the daily sites of an account", () => {
   // P5-R3. Fails if a default lets one account use the shared daily crawl cap, or the limits cannot be set.
   it("defaults to 50, 100 and 300, below the shared cap, and reads each as a positive number", () => {
     const c = local();
-    expect([c.accountSitesPerDayFree, c.accountSitesPerDayPro, c.accountSitesPerDayAgency]).toEqual([50, 100, 300]);
-    expect(c.accountSitesPerDayAgency * 2).toBeLessThan(c.crawlMaxHostsPerDay);
-    expect(local({ ACCOUNT_SITES_PER_DAY_PRO: "7" }).accountSitesPerDayPro).toBe(7);
+    expect(c.accountSitesPerDay).toEqual({ free: 50, pro: 100, agency: 300 });
+    expect(c.accountSitesPerDay.agency * 2).toBeLessThan(c.crawlMaxHostsPerDay);
+    expect(local({ ACCOUNT_SITES_PER_DAY_PRO: "7" }).accountSitesPerDay).toEqual({ free: 50, pro: 7, agency: 300 });
     expect(errorOf(() => local({ ACCOUNT_SITES_PER_DAY_AGENCY: "0" })).variable).toBe("ACCOUNT_SITES_PER_DAY_AGENCY");
   });
 });

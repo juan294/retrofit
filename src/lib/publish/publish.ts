@@ -7,7 +7,7 @@ import { GenerationFailed, generateNetwork, type NetworkValidator } from "@/lib/
 import type { ServerDeps } from "@/lib/server/runtime";
 import { agentSnapshot } from "@/lib/snapshot/types";
 
-export type PublishHostDeps = Pick<ServerDeps, "config" | "store" | "accounts" | "billing" | "clock"> & {
+export type PublishHostDeps = Pick<ServerDeps, "config" | "store" | "accounts" | "clock"> & {
   /** Replaces the vendored validator (tests force a failure through it). */
   readonly validate?: NetworkValidator;
 };

@@ -5,14 +5,16 @@ import type { BillingRecord } from "./data";
 import { endAccountSessions, endLastAccountSession, type Account } from "./session";
 
 /**
- * `deleted`: everything is gone. `subscription_kept`: Stripe did not confirm the cancellation, and
- * nothing was changed or deleted (no session ended either). `nothing_deleted`: a step before the data
- * deletion failed, so no account data was deleted (the account's other browsers may have been signed
- * out). `partial`: the data is deleted but the Supabase Auth user is not; this browser stays signed in,
- * and a retry finishes the deletion. `cancelled_only` and `partial_cancelled` are `nothing_deleted` and
- * `partial` after the plan was already cancelled, which the visitor must be told.
+ * How far the deletion came. `deleted`: everything is gone. `subscription`: Stripe did not confirm the
+ * cancellation, and nothing was changed or deleted (no session ended either). `data`: it stopped before or
+ * at the data deletion, so no account data was deleted (the account's other browsers may have been signed
+ * out). `user`: the data is deleted but the Supabase Auth user is not; this browser stays signed in, and a
+ * retry finishes the deletion. `cancelled`: a plan was already cancelled, which the visitor must be told.
  */
-export type DeleteOutcome = "deleted" | "subscription_kept" | "nothing_deleted" | "partial" | "cancelled_only" | "partial_cancelled";
+export interface DeleteOutcome {
+  readonly stage: "deleted" | "subscription" | "data" | "user";
+  readonly cancelled: boolean;
+}
 
 /**
  * Deletes the signed-in account (parent plan, "Accounts and sessions"). The order keeps every
@@ -46,7 +48,7 @@ export async function deleteAccount(deps: Pick<ServerDeps, "config" | "clock" | 
     record = await deps.accounts.getBilling(account.accountId);
   } catch (e) {
     fail("before data deletion", e);
-    return "nothing_deleted";
+    return { stage: "data", cancelled: false };
   }
   // True when a plan ended by this deletion, now or in an earlier try.
   let cancelled = record?.status === "canceled";
@@ -54,7 +56,7 @@ export async function deleteAccount(deps: Pick<ServerDeps, "config" | "clock" | 
     if (record && (await deps.billing.cancelSubscriptions(record.customerId)) > 0) cancelled = true;
   } catch (e) {
     logBillingFailure("Account deletion, cancelling the subscription", e);
-    return "subscription_kept";
+    return { stage: "subscription", cancelled };
   }
   if (record && cancelled) await storeState(deps, record);
   try {
@@ -62,17 +64,17 @@ export async function deleteAccount(deps: Pick<ServerDeps, "config" | "clock" | 
     await deps.accounts.deleteAccountData(account.accountId);
   } catch (e) {
     fail("before data deletion", e);
-    return cancelled ? "cancelled_only" : "nothing_deleted";
+    return { stage: "data", cancelled };
   }
   try {
     await deps.auth.deleteUser(account.accountId);
   } catch (e) {
     fail("of the auth user", e);
-    return cancelled ? "partial_cancelled" : "partial";
+    return { stage: "user", cancelled };
   }
   if (record) await deps.billing.cancelSubscriptions(record.customerId).catch((e: unknown) => logBillingFailure("Account deletion, the last subscription check", e));
   await Promise.all([endLastAccountSession(deps.store, account), forgetAccountAnalyses(deps.store, account.accountId)]).catch((e: unknown) => fail("of this session", e));
-  return "deleted";
+  return { stage: "deleted", cancelled };
 }
 
 /** Stores the cancelled state. A failure is logged: the webhook and the account page read it again. */

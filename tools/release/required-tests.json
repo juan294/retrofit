@@ -9762,6 +9762,12 @@
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) billing pruning events before a time keeps the later ones and refuses a time that is not one"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
       "title": "AccountData contract: memory (two clients, one backing) billing keeps the first start of an unpaid time while the same subscription stays past due"
     },
     {
@@ -9780,6 +9786,12 @@
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) API keys revoking deletes the key's row"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
       "title": "AccountData contract: memory (two clients, one backing) API keys keeps at most 5 active keys per account, also when creates race"
     },
     {
@@ -9787,6 +9799,12 @@
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
       "title": "AccountData contract: memory (two clients, one backing) API keys refuses an invalid account id, hash or hint with RangeError"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "memory AccountData specifics prunes at most `limit` events received before the time"
     },
     {
       "rule": "accounts deletion",
@@ -9876,6 +9894,12 @@
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port pruneStripeEvents throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
       "title": "Supabase AccountData on a closed port createApiKey throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
     },
     {
@@ -9895,6 +9919,18 @@
       "suite": "unit",
       "file": "tests/accounts/supabase-failure.test.ts",
       "title": "Supabase AccountData on a closed port findApiKeyAccount throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/api/cleanup.test.ts",
+      "title": "GET /api/cron/cleanup prunes Stripe events older than 90 days, at most 10,000 a run, after the secret"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/api/cleanup.test.ts",
+      "title": "GET /api/cron/cleanup answers 503 when the events cannot be pruned"
     },
     {
       "rule": "API keys",
@@ -10068,6 +10104,12 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/checkout.test.ts",
+      "title": "POST /api/billing/checkout a checkout paid meanwhile answers subscribed, and unavailable while Stripe does not show it"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/checkout.test.ts",
       "title": "POST /api/billing/checkout sells the first price of the list"
     },
     {
@@ -10164,6 +10206,12 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/enforcement.test.ts",
+      "title": "the free AI session a valid judge code works for a signed-in account without a plan, with every check, and for every visitor on both sides"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/enforcement.test.ts",
       "title": "the free AI session answers the own-key text when the plan cannot be read"
     },
     {
@@ -10182,31 +10230,169 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: free and analyze"
+      "title": "entitlements by plan and feature the table: free and analyze"
     },
     {
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: free and preview_own_key"
+      "title": "entitlements by plan and feature the table: free and preview_own_key"
     },
     {
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: free and download_bundle"
+      "title": "entitlements by plan and feature the table: free and download_bundle"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: free and publish"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: free and badge"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: free and saved_reports"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: free and free_ai_preview"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: free and api_keys"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: free and api_high_volume"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: pro and analyze"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: pro and preview_own_key"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: pro and download_bundle"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: pro and publish"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: pro and badge"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: pro and saved_reports"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: pro and free_ai_preview"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: pro and api_keys"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: pro and api_high_volume"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: agency and analyze"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: agency and preview_own_key"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: agency and download_bundle"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: agency and publish"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: agency and badge"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: agency and saved_reports"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: agency and free_ai_preview"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: agency and api_keys"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "entitlements by plan and feature the table: agency and api_high_volume"
     },
     {
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/entitlements.test.ts",
       "title": "entitlements by plan and feature after the start: free and publish"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: free and badge"
     },
     {
       "rule": "billing start and entitlements",
@@ -10230,37 +10416,7 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: free and api_high_volume"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: pro and analyze"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: pro and preview_own_key"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: pro and download_bundle"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
       "title": "entitlements by plan and feature after the start: pro and publish"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: pro and badge"
     },
     {
       "rule": "billing start and entitlements",
@@ -10284,37 +10440,7 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: pro and api_high_volume"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: agency and analyze"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: agency and preview_own_key"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: agency and download_bundle"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
       "title": "entitlements by plan and feature after the start: agency and publish"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: agency and badge"
     },
     {
       "rule": "billing start and entitlements",
@@ -10338,37 +10464,7 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature after the start: agency and api_high_volume"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature 1 ms before the start: analyze is allowed for everybody, and nothing is read"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature 1 ms before the start: preview_own_key is allowed for everybody, and nothing is read"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature 1 ms before the start: download_bundle is allowed for everybody, and nothing is read"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
       "title": "entitlements by plan and feature 1 ms before the start: publish is allowed for everybody, and nothing is read"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature 1 ms before the start: badge is allowed for everybody, and nothing is read"
     },
     {
       "rule": "billing start and entitlements",
@@ -10392,19 +10488,7 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature 1 ms before the start: api_high_volume is allowed for everybody, and nothing is read"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
       "title": "entitlements by plan and feature a plan that is not active counts as Free"
-    },
-    {
-      "rule": "billing start and entitlements",
-      "suite": "unit",
-      "file": "tests/billing/entitlements.test.ts",
-      "title": "entitlements by plan and feature without an account only the Free features are allowed"
     },
     {
       "rule": "billing start and entitlements",
@@ -10416,7 +10500,13 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/entitlements.test.ts",
-      "title": "a plan whose stored period passed ends when Stripe says so, and when Stripe cannot be asked"
+      "title": "a plan whose stored period passed ends when Stripe says so; while Stripe cannot be asked the answer is a retry, never that a plan is missing"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "a plan whose stored period passed answers a retry while another read is in progress and when the read takes too long"
     },
     {
       "rule": "billing start and entitlements",
@@ -10428,7 +10518,7 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/entitlements.test.ts",
-      "title": "billing data unreadable allows the Free features and denies the paid ones with a retry"
+      "title": "billing data unreadable denies the paid features with a retry (an analysis asks for no plan: free-limit.test.ts)"
     },
     {
       "rule": "billing start and entitlements",
@@ -10611,6 +10701,36 @@
       "title": "signed-in accounts after the start the hourly analysis cap also counts per account"
     },
     {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/judge-form.test.ts",
+      "title": "the judge form tries the code after a plan refusal or an unreadable plan"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/judge-form.test.ts",
+      "title": "the judge form shows every other refusal of the session and does not try the code"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/post.test.ts",
+      "title": "an answer on the page postJson never throws, and posts same-origin JSON"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/post.test.ts",
+      "title": "an answer on the page statusOf takes the message, localizes a refusal's time, and links only to the plans"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/post.test.ts",
+      "title": "an answer on the page StatusMessage announces a status or an alert"
+    },
+    {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/prices.test.ts",
@@ -10633,6 +10753,12 @@
       "suite": "unit",
       "file": "tests/billing/prices.test.ts",
       "title": "plan amounts does not wait longer than its limit"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/prices.test.ts",
+      "title": "plan amounts views share one read, and a late answer is kept"
     },
     {
       "rule": "billing",
@@ -10746,12 +10872,6 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/reconcile.test.ts",
-      "title": "the account page's billing a past_due plan is never activating, also after a checkout and when Stripe is unreachable"
-    },
-    {
-      "rule": "billing",
-      "suite": "unit",
-      "file": "tests/billing/reconcile.test.ts",
       "title": "the account page's billing a paused plan is never activating, also after a checkout and when Stripe is unreachable"
     },
     {
@@ -10759,6 +10879,12 @@
       "suite": "unit",
       "file": "tests/billing/reconcile.test.ts",
       "title": "the account page's billing a incomplete_expired plan is never activating, also after a checkout and when Stripe is unreachable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/reconcile.test.ts",
+      "title": "the account page's billing a past due plan ends 7 days after it was first seen, also when a later read shows a new unpaid period; a payment restores it"
     },
     {
       "rule": "billing",
@@ -10890,25 +11016,19 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules past due on the day"
+      "title": "subscription status rules past due, seen for the first time"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules past due, 7 days less 1 ms"
+      "title": "subscription status rules past due in the middle of a paid period (a switch whose payment failed)"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules past due, 7 days"
-    },
-    {
-      "rule": "billing",
-      "suite": "unit",
-      "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules past due without a period start"
+      "title": "subscription status rules past due, first seen after the period ended"
     },
     {
       "rule": "billing",
@@ -10956,7 +11076,7 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules past due counts from the stored start of the unpaid time"
+      "title": "subscription status rules past due keeps access for 7 days from the first time Retrofit saw it"
     },
     {
       "rule": "billing",
@@ -11119,6 +11239,30 @@
       "suite": "unit",
       "file": "tests/billing/stripe.test.ts",
       "title": "Stripe adapter two racing checkouts (price_pro and price_agency) leave one payable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/stripe.test.ts",
+      "title": "Stripe adapter a checkout paid before the new one exists stops the new checkout and leaves none payable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/stripe.test.ts",
+      "title": "Stripe adapter a checkout paid after the new one was created stops the new checkout and leaves none payable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/stripe.test.ts",
+      "title": "Stripe adapter the checkout just created counts although the list does not show it yet"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/stripe.test.ts",
+      "title": "Stripe adapter alternating plans many times always gives an open checkout of the chosen plan, and one at a time"
     },
     {
       "rule": "billing",
@@ -11376,6 +11520,12 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/webhook.test.ts",
+      "title": "events a replay after the record was pruned applies only what Stripe says now"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
       "title": "events acknowledges and ignores other types"
     },
     {
@@ -11562,6 +11712,12 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/webhook.test.ts",
+      "title": "account deletion against a checkout a checkout opened between the data and the auth user is not cancelled when it is paid later: it raises the alert"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
       "title": "account deletion against a checkout a record deleted while the event is applied is not recreated"
     },
     {
@@ -11622,6 +11778,12 @@
       "rule": "production evidence tooling",
       "suite": "unit",
       "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs after BILLING_START before the start the concurrent analyses run first, on a cold site"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
       "title": "production-evidence.mjs after BILLING_START uses the product's own limit text and earliest start"
     },
     {
@@ -11641,6 +11803,18 @@
       "suite": "unit",
       "file": "tests/site/legal-texts.test.ts",
       "title": "payments, the free limit and API keys in the privacy notice and the terms states the free-analysis count, its hash and its period"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "payments, the free limit and API keys in the privacy notice and the terms is true about the counting of calls with a key on both sides of the start, and names the unpaid date"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "payments, the free limit and API keys in the privacy notice and the terms says how long payment events are kept and that revoking a key deletes it"
     },
     {
       "rule": "privacy and terms drafts",
@@ -11736,6 +11910,12 @@
       "rule": "accounts data",
       "suite": "db",
       "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) billing pruning events before a time keeps the later ones and refuses a time that is not one"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
       "title": "AccountData contract: supabase (two clients) billing keeps the first start of an unpaid time while the same subscription stays past due"
     },
     {
@@ -11749,6 +11929,12 @@
       "suite": "db",
       "file": "tests/db/accounts.db.test.ts",
       "title": "AccountData contract: supabase (two clients) API keys a revoked key is found no more; only its account revokes it, once"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) API keys revoking deletes the key's row"
     },
     {
       "rule": "accounts data",
@@ -11787,6 +11973,12 @@
       "title": "the data deletion waits for a link in progress and marks its customer"
     },
     {
+      "rule": "billing",
+      "suite": "db",
+      "file": "tests/db/billing.db.test.ts",
+      "title": "pruneStripeEvents deletes the oldest events before the time, at most the limit"
+    },
+    {
       "rule": "store contract and database privileges",
       "suite": "db",
       "file": "tests/db/store.test.ts",
@@ -11815,6 +12007,12 @@
       "suite": "playwright",
       "file": "billing.spec.ts",
       "title": "plans after BILLING_START an API key is shown once, works, and stops when it is revoked"
+    },
+    {
+      "rule": "billing",
+      "suite": "playwright",
+      "file": "billing.spec.ts",
+      "title": "plans after BILLING_START a judge signed in to a Free account turns on judge access with the code"
     },
     {
       "rule": "billing",

@@ -21,13 +21,22 @@ export type Feature =
   | "api_keys"
   | "api_high_volume";
 
+/** The features a route refuses without a plan (src/lib/api/entitled.ts). */
+export type GatedFeature = Extract<Feature, "publish" | "saved_reports" | "free_ai_preview" | "api_keys">;
+
 export interface Plan {
   readonly id: PlanId;
   readonly name: string;
   readonly summary: string;
   readonly features: readonly Feature[];
+  readonly limits: PlanLimits;
+}
+
+export interface PlanLimits {
   /** Site scores per hour of the account's API keys together (GET /api/score); null without API keys. */
   readonly scoresPerHour: number | null;
+  /** Distinct sites the account may analyze and score in a UTC day (ACCOUNT_SITES_PER_DAY_<PLAN> replaces it). */
+  readonly sitesPerDay: number;
 }
 
 /** The text the pricing page shows for each feature. */
@@ -48,9 +57,9 @@ const PRO: readonly Feature[] = [...FREE, "publish", "badge", "saved_reports", "
 const AGENCY: readonly Feature[] = [...PRO, "api_high_volume"];
 
 export const PLANS: readonly Plan[] = [
-  { id: "free", name: "Free", summary: "Check your site and try its agent with your own AI key.", features: FREE, scoresPerHour: null },
-  { id: "pro", name: "Pro", summary: "Publish the agent for a site you own, with the badge and saved reports.", features: PRO, scoresPerHour: 60 },
-  { id: "agency", name: "Agency", summary: "For agencies that check many client and prospect sites.", features: AGENCY, scoresPerHour: 300 },
+  { id: "free", name: "Free", summary: "Check your site and try its agent with your own AI key.", features: FREE, limits: { scoresPerHour: null, sitesPerDay: 50 } },
+  { id: "pro", name: "Pro", summary: "Publish the agent for a site you own, with the badge and saved reports.", features: PRO, limits: { scoresPerHour: 60, sitesPerDay: 100 } },
+  { id: "agency", name: "Agency", summary: "For agencies that check many client and prospect sites.", features: AGENCY, limits: { scoresPerHour: 300, sitesPerDay: 300 } },
 ];
 
 export const isPaidPlan = (id: unknown): id is PaidPlanId => id === "pro" || id === "agency";

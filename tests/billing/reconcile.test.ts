@@ -3,8 +3,8 @@ import { accountBilling, RECONCILE_AFTER_MS } from "@/lib/billing/reconcile";
 import { billingView } from "@/lib/billing/view";
 import { dateText } from "@/lib/site/account-texts";
 import { BILLING_TEXT } from "@/lib/site/billing-texts";
-import { TEST_ACCOUNT, captureConsole, type TestDeps } from "../helpers/server-deps";
-import { billingDeps, OWNER, PRICES, SECRET_KEY } from "./setup";
+import { captureConsole, type TestDeps } from "../helpers/server-deps";
+import { billingDeps, customer, OWNER, PRICES, SECRET_KEY } from "./setup";
 
 const lines: string[] = [];
 beforeEach(() => {
@@ -14,12 +14,6 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 const MIN = 60_000;
-async function customer(d: TestDeps): Promise<string> {
-  const id = await d.billing.createCustomer({ accountId: OWNER, email: TEST_ACCOUNT.email });
-  await d.accounts.ensureProfile(OWNER);
-  await d.accounts.linkBillingCustomer(OWNER, id);
-  return id;
-}
 const reads = (d: TestDeps) => d.fixtureBilling.calls.filter((c) => c === "getSubscriptions").length;
 const load = (d: TestDeps, o: { checkout?: boolean; waitMs?: number } = {}) => accountBilling(d, OWNER, { checkout: false, ...o });
 

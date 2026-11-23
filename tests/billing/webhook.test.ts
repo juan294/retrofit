@@ -5,8 +5,8 @@ import { deleteAccount } from "@/lib/accounts/delete";
 import { createAccountSession, readAccountByToken } from "@/lib/accounts/session";
 import { handleCheckout } from "@/lib/api/billing";
 import { handleBillingWebhook, MAX_WEBHOOK_BYTES } from "@/lib/api/billing-webhook";
-import { captureConsole, OTHER_ACCOUNT, postRequest, PUBLIC_ORIGIN, TEST_ACCOUNT, testDeps, type TestDeps, type TestDepsOptions } from "../helpers/server-deps";
-import { billingDeps, brokenBilling, OWNER, PRICES, SECRET_KEY, WEBHOOK_SECRET } from "./setup";
+import { captureConsole, OTHER_ACCOUNT, postRequest, PUBLIC_ORIGIN, testDeps, type TestDeps, type TestDepsOptions } from "../helpers/server-deps";
+import { billingDeps, brokenBilling, customer, OWNER, PRICES, SECRET_KEY, WEBHOOK_SECRET } from "./setup";
 
 const lines: string[] = [];
 beforeEach(() => {
@@ -39,13 +39,6 @@ function send(d: TestDeps, body: string, o: { signature?: string | null; secret?
 }
 const deliver = (d: TestDeps, e: EventSpec) => send(d, eventBody(e));
 
-/** A customer linked to OWNER and created at the gateway for it. */
-async function customer(d: TestDeps): Promise<string> {
-  const id = await d.billing.createCustomer({ accountId: OWNER, email: TEST_ACCOUNT.email });
-  await d.accounts.ensureProfile(OWNER);
-  await d.accounts.linkBillingCustomer(OWNER, id);
-  return id;
-}
 async function setup(o: TestDepsOptions = {}) {
   const r = billingDeps(0, o);
   return { ...r, cus: await customer(r.d) };
@@ -123,6 +116,24 @@ describe("events", () => {
     clock.advance(1000);
     await deliver(d, { type, customer: cus, ref: OWNER });
     expect(await d.accounts.getBilling(OWNER)).toMatchObject({ status: "canceled" });
+  });
+
+  // Simplify 13. Fails if an event replayed after its record was pruned (90 days) can bring an old state back: what is applied is always
+  // what Stripe says when the replay arrives, read after the stored state.
+  it("a replay after the record was pruned applies only what Stripe says now", async () => {
+    const { d, cus, clock } = await setup();
+    const sub = d.fixtureBilling.subscribe(cus, { priceIds: [PRICES.pro] });
+    const body = eventBody({ customer: cus });
+    await send(d, body);
+    d.fixtureBilling.update(sub.id, { status: "canceled" });
+    clock.advance(91 * 24 * 3600_000);
+    await deliver(d, { customer: cus });
+    const stored = await d.accounts.getBilling(OWNER);
+    expect(stored).toMatchObject({ status: "canceled" });
+    expect(await d.accounts.pruneStripeEvents(new Date(Date.now() + 10 * 365 * 86_400_000).toISOString(), 100)).toBe(2);
+    expect((await send(d, body)).status).toBe(200);
+    expect(await d.accounts.getBilling(OWNER)).toMatchObject({ status: "canceled", plan: "pro" });
+    expect(Date.parse((await d.accounts.getBilling(OWNER))?.stateAt as string)).toBeGreaterThan(Date.parse(stored?.stateAt as string));
   });
 
   // Fails if an unknown type is an error (Stripe would retry it for days), is recorded, or reads anything.
@@ -399,7 +410,7 @@ describe("account deletion against a checkout", () => {
     const racing: TestDeps = { ...d, accounts, auth };
     if (when === "before the cancellation") pay();
     const account = await readAccountByToken(token, d);
-    expect(await deleteAccount(racing, account!)).toBe("deleted");
+    expect(await deleteAccount(racing, account!)).toMatchObject({ stage: "deleted" });
     await deliver(d, { type: COMPLETED, customer: cus, ref: userId });
     await deliver(d, { customer: cus });
     expect((await d.billing.getSubscriptions(cus)).filter((s) => s.status === "active")).toEqual([]);
@@ -416,7 +427,7 @@ describe("account deletion against a checkout", () => {
     const { token } = await createAccountSession(d, { userId, email: "late@example.test" });
     const account = await readAccountByToken(token, d);
     d.fixtureBilling.before("createCustomer", async () => {
-      expect(await deleteAccount(d, account!)).toBe("deleted");
+      expect(await deleteAccount(d, account!)).toMatchObject({ stage: "deleted" });
     });
     const res = await handleCheckout(postRequest("/api/billing/checkout", { plan: "pro" }, { cookie: `retrofit_account=${token}` }), d);
     expect(res.status).toBe(401);
@@ -448,7 +459,7 @@ describe("account deletion against a checkout", () => {
         d.accountsBacking.profiles.delete(id);
       },
     };
-    expect(await deleteAccount({ ...d, auth }, account!)).toBe("deleted");
+    expect(await deleteAccount({ ...d, auth }, account!)).toMatchObject({ stage: "deleted" });
     const cus = d.fixtureBilling.session(session)?.customerId as string;
     expect(d.fixtureBilling.complete(session)).not.toBeNull();
     lines.length = 0;

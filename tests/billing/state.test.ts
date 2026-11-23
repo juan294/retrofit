@@ -78,6 +78,7 @@ describe("plan mapping", () => {
     expect(billingState([sub({ priceIds: ["price_other"] })], PRICES, NOW).plan).toBe("free");
     expect(billingState([sub()], {}, NOW).plan).toBe("free");
     expect(billingState([sub({ priceIds: ["price_other", "price_pro"] })], PRICES, NOW).plan).toBe("pro");
+    expect(billingState([sub({ priceIds: ["price_pro", "price_agency"] })], PRICES, NOW).plan).toBe("agency");
     // P5-R5: a price that is no longer for sale still means its plan.
     expect(billingState([sub({ priceIds: ["price_pro_old"] })], PRICES, NOW).plan).toBe("pro");
     expect(billingState([sub({ priceIds: ["pro", "agency", "constructor"] })], PRICES, NOW).plan).toBe("free");

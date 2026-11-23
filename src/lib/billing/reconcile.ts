@@ -1,10 +1,10 @@
 import type { BillingRecord } from "@/lib/accounts/data";
 import { countClientWindow } from "@/lib/fetch/limits";
+import { beforeDeadline, TIMED_OUT } from "@/lib/fetch/timers";
 import type { ServerDeps } from "@/lib/server/runtime";
 import type { PlanId } from "./plans";
 import { entitledPlan } from "./state";
 import { logBillingFailure, readStripe } from "./sync";
-import { withTimeout } from "./timeout";
 
 /** A stored state this old is read again from Stripe when its owner opens the account page. */
 export const RECONCILE_AFTER_MS = 10 * 60_000;
@@ -56,8 +56,9 @@ export function isOld(record: Pick<BillingRecord, "stateAt">, now: number): bool
 }
 
 /** One read of Stripe for the account, stored (refresh), in at most `waitMs`; null also when it takes longer. */
-export function refreshBilling(deps: Deps, record: BillingRecord, waitMs = WAIT_MS): Promise<BillingRecord | "busy" | null> {
-  return withTimeout(refresh(deps, record), waitMs);
+export async function refreshBilling(deps: Deps, record: BillingRecord, waitMs = WAIT_MS): Promise<BillingRecord | "busy" | null> {
+  const fresh = await beforeDeadline(refresh(deps, record), waitMs);
+  return fresh === TIMED_OUT ? null : fresh;
 }
 
 /** The state read from Stripe and stored; "busy" while another read runs or past the hourly limit; null when Stripe or the Store cannot be asked. Never throws. */

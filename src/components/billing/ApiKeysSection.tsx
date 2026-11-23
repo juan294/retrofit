@@ -2,11 +2,15 @@
 
 import { useState, type FormEvent } from "react";
 import type { ApiKeyView } from "@/lib/api/api-keys";
-import { API_KEY_TEXT as T, PLAN_TEXT } from "@/lib/site/billing-texts";
-import { localizeRetry } from "../analysis/retry-time";
+import { API_KEY_TEXT as T } from "@/lib/site/billing-texts";
+import { postJson, statusOf, type Status } from "../post";
+import { StatusMessage } from "../StatusMessage";
 import { useHydrated } from "../useHydrated";
 
-type Status = { readonly ok: boolean; readonly text: string; readonly href?: string } | null;
+interface Answer {
+  readonly key?: unknown;
+  readonly apiKey?: ApiKeyView;
+}
 
 const border = { borderColor: "var(--color-border)" };
 const accent = { background: "var(--color-accent)", color: "var(--color-accent-text)" };
@@ -18,24 +22,17 @@ const accent = { background: "var(--color-accent)", color: "var(--color-accent-t
 export function ApiKeysSection({ keys }: { keys: readonly ApiKeyView[] }) {
   const [list, setList] = useState(keys);
   const [shown, setShown] = useState<string | null>(null);
-  const [status, setStatus] = useState<Status>(null);
+  const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const hydrated = useHydrated();
 
-  async function send(path: string, body: Record<string, string>, done: (answer: { key?: unknown; apiKey?: ApiKeyView }) => void): Promise<void> {
+  async function send(path: string, body: Record<string, string>, done: (answer: Answer) => void): Promise<void> {
     setBusy(true);
     setStatus(null);
     setShown(null);
-    try {
-      const res = await fetch(path, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      const answer = (await res.json().catch(() => null)) as { message?: unknown; retryAt?: unknown; href?: unknown; key?: unknown; apiKey?: ApiKeyView } | null;
-      const text = typeof answer?.message === "string" ? answer.message : T.unavailable;
-      const retryAt = typeof answer?.retryAt === "string" ? answer.retryAt : undefined;
-      setStatus({ ok: res.ok, text: res.ok ? text : localizeRetry(text, retryAt), ...(answer?.href === "/pricing" ? { href: answer.href } : {}) });
-      if (res.ok && answer) done(answer);
-    } catch {
-      setStatus({ ok: false, text: T.unavailable });
-    }
+    const answer = await postJson<Answer>(path, body);
+    setStatus(statusOf(answer, T.unavailable));
+    if (answer.ok && answer.body) done(answer.body);
     setBusy(false);
   }
 
@@ -61,19 +58,7 @@ export function ApiKeysSection({ keys }: { keys: readonly ApiKeyView[] }) {
           {busy ? T.busy : T.create}
         </button>
       </form>
-      {status ? (
-        <p className="mt-2" role={status.ok ? "status" : "alert"} data-testid="api-keys-message" style={status.ok ? undefined : { color: "var(--color-danger)" }}>
-          {status.text}
-          {status.href ? (
-            <>
-              {" "}
-              <a href={status.href} className="underline">
-                {PLAN_TEXT.seePlans}
-              </a>
-            </>
-          ) : null}
-        </p>
-      ) : null}
+      <StatusMessage status={status} testId="api-keys-message" className="mt-2" />
       {shown ? (
         <code className="mt-2 block rounded border p-2 text-sm break-all" style={{ ...border, background: "var(--color-surface)" }} data-testid="api-key">
           {shown}

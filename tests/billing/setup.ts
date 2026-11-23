@@ -26,6 +26,14 @@ export async function withBilling(d: Pick<TestDeps, "accounts" | "clock">, accou
   return customerId;
 }
 
+/** A Stripe customer of OWNER, made at the gateway and bound to its account. Returns its id. */
+export async function customer(d: Pick<TestDeps, "accounts" | "billing">): Promise<string> {
+  const id = await d.billing.createCustomer({ accountId: OWNER, email: TEST_ACCOUNT.email });
+  await d.accounts.ensureProfile(OWNER);
+  await d.accounts.linkBillingCustomer(OWNER, id);
+  return id;
+}
+
 /** Account data that records the name of every call. */
 export function spiedAccounts(data: AccountData): { accounts: AccountData; calls: string[] } {
   const calls: string[] = [];

@@ -1,8 +1,8 @@
+import { beforeDeadline, TIMED_OUT } from "@/lib/fetch/timers";
 import type { ServerDeps } from "@/lib/server/runtime";
 import type { BillingGateway, PriceAmount } from "./gateway";
 import type { PaidPlanId } from "./plans";
 import { logBillingFailure } from "./sync";
-import { withTimeout } from "./timeout";
 
 /** An amount read from Stripe is shown this long before it is read again. */
 const KEEP_MS = 3_600_000;
@@ -11,8 +11,11 @@ const RETRY_MS = 60_000;
 const WAIT_MS = 2_000;
 
 interface Cached {
-  readonly text: string | null;
-  readonly until: number;
+  /** What the page shows until `until`; null: no amount. */
+  text: string | null;
+  until: number;
+  /** The read in progress, shared by every view. */
+  reading: Promise<string | null> | null;
 }
 
 // Per gateway, so per process (and per test). Amounts are public; nothing here belongs to a visitor.
@@ -38,22 +41,29 @@ export async function planAmounts(deps: Pick<ServerDeps, "config" | "clock" | "b
   const cache = caches.get(billing) ?? new Map<string, Cached>();
   caches.set(billing, cache);
 
-  async function textOf(priceId: string): Promise<string | null> {
-    const cached = cache.get(priceId);
-    if (cached && deps.clock() < cached.until) return cached.text;
-    const read = await withTimeout(
-      billing.getPrice(priceId).then(
-        (price) => ({ text: price && formatAmount(price) }),
-        (e: unknown) => {
-          logBillingFailure("Reading a price", e);
-          return null;
-        },
-      ),
-      waitMs,
-    );
-    const entry = read ? { text: read.text, until: deps.clock() + KEEP_MS } : { text: null, until: deps.clock() + RETRY_MS };
-    cache.set(priceId, entry);
+  /** One read of the price, kept when it ends, also when no view waits for it any more. */
+  async function read(entry: Cached, priceId: string): Promise<string | null> {
+    try {
+      const price = await billing.getPrice(priceId);
+      Object.assign(entry, { text: price && formatAmount(price), until: deps.clock() + KEEP_MS });
+    } catch (e) {
+      logBillingFailure("Reading a price", e);
+      Object.assign(entry, { text: null, until: deps.clock() + RETRY_MS });
+    }
+    entry.reading = null;
     return entry.text;
+  }
+
+  async function textOf(priceId: string): Promise<string | null> {
+    const entry = cache.get(priceId) ?? { text: null, until: 0, reading: null };
+    cache.set(priceId, entry);
+    if (deps.clock() < entry.until) return entry.text;
+    entry.reading ??= read(entry, priceId);
+    const text = await beforeDeadline(entry.reading, waitMs);
+    if (text !== TIMED_OUT) return text;
+    // No amount for now; the read goes on and is kept.
+    Object.assign(entry, { text: null, until: deps.clock() + RETRY_MS });
+    return null;
   }
 
   const texts = await Promise.all(prices.map(async ([plan, priceId]) => [plan, await textOf(priceId)] as const));

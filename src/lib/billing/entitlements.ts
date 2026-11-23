@@ -1,12 +1,14 @@
 import type { ServerDeps } from "@/lib/server/runtime";
-import { planIncludes, type Feature, type PlanId } from "./plans";
+import { planIncludes, type GatedFeature, type PlanId } from "./plans";
 import { isOld, refreshBilling } from "./reconcile";
 import { entitledPlan, timeBoundPassed } from "./state";
+import { logBillingFailure } from "./sync";
 
 /**
- * Who may use a feature (phase-5.md). Before BILLING_START everybody may use everything, decided by one
- * clock comparison: nothing is read. From that instant the account's plan decides (plans.ts); a visitor
- * without an account has the Free features. The free-analysis limit of visitors is free-limit.ts.
+ * Whether an account may use a feature that a plan gives (phase-5.md). Before BILLING_START everybody may
+ * use everything, decided by one clock comparison: nothing is read. From that instant the account's plan
+ * decides (plans.ts). The features every plan has are never asked for here, so an outage never refuses an
+ * analysis; the free-analysis limit of visitors without an account is free-limit.ts.
  */
 
 type Deps = Pick<ServerDeps, "config" | "clock" | "store" | "accounts" | "billing">;
@@ -36,16 +38,13 @@ export async function accountPlan(deps: Deps, accountId: string): Promise<PlanId
     const fresh = await refreshBilling(deps, record);
     return fresh === "busy" || fresh === null ? null : entitledPlan(fresh, now);
   } catch (e) {
-    console.error("Reading the billing plan failed:", e instanceof Error ? e.name : "unknown error");
+    logBillingFailure("Reading the billing plan", e);
     return null;
   }
 }
 
-export async function entitlement(deps: Deps, accountId: string | null, feature: Feature): Promise<Entitlement> {
+export async function entitlement(deps: Deps, accountId: string, feature: GatedFeature): Promise<Entitlement> {
   if (!billingStarted(deps)) return ALLOWED;
-  // A feature every plan has needs no read, so an outage never refuses an analysis.
-  if (planIncludes("free", feature)) return ALLOWED;
-  if (accountId === null) return { allowed: false, reason: "plan_required" };
   const plan = await accountPlan(deps, accountId);
   if (plan === null) return { allowed: false, reason: "unavailable" };
   return planIncludes(plan, feature) ? ALLOWED : { allowed: false, reason: "plan_required" };

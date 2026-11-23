@@ -132,7 +132,7 @@ async function scoreCaller(request: Request, deps: ServerDeps, now: number): Pro
   if (!billingStarted(deps)) return { windows: [network, account(network.limit)] };
   const plan = await accountPlan(deps, accountId);
   if (plan === null) return { windows: [network, account(network.limit)], daily: { accountId, plan } };
-  const limit = planOf(plan).scoresPerHour;
+  const limit = planOf(plan).limits.scoresPerHour;
   return limit === null ? fixed("plan_required") : { windows: [account(limit)], daily: { accountId, plan } };
 }
 

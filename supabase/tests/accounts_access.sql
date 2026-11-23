@@ -590,6 +590,7 @@ begin
     $q$select public.apply_billing_event('evt_probe', 'customer.subscription.updated', 'cus_probe', 'pro', 'active', null, false, null, null, now())$q$,
     $q$select public.create_api_key('00000000-0000-4000-8000-0000000000f5', repeat('7', 64), 'beef', 5)$q$,
     $q$select public.customer_hash('cus_probe')$q$,
+    $q$select public.prune_stripe_events(now(), 1)$q$,
     $q$select public.billing_json(null::public.billing_customers)$q$
   ] loop
     perform pg_temp.expect_denied('anon', v_fn);
@@ -703,6 +704,18 @@ begin
   delete from public.billing_customers where account_id = '00000000-0000-4000-8000-0000000000f6';
   perform pg_temp.expect_error('service_role', $q$select public.link_billing_customer('00000000-0000-4000-8000-0000000000f6', 'acct_1')$q$, '23514');
   perform pg_temp.expect_error('service_role', $q$select public.create_api_key('00000000-0000-4000-8000-0000000000f6', repeat('9', 64), 'key!', 5)$q$, '23514');
+  -- Pruning takes the oldest events before the time, at most the limit.
+  insert into public.stripe_events (event_id, type, received_at) values ('evt_p1', 't', '2015-01-01'), ('evt_p2', 't', '2015-01-02'), ('evt_p3', 't', '2015-01-03');
+  if public.prune_stripe_events('2015-01-02T12:00:00Z', 1) <> 1 then
+    raise exception 'accounts_access: prune_stripe_events ignored its limit';
+  end if;
+  if exists (select 1 from public.stripe_events where event_id = 'evt_p1') or (select count(*) from public.stripe_events where event_id in ('evt_p2', 'evt_p3')) <> 2 then
+    raise exception 'accounts_access: prune_stripe_events did not take the oldest event';
+  end if;
+  if public.prune_stripe_events('2015-01-02T12:00:00Z', 10) <> 1 then
+    raise exception 'accounts_access: prune_stripe_events did not stop at its time';
+  end if;
+  perform pg_temp.expect_error('service_role', $q$select public.prune_stripe_events(null, 1)$q$, '22004');
   perform pg_temp.expect_error('service_role', $q$select public.link_billing_customer(null, 'cus_x')$q$, '22004');
   perform pg_temp.expect_error('service_role', $q$select public.apply_billing_state('cus_probe', 'pro', 'active', null, false, null, null, null)$q$, '22004');
   perform pg_temp.expect_error('service_role', $q$select public.apply_billing_event(null, 't', 'cus_probe', 'pro', 'active', null, false, null, null, now())$q$, '22004');
@@ -711,7 +724,7 @@ begin
   select pg_catalog.string_agg(p.proname, ', ') into v_bad
   from pg_catalog.pg_proc p
   where p.pronamespace = 'public'::regnamespace
-    and p.proname in ('billing_json', 'customer_hash', 'link_billing_customer', 'apply_billing_state', 'apply_billing_event', 'create_api_key')
+    and p.proname in ('billing_json', 'customer_hash', 'prune_stripe_events', 'link_billing_customer', 'apply_billing_state', 'apply_billing_event', 'create_api_key')
     and (p.prosecdef
       or not ('search_path=""' = any (coalesce(p.proconfig, '{}')))
       or pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
@@ -719,7 +732,7 @@ begin
       or exists (select 1 from pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) x where x.grantee = 0)
       or not pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE'));
   if v_bad is not null or (select count(*) from pg_catalog.pg_proc where pronamespace = 'public'::regnamespace
-      and proname in ('billing_json', 'customer_hash', 'link_billing_customer', 'apply_billing_state', 'apply_billing_event', 'create_api_key')) <> 6 then
+      and proname in ('billing_json', 'customer_hash', 'prune_stripe_events', 'link_billing_customer', 'apply_billing_state', 'apply_billing_event', 'create_api_key')) <> 7 then
     raise exception 'accounts_access: billing functions missing, security definer, without search_path = '''', or with wrong EXECUTE: %', coalesce(v_bad, 'missing');
   end if;
 end;

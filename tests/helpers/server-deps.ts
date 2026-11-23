@@ -278,9 +278,10 @@ export function statusRequest(id: string, o: { cookie?: string; include?: string
   return new Request(`${PUBLIC_ORIGIN}/api/analyze/${id}${q}`, { headers });
 }
 
-export function scoreRequest(query: string, o: { method?: string; ip?: string; cookie?: string } = {}): Request {
+export function scoreRequest(query: string, o: { method?: string; ip?: string; cookie?: string; auth?: string } = {}): Request {
   const headers = new Headers({ "x-forwarded-for": o.ip ?? "198.51.100.9" });
   if (o.cookie) headers.set("cookie", o.cookie);
+  if (o.auth !== undefined) headers.set("authorization", o.auth);
   return new Request(`${PUBLIC_ORIGIN}/api/score${query}`, { method: o.method ?? "GET", headers });
 }
 

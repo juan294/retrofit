@@ -3,6 +3,7 @@ import ipaddr from "ipaddr.js";
 import { clientIpFrom, ttlUntil } from "@/lib/fetch/limits";
 import { realSleep } from "@/lib/fetch/timers";
 import type { ServerDeps } from "@/lib/server/runtime";
+import { logBillingFailure } from "./sync";
 
 /**
  * The free analyses of visitors without an account, from BILLING_START on: FREE_ANALYSES per visitor
@@ -47,7 +48,7 @@ export interface FreeReservation {
   release(): Promise<void>;
 }
 
-const logFailure = (e: unknown) => console.error("The free-analysis count failed:", e instanceof Error ? e.name : "unknown error");
+const logFailure = (e: unknown) => logBillingFailure("The free-analysis count", e);
 
 const ATTEMPTS = 3;
 const RETRY_WAIT_MS = 25;

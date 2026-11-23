@@ -56,6 +56,7 @@ describe("Supabase AccountData on a closed port", () => {
     ["applyBillingState", (d) => d.applyBillingState(CUSTOMER, STATE)],
     ["applyBillingEvent", (d) => d.applyBillingEvent({ id: EVENT, type: "customer.subscription.updated" }, CUSTOMER, STATE)],
     ["isDeletedCustomer", (d) => d.isDeletedCustomer(CUSTOMER)],
+    ["pruneStripeEvents", (d) => d.pruneStripeEvents("2027-01-01T00:00:00.000Z", 10)],
     ["createApiKey", (d) => d.createApiKey(ACCOUNT, { keyHash: HASH, hint: "beef" })],
     ["listApiKeys", (d) => d.listApiKeys(ACCOUNT)],
     ["revokeApiKey", (d) => d.revokeApiKey(ACCOUNT, ACCOUNT)],
