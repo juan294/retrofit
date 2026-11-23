@@ -36,8 +36,8 @@ describe("Retrofit's own site, scored by Retrofit", () => {
   it("robots allows every agent and declares the sitemap", () => {
     const r = robots();
     const origin = getConfig().publicOrigin;
-    // Private pages (results, previews, the judge page) are visitor-owned; crawlers have no reason to request them.
-    expect(r.rules).toEqual([{ userAgent: "*", allow: "/", disallow: ["/r/", "/p/", "/judges"] }]);
+    // Private pages (results, previews, the judge page, unsubscribe links) are visitor-owned; crawlers have no reason to request them.
+    expect(r.rules).toEqual([{ userAgent: "*", allow: "/", disallow: ["/r/", "/p/", "/judges", "/unsubscribe"] }]);
     expect(r.sitemap).toBe(`${origin}/sitemap.xml`);
   });
 
@@ -78,5 +78,30 @@ describe("installation inquiries", () => {
       provider: expect.objectContaining({ "@type": "Organization", name: "Retrofit", contactPoint: expect.objectContaining({ "@type": "ContactPoint", email: "retrofit@thecreativetoken.com" }) }),
     }));
     expect(llmsText(ORIGIN)).toMatch(/## Contact\n\n[^\n]*retrofit@thecreativetoken\.com/);
+  });
+});
+
+describe("pricing, privacy and terms pages", () => {
+  const NEW_PAGES = ["/pricing", "/privacy", "/terms"];
+
+  // Fails if one of the new public pages is missing from OWN_PAGES, and so from the sitemap and llms.txt.
+  it("are public pages in the sitemap and llms.txt", () => {
+    const origin = getConfig().publicOrigin;
+    const urls = sitemap().map((e) => e.url);
+    const body = llmsText(origin);
+    for (const path of NEW_PAGES) {
+      expect(OWN_PAGES.map((p) => p.path)).toContain(path);
+      expect(urls).toContain(`${origin}${path}`);
+      expect(body).toContain(`(${origin}${path})`);
+    }
+  });
+
+  // Fails if robots.txt blocks a new public page, or stops blocking the unsubscribe links (they carry a token).
+  it("are allowed by robots while unsubscribe links are not", () => {
+    const disallow = robots().rules;
+    const rules = Array.isArray(disallow) ? disallow : [disallow];
+    const blocked = rules.flatMap((r) => (Array.isArray(r.disallow) ? r.disallow : r.disallow ? [r.disallow] : []));
+    for (const path of NEW_PAGES) expect(blocked.some((d) => path.startsWith(d))).toBe(false);
+    expect(blocked).toContain("/unsubscribe");
   });
 });

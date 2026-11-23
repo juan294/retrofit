@@ -1,11 +1,14 @@
 // Retrofit's own discovery data: the public pages, the home page JSON-LD and /llms.txt.
 // Retrofit scores other sites on these signals (score/v1), so its own site carries them too.
 
-/** Public pages, in sitemap and llms.txt order. Private pages (judges, results, previews) stay out. */
+/** Public pages, in sitemap and llms.txt order. Private pages (judges, results, previews, unsubscribe links) stay out. */
 export const OWN_PAGES: readonly { path: string; title: string; summary: string }[] = [
   { path: "/", title: "Retrofit", summary: "Paste a website address to score how ready it is for AI agents and try a private preview agent built from its public pages." },
   { path: "/conformance", title: "Conformance fixtures", summary: "Retrofit's conformance network and its partner fixtures for the open agentic web specification." },
   { path: "/bot", title: "How RetrofitBot reads your site", summary: "What RetrofitBot fetches, which pages it skips, and how it follows robots rules." },
+  { path: "/pricing", title: "Pricing", summary: "Retrofit's plans and their features. Retrofit is free during the hackathon judging period; join the list to hear when paid plans start." },
+  { path: "/privacy", title: "Privacy", summary: "What Retrofit stores, for how long, and which services receive data." },
+  { path: "/terms", title: "Terms", summary: "The terms for using Retrofit, its preview agents and its files." },
 ];
 
 export const LEAD_EMAIL = "retrofit@thecreativetoken.com";

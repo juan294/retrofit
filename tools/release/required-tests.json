@@ -5917,6 +5917,642 @@
       "suite": "unit",
       "file": "tests/agent/bridge-actions.test.ts",
       "title": "the page's own score_site keeps one request per call returns running after one request, for the model to call again"
+    },
+    {
+      "rule": "billing start",
+      "suite": "unit",
+      "file": "tests/config.test.ts",
+      "title": "billing start and notify limit defaults BILLING_START to 2027-01-19T00:00:00Z and NOTIFY_PER_CLIENT_HOUR to 5"
+    },
+    {
+      "rule": "billing start",
+      "suite": "unit",
+      "file": "tests/config.test.ts",
+      "title": "billing start and notify limit reads BILLING_START as an ISO date and time and refuses anything else"
+    },
+    {
+      "rule": "billing start",
+      "suite": "unit",
+      "file": "tests/config.test.ts",
+      "title": "billing start and notify limit reads NOTIFY_PER_CLIENT_HOUR as a positive number"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) notify signups stores the email trimmed and in lower case, and the other client finds it in any case"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) notify signups stores marketing consent as false unless it is given, and true when it is"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) notify signups returns a new unsubscribe token only when the signup is new"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) notify signups a repeat signup changes nothing: consent and creation time stay as first stored"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) notify signups two concurrent signups for one address create one row"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) notify signups refuses an invalid address with RangeError and stores nothing"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) notify signups findNotifySignup answers null for an unknown or invalid address"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) unsubscribe unsubscribes once by the token hash and records the time"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) unsubscribe is idempotent: a second unsubscribe answers already and keeps the first time"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) unsubscribe answers unknown for a hash that matches no signup, or is not a SHA-256 hex digest"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) unsubscribe a signup after unsubscribing stays unsubscribed"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "memory AccountData specifics stores only the SHA-256 of the unsubscribe token"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "memory AccountData specifics records created and unsubscribed times from its clock"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "memory AccountData specifics does not touch the backing before yielding"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"Ana@Example.com\") -> \"ana@example.com\""
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"  b.c+tag@sub.example.org \") -> \"b.c+tag@sub.example.org\""
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"o'neil@example.ie\") -> \"o'neil@example.ie\""
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"plain\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"@example.com\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"a@\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"a@b\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"a b@example.com\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"a@@example.com\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"a@exa mple.com\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"a@example..com\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"a@.example.com\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"<a>@example.com\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"lllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll@example.com\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers normalizeEmail(\"a@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.com\") -> null"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers unsubscribeUrl builds the link every message carries"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "email and token helpers hashToken is SHA-256 in hex"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port addNotifySignup throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port findNotifySignup throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port unsubscribe throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port refuses an invalid address with RangeError, answers unknown for a malformed hash, and logs nothing"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "getAccountData throws on Vercel without Supabase configuration"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "getAccountData uses Supabase when SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "getAccountData uses memory off Vercel without Supabase configuration"
+    },
+    {
+      "rule": "plans table",
+      "suite": "unit",
+      "file": "tests/billing/plans.test.ts",
+      "title": "plans table has Free, Pro and Agency in that order"
+    },
+    {
+      "rule": "plans table",
+      "suite": "unit",
+      "file": "tests/billing/plans.test.ts",
+      "title": "plans table matches the plan ids allowed by billing_customers.plan in the migration"
+    },
+    {
+      "rule": "plans table",
+      "suite": "unit",
+      "file": "tests/billing/plans.test.ts",
+      "title": "plans table each plan includes every feature of the plan before it, and every feature has a label"
+    },
+    {
+      "rule": "plans table",
+      "suite": "unit",
+      "file": "tests/billing/plans.test.ts",
+      "title": "plans table keeps publishing, the badge, saved reports and API keys out of Free"
+    },
+    {
+      "rule": "plans table",
+      "suite": "unit",
+      "file": "tests/billing/plans.test.ts",
+      "title": "plans table carries no amounts"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify refuses a cross-origin POST with 403 and stores nothing"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify accepts Origin equal to PUBLIC_ORIGIN"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify answers 413 for a body over 2 KB and accepts one of exactly 2 KB"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify answers 400 for {\"email\":\"not-an-email\"} and stores nothing"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify answers 400 for {\"email\":\"a@b\"} and stores nothing"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify answers 400 for {\"email\":42} and stores nothing"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify answers 400 for {} and stores nothing"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify answers 400 for null and stores nothing"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify answers 400 for \"{not json\" and stores nothing"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify answers 400 for [\"a@example.test\"] and stores nothing"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify answers 429 with retryAt after 5 signups an hour from one network"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify answers a repeat signup exactly like a new one and changes nothing"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify stores the address in lower case with consent only for consent: true"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/notify.test.ts",
+      "title": "POST /api/notify answers 503 when account data is unavailable and never logs the address"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> unsubscribes once and gives the same answer on a second visit"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> answers invalid for undefined"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> answers invalid for \"\""
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> answers invalid for \"0123456789abcdef0123456789abcdef\""
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> answers invalid for \"../etc\""
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> answers invalid for [\"a\",\"b\"]"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> answers invalid for \"0123456789ABCDEF0123456789ABCDEF\""
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/api/unsubscribe.test.ts",
+      "title": "GET /unsubscribe?t=<token> answers unavailable when account data fails and never logs the token"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "privacy notice draft names every cookie with the lifetime the code gives it"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "privacy notice draft states the crawl cache and analysis retention the code applies"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "privacy notice draft covers what is stored and every service that receives data"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "terms draft states the free period, the claim rule for publishing and the contact address"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/site/notify-form.test.ts",
+      "title": "NotifyForm renders an email field, an unticked consent box and the privacy link"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/site/notify-form.test.ts",
+      "title": "NotifyForm renders nothing without a privacy link"
+    },
+    {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/site/notify-form.test.ts",
+      "title": "pricing notice shows the free judging period note only before BILLING_START"
+    },
+    {
+      "rule": "own pages",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "pricing, privacy and terms pages are public pages in the sitemap and llms.txt"
+    },
+    {
+      "rule": "own pages",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "pricing, privacy and terms pages are allowed by robots while unsubscribe links are not"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) notify signups stores the email trimmed and in lower case, and the other client finds it in any case"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) notify signups stores marketing consent as false unless it is given, and true when it is"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) notify signups returns a new unsubscribe token only when the signup is new"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) notify signups a repeat signup changes nothing: consent and creation time stay as first stored"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) notify signups two concurrent signups for one address create one row"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) notify signups refuses an invalid address with RangeError and stores nothing"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) notify signups findNotifySignup answers null for an unknown or invalid address"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) unsubscribe unsubscribes once by the token hash and records the time"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) unsubscribe is idempotent: a second unsubscribe answers already and keeps the first time"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) unsubscribe answers unknown for a hash that matches no signup, or is not a SHA-256 hex digest"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) unsubscribe a signup after unsubscribing stays unsubscribed"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "records created and unsubscribed times close to now"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/sql-access.test.ts",
+      "title": "accounts access: anon and authenticated are denied on every account table, service_role works, account rows cascade"
+    },
+    {
+      "rule": "notify me",
+      "suite": "playwright",
+      "file": "pricing.spec.ts",
+      "title": "pricing and notify me the pricing page shows the plans, the free-period note, an unticked consent box and the privacy link"
+    },
+    {
+      "rule": "notify me",
+      "suite": "playwright",
+      "file": "pricing.spec.ts",
+      "title": "pricing and notify me notify me posts the address with consent false and shows the confirmation"
+    },
+    {
+      "rule": "notify me",
+      "suite": "playwright",
+      "file": "pricing.spec.ts",
+      "title": "pricing and notify me a ticked box sends consent true, and a repeat signup gets the same confirmation"
+    },
+    {
+      "rule": "notify me",
+      "suite": "playwright",
+      "file": "pricing.spec.ts",
+      "title": "pricing and notify me an empty address shows the field error and posts nothing"
+    },
+    {
+      "rule": "own pages",
+      "suite": "playwright",
+      "file": "pricing.spec.ts",
+      "title": "privacy, terms and unsubscribe the home page footer links to pricing, privacy and terms, and each page serves"
+    },
+    {
+      "rule": "own pages",
+      "suite": "playwright",
+      "file": "pricing.spec.ts",
+      "title": "privacy, terms and unsubscribe an unknown unsubscribe link shows the invalid-link text and is not indexed"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/pricing fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/privacy fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/terms fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /pricing page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /privacy page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /terms page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /pricing page text is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /privacy page text is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /terms page text is readable in dark mode"
     }
   ],
   "repairs": {

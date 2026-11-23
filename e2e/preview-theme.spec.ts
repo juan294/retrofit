@@ -63,3 +63,29 @@ for (const colorScheme of ["light", "dark"] as const) {
     }
   });
 }
+
+// The pricing, privacy and terms pages use the page tokens only; every text kind on them must stay readable in both schemes.
+for (const colorScheme of ["light", "dark"] as const) {
+  for (const path of ["/pricing", "/privacy", "/terms"] as const) {
+    test(`the ${path} page text is readable in ${colorScheme} mode`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme });
+      await page.goto(path);
+      const targets: Record<string, Locator> = {
+        heading: page.getByRole("heading", { level: 1 }),
+        text: page.locator("main p").nth(1),
+        link: page.getByRole("link", { name: "Retrofit", exact: true }),
+      };
+      if (path === "/pricing") {
+        targets.button = page.getByRole("button", { name: "Notify me" });
+        targets.privacy = page.getByRole("link", { name: "privacy notice" });
+        targets.plan = page.getByRole("heading", { level: 2, name: "Pro", exact: true });
+      }
+      for (const [name, el] of Object.entries(targets)) {
+        await expect(el, name).toBeVisible();
+        const { ratio, color, background } = await contrastOf(el);
+        expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+  }
+}
+
