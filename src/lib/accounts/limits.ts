@@ -9,3 +9,10 @@ export const MAX_PENDING_CLAIMS = 10;
 export const CLAIM_LAPSE_AFTER = 3;
 /** Checks (Check again and Start over) of one claim per hour. The daily recheck does not count. */
 export const CLAIM_CHECKS_PER_HOUR = 5;
+/** Claim creations and Start overs of one account per hour. */
+export const CLAIM_CHANGES_PER_HOUR = 20;
+/** A verified or lapsed claim is rechecked once its last check is this old. */
+export const CLAIM_RECHECK_AFTER_S = 24 * 3600;
+/** A claim lapsed longer than this is rechecked only weekly (CLAIM_SLOW_RECHECK_AFTER_S). */
+export const CLAIM_SLOW_AFTER_S = 30 * 24 * 3600;
+export const CLAIM_SLOW_RECHECK_AFTER_S = 7 * 24 * 3600;

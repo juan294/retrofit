@@ -354,6 +354,24 @@ begin
   if v -> 'claim' ->> 'status' <> 'lapsed' or (v -> 'claim' ->> 'failures')::int <> 3 then
     raise exception 'accounts_access: three failures did not lapse the claim: %', v;
   end if;
+  if v -> 'claim' ->> 'lapsed_at' is distinct from '2026-11-26T09:00:00+00:00' then
+    raise exception 'accounts_access: the lapse instant was not recorded: %', v;
+  end if;
+  v := public.record_claim_failure(v_first, repeat('3', 64), 'crawl_delay', 86400, '2026-11-26T12:00:00Z', 3);
+  if v -> 'claim' ->> 'lapsed_at' is distinct from '2026-11-26T09:00:00+00:00' or (v -> 'claim' ->> 'last_detail')::int <> 86400 then
+    raise exception 'accounts_access: a later failure moved the lapse instant: %', v;
+  end if;
+  -- claims_due: verified before lapsed, each least recently checked first; a long-lapsed claim only weekly.
+  if (select pg_catalog.jsonb_agg(x ->> 'id') from pg_catalog.jsonb_array_elements(public.claims_due('2026-11-27T00:00:00Z', '2026-10-01T00:00:00Z', '2026-11-20T00:00:00Z', 50)) x
+      where x ->> 'host' = 'fn.example') <> pg_catalog.jsonb_build_array(v_first::text) then
+    raise exception 'accounts_access: claims_due did not list the recently lapsed claim';
+  end if;
+  if exists (select 1 from pg_catalog.jsonb_array_elements(public.claims_due('2026-12-30T00:00:00Z', '2026-12-01T00:00:00Z', '2026-11-20T00:00:00Z', 50)) x where x ->> 'id' = v_first::text) then
+    raise exception 'accounts_access: claims_due listed a long-lapsed claim checked within the week';
+  end if;
+  if pg_catalog.jsonb_array_length(public.claims_due('2026-11-27T00:00:00Z', '2026-10-01T00:00:00Z', '2026-11-20T00:00:00Z', 0)) <> 0 then
+    raise exception 'accounts_access: claims_due ignored p_limit';
+  end if;
   -- A second account verifies: the lapsed claim is superseded in the same call and stays terminal.
   v := public.create_claim('00000000-0000-4000-8000-0000000000b2', 'fn.example', 'meta', repeat('5', 64), 10);
   v_second := (v -> 'claim' ->> 'id')::uuid;
@@ -366,6 +384,9 @@ begin
      or (select superseded_at from public.site_claims where id = v_first) <> '2026-11-27T09:00:00Z' then
     raise exception 'accounts_access: the first claim was not superseded by the second account';
   end if;
+  if (select lapsed_at from public.site_claims where id = v_first) is not null then
+    raise exception 'accounts_access: a superseded claim kept its lapse instant';
+  end if;
   if public.verify_claim(v_first, repeat('3', 64), now()) ->> 'outcome' <> 'superseded'
      or public.record_claim_failure(v_first, repeat('3', 64), 'tag_missing', null, now(), 3) ->> 'outcome' <> 'superseded'
      or public.restart_claim(v_first, '00000000-0000-4000-8000-0000000000b1', 'meta', repeat('6', 64), 10) ->> 'outcome' <> 'superseded'
@@ -374,13 +395,16 @@ begin
   end if;
   reset role;
   perform pg_temp.expect_error('service_role', $q$update public.site_claims set last_result = 'found' where host = 'fn.example'$q$, '23514');
+  perform pg_temp.expect_error('service_role', $q$update public.site_claims set lapsed_at = now() where host = 'fn.example' and status <> 'lapsed'$q$, '23514');
+  perform pg_temp.expect_denied('anon', $q$select public.claims_due(now(), now(), now(), 10)$q$);
+  perform pg_temp.expect_denied('authenticated', $q$select public.claims_due(now(), now(), now(), 10)$q$);
   perform pg_temp.expect_error('service_role', $q$select public.record_claim_failure('00000000-0000-4000-8000-0000000000c9', repeat('1', 64), 'verified', null, now(), 3)$q$, '22023');
 
   -- Every account function: security invoker, empty search_path, EXECUTE for service_role only.
   select pg_catalog.string_agg(p.proname, ', ') into v_bad
   from pg_catalog.pg_proc p
   where p.pronamespace = 'public'::regnamespace
-    and p.proname in ('save_report', 'delete_account_data', 'claim_json', 'create_claim', 'restart_claim', 'record_claim_failure', 'verify_claim')
+    and p.proname in ('save_report', 'delete_account_data', 'claim_json', 'create_claim', 'restart_claim', 'record_claim_failure', 'verify_claim', 'claims_due')
     and (p.prosecdef
       or not ('search_path=""' = any (coalesce(p.proconfig, '{}')))
       or pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
@@ -388,7 +412,7 @@ begin
       or exists (select 1 from pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) a where a.grantee = 0)
       or not pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE'));
   if v_bad is not null or (select count(*) from pg_catalog.pg_proc where pronamespace = 'public'::regnamespace
-      and proname in ('save_report', 'delete_account_data', 'claim_json', 'create_claim', 'restart_claim', 'record_claim_failure', 'verify_claim')) <> 7 then
+      and proname in ('save_report', 'delete_account_data', 'claim_json', 'create_claim', 'restart_claim', 'record_claim_failure', 'verify_claim', 'claims_due')) <> 8 then
     raise exception 'accounts_access: account functions missing, security definer, without search_path = '''', or with wrong EXECUTE: %', coalesce(v_bad, 'missing');
   end if;
 end;

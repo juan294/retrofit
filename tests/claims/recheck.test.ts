@@ -4,7 +4,7 @@
  * three consecutive failures lapse a claim and one pass restores it. A fake clock and a fake TXT
  * resolver; the meta path reads a loopback fixture site.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountData, Claim } from "@/lib/accounts/data";
 import { handleClaimsRecheck } from "@/lib/api/claims-recheck";
 import { RECHECK_BUDGET_MS, RECHECK_PER_RUN, recheckDueClaims } from "@/lib/claims/recheck";
@@ -21,6 +21,7 @@ let server: FixtureServer | undefined;
 afterEach(async () => {
   await server?.close();
   server = undefined;
+  vi.restoreAllMocks();
 });
 
 /** A verified DNS claim for `host` of a new account, checked now. */
@@ -61,7 +62,13 @@ describe("lapse and restore", () => {
     const lapsed = (await d.accounts.getClaim(TEST_ACCOUNT.userId, c.id))!;
     expect(lapsed.failures).toBe(3);
     expect(claimView(lapsed, d.config).statusText).toBe("Verification failed on 26 November 2026. Your published page and badge are paused.");
-    expect(claimView(lapsed, d.config).statusText).toBe(CLAIMS_TEXT.status.lapsed(lapsed.lastCheckedAt!));
+    expect(claimView(lapsed, d.config).statusText).toBe(CLAIMS_TEXT.status.lapsed(lapsed.lapsedAt!));
+    // P3-R8. A later failed recheck keeps the date the claim lapsed.
+    clock.advance(DAY + 60_000);
+    await recheckDueClaims(d);
+    const later = (await d.accounts.getClaim(TEST_ACCOUNT.userId, c.id))!;
+    expect(later.lastCheckedAt).not.toBe(lapsed.lastCheckedAt);
+    expect(claimView(later, d.config).statusText).toBe("Verification failed on 26 November 2026. Your published page and badge are paused.");
   });
 
   // Fails if a lapsed claim is not rechecked, or one passing check does not restore it with no failures.
@@ -120,6 +127,42 @@ describe("what a run checks", () => {
     expect(await recheckDueClaims(d)).toMatchObject({ checked: 0 });
   });
 
+  // P3-R4. Fails if a run with more due claims than it may check says nothing, or names a host in the log.
+  it("logs, with counts only, when more claims are due than one run checks", async () => {
+    const { d, clock } = setup();
+    const lines: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => void lines.push(args.join(" ")));
+    for (let n = 0; n < RECHECK_PER_RUN; n++) await verifiedClaim(d.accounts, `full${n}.example.com`, clock.now());
+    clock.advance(DAY + 60_000);
+    await recheckDueClaims(d);
+    expect(lines).toEqual([]);
+    await verifiedClaim(d.accounts, "over.example.com", clock.now() - DAY - 60_000);
+    for (let n = 0; n < RECHECK_PER_RUN; n++) await verifiedClaim(d.accounts, `more${n}.example.com`, clock.now() - DAY - 60_000);
+    await recheckDueClaims(d);
+    expect(lines).toEqual([`Claim recheck: more than ${RECHECK_PER_RUN} claims were due; the rest wait for the next run.`]);
+    expect(lines.join("")).not.toMatch(/example/);
+  });
+
+  // P3-R2. Fails if a site whose Crawl-delay is longer than the run budget defers every recheck (its claim would never lapse).
+  it("a Crawl-delay longer than the run budget fails the recheck with crawl_delay, so the claim can lapse", async () => {
+    const { d, clock } = setup();
+    server = await startFixtureServer({
+      "slowbot.fixture.test": {
+        "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nCrawl-delay: 86400\nAllow: /\n" },
+        "/": { headers: { "content-type": "text/html" }, body: `<html><head><meta name="retrofit-site-verification" content="${TOKEN}"></head></html>` },
+      },
+    });
+    const created = await d.accounts.createClaim(TEST_ACCOUNT.userId, { host: `slowbot.fixture.test:${server.port}`, method: "meta", tokenHash: sha256Hex(TOKEN) });
+    if (created.outcome !== "created") throw new Error("create failed");
+    await d.accounts.verifyClaim(created.claim.id, { tokenHash: created.claim.tokenHash, checkedAt: new Date(clock.now()).toISOString() });
+    for (let day = 1; day <= 3; day++) {
+      clock.advance(DAY + 60_000);
+      expect(await recheckDueClaims(d)).toMatchObject({ checked: 1, failed: 1, skipped: 0 });
+    }
+    expect(await d.accounts.getClaim(TEST_ACCOUNT.userId, created.claim.id)).toMatchObject({ status: "lapsed", lastResult: "crawl_delay", lastDetail: 86400 });
+    expect(server.requests.map((r) => r.path)).not.toContain("/");
+  });
+
   // Fails if a run starts checks after its time budget (the cron would outlive its function), or records the skipped ones.
   it("starts no check after the time budget; the rest stay due", async () => {
     const { d, clock, state } = setup();
@@ -130,7 +173,7 @@ describe("what a run checks", () => {
     const summary = await recheckDueClaims(d);
     expect(summary.checked).toBeLessThan(10);
     expect(summary.checked + summary.skipped).toBe(10);
-    expect((await d.accounts.listClaimsDueForRecheck(new Date(clock.now() - DAY).toISOString(), 50)).length).toBe(summary.skipped);
+    expect((await d.accounts.listClaimsDueForRecheck(new Date(clock.now()).toISOString(), 50)).length).toBe(summary.skipped);
   });
 
   // Fails if a meta recheck is not paced per host through the fetch context or ignores robots (the check reads robots.txt first).

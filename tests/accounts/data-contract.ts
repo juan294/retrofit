@@ -254,7 +254,7 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         const owner = await newAccount();
         const other = await newAccount();
         const c = await claimed(a, owner, "new", "dns");
-        expect(c).toMatchObject({ accountId: owner, host: host("new"), method: "dns", tokenHash: hash("new"), status: "pending", verifiedAt: null, lastCheckedAt: null, failures: 0, supersededAt: null, lastResult: null, lastDetail: null });
+        expect(c).toMatchObject({ accountId: owner, host: host("new"), method: "dns", tokenHash: hash("new"), status: "pending", verifiedAt: null, lastCheckedAt: null, failures: 0, supersededAt: null, lapsedAt: null, lastResult: null, lastDetail: null });
         expect(Number.isFinite(Date.parse(c.createdAt))).toBe(true);
         expect(await b.getClaim(owner, c.id)).toEqual(c);
         expect(await b.listClaims(owner)).toEqual([c]);
@@ -299,7 +299,8 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         expect((await a.getClaim(owner, c.id))?.tokenHash).toBe(v.claim.tokenHash);
         for (let n = 0; n < CLAIM_LAPSE_AFTER; n++) await fail(a, v.claim, `2026-11-2${4 + n}T10:00:00.000Z`);
         expect((await a.getClaim(owner, c.id))?.status).toBe("lapsed");
-        expect((await b.restartClaim(owner, c.id, { method: "meta", tokenHash: hash("z") })).outcome).toBe("restarted");
+        const restarted = await b.restartClaim(owner, c.id, { method: "meta", tokenHash: hash("z") });
+        expect(restarted.outcome === "restarted" && restarted.claim).toMatchObject({ status: "pending", lapsedAt: null });
       });
 
       // Fails if a failed check is not recorded, a pending claim lapses, or a verified claim lapses before CLAIM_LAPSE_AFTER failures.
@@ -315,7 +316,11 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
           expect(r.outcome === "updated" && r.claim).toMatchObject({ status: "verified", failures: n, lastResult: "http_status", lastDetail: 503 });
         }
         const lapsed = await b.recordClaimFailure(c.id, { tokenHash: c.tokenHash, result: "record_missing", detail: null, checkedAt: "2026-11-30T10:00:00.000Z" });
-        expect(lapsed.outcome === "updated" && lapsed.claim).toMatchObject({ status: "lapsed", failures: CLAIM_LAPSE_AFTER, lastCheckedAt: "2026-11-30T10:00:00.000Z", verifiedAt: "2026-11-23T09:00:00.000Z" });
+        expect(lapsed.outcome === "updated" && lapsed.claim).toMatchObject({ status: "lapsed", failures: CLAIM_LAPSE_AFTER, lastCheckedAt: "2026-11-30T10:00:00.000Z", verifiedAt: "2026-11-23T09:00:00.000Z", lapsedAt: "2026-11-30T10:00:00.000Z" });
+        // P3-R8. A later failure keeps the instant the claim lapsed.
+        const later = await a.recordClaimFailure(c.id, { tokenHash: c.tokenHash, result: "tag_missing", detail: null, checkedAt: "2026-12-01T10:00:00.000Z" });
+        expect(later.outcome === "updated" && later.claim).toMatchObject({ status: "lapsed", lastCheckedAt: "2026-12-01T10:00:00.000Z", lapsedAt: "2026-11-30T10:00:00.000Z" });
+        expect((await b.getClaim(owner, pending.id))?.lapsedAt).toBeNull();
       });
 
       // Fails if a check result is applied after Start over replaced the token it checked, or for an unknown claim.
@@ -342,7 +347,7 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         expect((await verified(a, c, "2026-11-24T09:00:00.000Z")).claim.verifiedAt).toBe("2026-11-23T09:00:00.000Z");
         for (let n = 0; n < CLAIM_LAPSE_AFTER; n++) await fail(a, c, `2026-11-2${5 + n}T09:00:00.000Z`);
         const restored = await verified(b, c, "2026-11-29T09:00:00.000Z");
-        expect(restored.claim).toMatchObject({ status: "verified", verifiedAt: "2026-11-29T09:00:00.000Z", failures: 0 });
+        expect(restored.claim).toMatchObject({ status: "verified", verifiedAt: "2026-11-29T09:00:00.000Z", failures: 0, lapsedAt: null });
       });
 
       // Fails if a second account's verification does not move the host, record the change, or a superseded claim can come back.
@@ -382,21 +387,36 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
       });
 
       // Fails if the recheck list includes pending or superseded claims, recent checks, misses lapsed ones, or ignores the order or limit.
-      it("listClaimsDueForRecheck lists verified and lapsed claims checked before the cutoff, least recently checked first, up to the limit", async () => {
+      // P3-R4. Fails if a lapsed claim is listed before a verified one, a recent check is listed, or the limit is ignored.
+      it("listClaimsDueForRecheck lists claims checked over a day before now: verified first, then lapsed, each least recently checked first", async () => {
         const owner = await newAccount();
         // Only this case checks claims in 2001, so other cases' claims are never due here.
         const at = (day: number) => `2001-01-${String(day).padStart(2, "0")}T00:00:00.000Z`;
-        const v1 = (await verified(a, await claimed(a, owner, "due1"), at(3))).claim;
-        const v2 = (await verified(a, await claimed(a, owner, "due2"), at(2))).claim;
         const lapsedClaim = (await verified(a, await claimed(a, owner, "due3"), at(1))).claim;
         for (let n = 0; n < CLAIM_LAPSE_AFTER; n++) await fail(a, lapsedClaim, at(4 + n));
+        const v1 = (await verified(a, await claimed(a, owner, "due1"), at(8))).claim;
+        const v2 = (await verified(a, await claimed(a, owner, "due2"), at(7))).claim;
         await claimed(a, owner, "due-pending");
-        const recent = (await verified(a, await claimed(a, owner, "due-recent"), at(20))).claim;
+        const recent = (await verified(a, await claimed(a, owner, "due-recent"), at(10))).claim;
         const mine = (list: Claim[]) => list.filter((c) => c.accountId === owner).map((c) => c.id);
-        expect(mine(await b.listClaimsDueForRecheck(at(10), 50))).toEqual([v2.id, v1.id, lapsedClaim.id]);
-        expect(mine(await b.listClaimsDueForRecheck(at(10), 50))).not.toContain(recent.id);
-        const capped = await b.listClaimsDueForRecheck(at(10), 2);
+        expect(mine(await b.listClaimsDueForRecheck(at(11), 50))).toEqual([v2.id, v1.id, lapsedClaim.id]);
+        expect(mine(await b.listClaimsDueForRecheck(at(11), 50))).not.toContain(recent.id);
+        const capped = await b.listClaimsDueForRecheck(at(11), 2);
         expect(capped.length).toBeLessThanOrEqual(2);
+      });
+
+      // P3-R4. Fails if a claim lapsed over 30 days ago is rechecked more than weekly, or never again.
+      it("a claim lapsed over 30 days ago is due only when its last check is over 7 days old", async () => {
+        const owner = await newAccount();
+        // Only this case checks claims in 2002.
+        const c = (await verified(a, await claimed(a, owner, "slow"), "2002-01-01T00:00:00.000Z")).claim;
+        for (let n = 0; n < CLAIM_LAPSE_AFTER; n++) await fail(a, c, `2002-01-0${2 + n}T00:00:00.000Z`);
+        const due = async (now: string) => (await b.listClaimsDueForRecheck(now, 50)).some((x) => x.id === c.id);
+        // Lapsed 4 January; on 20 January the lapse is recent, so a check over a day old is due.
+        expect(await due("2002-01-20T00:00:00.000Z")).toBe(true);
+        await fail(a, c, "2002-02-25T00:00:00.000Z");
+        expect(await due("2002-03-01T00:00:00.000Z")).toBe(false);
+        expect(await due("2002-03-04T12:00:00.000Z")).toBe(true);
       });
 
       // Fails if a claim can be withdrawn by another account, or withdrawing leaves it.

@@ -1,4 +1,4 @@
-import { CLAIM_CHECKS_PER_HOUR } from "@/lib/accounts/limits";
+import { CLAIM_CHANGES_PER_HOUR, CLAIM_CHECKS_PER_HOUR } from "@/lib/accounts/limits";
 import { readAccount, type Account } from "@/lib/accounts/session";
 import { isSameOrigin } from "@/lib/analysis/run";
 import { claimPageUrl, newClaimToken } from "@/lib/claims/host";
@@ -22,11 +22,12 @@ import { json } from "./json";
  * the new token, the only time it is ever shown.
  */
 
-type Deps = Pick<ServerDeps, "config" | "store" | "accounts" | "clock" | "fetch" | "txt">;
+type Deps = Pick<ServerDeps, "config" | "store" | "accounts" | "clock" | "fetch" | "txt" | "sleep">;
 
 /** A check (Check again or Start over) may start requests for this long; a route invocation has 60 s. */
 export const CHECK_DEADLINE_MS = 20_000;
 const CHECK_WINDOW = "claim-check";
+const CHANGE_WINDOW = "claim-change";
 
 type Fields = Record<string, unknown>;
 
@@ -57,13 +58,21 @@ async function ownClaim(deps: Deps, account: Account, fields: Fields): Promise<C
   return claim ?? notFound();
 }
 
-/** Counts one check of the claim (CLAIM_CHECKS_PER_HOUR per hour); a 429 response past it. */
-async function countCheck(deps: Deps, claimId: string): Promise<Response | null> {
-  const counted = await countClientWindow(deps.store, CHECK_WINDOW, CLAIM_CHECKS_PER_HOUR, claimId, deps.clock());
+/** Counts one call in an hourly window; a 429 response with `text` past `limit`. */
+async function countIn(deps: Deps, prefix: string, limit: number, key: string, text: (retryAt: Date) => string): Promise<Response | null> {
+  const counted = await countClientWindow(deps.store, prefix, limit, key, deps.clock());
   if (counted.ok) return null;
   const retryAt = new Date(counted.retryAt);
-  return json(429, { error: "limit", message: T.limit(retryAt), retryAt: retryAt.toISOString() });
+  return json(429, { error: "limit", message: text(retryAt), retryAt: retryAt.toISOString() });
 }
+
+/**
+ * Counts one check of the account's claim for `host` (CLAIM_CHECKS_PER_HOUR per account and host, so
+ * Remove and a new claim do not reset it). The window key is a hash, so the Store holds no host.
+ */
+const countCheck = (deps: Deps, account: Account, host: string) => countIn(deps, CHECK_WINDOW, CLAIM_CHECKS_PER_HOUR, sha256Hex(`${account.accountId}\n${host}`), T.limit);
+/** Counts one claim creation or Start over of the account (CLAIM_CHANGES_PER_HOUR). */
+const countChange = (deps: Deps, account: Account) => countIn(deps, CHANGE_WINDOW, CLAIM_CHANGES_PER_HOUR, account.accountId, T.changeLimit);
 
 async function guarded(name: string, request: Request, deps: Deps, body: (account: Account, fields: Fields) => Promise<Response>): Promise<Response> {
   try {
@@ -80,7 +89,8 @@ async function guarded(name: string, request: Request, deps: Deps, body: (accoun
  * POST /api/claims `{source, method}` -> 201 `{claim, token, message}`. `source` is `analysis:<id>`
  * (an analysis attached to the account) or `report:<id>` (a saved report); the claim is for that
  * analysis's or report's exact host. 400 invalid (no valid source or method) or not_public (the host
- * is not a public website), 404 not_found (not the account's), 409 exists or full (MAX_PENDING_CLAIMS).
+ * is not a public website), 404 not_found (not the account's), 409 exists or full (MAX_PENDING_CLAIMS),
+ * 429 limit past CLAIM_CHANGES_PER_HOUR creations and Start overs of the account in the hour.
  */
 export function handleCreateClaim(request: Request, deps: Deps): Promise<Response> {
   return guarded("/api/claims", request, deps, async (account, fields) => {
@@ -94,6 +104,8 @@ export function handleCreateClaim(request: Request, deps: Deps): Promise<Respons
     } catch {
       return json(400, { error: "not_public", message: T.notPublic });
     }
+    const limited = await countChange(deps, account);
+    if (limited) return limited;
     const token = newClaimToken(host, deps.config);
     const created = await deps.accounts.createClaim(account.accountId, { host, method, tokenHash: sha256Hex(token) });
     if (created.outcome === "full") return json(409, { error: "full", message: T.full });
@@ -105,16 +117,16 @@ export function handleCreateClaim(request: Request, deps: Deps): Promise<Respons
 /**
  * POST /api/claims/check `{claimId}` -> 200 `{claim, message}`: Check again. Reads the home page or
  * the TXT record now and records what it found. 409 superseded (terminal: nothing is read), 429
- * limit `{retryAt}` past CLAIM_CHECKS_PER_HOUR checks of the claim in the hour.
+ * limit `{retryAt}` past CLAIM_CHECKS_PER_HOUR checks of the account's claims for the host in the hour.
  */
 export function handleCheckClaim(request: Request, deps: Deps): Promise<Response> {
   return guarded("/api/claims/check", request, deps, async (account, fields) => {
     const claim = await ownClaim(deps, account, fields);
     if (claim instanceof Response) return claim;
     if (claim.status === "superseded") return json(409, { error: "superseded", message: T.supersededFinal, claim: view(deps, claim) });
-    const limited = await countCheck(deps, claim.id);
+    const limited = await countCheck(deps, account, claim.host);
     if (limited) return limited;
-    const { claim: after, checked } = await runClaimCheck(deps, claim, { notAfter: deps.clock() + CHECK_DEADLINE_MS });
+    const { claim: after, checked } = await runClaimCheck(deps, claim, { deadline: { notAfter: deps.clock() + CHECK_DEADLINE_MS, maxWaitMs: CHECK_DEADLINE_MS, onTimeout: "record" } });
     const shown = view(deps, after);
     return json(200, { claim: shown, message: checked ? (shown.reason ?? shown.statusText) : T.notChecked });
   });
@@ -122,7 +134,7 @@ export function handleCheckClaim(request: Request, deps: Deps): Promise<Response
 
 /**
  * POST /api/claims/start-over `{claimId, method?}` -> 200 `{claim, token, message}`: a new token (the
- * old one stops counting) and optionally the other method, back to pending. Counts as a check. 409
+ * old one stops counting) and optionally the other method, back to pending. Counts as a change and a check. 409
  * verified or superseded (refused), 409 full (a lapsed claim would pass MAX_PENDING_CLAIMS), 429 limit.
  */
 export function handleStartOverClaim(request: Request, deps: Deps): Promise<Response> {
@@ -133,7 +145,7 @@ export function handleStartOverClaim(request: Request, deps: Deps): Promise<Resp
     if (!method) return json(400, { error: "invalid", message: T.invalid });
     if (claim.status === "verified") return json(409, { error: "verified", message: T.verifiedNoRestart, claim: view(deps, claim) });
     if (claim.status === "superseded") return json(409, { error: "superseded", message: T.supersededFinal, claim: view(deps, claim) });
-    const limited = await countCheck(deps, claim.id);
+    const limited = (await countChange(deps, account)) ?? (await countCheck(deps, account, claim.host));
     if (limited) return limited;
     const token = newClaimToken(claim.host, deps.config);
     const r = await deps.accounts.restartClaim(account.accountId, claim.id, { method, tokenHash: sha256Hex(token) });

@@ -5,10 +5,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { attachVisitorAnalyses, listAccountAnalyses } from "@/lib/analysis/owner";
-import { getAnalysis } from "@/lib/analysis/record";
+import { analysisKey, getAnalysis, type Analysis } from "@/lib/analysis/record";
+import type { Snapshot } from "@/lib/snapshot/types";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { claimHost, claimPageUrl, newClaimToken, FIXTURE_CLAIM_TOKEN } from "@/lib/claims/host";
-import { claimOptions, parseClaimSource } from "@/lib/claims/sources";
+import { claimOptions, hostOfSource, parseClaimSource } from "@/lib/claims/sources";
 import { loadConfig } from "@/lib/config";
 import { sha256Hex } from "@/lib/security/tokens";
 import { accountCookie, analyzeRequest, holdAllSlots, OTHER_ACCOUNT, testDeps, TEST_ACCOUNT } from "../helpers/server-deps";
@@ -57,6 +58,24 @@ describe("parseClaimSource", () => {
     expect(parseClaimSource("report:00000000-0000-4000-8000-000000000001")).toEqual({ kind: "report", id: "00000000-0000-4000-8000-000000000001" });
     expect(parseClaimSource(`analysis:${"a".repeat(32)}`)).toEqual({ kind: "analysis", id: "a".repeat(32) });
     for (const bad of ["shop.example.com", "report:", "analysis:xyz", `host:${"a".repeat(32)}`, `analysis:${"A".repeat(32)}`, 42, null]) expect(parseClaimSource(bad)).toBeNull();
+  });
+});
+
+describe("the scored host", () => {
+  // P3-R1. Fails if a claim from an analysis whose input redirected to www. is for the typed host instead of the scored one
+  // (a saved report of the same analysis would name the www. host).
+  it("an analysis source gives the host the analysis scored, like its saved report", async () => {
+    const d = testDeps();
+    const id = "e".repeat(32);
+    const a: Analysis = { version: 2, id, ownerHash: sha256Hex("v"), accountId: TEST_ACCOUNT.userId, jobId: "j", inputOrigin: "https://shop.example.com", createdAt: Date.now(), expiresAt: Date.now() + 3_600_000, snapshot: { host: "www.shop.example.com" } as Snapshot };
+    await d.store.set(analysisKey(id), a, 7200);
+    await d.store.set("account-analyses:" + TEST_ACCOUNT.userId, { version: 1, ids: [id] }, 7200);
+    expect(await hostOfSource(d, TEST_ACCOUNT.userId, { kind: "analysis", id })).toBe("www.shop.example.com");
+    const options = await claimOptions(d, TEST_ACCOUNT.userId, [], []);
+    expect(options.map((o) => o.label)).toEqual(["www.shop.example.com (recent analysis)"]);
+    // Before the score exists, the typed origin's host is all there is.
+    await d.store.set(analysisKey(id), { ...a, snapshot: undefined }, 7200);
+    expect(await hostOfSource(d, TEST_ACCOUNT.userId, { kind: "analysis", id })).toBe("shop.example.com");
   });
 });
 

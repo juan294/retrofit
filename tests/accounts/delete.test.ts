@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountData } from "@/lib/accounts/data";
 import { deleteAccount } from "@/lib/accounts/delete";
+import { indexAccountAnalyses } from "@/lib/analysis/owner";
 import { ACCOUNT_COOKIE, createAccountSession, readAccount, readAccountByToken } from "@/lib/accounts/session";
 import { handleAccountDelete } from "@/lib/api/account-delete";
 import type { AuthGateway } from "@/lib/auth/gateway";
@@ -61,6 +62,15 @@ describe("account deletion", () => {
     expect(await readAccountByToken(s.elsewhere, s.d)).toBeNull();
     expect(s.fixture.userIdOf("gone@example.test")).toBeNull();
     expect([...s.d.backing.values.keys()].filter((k) => k.startsWith("account-session"))).toEqual([]);
+  });
+
+  // P3-R7. Fails if the account's list of analyses (the claim choices) outlives the account.
+  it("deletes the account's list of analyses", async () => {
+    const s = await signedIn();
+    await indexAccountAnalyses(s.d, s.userId, ["a".repeat(32)]);
+    expect([...s.d.backing.values.keys()]).toContain(`account-analyses:${s.userId}`);
+    expect(await deleteAccount(s.d, s.account)).toBe("deleted");
+    expect([...s.d.backing.values.keys()].filter((k) => k.startsWith("account-analyses:"))).toEqual([]);
   });
 
   // Fails if a provider outage deletes anything (the pre-check must run before every deletion).

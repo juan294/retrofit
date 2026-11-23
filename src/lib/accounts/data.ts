@@ -91,6 +91,8 @@ export const CLAIM_RESULTS = [
   "record_missing",
   "record_mismatch",
   "dns_failed",
+  "crawl_delay",
+  "dns_timeout",
 ] as const;
 export type ClaimResult = (typeof CLAIM_RESULTS)[number];
 
@@ -115,8 +117,10 @@ export interface Claim {
   readonly failures: number;
   /** ISO 8601: when another account took the host over, or null. */
   readonly supersededAt: string | null;
+  /** ISO 8601: when the claim lapsed (kept by later failures), or null while it is not lapsed. */
+  readonly lapsedAt: string | null;
   readonly lastResult: ClaimResult | null;
-  /** The HTTP status (http_status) or the number of tags or records found (tag_mismatch, record_mismatch). */
+  /** The HTTP status (http_status), the number of tags or records found (tag_mismatch, record_mismatch), or the Crawl-delay in seconds (crawl_delay). */
   readonly lastDetail: number | null;
 }
 
@@ -226,13 +230,17 @@ export interface AccountData {
    * the host moves and the change is recorded. A superseded claim is never verified again.
    */
   verifyClaim(claimId: string, input: ClaimCheckInput): Promise<VerifyClaimResult>;
-  /** Verified and lapsed claims last checked before `checkedBefore` (ISO 8601), least recently checked first, at most `limit`. */
-  listClaimsDueForRecheck(checkedBefore: string, limit: number): Promise<Claim[]>;
+  /**
+   * The claims due for the daily recheck at `now` (ISO 8601), at most `limit`: verified and lapsed claims last checked over
+   * CLAIM_RECHECK_AFTER_S before `now`; a claim lapsed over CLAIM_SLOW_AFTER_S before `now` only once its last check is over
+   * CLAIM_SLOW_RECHECK_AFTER_S old. Verified claims first, then lapsed ones, each least recently checked first.
+   */
+  listClaimsDueForRecheck(now: string, limit: number): Promise<Claim[]>;
   /** Withdraws one claim of the account (a published site of the claim goes with it). False when there was none. */
   deleteClaim(accountId: string, claimId: string): Promise<boolean>;
 }
 
-export { CLAIM_LAPSE_AFTER, MAX_PENDING_CLAIMS, MAX_SAVED_REPORTS } from "./limits";
+export { CLAIM_LAPSE_AFTER, CLAIM_RECHECK_AFTER_S, CLAIM_SLOW_AFTER_S, CLAIM_SLOW_RECHECK_AFTER_S, MAX_PENDING_CLAIMS, MAX_SAVED_REPORTS } from "./limits";
 /** A score/v1 report is a few kilobytes; this bound only refuses something that is not one. */
 export const MAX_REPORT_BYTES = 256 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

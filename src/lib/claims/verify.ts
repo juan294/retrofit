@@ -27,12 +27,30 @@ export type CheckOutcome =
   | { readonly passed: false; readonly result: Exclude<ClaimResult, "verified">; readonly detail: number | null }
   | { readonly passed: null; readonly deferred: true };
 
-export interface CheckOptions {
-  /** Latest start (ms, deps.clock) of any request of the check (FetchOptions.notAfter). */
-  readonly notAfter?: number;
+/**
+ * How long a check may take. `notAfter` (ms, deps.clock): no request starts later, and a TXT lookup
+ * still waiting then is given up. `maxWaitMs`: the longest wait the caller ever allows; a site whose
+ * Crawl-delay is longer can never be read, so the check fails with crawl_delay instead of waiting
+ * (otherwise a recheck would be deferred forever). `onTimeout`: a TXT lookup given up at `notAfter`
+ * is recorded as dns_timeout (`record`, a visitor's check) or deferred (`defer`, the daily run, whose
+ * budget is then spent).
+ */
+export interface CheckDeadline {
+  readonly notAfter: number;
+  readonly maxWaitMs: number;
+  readonly onTimeout: "record" | "defer";
 }
 
-export type ClaimCheckDeps = Pick<ServerDeps, "config" | "fetch" | "txt">;
+export interface CheckOptions {
+  readonly deadline?: CheckDeadline;
+}
+
+export type ClaimCheckDeps = Pick<ServerDeps, "config" | "fetch" | "txt" | "clock" | "sleep">;
+
+/** A timer that never keeps the process alive (a lookup that answered leaves it running). */
+const realSleep = (ms: number) => new Promise<void>((resolve) => void setTimeout(resolve, ms).unref?.());
+/** HTML's ASCII whitespace (the spec's "strip leading and trailing ASCII whitespace"). */
+const ASCII_SPACE = /^[\t\n\f\r ]+|[\t\n\f\r ]+$/g;
 
 const fail = (result: Exclude<ClaimResult, "verified">, detail: number | null = null): CheckOutcome => ({ passed: false, result, detail });
 
@@ -52,9 +70,13 @@ async function checkMeta(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "toke
   }
   let res;
   try {
-    res = await guardedFetch(url, deps.fetch, { notAfter: opts.notAfter });
+    res = await guardedFetch(url, deps.fetch, { notAfter: opts.deadline?.notAfter });
   } catch (e) {
-    if (e instanceof CrawlDelayTooLong) return { passed: null, deferred: true };
+    if (e instanceof CrawlDelayTooLong) {
+      const delay = await deps.fetch.robots.crawlDelay(url.origin).catch(() => undefined);
+      if (delay !== undefined && opts.deadline && delay * 1000 > opts.deadline.maxWaitMs) return fail("crawl_delay", Math.round(delay));
+      return { passed: null, deferred: true };
+    }
     if (e instanceof RobotsBlocked) return fail("robots_blocked");
     if (e instanceof RobotsUnavailable) return fail("robots_unavailable");
     if (e instanceof FetchTimeoutError) return fail("timeout");
@@ -69,16 +91,27 @@ async function checkMeta(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "toke
   const $ = cheerio.load(res.body);
   const values = $("head meta[name]")
     .filter((_, el) => ($(el).attr("name") ?? "").trim().toLowerCase() === CLAIM_META_NAME)
-    .map((_, el) => $(el).attr("content") ?? "")
+    .map((_, el) => ($(el).attr("content") ?? "").replace(ASCII_SPACE, ""))
     .get();
   if (values.length === 0) return fail("tag_missing");
   return anyMatches(values, claim.tokenHash) ? { passed: true } : fail("tag_mismatch", values.length);
 }
 
-async function checkDns(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "tokenHash">): Promise<CheckOutcome> {
+const GAVE_UP: unique symbol = Symbol("gave up");
+
+async function checkDns(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "tokenHash">, opts: CheckOptions): Promise<CheckOutcome> {
   let records: string[][];
   try {
-    records = await deps.txt(claimRecordName(claim.host));
+    const lookup = deps.txt(claimRecordName(claim.host));
+    const { deadline } = opts;
+    if (deadline) {
+      lookup.catch(() => {});
+      const answer = await Promise.race([lookup, (deps.sleep ?? realSleep)(Math.max(0, deadline.notAfter - deps.clock())).then((): typeof GAVE_UP => GAVE_UP)]);
+      if (answer === GAVE_UP) return deadline.onTimeout === "record" ? fail("dns_timeout") : { passed: null, deferred: true };
+      records = answer;
+    } else {
+      records = await lookup;
+    }
   } catch (e) {
     return fail(isNoRecord(e) ? "record_missing" : "dns_failed");
   }
@@ -95,7 +128,7 @@ export async function checkClaim(deps: ClaimCheckDeps, claim: Pick<Claim, "host"
   } catch {
     return fail("not_public");
   }
-  return claim.method === "meta" ? checkMeta(deps, claim, opts) : checkDns(deps, claim);
+  return claim.method === "meta" ? checkMeta(deps, claim, opts) : checkDns(deps, claim, opts);
 }
 
 /**

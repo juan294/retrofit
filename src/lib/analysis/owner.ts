@@ -70,6 +70,11 @@ export async function indexAccountAnalyses(deps: Deps & { readonly config: Pick<
   await updateIdList(deps.store, accountAnalysesKey(accountId), (list) => ids.reduce((acc, id) => appendBounded(id, MAX_INDEXED_ANALYSES)(acc), list), deps.config.analysisTtlS + EXPIRED_GRACE_S);
 }
 
+/** Drops the account's list of analyses (account deletion). The analyses themselves expire on their own. */
+export async function forgetAccountAnalyses(store: Store, accountId: string): Promise<void> {
+  await store.delete(accountAnalysesKey(accountId));
+}
+
 /** The account's most recent listed analyses that are still stored and attached to it, newest first, at most `max`. */
 export async function listAccountAnalyses(deps: Deps, accountId: string, max: number): Promise<Analysis[]> {
   const ids = (await readIdList(deps.store, accountAnalysesKey(accountId))).slice(-max).reverse();

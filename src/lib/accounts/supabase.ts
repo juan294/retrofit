@@ -3,6 +3,9 @@ import { serviceCall, serviceClient, type ServiceClientSource } from "@/lib/supa
 import {
   AccountDataUnavailable,
   CLAIM_LAPSE_AFTER,
+  CLAIM_RECHECK_AFTER_S,
+  CLAIM_SLOW_AFTER_S,
+  CLAIM_SLOW_RECHECK_AFTER_S,
   isUuid,
   MAX_PENDING_CLAIMS,
   MAX_SAVED_REPORTS,
@@ -60,6 +63,7 @@ interface ClaimRow {
   last_checked_at: string | null;
   failures: number;
   superseded_at: string | null;
+  lapsed_at: string | null;
   last_result: ClaimResult | null;
   last_detail: number | null;
 }
@@ -73,7 +77,7 @@ interface ClaimAnswer {
 
 const iso = (t: string) => new Date(t).toISOString();
 const isoOrNull = (t: string | null) => (t === null ? null : iso(t));
-const CLAIM_COLUMNS = "id, account_id, host, method, token_hash, status, created_at, verified_at, last_checked_at, failures, superseded_at, last_result, last_detail";
+const CLAIM_COLUMNS = "id, account_id, host, method, token_hash, status, created_at, verified_at, last_checked_at, failures, superseded_at, lapsed_at, last_result, last_detail";
 
 function claimOf(row: ClaimRow): Claim {
   return {
@@ -88,6 +92,7 @@ function claimOf(row: ClaimRow): Claim {
     lastCheckedAt: isoOrNull(row.last_checked_at),
     failures: row.failures,
     supersededAt: isoOrNull(row.superseded_at),
+    lapsedAt: isoOrNull(row.lapsed_at),
     lastResult: row.last_result,
     lastDetail: row.last_detail,
   };
@@ -256,16 +261,12 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
       throw new AccountDataUnavailable("verifyClaim", "bad_outcome");
     },
 
-    async listClaimsDueForRecheck(checkedBefore, limit) {
-      const cutoff = iso(checkedBefore);
+    async listClaimsDueForRecheck(rawNow, limit) {
+      const now = Date.parse(iso(rawNow));
+      const before = (s: number) => new Date(now - s * 1000).toISOString();
+      // One database function applies the recheck policy and order (supabase/migrations/*_claims.sql claims_due).
       const rows = await call<ClaimRow[]>("listClaimsDueForRecheck", () =>
-        claims()
-          .select(CLAIM_COLUMNS)
-          .in("status", ["verified", "lapsed"])
-          .or(`last_checked_at.is.null,last_checked_at.lt.${cutoff}`)
-          .order("last_checked_at", { ascending: true, nullsFirst: true })
-          .order("id", { ascending: true })
-          .limit(Math.max(0, limit)),
+        client.rpc("claims_due", { p_checked_before: before(CLAIM_RECHECK_AFTER_S), p_slow_lapsed_before: before(CLAIM_SLOW_AFTER_S), p_slow_checked_before: before(CLAIM_SLOW_RECHECK_AFTER_S), p_limit: Math.max(0, limit) }),
       );
       return (rows ?? []).map(claimOf);
     },

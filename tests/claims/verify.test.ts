@@ -11,7 +11,7 @@ import type { TxtResolver } from "@/lib/claims/txt";
 import { sha256Hex } from "@/lib/security/tokens";
 import { blocked, hostile, materialize, type FixtureSite } from "../fixtures/sites";
 import { startFixtureServer, type FixtureRoutes, type FixtureServer } from "../helpers/fixture-server";
-import { noRealDns, testDeps, TEST_ACCOUNT, type TestDepsOptions } from "../helpers/server-deps";
+import { fakeClock, noRealDns, testDeps, TEST_ACCOUNT, type TestDepsOptions } from "../helpers/server-deps";
 
 const TOKEN = "0123456789abcdef0123456789abcdef";
 const page = (head: string, body = "<p>Home</p>") => ({ headers: { "content-type": "text/html; charset=utf-8" }, body: `<!doctype html><html><head><meta charset="utf-8">${head}</head><body>${body}</body></html>` });
@@ -53,6 +53,7 @@ function claim(host: string, method: "meta" | "dns" = "meta", token = TOKEN): Cl
     lastCheckedAt: null,
     failures: 0,
     supersededAt: null,
+    lapsedAt: null,
     lastResult: null,
     lastDetail: null,
   };
@@ -91,6 +92,26 @@ describe("meta method", () => {
   it("refuses a wrong token and reports how many tags it found", async () => {
     const host = await serve({ wrong: { "/robots.txt": allow, "/": page(`${tag("f".repeat(32))}${tag(` ${TOKEN}x`)}`) } });
     expect(await checkClaim(deps(), claim(host("wrong")))).toEqual({ passed: false, result: "tag_mismatch", detail: 2 });
+  });
+
+  // P3-R6. Fails if spaces, tabs or newlines around the token (as HTML authors and templates add them) refuse the tag, or other spaces are trimmed.
+  it("trims ASCII whitespace around the content, and nothing else", async () => {
+    const host = await serve({ spaced: { "/robots.txt": allow, "/": page(tag(` \t${TOKEN}\n `)) }, nbsp: { "/robots.txt": allow, "/": page(tag(`\u00a0${TOKEN}`)) } });
+    expect(await checkClaim(deps(), claim(host("spaced")))).toEqual({ passed: true });
+    expect(await checkClaim(deps(), claim(host("nbsp")))).toEqual({ passed: false, result: "tag_mismatch", detail: 1 });
+  });
+
+  // P3-R2. Fails if a Crawl-delay longer than the check may wait defers the check (a recheck would then never fail), or the
+  // home page is requested anyway.
+  it("a Crawl-delay longer than the check may wait records crawl_delay; a shorter wait past the deadline defers", async () => {
+    const host = await serve({ slowbot: { "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nCrawl-delay: 3600\nAllow: /\n" }, "/": page(tag(TOKEN)) } });
+    const clock = fakeClock();
+    const d = deps({ clock: clock.clock });
+    const deadline = (maxWaitMs: number) => ({ notAfter: clock.now() + maxWaitMs, maxWaitMs, onTimeout: "record" as const });
+    expect(await checkClaim(d, claim(host("slowbot")), { deadline: deadline(20_000) })).toEqual({ passed: false, result: "crawl_delay", detail: 3600 });
+    expect(server?.requests.map((r) => r.path)).toEqual(["/robots.txt"]);
+    // A check that may wait longer than the delay, but whose own deadline is already near, is deferred.
+    expect(await checkClaim(d, claim(host("slowbot")), { deadline: { notAfter: clock.now() + 1000, maxWaitMs: 7_200_000, onTimeout: "record" } })).toEqual({ passed: null, deferred: true });
   });
 
   // Fails if one matching tag among several does not verify.
@@ -183,6 +204,20 @@ describe("dns method", () => {
       throw Object.assign(new Error("queryTxt ESERVFAIL"), { code: "ESERVFAIL" });
     };
     expect(await checkClaim(deps({ txt: servfail }), claim("shop.example.com", "dns"))).toEqual({ passed: false, result: "dns_failed", detail: null });
+  });
+
+  // P3-R5. Fails if a TXT lookup that never answers holds the check past its deadline, or a user check is not told why.
+  it("a TXT lookup past the deadline records dns_timeout for a user check and defers a recheck", async () => {
+    const clock = fakeClock();
+    const waits: number[] = [];
+    const d = deps({ clock: clock.clock, txt: () => new Promise<string[][]>(() => {}), sleep: async (ms) => (waits.push(ms), clock.advance(ms)) });
+    const at = clock.now();
+    expect(await checkClaim(d, claim("shop.example.com", "dns"), { deadline: { notAfter: at + 20_000, maxWaitMs: 20_000, onTimeout: "record" } })).toEqual({ passed: false, result: "dns_timeout", detail: null });
+    expect(waits).toEqual([20_000]);
+    expect(await checkClaim(d, claim("shop.example.com", "dns"), { deadline: { notAfter: clock.now() + 5_000, maxWaitMs: 40_000, onTimeout: "defer" } })).toEqual({ passed: null, deferred: true });
+    // A lookup that answers in time is not cut short.
+    const fast = deps({ clock: clock.clock, txt: async () => [[`retrofit-site-verification=${TOKEN}`]], sleep: () => new Promise(() => {}) });
+    expect(await checkClaim(fast, claim("shop.example.com", "dns"), { deadline: { notAfter: clock.now() + 20_000, maxWaitMs: 20_000, onTimeout: "record" } })).toEqual({ passed: true });
   });
 
   // Fails if an IDN host is looked up in Unicode instead of punycode.

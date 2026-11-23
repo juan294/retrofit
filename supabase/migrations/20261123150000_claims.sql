@@ -12,17 +12,21 @@
 --
 -- Access contract, as for delete_account_data: security invoker with an empty search_path,
 -- EXECUTE for service_role only. Every function returns jsonb {outcome, claim} where claim is the
--- row without superseded_by.
+-- row without superseded_by (claims_due returns the claims as a jsonb array).
 
 alter table public.site_claims
   add column last_result text
     constraint site_claims_last_result check (last_result in (
       'verified', 'tag_missing', 'tag_mismatch', 'robots_blocked', 'robots_unavailable', 'redirected', 'http_status',
-      'not_html', 'timeout', 'not_public', 'fetch_failed', 'record_missing', 'record_mismatch', 'dns_failed')),
-  add column last_detail integer;
+      'not_html', 'timeout', 'not_public', 'fetch_failed', 'record_missing', 'record_mismatch', 'dns_failed', 'crawl_delay',
+      'dns_timeout')),
+  add column last_detail integer,
+  -- When the claim lapsed: set by the failure that lapses it, kept by later failures, cleared when it passes or restarts.
+  add column lapsed_at timestamptz,
+  add constraint site_claims_lapsed_at check ((status = 'lapsed') = (lapsed_at is not null));
 
--- The daily recheck reads verified and lapsed claims, least recently checked first.
-create index site_claims_due on public.site_claims (last_checked_at nulls first) where status in ('verified', 'lapsed');
+-- The daily recheck (claims_due) reads verified and lapsed claims, least recently checked first.
+create index site_claims_due on public.site_claims (status, last_checked_at nulls first) where status in ('verified', 'lapsed');
 
 -- The claim as the functions return it.
 create function public.claim_json(p_claim public.site_claims)
@@ -95,7 +99,7 @@ begin
   end if;
   update public.site_claims c
   set method = p_method, token_hash = p_token_hash, status = 'pending', verified_at = null, last_checked_at = null,
-      failures = 0, last_result = null, last_detail = null
+      failures = 0, last_result = null, last_detail = null, lapsed_at = null
   where c.id = p_claim_id
   returning * into v_claim;
   return pg_catalog.jsonb_build_object('outcome', 'restarted', 'claim', public.claim_json(v_claim));
@@ -130,7 +134,8 @@ begin
   end if;
   update public.site_claims c
   set failures = c.failures + 1, last_checked_at = p_now, last_result = p_result, last_detail = p_detail,
-      status = case when c.status in ('verified', 'lapsed') and c.failures + 1 >= p_lapse_after then 'lapsed' else c.status end
+      status = case when c.status in ('verified', 'lapsed') and c.failures + 1 >= p_lapse_after then 'lapsed' else c.status end,
+      lapsed_at = case when c.status in ('verified', 'lapsed') and c.failures + 1 >= p_lapse_after then coalesce(c.lapsed_at, p_now) else null end
   where c.id = p_claim_id
   returning * into v_claim;
   return pg_catalog.jsonb_build_object('outcome', 'updated', 'claim', public.claim_json(v_claim));
@@ -171,7 +176,7 @@ begin
   -- The host moves. Phase 4: the published sites of the superseded claims are paused here.
   with moved as (
     update public.site_claims c
-    set status = 'superseded', superseded_at = p_now, superseded_by = v_claim.account_id
+    set status = 'superseded', superseded_at = p_now, superseded_by = v_claim.account_id, lapsed_at = null
     where c.host = v_claim.host and c.id <> v_claim.id and c.status in ('verified', 'lapsed')
     returning c.account_id
   )
@@ -179,14 +184,38 @@ begin
 
   update public.site_claims c
   set status = 'verified', verified_at = case when c.status = 'verified' then c.verified_at else p_now end,
-      last_checked_at = p_now, failures = 0, last_result = 'verified', last_detail = null
+      last_checked_at = p_now, failures = 0, last_result = 'verified', last_detail = null, lapsed_at = null
   where c.id = p_claim_id
   returning * into v_claim;
   return pg_catalog.jsonb_build_object('outcome', 'verified', 'claim', public.claim_json(v_claim), 'moved_from', pg_catalog.to_jsonb(v_moved));
 end;
 $$;
 
+-- The daily recheck's claims: verified ones checked before p_checked_before, then lapsed ones checked before
+-- p_checked_before, or before p_slow_checked_before when they lapsed before p_slow_lapsed_before; each least
+-- recently checked first, at most p_limit in all.
+create function public.claims_due(p_checked_before timestamptz, p_slow_lapsed_before timestamptz, p_slow_checked_before timestamptz, p_limit integer)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select coalesce(pg_catalog.jsonb_agg(public.claim_json(d.claim) order by d.rank, d.checked nulls first, d.id), '[]'::jsonb)
+  from (
+    select c as claim, case when c.status = 'verified' then 0 else 1 end as rank, c.last_checked_at as checked, c.id
+    from public.site_claims c
+    where (c.status = 'verified' and (c.last_checked_at is null or c.last_checked_at < p_checked_before))
+       or (c.status = 'lapsed' and (c.last_checked_at is null or c.last_checked_at <
+             case when c.lapsed_at < p_slow_lapsed_before then least(p_checked_before, p_slow_checked_before) else p_checked_before end))
+    order by 2, 3 nulls first, 4
+    limit greatest(p_limit, 0)
+  ) d;
+$$;
+
 revoke all on function public.claim_json(public.site_claims) from public, anon, authenticated;
+revoke all on function public.claims_due(timestamptz, timestamptz, timestamptz, integer) from public, anon, authenticated;
+grant execute on function public.claims_due(timestamptz, timestamptz, timestamptz, integer) to service_role;
 revoke all on function public.create_claim(uuid, text, text, text, integer) from public, anon, authenticated;
 revoke all on function public.restart_claim(uuid, uuid, text, text, integer) from public, anon, authenticated;
 revoke all on function public.record_claim_failure(uuid, text, text, integer, timestamptz, integer) from public, anon, authenticated;

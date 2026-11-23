@@ -3,6 +3,9 @@ import { systemClock, type Clock } from "@/lib/store/types";
 import { newToken, sha256Hex, SHA256_HEX_PATTERN } from "@/lib/security/tokens";
 import {
   CLAIM_LAPSE_AFTER,
+  CLAIM_RECHECK_AFTER_S,
+  CLAIM_SLOW_AFTER_S,
+  CLAIM_SLOW_RECHECK_AFTER_S,
   isUuid,
   MAX_PENDING_CLAIMS,
   MAX_SAVED_REPORTS,
@@ -217,6 +220,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
           lastCheckedAt: null,
           failures: 0,
           supersededAt: null,
+          lapsedAt: null,
           lastResult: null,
           lastDetail: null,
         };
@@ -245,7 +249,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
         const { status } = row.claim;
         if (status === "verified" || status === "superseded") return { outcome: status, claim: copy(row.claim) };
         if (status !== "pending" && pendingCount(accountId) >= MAX_PENDING_CLAIMS) return { outcome: "full" };
-        const claim = update(row, { method: input.method, tokenHash: input.tokenHash, status: "pending", verifiedAt: null, lastCheckedAt: null, failures: 0, lastResult: null, lastDetail: null });
+        const claim = update(row, { method: input.method, tokenHash: input.tokenHash, status: "pending", verifiedAt: null, lastCheckedAt: null, failures: 0, lapsedAt: null, lastResult: null, lastDetail: null });
         return { outcome: "restarted", claim };
       });
     },
@@ -259,7 +263,9 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
         const failures = row.claim.failures + 1;
         const lapses = (row.claim.status === "verified" || row.claim.status === "lapsed") && failures >= CLAIM_LAPSE_AFTER;
         const status: ClaimStatus = lapses ? "lapsed" : row.claim.status;
-        return { outcome: "updated", claim: update(row, { failures, status, lastCheckedAt: checkedAt, lastResult: input.result, lastDetail: input.detail }) };
+        // The lapse instant is the failure that lapsed it; later failures keep it.
+        const lapsedAt = status === "lapsed" ? (row.claim.lapsedAt ?? checkedAt) : null;
+        return { outcome: "updated", claim: update(row, { failures, status, lapsedAt, lastCheckedAt: checkedAt, lastResult: input.result, lastDetail: input.detail }) };
       });
     },
 
@@ -278,20 +284,27 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
           movedFrom.push(other.claim.accountId);
         }
         const verifiedAt = row.claim.status === "verified" ? row.claim.verifiedAt : checkedAt;
-        const claim = update(row, { status: "verified", verifiedAt, lastCheckedAt: checkedAt, failures: 0, lastResult: "verified", lastDetail: null });
+        const claim = update(row, { status: "verified", verifiedAt, lapsedAt: null, lastCheckedAt: checkedAt, failures: 0, lastResult: "verified", lastDetail: null });
         return { outcome: "verified", claim, movedFrom };
       });
     },
 
-    async listClaimsDueForRecheck(checkedBefore, limit) {
-      const cutoff = Date.parse(checkedBefore);
+    async listClaimsDueForRecheck(rawNow, limit) {
+      const now = Date.parse(rawNow);
       // Never checked sorts first, as in the database (nulls first).
       const checked = (c: Claim) => (c.lastCheckedAt === null ? 0 : Date.parse(c.lastCheckedAt));
+      const due = (c: Claim) => {
+        if (c.status === "verified") return checked(c) < now - CLAIM_RECHECK_AFTER_S * 1000;
+        if (c.status !== "lapsed") return false;
+        const slow = c.lapsedAt !== null && Date.parse(c.lapsedAt) < now - CLAIM_SLOW_AFTER_S * 1000;
+        return checked(c) < now - (slow ? CLAIM_SLOW_RECHECK_AFTER_S : CLAIM_RECHECK_AFTER_S) * 1000;
+      };
+      const rank = (c: Claim) => (c.status === "verified" ? 0 : 1);
       return op(() =>
         [...claims.values()]
           .map((r) => r.claim)
-          .filter((c) => (c.status === "verified" || c.status === "lapsed") && checked(c) < cutoff)
-          .sort((x, y) => checked(x) - checked(y))
+          .filter(due)
+          .sort((x, y) => rank(x) - rank(y) || checked(x) - checked(y))
           .slice(0, Math.max(0, limit))
           .map(copy),
       );

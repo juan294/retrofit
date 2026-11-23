@@ -1,3 +1,4 @@
+import { forgetAccountAnalyses } from "@/lib/analysis/owner";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { endAccountSessions, endLastAccountSession, type Account } from "./session";
 
@@ -18,7 +19,8 @@ export type DeleteOutcome = "deleted" | "nothing_deleted" | "partial";
  * 3. End the account's other sessions (this one stays, so the visitor can retry).
  * 4. Delete every account row in one atomic step (AccountData.deleteAccountData).
  * 5. Delete the Supabase Auth user, last. A user already gone counts as deleted.
- * 6. End this session and drop the session index. A failure is logged; the handler clears the cookie anyway.
+ * 6. End this session, drop the session index and the account's list of analyses. A failure is logged; the
+ *    handler clears the cookie anyway.
  */
 export async function deleteAccount(deps: Pick<ServerDeps, "store" | "accounts" | "auth">, account: Pick<Account, "accountId" | "sessionHash">): Promise<DeleteOutcome> {
   const fail = (step: string, e: unknown) => console.error(`Account deletion ${step} failed:`, e instanceof Error ? e.name : "unknown error");
@@ -37,6 +39,6 @@ export async function deleteAccount(deps: Pick<ServerDeps, "store" | "accounts" 
     fail("of the auth user", e);
     return "partial";
   }
-  await endLastAccountSession(deps.store, account).catch((e: unknown) => fail("of this session", e));
+  await Promise.all([endLastAccountSession(deps.store, account), forgetAccountAnalyses(deps.store, account.accountId)]).catch((e: unknown) => fail("of this session", e));
   return "deleted";
 }

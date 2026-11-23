@@ -2,7 +2,7 @@
 // restyle the claim panels without touching their logic. Every text names what Retrofit checked (the
 // URL or the record name) and what it found; it never quotes the site's own content.
 
-import { CLAIM_CHECKS_PER_HOUR, MAX_PENDING_CLAIMS } from "@/lib/accounts/limits";
+import { CLAIM_CHANGES_PER_HOUR, CLAIM_CHECKS_PER_HOUR, MAX_PENDING_CLAIMS } from "@/lib/accounts/limits";
 import type { ClaimMethod, ClaimResult, ClaimStatus } from "@/lib/accounts/data";
 import { formatDate, hhmmUtc } from "@/lib/analysis/texts";
 import { CLAIM_META_NAME, CLAIM_TXT_PREFIX } from "@/lib/claims/names";
@@ -92,6 +92,10 @@ export const CLAIMS_TEXT = {
           : `Retrofit found ${detail ?? "several"} TXT records at ${t.recordName}, but none is ${CLAIM_TXT_PREFIX} with this claim's token.`;
       case "dns_failed":
         return `Retrofit could not look up ${t.recordName}. Check again in a few minutes.`;
+      case "dns_timeout":
+        return `The DNS lookup of ${t.recordName} did not answer in time. Check again in a few minutes.`;
+      case "crawl_delay":
+        return `The robots.txt of ${t.host} asks RetrofitBot to wait ${detail ?? "too long"} seconds between requests, longer than Retrofit can wait, so it cannot read the tag. Use the DNS method instead.`;
     }
   },
 
@@ -101,6 +105,7 @@ export const CLAIMS_TEXT = {
   /** A check that could not start before the deadline: nothing was recorded. */
   notChecked: "Retrofit could not check this site right now. Check again in a few minutes.",
   limit: (retryAt: Date) => `You can check a claim ${CLAIM_CHECKS_PER_HOUR} times an hour. Try again at ${hhmmUtc(retryAt)} UTC.`,
+  changeLimit: (retryAt: Date) => `You can start or restart ${CLAIM_CHANGES_PER_HOUR} claims an hour. Try again at ${hhmmUtc(retryAt)} UTC.`,
   full: `You can have at most ${MAX_PENDING_CLAIMS} claims waiting for verification. Remove one, or finish one, first.`,
   exists: "You already have a claim for this site.",
   verifiedNoRestart: "This claim is verified. Remove it first if you want to start over.",

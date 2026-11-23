@@ -1,7 +1,7 @@
 import type { Claim, SavedReportSummary } from "@/lib/accounts/data";
 import { isUuid } from "@/lib/accounts/data";
 import { listAccountAnalyses } from "@/lib/analysis/owner";
-import { getAnalysis, isAnalysisId } from "@/lib/analysis/record";
+import { getAnalysis, isAnalysisId, type Analysis } from "@/lib/analysis/record";
 import { sameHash } from "@/lib/analysis/visitor";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
@@ -16,6 +16,20 @@ export type ClaimSource = { readonly kind: "report" | "analysis"; readonly id: s
 
 /** Recent analyses the account page offers. */
 export const CLAIM_RECENT_ANALYSES = 10;
+
+/**
+ * The host an analysis scored (its snapshot's host, after redirects: what its report and a saved
+ * report name), or before the score exists the host of the typed origin.
+ */
+function scoredHost(analysis: Pick<Analysis, "inputOrigin" | "snapshot">): string | null {
+  const snapshotHost = (analysis.snapshot as { host?: unknown } | undefined)?.host;
+  if (typeof snapshotHost === "string") return claimHost(snapshotHost);
+  try {
+    return claimHost(new URL(analysis.inputOrigin).host);
+  } catch {
+    return null;
+  }
+}
 
 export function parseClaimSource(raw: unknown): ClaimSource | null {
   if (typeof raw !== "string") return null;
@@ -35,11 +49,7 @@ export async function hostOfSource(deps: Pick<ServerDeps, "store" | "accounts">,
   }
   const analysis = await getAnalysis(deps.store, source.id);
   if (!analysis?.accountId || !sameHash(analysis.accountId, accountId)) return null;
-  try {
-    return claimHost(new URL(analysis.inputOrigin).host);
-  } catch {
-    return null;
-  }
+  return scoredHost(analysis);
 }
 
 export interface ClaimOption {
@@ -60,15 +70,7 @@ export async function claimOptions(deps: Pick<ServerDeps, "store" | "clock">, ac
     taken.add(host);
     options.push({ value, label: label(host) });
   };
-  for (const a of await listAccountAnalyses(deps, accountId, CLAIM_RECENT_ANALYSES)) {
-    let host: string | null = null;
-    try {
-      host = claimHost(new URL(a.inputOrigin).host);
-    } catch {
-      host = null;
-    }
-    add(host, `analysis:${a.id}`, CLAIMS_TEXT.sourceFromAnalysis);
-  }
+  for (const a of await listAccountAnalyses(deps, accountId, CLAIM_RECENT_ANALYSES)) add(scoredHost(a), `analysis:${a.id}`, CLAIMS_TEXT.sourceFromAnalysis);
   for (const r of reports) add(claimHost(r.host), `report:${r.id}`, CLAIMS_TEXT.sourceFromReport);
   return options;
 }

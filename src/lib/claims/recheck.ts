@@ -3,8 +3,9 @@ import type { ServerDeps } from "@/lib/server/runtime";
 import { runClaimCheck } from "./verify";
 
 /**
- * The daily recheck (GET /api/cron/claims, phase-3.md): verified and lapsed claims last checked more
- * than RECHECK_AFTER_S ago, least recently checked first, at most RECHECK_PER_RUN per run. A few
+ * The daily recheck (GET /api/cron/claims, phase-3.md): the due claims (AccountData
+ * listClaimsDueForRecheck: verified first, then lapsed, a long-lapsed claim only weekly), at most
+ * RECHECK_PER_RUN per run; a run with more due logs that (counts only). A few
  * checks run at once; each meta check is paced per host and follows robots rules through the fetch
  * context. No check starts after RECHECK_BUDGET_MS, and no request after it either, so a run ends
  * well inside one 60 s function; the claims it did not reach stay due for the next run. Three
@@ -12,7 +13,6 @@ import { runClaimCheck } from "./verify";
  * come from deps.clock.
  */
 
-export const RECHECK_AFTER_S = 24 * 3600;
 export const RECHECK_PER_RUN = 50;
 /** No check or request starts after this; a started request ends within FETCH_TIMEOUT_MS (8 s). */
 export const RECHECK_BUDGET_MS = 40_000;
@@ -31,15 +31,18 @@ export interface RecheckSummary {
   readonly errors: number;
 }
 
-type Deps = Pick<ServerDeps, "config" | "accounts" | "clock" | "fetch" | "txt">;
+type Deps = Pick<ServerDeps, "config" | "accounts" | "clock" | "fetch" | "txt" | "sleep">;
 
 /** Runs one recheck. Throws only when the due claims cannot be listed. */
 export async function recheckDueClaims(deps: Deps): Promise<RecheckSummary> {
   const startedAt = deps.clock();
   const notAfter = startedAt + RECHECK_BUDGET_MS;
-  const due = await deps.accounts.listClaimsDueForRecheck(new Date(startedAt - RECHECK_AFTER_S * 1000).toISOString(), RECHECK_PER_RUN);
+  const deadline = { notAfter, maxWaitMs: RECHECK_BUDGET_MS, onTimeout: "defer" } as const;
+  // One more than a run checks, to know whether some must wait for the next run.
+  const due = await deps.accounts.listClaimsDueForRecheck(new Date(startedAt).toISOString(), RECHECK_PER_RUN + 1);
+  if (due.length > RECHECK_PER_RUN) console.warn(`Claim recheck: more than ${RECHECK_PER_RUN} claims were due; the rest wait for the next run.`);
   const tally = { checked: 0, verified: 0, failed: 0, lapsed: 0, skipped: 0, errors: 0 };
-  const queue = [...due];
+  const queue = due.slice(0, RECHECK_PER_RUN);
 
   async function one(claim: Claim): Promise<void> {
     if (deps.clock() >= notAfter) {
@@ -47,7 +50,7 @@ export async function recheckDueClaims(deps: Deps): Promise<RecheckSummary> {
       return;
     }
     try {
-      const { claim: after, checked } = await runClaimCheck(deps, claim, { notAfter });
+      const { claim: after, checked } = await runClaimCheck(deps, claim, { deadline });
       if (!checked) {
         tally.skipped++;
         return;

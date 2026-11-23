@@ -44,7 +44,7 @@ export function claimView(claim: Claim, config: Pick<Config, "fixturesEnabled">)
     claim.status === "verified"
       ? T.status.verified(claim.verifiedAt ?? claim.createdAt)
       : claim.status === "lapsed"
-        ? T.status.lapsed(claim.lastCheckedAt ?? claim.createdAt)
+        ? T.status.lapsed(claim.lapsedAt ?? claim.lastCheckedAt ?? claim.createdAt)
         : claim.status === "superseded"
           ? T.status.superseded(claim.supersededAt ?? claim.createdAt)
           : T.status.pending;

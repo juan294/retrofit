@@ -4,7 +4,7 @@
  * resolver; no test reaches the network or real DNS.
  */
 import { describe, expect, it } from "vitest";
-import { CLAIM_CHECKS_PER_HOUR, MAX_PENDING_CLAIMS } from "@/lib/accounts/limits";
+import { CLAIM_CHANGES_PER_HOUR, CLAIM_CHECKS_PER_HOUR, MAX_PENDING_CLAIMS } from "@/lib/accounts/limits";
 import { analysisKey, type Analysis } from "@/lib/analysis/record";
 import { handleCheckClaim, handleCreateClaim, handleRemoveClaim, handleStartOverClaim } from "@/lib/api/claims";
 import type { ClaimView } from "@/lib/claims/view";
@@ -157,6 +157,40 @@ describe("check, start over and remove", () => {
     expect((await startOver({ claimId })).status).toBe(429);
     clock.advance(3_600_000);
     expect((await check(claimId)).status).toBe(200);
+  });
+
+  // P3-R3. Fails if removing a claim and claiming the host again gives a fresh check budget.
+  it("the check limit is per account and host: Remove and a new claim do not reset it", async () => {
+    const clock = fakeClock(Date.parse("2026-11-23T10:20:00.000Z"));
+    const { d, claimId, check, remove, create } = await withClaim({ clock });
+    for (let n = 0; n < CLAIM_CHECKS_PER_HOUR; n++) expect((await check(claimId)).status).toBe(200);
+    expect((await check(claimId)).status).toBe(429);
+    expect((await remove(claimId)).status).toBe(200);
+    const again = await read(await create({ source: `analysis:${await analysisOf(d, "https://shop.example.com", TEST_ACCOUNT.userId)}`, method: "dns" }));
+    expect(again.claim?.id).not.toBe(claimId);
+    const limited = await check(again.claim!.id);
+    expect(limited.status).toBe(429);
+    expect((await read(limited)).retryAt).toBe("2026-11-23T11:00:00.000Z");
+  });
+
+  // P3-R3. Fails if an account can create (or Start over) claims without an hourly bound, or the 429 lacks the retry time.
+  it(`allows ${CLAIM_CHANGES_PER_HOUR} claim creations and Start overs per account per hour, then 429 with retryAt`, async () => {
+    const clock = fakeClock(Date.parse("2026-11-23T10:20:00.000Z"));
+    const { d, create, remove, startOver } = await setup({ clock });
+    const source = `analysis:${await analysisOf(d, "https://cap.example.com", TEST_ACCOUNT.userId)}`;
+    let last = "";
+    for (let n = 0; n < CLAIM_CHANGES_PER_HOUR - 1; n++) {
+      const body = await read(await create({ source, method: "dns" }));
+      last = body.claim!.id;
+      if (n < CLAIM_CHANGES_PER_HOUR - 2) await remove(last);
+    }
+    expect((await startOver({ claimId: last })).status).toBe(200);
+    await remove(last);
+    const refused = await create({ source, method: "dns" });
+    expect(refused.status).toBe(429);
+    expect(await read(refused)).toMatchObject({ error: "limit", retryAt: "2026-11-23T11:00:00.000Z", message: CLAIMS_TEXT.changeLimit(new Date("2026-11-23T11:00:00.000Z")) });
+    clock.advance(3_600_000);
+    expect((await create({ source, method: "dns" })).status).toBe(201);
   });
 
   // Fails if Start over keeps the old token, cannot switch the method, or works on a verified claim.

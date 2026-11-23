@@ -29,6 +29,7 @@ const base: Claim = {
   lastCheckedAt: "2026-11-23T10:05:00.000Z",
   failures: 1,
   supersededAt: null,
+  lapsedAt: null,
   lastResult: "robots_blocked",
   lastDetail: null,
 };
@@ -70,7 +71,7 @@ describe("claim panels before hydration", () => {
     expect(superseded).not.toContain(CLAIMS_TEXT.checkAgain);
     expect(superseded).not.toContain(CLAIMS_TEXT.startOver);
     expect(superseded).toContain(CLAIMS_TEXT.remove);
-    const lapsed = render([{ ...base, status: "lapsed", lastCheckedAt: "2026-11-26T04:41:00.000Z", lastResult: "tag_missing" }]);
+    const lapsed = render([{ ...base, status: "lapsed", lapsedAt: "2026-11-26T04:41:00.000Z", lastCheckedAt: "2026-11-28T04:41:00.000Z", lastResult: "tag_missing" }]);
     expect(lapsed).toContain("Verification failed on 26 November 2026. Your published page and badge are paused.");
     expect(lapsed).toContain(CLAIMS_TEXT.startOver);
   });
