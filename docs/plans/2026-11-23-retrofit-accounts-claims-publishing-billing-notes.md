@@ -16,6 +16,14 @@ On 2026-11-23 Juan authorized all five phases of 2026-11-23-retrofit-accounts-cl
 - Unsubscribe. Phase 1 said `GET /unsubscribe?t=<token>` records `unsubscribed_at`. Chose: GET shows a confirmation button; the change happens on `POST /api/unsubscribe`, which also accepts the RFC 8058 one-click body from mailbox providers (so it does not require same-origin). Why: mail link scanners open GET links and would unsubscribe people silently.
 - Claim transfer. The parent plan's claim states were `pending`, `verified` and `lapsed`. Chose: the migration adds a terminal `superseded` status with `superseded_at` and `superseded_by`. Why: a host that moves to another account must keep a record of the change, and a lapsed claim of the old owner must never be restored over the new owner (review finding P1-R4).
 - Additions beyond the phase file: `findNotifySignup`, `NOTIFY_PER_CLIENT_HOUR` (default 5), a partial unique index for one verified claim per host, and `unique(account_id, host)` on claims.
+- Session secret. Phase 2 listed `ACCOUNT_SESSION_SECRET`. Chose: no new secret. The session id is 128 random bits and the Store keeps only its SHA-256; the per-email sign-in window key is an HMAC with the existing `SESSION_SECRET`. External action 4 therefore needs only `SUPABASE_ANON_KEY`.
+- Return page. Phase 2 said `emailRedirectTo /auth/confirm?next=returnTo`. Found: the pinned email template builds its own link and ignores the redirect. Chose: a one-hour `retrofit_signin` cookie (Path=/auth) carries the return page and the requesting browser's identity. Why: the link stays fixed and the return page never appears in mail.
+- Browser sign-in tests. Phase 2 said `e2e/account.spec.ts` signs in through the local mail catcher. Found: the gate removes the database stack before Playwright, and the browser tests run on the memory store. Chose: a fixtures-only mailbox (404 outside fixtures mode) for the browser test, and `tests/db/auth.db.test.ts` for real Supabase Auth with the local mail catcher. Why: both paths are covered without a second stack.
+- Attaching analyses. Chose: analyses attach at sign-in only in the browser that asked for the link, for the same address. Why: a forwarded link must not attach another person's analyses.
+- Confirm page. Plan said the confirm link verifies on GET. Chose: GET shows a "Sign in" button and only the same-origin POST verifies the token (review P2-R1). Why: mail link scanners open links and would use up the one-time token; the page also warns when the link was requested in another browser (login CSRF, P2-R8).
+- Account cookie lifetime. The cookie has a 400-day Max-Age and the Store record (30 days, sliding) decides when the session ends. Why: server components cannot reset a cookie on every request.
+- Account deletion order: provider check, the account's other sessions, all data in one database transaction (`delete_account_data`, a second migration), then the auth user, then this browser's session. A failure at the auth user step keeps this browser signed in so a retry finishes.
+- External action 3 (Supabase Auth settings) gains: use `supabase/templates/magic_link.html` for both the Confirm signup and Magic Link templates; the site URL is the origin only (the template builds `{{ .SiteURL }}/auth/confirm`); raise the Auth email rate limit to fit the sign-in limits.
 
 ## Phase 1
 
@@ -30,9 +38,32 @@ Independent review returned CHANGES REQUIRED with nine findings. Dispositions:
 - P1-R5 fixed: `/unsubscribe` joined the phone-width and color-scheme specs.
 - P1-R6 fixed in `2a8ed26`: production case `own-pages` (`e2e-prod/pages.spec.ts`). It fails against `v0.2.0` until a release ships these pages.
 - P1-R7 fixed by this notes file.
-- P1-R8 fixed: the privacy draft says the free AI keeps usage and cost counts and never the conversation (verified against the inference proxy log calls, which carry only error codes and pool names), and that Retrofit sends no email yet.
+- P1-R8 fixed: the privacy draft says the free AI keeps usage and cost counts and never the conversation (verified against the inference proxy log calls, which carry only error codes and pool names), and that Retrofit sends no email yet. Phase 2 (P2-R3) replaced that sentence: sign-in email now goes through Supabase Auth and Amazon SES.
 - P1-R9 fixed: the Playwright server raises `NOTIFY_PER_CLIENT_HOUR`.
 
 The integration owner reviewed the repair diffs and approved them. The simplify pass (four angles) produced `1bf7963`: one shared Supabase service client and failure wrapper, one adapter choice in the runtime with lazy account data, `countClientWindow`, one token module, a general lint rule for Supabase adapters, the `SitePage` shell, `PRIVATE_PATHS`, shared request texts, and removal of the unused unsubscribe URL builders (a mailer adds them back). Skipped with reasons: the `privacyHref` prop (the plan refuses the form without a privacy link), `findNotifySignup` (the contract suite reads it), a one-round-trip unsubscribe function (only the repeat path pays a second call), a shared client `post()` with the older `JudgeForm`, a per-spec Playwright client identity, and the memory adapter's linear token lookup (tests only).
 
 Owner manual check 1 (approve `/privacy` and `/terms`) is required before any release that includes this phase. The phase gate runs on the commit containing this entry; Phase 2 records its receipt.
+
+Phase 1 passed all 15 local checks on `52b1dd24ba614cba665a08a0c41f11cdb059a5ae`. The analyzer accepted 1,366 unit, 3 performance, 58 database and 100 browser tests (1,117 required). Coverage was 94.12% for statements and 88.47% for branches. The gate database teardown completed. The receipt and reports are kept under the canonical checkout's ignored `.local/runs/2026-11-23-accounts/phase1/`.
+
+## Phase 2
+
+Commits `3f5b800`, `e48a218`, `811a86f`, `84ec067` and `1c4ff47` added the `AuthGateway` (Supabase Auth with the anon key server side, a fake for unit tests, a fixtures-only gateway and mailbox for browser tests), the `retrofit_account` session, sign-in limits per network (5 an hour) and per keyed email hash (3 an hour), `/sign-in`, `/auth/confirm`, `/account`, saved reports with a read-only view, sign-out, account deletion with a marked step for Phase 5's subscription cancel, and owner checks that accept the visitor cookie or the attached account. The local stack now runs email sign-up and the Mailpit mail catcher (dev port 54724, gate port 54734), with `supabase/templates/magic_link.html`. Each unit test failed first on the missing module or behavior. `tests/db/auth.db.test.ts` first failed on a real 429 from an immediate resend; the test now asserts that answer. A mutation of `delete_account_data` that left `api_keys` behind failed the access probe and was reverted. The first full browser run failed `analyze.spec.ts` "sees progress", because the new account spec warmed the bakery crawl cache; the account spec now uses `agentified.fixture.test`.
+
+Independent review returned CHANGES REQUIRED with ten findings. Dispositions:
+
+- P2-R1 (S3) and P2-R8 fixed in `e630e3d`: see the confirm page deviation. Eight confirm tests failed first.
+- P2-R2 fixed: Supabase's project-wide email limit answers `mail_busy` ("try again later" with the lead address); the per-address limit keeps its wait.
+- P2-R3 fixed: the privacy and terms drafts describe sign-in mail through Supabase Auth and Amazon SES, the keyed address hash kept about an hour for limits, analyses private to the browser and the attached account, and that the sign-in provider may keep security logs. Owner manual check 1 covers these drafts.
+- P2-R4 fixed: confirm ends the browser's previous session before the new one.
+- P2-R5 fixed: migration `20261123140000_saved_reports_once.sql` makes a saved report unique per account, host and fetch time and caps an account at 100 (`save_report` rpc).
+- P2-R6 fixed: the failure after the token is used says to ask for a new link.
+- P2-R7 not applied, recorded as hardening: a `__Host-` cookie prefix needs a different cookie name over plain HTTP in tests. The cookies set no Domain attribute; a sibling subdomain of `thecreativetoken.com` could still plant a cookie. Revisit for the visitor and account cookies together.
+- P2-R9 fixed by this notes file (deviations and external action 3 additions).
+- P2-R10 fixed: one session read on the results page; the sign-in form states, confirm page states and save error at 320 px and in both color schemes.
+- The deletion failure text says other devices may already be signed out.
+
+The integration owner reviewed the confirm repair (POST-only verification, same-origin, previous session ended) and approved it. The simplify pass produced `54cac06`: one owned-analysis lookup (`findOwnedAnalysis`), shared cookie helpers (`src/lib/security/cookies.ts`, also used by the free-AI session cookie with identical output), one `seeOther`, one `useHydrated`, `anonKey` inside `SupabaseConfig`, gate-db requiring the anon key and mail URL, fewer sequential Store calls at sign-in, and test helpers. Skipped: a process memo for session reads, a fixtures control route in place of e2e route mocks for the sign-in failure states, and making `analyze.spec.ts` independent of spec order for its cold crawl.
+
+External actions 1 to 4 of Phase 2 and owner manual check 2 stay pending. The phase gate runs on the commit containing this entry; Phase 3 records its receipt.
