@@ -47,8 +47,9 @@ create table public.saved_reports (
 create index saved_reports_account on public.saved_reports (account_id, created_at desc);
 
 -- Ownership claims (Phase 3). One claim per account and host; at most one verified claim per host
--- (the first to verify wins; a later verification by another account moves the host in one
--- transaction). Three failed rechecks lapse a claim.
+-- (the first to verify wins). A later verification by another account moves the host in one
+-- transaction: the earlier claim becomes `superseded` (superseded_at, superseded_by = the new
+-- account) and the new one `verified`. Three failed rechecks lapse a claim.
 create table public.site_claims (
   id uuid primary key default gen_random_uuid(),
   account_id uuid not null references auth.users (id) on delete cascade,
@@ -58,17 +59,21 @@ create table public.site_claims (
   token_hash text not null
     constraint site_claims_token_hash check (token_hash ~ '^[0-9a-f]{64}$'),
   status text not null default 'pending'
-    constraint site_claims_status check (status in ('pending', 'verified', 'lapsed')),
+    constraint site_claims_status check (status in ('pending', 'verified', 'lapsed', 'superseded')),
   created_at timestamptz not null default now(),
   verified_at timestamptz,
   last_checked_at timestamptz,
   failures integer not null default 0
     constraint site_claims_failures check (failures >= 0),
+  superseded_at timestamptz,
+  -- The account that took the host over; null after that account is deleted.
+  superseded_by uuid references auth.users (id) on delete set null,
   constraint site_claims_account_host unique (account_id, host)
 );
 
 create unique index site_claims_one_verified_per_host on public.site_claims (host) where status = 'verified';
 create index site_claims_host on public.site_claims (host);
+create index site_claims_superseded_by on public.site_claims (superseded_by) where superseded_by is not null;
 
 -- Retrofit-hosted agents (Phase 4). One published site per host, tied to the claim that allows it.
 create table public.published_sites (

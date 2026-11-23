@@ -147,6 +147,34 @@ begin
 end;
 $$;
 
+-- The host moves: in one transaction the first claim becomes superseded by the second account and
+-- the second claim becomes verified. Moving it back restores the first account's claim.
+insert into auth.users (id) values ('00000000-0000-4000-8000-0000000000a3');
+do $$
+begin
+  perform pg_temp.expect_allowed('service_role', $q$update public.site_claims set status = 'superseded', superseded_at = now(), superseded_by = '00000000-0000-4000-8000-0000000000a2' where account_id = '00000000-0000-4000-8000-0000000000a1' and host = 'access.example'$q$);
+  perform pg_temp.expect_allowed('service_role', $q$update public.site_claims set status = 'verified', verified_at = now() where account_id = '00000000-0000-4000-8000-0000000000a2' and host = 'access.example'$q$);
+  perform pg_temp.expect_allowed('service_role', $q$update public.site_claims set status = 'pending', superseded_at = null, superseded_by = null where account_id = '00000000-0000-4000-8000-0000000000a2' and host = 'access.example'$q$);
+  perform pg_temp.expect_allowed('service_role', $q$update public.site_claims set status = 'verified', superseded_at = null, superseded_by = null where account_id = '00000000-0000-4000-8000-0000000000a1' and host = 'access.example'$q$);
+  -- superseded_by must name an auth user.
+  perform pg_temp.expect_error('service_role', $q$update public.site_claims set superseded_by = '00000000-0000-4000-8000-0000000000ff' where account_id = '00000000-0000-4000-8000-0000000000a2'$q$, '23503');
+  -- A third account supersedes a2's claim; deleting that account keeps the claim and clears superseded_by.
+  perform pg_temp.expect_allowed('service_role', $q$update public.site_claims set status = 'superseded', superseded_at = now(), superseded_by = '00000000-0000-4000-8000-0000000000a3' where account_id = '00000000-0000-4000-8000-0000000000a2'$q$);
+end;
+$$;
+
+delete from auth.users where id = '00000000-0000-4000-8000-0000000000a3';
+
+do $$
+begin
+  if (select superseded_by from public.site_claims where account_id = '00000000-0000-4000-8000-0000000000a2') is not null
+     or (select status from public.site_claims where account_id = '00000000-0000-4000-8000-0000000000a2') is distinct from 'superseded'
+     or (select superseded_at from public.site_claims where account_id = '00000000-0000-4000-8000-0000000000a2') is null then
+    raise exception 'accounts_access: deleting the superseding account must keep the superseded claim and set superseded_by to null';
+  end if;
+end;
+$$;
+
 -- Deleting the auth user deletes every row the account owns, and nothing else.
 delete from auth.users where id = '00000000-0000-4000-8000-0000000000a1';
 
