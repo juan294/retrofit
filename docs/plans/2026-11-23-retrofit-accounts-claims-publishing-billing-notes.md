@@ -35,6 +35,16 @@ On 2026-11-23 Juan authorized all five phases of 2026-11-23-retrofit-accounts-cl
 - Cross-origin reads cover all published agent JSON, including `site-content.json` and the bridge manifest. A site with no score shows "Agent-ready check · verified by Retrofit" on the badge. An expired analysis cannot be published.
 - Production case `published-unknown` fails against a release without this phase.
 - Refresh and the crawl cache. Chose: keep the 24-hour cache (project rule: cache results and limit requests per site) and tell the owner when a new read is possible (review P4-R1). Letting a verified owner's refresh bypass the cache is an open product option for Juan.
+- Billing variables. `BILLING_START`, `STRIPE_SECRET_KEY` (test) and `STRIPE_WEBHOOK_SECRET` are required on Vercel as the plan's stuck-state row says; prices are optional. Effect: a release of any of these phases needs the Stripe test account first, because the configuration loads on every route. Set the variables before the deployment.
+- Live Stripe keys and live events are refused everywhere, not only on Vercel. An earlier `BILLING_START` than 2027-01-19T00:00:00Z is refused on Vercel, so manual check 4 works before that date only locally.
+- `BILLING_START` is 2027-01-18 16:00 in Pacific time. The instant follows the plan. Whether judging needs the rest of that day is an open owner decision (review P5-R4).
+- Score and key limits the plan left open: 20 an hour anonymous, 60 Pro, 300 Agency, with per-account daily caps; at most 5 keys per account; key prefix `rk_retrofit_` because Stripe's restricted keys also start with `rk_`.
+- Free limit: a fixed 30-day window from `BILLING_START`, per visitor cookie and per network (a keyed hash of the address kept up to 30 days, stated in the privacy draft).
+- When a plan ends, published pages, badges and saved reports stay; a new publish, refresh or save needs a plan. Juan may choose otherwise.
+- Retrofit's free AI ends only for signed-in Free accounts, as the phase file says, so signing out restores it. Juan may choose otherwise.
+- Stripe's customer portal needs a saved test configuration: one more external action.
+- A completed deletion records a hashed customer marker; a later event cancels a subscription only on that marker (review P5-R1).
+- Test servers use `BILLING_START` in 2036 so the local gate does not change by date; the post-start browser cases move the fixtures clock.
 
 ## Phase 1
 
@@ -115,3 +125,27 @@ Independent review returned CHANGES REQUIRED. Dispositions, all in `b82b182` unl
 The integration owner read the saved-key, deletion and matcher repairs and approved them. The simplify pass produced `c4743f6`. A publication now stores only the fields its files need (`agentSnapshot`), so link lists, forms, page markup data and probe bodies of the crawl are not kept; the generated files are byte-identical to those from the full snapshot. The route's trace lists only the eight served files (INFERRED that Vercel uses it as for `/p/`). Skipped: moving the matcher grammar into `proxy()`, a required saved-key policy type, a fetch-guard base set by the preview, an outline read for the manifest and network, caching the scored host and read time on the analysis list, a view for `public_hosts`, accepting ports only in fixtures mode, and dropping `movedFrom` and other adapter-only return fields.
 
 Open: a refresh inside the read window cannot bypass the cache (owner option); deleting the auth user may wait on a verification by the same account (INFERRED, untested); the time shown for a new read has no date, which is clear only while the window is 24 hours or less; a browser can show a cached badge for up to one hour after a lapse (planned and stated in the privacy draft). Owner manual checks 1 and 3 stay pending. The phase gate runs on the commit containing this entry; Phase 5 records its receipt.
+
+Phase 4 passed all 15 local checks on `7e3e9222bbaeeca6c04ea6b7e6070b3763ec37a9`. The analyzer accepted 1,732 unit, 3 performance, 98 database and 161 browser tests (1,583 required). Coverage was 92.48% for statements and 85.82% for branches. The gate database teardown completed. The receipt is under `.local/runs/2026-11-23-accounts/phase4/`.
+
+## Phase 5
+
+Commits `bba098c` to `c54d18d` added the billing gateway (the `stripe` package 23.2.0, exact pin, no install scripts, API version pinned, loaded lazily), the billing migration, entitlements from one plan table, the free-analysis limit, checkout, portal, webhook, reconciliation, API keys, the account and pricing changes and the deletion step that cancels first. No check contacted Stripe; the tests use an in-memory Stripe API and a fixtures gateway. Unit modules failed first on missing code; the database contract and race tests, a store case, `runtime.test.ts` and all browser specs were first seen green. Of 81 mutations in this first round, three survived at first: dropping the explicit API version (the package default is the same), a field the memory adapter never stores, and one signature check whose test was then strengthened.
+
+Independent review returned CHANGES REQUIRED with fourteen findings; a second reviewer checked the repairs and returned CHANGES REQUIRED with eight. Dispositions:
+
+- P5-R1 (S2) fixed in `2333920` and the commits after it: an orphan subscription is cancelled only on a hashed customer marker written in the deletion transaction; `getUser` and `deleteUser` accept only the provider's explicit user-not-found answer. Without a marker the webhook raises an alert and leaves the subscription alone.
+- P5-R2, P5-R3, P5-R6, P5-R7, P5-R8, P5-R9 (S3 and S4) fixed: access always ends (period end plus three days, no grace when cancelled; seven days from the first time Retrofit saw a past-due status); keys add no capacity before the start and have per-account daily caps after it; price variables accept a list; a living customer without a record is linked again; a lease and a second list keep one payable checkout.
+- P5-R4 (S3) not changed: the start instant is the plan's. It is 16:00 Pacific time on 2027-01-18. Owner decision.
+- P5-R5 and P5-RR1 (S3) fixed: after the start the production evidence runs the browser suite first and treats the exact limit answer as an expected result; before it, the order and the cold concurrent case are unchanged. No product bypass was added. The limit branch of `e2e-prod/probes.spec.ts` has not been run.
+- P5-R10 to P5-R13 and the nits fixed. P5-R14 is this entry.
+- P5-RR2, P5-RR4 to P5-RR8 fixed in `e9111a3`. P5-RR3 fixed as a correction: after the data deletion and before the auth user is deleted, a sign-in and checkout in another browser leaves an alert, not a cancellation. No automatic marker was added, because clearing billing rows by hand would then cancel subscriptions.
+- A judge who is signed in on a Free account could not submit the code after the start (raised in the simplify review). Fixed in `e9111a3`: a valid code opens the judge session under the same attempt and daily limits.
+
+The integration owner read the checkout, judge, entitlement and dependency changes of the second round and approved them. The simplify pass produced `513c2a5`. Skipped: a conditional two-key Store call for the free count, one call for key plus billing, an unreleased reconcile lease, one limits function for analysis start, and one layer for the hosted-URL check.
+
+Choices that need Juan: the start instant; the required Stripe test variables on Vercel; the score, key and daily limits (Free accounts 50 sites a day, Pro 100, Agency 300); the 30-day free window and its keyed address hash; what stays public when a plan ends; free AI after signing out; immediate cancellation at account deletion.
+
+Open risks: two checkouts paid in the same second can both charge, and nothing cancels one (INFERRED); a deletion stopped at the auth user shows the general text on retry; test-mode billing rows must be cleared before live mode; `deleted_customers` is kept on purpose; no check used the real Stripe API, Amazon SES or a hosted Supabase project.
+
+Pending external actions: the production migrations; SES production access and SMTP credentials; Supabase Auth settings and both email templates; the Stripe test account, products, webhook and portal configuration; the production variables; release. Owner manual checks 1 to 5 are pending. The phase gate runs on the commit containing this entry; the integrated result is verified again on `develop`.

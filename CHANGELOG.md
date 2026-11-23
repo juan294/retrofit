@@ -2,6 +2,16 @@
 
 All notable changes to Retrofit are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- `/pricing` with "notify me", drafts of `/privacy` and `/terms` for owner review, and unsubscribe.
+- Accounts: sign-in by email link, saved reports, sign-out and account deletion.
+- Ownership claims by meta tag or DNS record, rechecked daily.
+- Publishing: the verified owner of a site can publish its report and agent at `/s/<host>`, and embed a badge.
+- Billing in Stripe test mode, plans, a free-analysis limit and API keys. All of it starts only at `BILLING_START` (2027-01-19T00:00:00Z); before that Retrofit stays open and free.
+
 ## [0.2.0] - 2026-11-22
 
 ### Added
