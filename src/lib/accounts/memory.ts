@@ -1,6 +1,19 @@
+import { randomUUID } from "node:crypto";
 import { systemClock, type Clock } from "@/lib/store/types";
 import { newToken, sha256Hex, SHA256_HEX_PATTERN } from "@/lib/security/tokens";
-import { normalizeEmail, requireEmail, type AccountData, type NotifySignup } from "./data";
+import {
+  isUuid,
+  MAX_SAVED_REPORTS_LISTED,
+  normalizeEmail,
+  requireAccountId,
+  requireEmail,
+  requireSaveInput,
+  scoreOf,
+  type AccountData,
+  type NotifySignup,
+  type SavedReport,
+  type SavedReportSummary,
+} from "./data";
 
 interface NotifyRow {
   readonly email: string;
@@ -10,14 +23,35 @@ interface NotifyRow {
   unsubscribedAt: number | null;
 }
 
+interface SavedReportRow {
+  readonly id: string;
+  readonly accountId: string;
+  readonly host: string;
+  readonly report: Record<string, unknown>;
+  readonly fetchedAt: string;
+  readonly createdAt: number;
+  /** Insertion order, so reports saved in the same millisecond still list newest first. */
+  readonly seq: number;
+}
+
 /** Shared state. Two adapters over one backing model two server instances. */
 export interface AccountMemoryBacking {
   /** Keyed by the normalized email. */
   readonly notify: Map<string, NotifyRow>;
+  /** Profile creation times, keyed by account id. */
+  readonly profiles: Map<string, number>;
+  /** Keyed by report id. */
+  readonly savedReports: Map<string, SavedReportRow>;
 }
 
 export function createAccountMemoryBacking(): AccountMemoryBacking {
-  return { notify: new Map() };
+  return { notify: new Map(), profiles: new Map(), savedReports: new Map() };
+}
+
+let seq = 0;
+
+function summary(row: SavedReportRow): SavedReportSummary {
+  return { id: row.id, host: row.host, score: scoreOf(row.report), fetchedAt: row.fetchedAt, savedAt: iso(row.createdAt) };
 }
 
 export interface MemoryAccountDataOptions {
@@ -34,7 +68,7 @@ const iso = (ms: number) => new Date(ms).toISOString();
  */
 export function createMemoryAccountData(options: MemoryAccountDataOptions = {}): AccountData {
   const clock = options.clock ?? systemClock;
-  const { notify } = options.backing ?? createAccountMemoryBacking();
+  const { notify, profiles, savedReports } = options.backing ?? createAccountMemoryBacking();
 
   async function op<R>(body: (now: number) => R): Promise<R> {
     await Promise.resolve();
@@ -71,6 +105,57 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
           return "unsubscribed";
         }
         return "unknown";
+      });
+    },
+
+    async ensureProfile(rawId) {
+      const accountId = requireAccountId(rawId);
+      return op((now) => {
+        if (!profiles.has(accountId)) profiles.set(accountId, now);
+      });
+    },
+
+    async getProfile(accountId) {
+      return op(() => {
+        const createdAt = profiles.get(accountId);
+        return createdAt === undefined ? null : { createdAt: iso(createdAt) };
+      });
+    },
+
+    async saveReport(rawId, input) {
+      const accountId = requireAccountId(rawId);
+      const fetchedAt = requireSaveInput(input);
+      return op((now) => {
+        const row: SavedReportRow = { id: randomUUID(), accountId, host: input.host, report: structuredClone(input.report), fetchedAt, createdAt: now, seq: ++seq };
+        savedReports.set(row.id, row);
+        return summary(row);
+      });
+    },
+
+    async listSavedReports(accountId) {
+      return op(() =>
+        [...savedReports.values()]
+          .filter((r) => r.accountId === accountId)
+          .sort((x, y) => y.createdAt - x.createdAt || y.seq - x.seq)
+          .slice(0, MAX_SAVED_REPORTS_LISTED)
+          .map(summary),
+      );
+    },
+
+    async getSavedReport(accountId, reportId) {
+      return op((): SavedReport | null => {
+        const row = isUuid(reportId) ? savedReports.get(reportId) : undefined;
+        if (!row || row.accountId !== accountId) return null;
+        return { ...summary(row), report: structuredClone(row.report) };
+      });
+    },
+
+    async deleteAccountData(rawId) {
+      const accountId = requireAccountId(rawId);
+      // One synchronous step after the yield, so it is atomic like the database function.
+      return op(() => {
+        profiles.delete(accountId);
+        for (const [id, row] of savedReports) if (row.accountId === accountId) savedReports.delete(id);
       });
     },
   };

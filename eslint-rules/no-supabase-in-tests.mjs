@@ -1,7 +1,7 @@
 // Forbids importing a Supabase adapter (any lib/<dir>/supabase module) or the shared service client
 // (lib/supabase/client) from tests outside tests/db/**, except the listed files that use a closed
-// port and need no database.
-const ALLOWED = ["tests/store/supabase-failure.test.ts", "tests/accounts/supabase-failure.test.ts"];
+// port or a fake provider fetch and need no database.
+const ALLOWED = ["tests/store/supabase-failure.test.ts", "tests/accounts/supabase-failure.test.ts", "tests/accounts/auth-supabase.test.ts"];
 
 export default {
   meta: { type: "problem", messages: { forbidden: "Import the Supabase adapter only from tests/db/** (or the listed exception)." }, schema: [] },

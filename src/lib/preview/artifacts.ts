@@ -4,8 +4,7 @@ import { getAnalysis, isAnalysisId, readAnalysisView } from "@/lib/analysis/reco
 import { bundleFiles } from "@/lib/bundle/files";
 import { writeZip } from "@/lib/bundle/zip";
 import { visitorTexts } from "@/lib/analysis/texts";
-import { readVisitorToken, sameHash } from "@/lib/analysis/visitor";
-import { sha256Hex } from "@/lib/security/tokens";
+import { ownsAnalysis, requesterOf } from "@/lib/analysis/owner";
 import type { JobDeps } from "@/lib/crawl/jobs";
 import { GenerationFailed, generateNetwork, type GeneratedPreview, type NetworkValidator } from "@/lib/generate/network";
 
@@ -82,19 +81,20 @@ async function serveAsset(assetsDir: string, relative: string): Promise<Response
 
 /**
  * GET /p/[id]/[...file]: the private preview's artifacts, served only to the
- * analysis owner (same 404 text for another visitor and an unknown id).
+ * analysis owner: its visitor or its attached account (same 404 text for another
+ * visitor or account and an unknown id).
  * Expired -> 410 with the expiry text. Not ready, or GenerationFailed -> 404 with
  * the generation text. content-actions.js and bridge/* are read from
  * public/preview-assets and returned at this URL (a rewrite, not a redirect), so
  * content-actions.js finds ./site-content.json next to its own module URL.
  */
 export async function handlePreviewFile(request: Request, deps: PreviewDeps, id: string, segments: readonly string[]): Promise<Response> {
-  const token = readVisitorToken(request);
-  if (!token || !isAnalysisId(id)) return otherBrowser();
+  const who = requesterOf(request);
+  if ((!who.visitorToken && !who.accountToken) || !isAnalysisId(id)) return otherBrowser();
   let generated: GeneratedPreview;
   try {
     const analysis = await getAnalysis(deps.store, id);
-    if (!analysis || !sameHash(analysis.ownerHash, sha256Hex(token))) return otherBrowser();
+    if (!analysis || !(await ownsAnalysis(analysis, who, deps))) return otherBrowser();
     const view = await readAnalysisView(deps, analysis);
     if (view.status === "expired") return jsonResponse(410, { error: "expired", message: view.failure?.message ?? visitorTexts.expired(new Date(analysis.expiresAt)) });
     const snapshot = view.analysis.snapshot;

@@ -14,6 +14,7 @@ const CLOSED = "http://127.0.0.1:1";
 const SERVICE_KEY = "service-role-test-secret";
 const EMAIL = "secret.person@example.test";
 const HASH = "a".repeat(64);
+const ACCOUNT = "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f";
 const closed = () => createSupabaseAccountData({ url: CLOSED, serviceRoleKey: SERVICE_KEY, timeoutMs: 2000 });
 
 let errorLog: ReturnType<typeof vi.spyOn>;
@@ -31,6 +32,12 @@ describe("Supabase AccountData on a closed port", () => {
     ["addNotifySignup", (d) => d.addNotifySignup(EMAIL, true)],
     ["findNotifySignup", (d) => d.findNotifySignup(EMAIL)],
     ["unsubscribe", (d) => d.unsubscribe(HASH)],
+    ["ensureProfile", (d) => d.ensureProfile(ACCOUNT)],
+    ["getProfile", (d) => d.getProfile(ACCOUNT)],
+    ["saveReport", (d) => d.saveReport(ACCOUNT, { host: "h.example", report: { score: 1 }, fetchedAt: "2026-11-23T10:00:00.000Z" })],
+    ["listSavedReports", (d) => d.listSavedReports(ACCOUNT)],
+    ["getSavedReport", (d) => d.getSavedReport(ACCOUNT, ACCOUNT)],
+    ["deleteAccountData", (d) => d.deleteAccountData(ACCOUNT)],
   ];
 
   // Fails if a failed call resolves (a fallback) instead of throwing, is logged below ERROR or without
@@ -40,7 +47,7 @@ describe("Supabase AccountData on a closed port", () => {
     const lines = logged();
     expect(lines.length).toBeGreaterThanOrEqual(1);
     expect(lines[0]).toContain(`[TABLE_FALLBACK] accounts ${op} failed`);
-    for (const line of lines) for (const secret of [EMAIL, "secret.person", HASH, SERVICE_KEY]) expect(line).not.toContain(secret);
+    for (const line of lines) for (const secret of [EMAIL, "secret.person", HASH, SERVICE_KEY, ACCOUNT]) expect(line).not.toContain(secret);
   });
 
   // Fails if argument checks need the network (an invalid address would be reported as an outage).

@@ -25,6 +25,10 @@ export interface Config {
   readonly analysesPerClientHour: number;
   /** "Notify me" signups per network per hour (POST /api/notify). */
   readonly notifyPerClientHour: number;
+  /** Sign-in links per network per hour (POST /api/auth/sign-in). */
+  readonly signInPerClientHour: number;
+  /** Sign-in links per email address per hour; the window is keyed by a keyed hash of the address. */
+  readonly signInPerEmailHour: number;
   readonly staleAfterS: number;
   readonly analysisTtlS: number;
   readonly scoreWaitMs: number;
@@ -41,6 +45,11 @@ export interface Config {
   readonly free: FreeConfig;
   /** Phase 7: the Supabase store. Required on Vercel; null off Vercel without it (memory store). */
   readonly supabase: SupabaseConfig | null;
+  /**
+   * SUPABASE_ANON_KEY: the anon key that sign-in uses for Supabase Auth (server side only; it never
+   * reaches a browser). Required on Vercel; null off Vercel without it (sign-in then answers 503).
+   */
+  readonly supabaseAnonKey: string | null;
 }
 
 export interface SupabaseConfig {
@@ -99,6 +108,8 @@ const NUMBERS = {
   queueMaxWaitS: ["QUEUE_MAX_WAIT_S", 120],
   analysesPerClientHour: ["ANALYSES_PER_CLIENT_HOUR", 20],
   notifyPerClientHour: ["NOTIFY_PER_CLIENT_HOUR", 5],
+  signInPerClientHour: ["SIGNIN_PER_CLIENT_HOUR", 5],
+  signInPerEmailHour: ["SIGNIN_PER_EMAIL_HOUR", 3],
   staleAfterS: ["STALE_AFTER_S", 90],
   analysisTtlS: ["ANALYSIS_TTL_S", 604800],
   scoreWaitMs: ["SCORE_WAIT_MS", 25000],
@@ -177,10 +188,13 @@ export function loadConfig(env: Env): Config {
   if (free.upstreamTimeoutMs > 50_000) throw new ConfigError("FREE_UPSTREAM_TIMEOUT_MS", "must be at most 50000 (maxDuration 60 s)");
 
   const supabase = loadSupabaseConfig(env, onVercel);
+  const supabaseAnonKey = env.SUPABASE_ANON_KEY?.trim() || null;
+  if (onVercel && !supabaseAnonKey) throw new ConfigError("SUPABASE_ANON_KEY", "is required on Vercel");
+  if (supabaseAnonKey && !supabase) throw new ConfigError("SUPABASE_URL", "is required when SUPABASE_ANON_KEY is set");
 
   const billingStart = parseInstant(env, "BILLING_START", "2027-01-19T00:00:00Z");
 
-  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, free, supabase });
+  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, free, supabase, supabaseAnonKey });
 }
 
 /** SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY: required on Vercel (https); off Vercel both or neither. */

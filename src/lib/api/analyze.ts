@@ -2,6 +2,7 @@ import { dispatchQueued } from "@/lib/analysis/capacity";
 import { isSameOrigin, startAnalysis } from "@/lib/analysis/run";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { resolveVisitor } from "@/lib/analysis/visitor";
+import { readAccount, readAccountToken } from "@/lib/accounts/session";
 import { clientIdFromRequest } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { readLimitedBody } from "./body";
@@ -22,7 +23,7 @@ function urlFrom(text: string): string | null {
 
 /**
  * POST /api/analyze `{url}` -> 200 `{id}`. Same-origin only (403 otherwise).
- * Sets the visitor cookie when absent. Errors: 400 not_public, 413 too_large,
+ * Sets the visitor cookie when absent. A signed-in visitor's analysis is attached to the account. Errors: 400 not_public, 413 too_large,
  * 429 client_limit or daily_limit (`{error, message, retryAt?}`), 503 unavailable,
  * and 503 counting (`{error, message, retryAfterSeconds}` with Retry-After) while
  * the site's daily count is undecided: no analysis is created, so the page retries.
@@ -39,7 +40,9 @@ export async function handleAnalyze(request: Request, deps: ServerDeps): Promise
     const rawUrl = urlFrom(text);
     if (rawUrl === null) return json(400, { error: "not_public", message: visitorTexts.notPublic }, visitor.setCookie);
     const clientId = clientIdFromRequest(request, deps.config, deps.clock());
-    const outcome = await startAnalysis(deps, { rawUrl, ownerHash: visitor.hash, clientId, invocation });
+    // Only a request with an account cookie reads a session; the anonymous path is unchanged.
+    const account = readAccountToken(request) ? await readAccount(request, deps) : null;
+    const outcome = await startAnalysis(deps, { rawUrl, ownerHash: visitor.hash, clientId, invocation, accountId: account?.accountId });
     if (outcome.ok) return json(200, { id: outcome.id }, visitor.setCookie);
     if (outcome.code === "counting") {
       const { status, code, message, retryAfterSeconds } = outcome;

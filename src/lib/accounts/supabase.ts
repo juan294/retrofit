@@ -1,6 +1,18 @@
 import { sha256Hex, newToken, SHA256_HEX_PATTERN } from "@/lib/security/tokens";
 import { serviceCall, serviceClient, type ServiceClientSource } from "@/lib/supabase/client";
-import { AccountDataUnavailable, normalizeEmail, requireEmail, type AccountData, type NotifySignup } from "./data";
+import {
+  AccountDataUnavailable,
+  isUuid,
+  MAX_SAVED_REPORTS_LISTED,
+  normalizeEmail,
+  requireAccountId,
+  requireEmail,
+  requireSaveInput,
+  scoreOf,
+  type AccountData,
+  type NotifySignup,
+  type SavedReportSummary,
+} from "./data";
 
 /**
  * Supabase AccountData (production). Server only: it holds the service role
@@ -20,11 +32,28 @@ interface NotifyRow {
   unsubscribed_at: string | null;
 }
 
+interface SavedReportRow {
+  id: string;
+  host: string;
+  fetched_at: string;
+  created_at: string;
+  /** `report->score` (the list) or the whole report (one report). */
+  score?: unknown;
+  report?: Record<string, unknown>;
+}
+
 const iso = (t: string) => new Date(t).toISOString();
+const SUMMARY = "id, host, fetched_at, created_at, score:report->score";
+
+function summary(row: SavedReportRow, score: unknown): SavedReportSummary {
+  return { id: row.id, host: row.host, score: scoreOf({ score }), fetchedAt: iso(row.fetched_at), savedAt: iso(row.created_at) };
+}
 
 export function createSupabaseAccountData(source: ServiceClientSource): AccountData {
   const client = serviceClient(source);
   const notify = () => client.from("notify_signups");
+  const profiles = () => client.from("account_profiles");
+  const reports = () => client.from("saved_reports");
   const call = <T>(operation: string, request: () => PromiseLike<{ data: T | null; error: { code?: string } | null }>) =>
     serviceCall<T>({ service: "accounts", operation }, request, (code) => new AccountDataUnavailable(operation, code));
 
@@ -62,6 +91,47 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
       if ((changed ?? []).length > 0) return "unsubscribed";
       const existing = await call("unsubscribe", () => notify().select("id").eq("unsubscribe_token_hash", tokenHash).maybeSingle());
       return existing ? "already" : "unknown";
+    },
+
+    async ensureProfile(rawId) {
+      const accountId = requireAccountId(rawId);
+      // INSERT ... ON CONFLICT (account_id) DO NOTHING: a repeat sign-in keeps the first creation time.
+      await call("ensureProfile", () => profiles().upsert({ account_id: accountId }, { onConflict: "account_id", ignoreDuplicates: true }));
+    },
+
+    async getProfile(accountId) {
+      if (!isUuid(accountId)) return null;
+      const row = await call<{ created_at: string }>("getProfile", () => profiles().select("created_at").eq("account_id", accountId).maybeSingle());
+      return row ? { createdAt: iso(row.created_at) } : null;
+    },
+
+    async saveReport(rawId, input) {
+      const accountId = requireAccountId(rawId);
+      const fetchedAt = requireSaveInput(input);
+      const row = await call<SavedReportRow>("saveReport", () => reports().insert({ account_id: accountId, host: input.host, report: input.report, fetched_at: fetchedAt }).select(SUMMARY).single());
+      if (!row) throw new AccountDataUnavailable("saveReport", "no_row");
+      return summary(row, row.score);
+    },
+
+    async listSavedReports(accountId) {
+      if (!isUuid(accountId)) return [];
+      const rows = await call<SavedReportRow[]>("listSavedReports", () =>
+        reports().select(SUMMARY).eq("account_id", accountId).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(MAX_SAVED_REPORTS_LISTED),
+      );
+      return (rows ?? []).map((r) => summary(r, r.score));
+    },
+
+    async getSavedReport(accountId, reportId) {
+      if (!isUuid(accountId) || !isUuid(reportId)) return null;
+      const row = await call<SavedReportRow>("getSavedReport", () => reports().select("id, host, fetched_at, created_at, report").eq("account_id", accountId).eq("id", reportId).maybeSingle());
+      if (!row?.report) return null;
+      return { ...summary(row, row.report.score), report: row.report };
+    },
+
+    async deleteAccountData(rawId) {
+      const accountId = requireAccountId(rawId);
+      // One database function, one transaction (supabase/migrations/*_delete_account_data.sql).
+      await call("deleteAccountData", () => client.rpc("delete_account_data", { p_account_id: accountId }));
     },
   };
 }

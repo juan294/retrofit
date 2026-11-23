@@ -1,0 +1,72 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { ACCOUNT_COOKIE, createAccountSession } from "@/lib/accounts/session";
+import { getAnalysis, readAnalysisView, reportBody } from "@/lib/analysis/record";
+import { handleAnalyze } from "@/lib/api/analyze";
+import { handleSaveReport } from "@/lib/api/saved-reports";
+import { SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
+import { readyBakeryPreview, type ReadyPreview } from "../generate/preview-setup";
+import { analyzeRequest, holdAllSlots, postRequest, testDeps } from "../helpers/server-deps";
+
+const OWNER = { userId: "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "owner@example.test" };
+
+let preview: ReadyPreview | undefined;
+afterEach(async () => {
+  await preview?.close();
+  preview = undefined;
+});
+
+const save = (analysisId: unknown, cookie: string, o: { cross?: boolean } = {}) =>
+  postRequest("/api/account/reports", { analysisId }, { cookie, ...(o.cross ? { fetchSite: "cross-site", origin: "https://evil.example" } : {}) });
+
+describe("POST /api/account/reports (Save this report)", () => {
+  // Fails if the saved copy differs from the report the results page shows, or is not listed for the account.
+  it("saves the ready report of the visitor's analysis to the signed-in account", async () => {
+    preview = await readyBakeryPreview();
+    const { d, id, cookie } = preview;
+    const session = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OWNER)).token}`;
+    const res = await handleSaveReport(save(id, `${cookie}; ${session}`), d);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string; message: string; href: string };
+    expect(body.message).toBe(SAVE_REPORT_TEXT.saved);
+    expect(body.href).toBe(`/account/reports/${body.id}`);
+
+    const { analysis } = await readAnalysisView(d, (await getAnalysis(d.store, id))!);
+    const expected = reportBody(analysis.score, analysis.readyAt!, d.config);
+    const stored = await d.accounts.getSavedReport(OWNER.userId, body.id);
+    expect(stored?.report).toEqual(expected);
+    expect(stored?.host).toBe((expected as { host: string }).host);
+    expect(stored?.fetchedAt).toBe(new Date((expected as { fetchedAt: string }).fetchedAt).toISOString());
+    expect((await d.accounts.listSavedReports(OWNER.userId)).map((r) => r.id)).toEqual([body.id]);
+  });
+
+  // Fails if saving works signed out, for another visitor's analysis, before the report is ready, or from another site.
+  it("refuses a signed-out visitor, another visitor's analysis, an unready analysis and a cross-site post", async () => {
+    preview = await readyBakeryPreview();
+    const { d, id, cookie } = preview;
+    const session = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OWNER)).token}`;
+
+    const signedOut = await handleSaveReport(save(id, cookie), d);
+    expect(signedOut.status).toBe(401);
+    expect(await signedOut.json()).toEqual({ error: "signed_out", message: SAVE_REPORT_TEXT.signedOut });
+
+    const other = await handleSaveReport(save(id, `retrofit_visitor=${"b".repeat(32)}; ${session}`), d);
+    expect(other.status).toBe(404);
+    expect(await other.json()).toEqual({ error: "not_found", message: SAVE_REPORT_TEXT.notFound });
+    expect((await handleSaveReport(save("not-an-id", `${cookie}; ${session}`), d)).status).toBe(404);
+
+    expect((await handleSaveReport(save(id, `${cookie}; ${session}`, { cross: true }), d)).status).toBe(403);
+    expect(await d.accounts.listSavedReports(OWNER.userId)).toEqual([]);
+  });
+
+  // Fails if a queued analysis (no report yet) is saved as an empty report.
+  it("answers 409 not_ready for an analysis that has no report yet", async () => {
+    const d = testDeps();
+    await holdAllSlots(d);
+    const visitor = `retrofit_visitor=${"c".repeat(32)}`;
+    const { id } = (await (await handleAnalyze(analyzeRequest({ url: "https://bakery.example.com" }, { cookie: visitor }), d)).json()) as { id: string };
+    const session = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OWNER)).token}`;
+    const res = await handleSaveReport(save(id, `${visitor}; ${session}`), d);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "not_ready", message: SAVE_REPORT_TEXT.notReady });
+  });
+});

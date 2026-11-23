@@ -14,4 +14,5 @@ export const VERCEL_ENV: Record<string, string> = {
   ALERT_GITHUB_TOKEN: "github-token-test",
   SUPABASE_URL: "https://store.supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-key-test",
+  SUPABASE_ANON_KEY: "anon-key-test",
 };

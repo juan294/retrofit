@@ -15,6 +15,8 @@ import { sha256Hex } from "@/lib/security/tokens";
 export interface AccountDataClients {
   a: AccountData;
   b: AccountData;
+  /** Creates an account (a Supabase Auth user on the database) and returns its id. */
+  newAccount: () => Promise<string>;
 }
 
 const TOKEN = /^[0-9a-f]{32}$/;
@@ -23,11 +25,12 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
   describe(`AccountData contract: ${name}`, () => {
     let a: AccountData;
     let b: AccountData;
+    let newAccount: () => Promise<string>;
     let tag: string;
     const email = (local: string) => `${local}-${tag}@example.test`;
 
     beforeEach(async () => {
-      ({ a, b } = await makeClients());
+      ({ a, b, newAccount } = await makeClients());
       tag = randomUUID().slice(0, 8);
     });
 
@@ -131,6 +134,89 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         const row = await a.findNotifySignup(email("back"));
         expect(row?.unsubscribedAt).not.toBeNull();
         expect(row?.marketingConsent).toBe(false);
+      });
+    });
+
+    const report = (score: number | null, host: string) => ({ status: "ready", scoreVersion: "score/v1", host, score, summary: "s", webmcp: "none", fetchedAt: "2026-11-23T10:00:00.000Z", checks: [{ id: "disc.robots", result: "pass" }] });
+
+    describe("profiles", () => {
+      // Fails if a repeat sign-in fails or moves the creation time (ensureProfile runs on every sign-in).
+      it("ensureProfile creates the profile once and keeps its creation time", async () => {
+        const id = await newAccount();
+        expect(await b.getProfile(id)).toBeNull();
+        await a.ensureProfile(id);
+        const first = await b.getProfile(id);
+        expect(Number.isFinite(Date.parse(first?.createdAt as string))).toBe(true);
+        await b.ensureProfile(id);
+        expect(await a.getProfile(id)).toEqual(first);
+      });
+
+      // Fails if an account id that is not a UUID reaches storage.
+      it("refuses an account id that is not a UUID", async () => {
+        await expect(a.ensureProfile("not-a-uuid")).rejects.toThrow(RangeError);
+        expect(await a.getProfile("not-a-uuid")).toBeNull();
+      });
+    });
+
+    describe("saved reports", () => {
+      // Fails if a saved report is not readable by its account from another instance, or loses its host, score or fetch time.
+      it("saves a report and lists it newest first with its host, score and fetch time", async () => {
+        const id = await newAccount();
+        const first = await a.saveReport(id, { host: "one.example", report: report(40, "one.example"), fetchedAt: "2026-11-20T08:00:00.000Z" });
+        const second = await a.saveReport(id, { host: "two.example", report: report(null, "two.example"), fetchedAt: "2026-11-21T08:00:00.000Z" });
+        const list = await b.listSavedReports(id);
+        expect(list.map((r) => r.id)).toEqual([second.id, first.id]);
+        expect(list[1]).toEqual({ id: first.id, host: "one.example", score: 40, fetchedAt: "2026-11-20T08:00:00.000Z", savedAt: first.savedAt });
+        expect(list[0]?.score).toBeNull();
+        expect(Number.isFinite(Date.parse(first.savedAt))).toBe(true);
+      });
+
+      // Fails if the full report is not kept as saved, or another account can open it.
+      it("getSavedReport returns the whole report to its account only", async () => {
+        const owner = await newAccount();
+        const other = await newAccount();
+        const saved = await a.saveReport(owner, { host: "three.example", report: report(77, "three.example"), fetchedAt: "2026-11-22T08:00:00.000Z" });
+        const read = await b.getSavedReport(owner, saved.id);
+        expect(read?.report).toEqual(report(77, "three.example"));
+        expect(read?.host).toBe("three.example");
+        expect(await b.getSavedReport(other, saved.id)).toBeNull();
+        expect(await b.listSavedReports(other)).toEqual([]);
+      });
+
+      // Fails if a malformed or unknown report id throws or reveals anything.
+      it("getSavedReport answers null for an unknown or malformed id", async () => {
+        const id = await newAccount();
+        expect(await a.getSavedReport(id, "00000000-0000-4000-8000-000000000000")).toBeNull();
+        expect(await a.getSavedReport(id, "../etc")).toBeNull();
+      });
+
+      // Fails if an invalid save reaches storage (a report must be an object with a host and an ISO fetch time).
+      it("refuses an invalid account id, host, report or fetch time with RangeError", async () => {
+        const id = await newAccount();
+        const ok = { host: "h.example", report: report(1, "h.example"), fetchedAt: "2026-11-22T08:00:00.000Z" };
+        await expect(a.saveReport("nope", ok)).rejects.toThrow(RangeError);
+        await expect(a.saveReport(id, { ...ok, host: "" })).rejects.toThrow(RangeError);
+        await expect(a.saveReport(id, { ...ok, report: [] as unknown as Record<string, unknown> })).rejects.toThrow(RangeError);
+        await expect(a.saveReport(id, { ...ok, fetchedAt: "yesterday" })).rejects.toThrow(RangeError);
+        expect(await b.listSavedReports(id)).toEqual([]);
+      });
+    });
+
+    describe("account deletion", () => {
+      // Fails if deleting one account's data leaves its profile or saved reports, touches another account's, or fails on a retry.
+      it("deleteAccountData removes the account's profile and saved reports only, and a second call succeeds", async () => {
+        const gone = await newAccount();
+        const kept = await newAccount();
+        for (const id of [gone, kept]) {
+          await a.ensureProfile(id);
+          await a.saveReport(id, { host: "d.example", report: report(5, "d.example"), fetchedAt: "2026-11-22T08:00:00.000Z" });
+        }
+        await b.deleteAccountData(gone);
+        expect(await a.getProfile(gone)).toBeNull();
+        expect(await a.listSavedReports(gone)).toEqual([]);
+        expect(await a.getProfile(kept)).not.toBeNull();
+        expect(await a.listSavedReports(kept)).toHaveLength(1);
+        await b.deleteAccountData(gone);
       });
     });
   });

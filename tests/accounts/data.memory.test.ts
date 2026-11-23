@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { normalizeEmail } from "@/lib/accounts/data";
 import { createAccountMemoryBacking, createMemoryAccountData } from "@/lib/accounts/memory";
@@ -11,6 +12,7 @@ runAccountDataContract("memory (two clients, one backing)", async () => {
   return {
     a: createMemoryAccountData({ clock: clock.now, backing }),
     b: createMemoryAccountData({ clock: clock.now, backing }),
+    newAccount: async () => randomUUID(),
   };
 });
 

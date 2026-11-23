@@ -1,6 +1,8 @@
 import { vi } from "vitest";
 import type { AccountData } from "@/lib/accounts/data";
 import { createAccountMemoryBacking, createMemoryAccountData, type AccountMemoryBacking } from "@/lib/accounts/memory";
+import type { AuthGateway } from "@/lib/auth/gateway";
+import { createFixtureAuth, type FixtureAuth } from "@/lib/test-fixtures/auth";
 import { loadConfig, type Env } from "@/lib/config";
 import { slotKey } from "@/lib/analysis/capacity";
 import { createFetchContext } from "@/lib/fetch/context";
@@ -68,12 +70,15 @@ export interface TestDepsOptions {
   backing?: MemoryBacking;
   store?: Store;
   accounts?: AccountData;
+  auth?: AuthGateway;
 }
 
 export interface TestDeps extends ServerDeps {
   readonly backing: MemoryBacking;
   /** The memory account data behind `accounts` (unused when the test passes its own `accounts`). */
   readonly accountsBacking: AccountMemoryBacking;
+  /** The fixture provider behind `auth` (unused when the test passes its own `auth`). */
+  readonly fixtureAuth: FixtureAuth;
   /** Errors thrown by background tasks. Tests assert it stays empty. */
   readonly errors: unknown[];
   /** Awaits every background task, including tasks that background tasks add. */
@@ -87,6 +92,7 @@ export function testDeps(o: TestDepsOptions = {}): TestDeps {
   const store = o.store ?? createMemoryStore({ clock, backing, instrument: o.instrument });
   const accountsBacking = createAccountMemoryBacking();
   const accounts = o.accounts ?? createMemoryAccountData({ clock, backing: accountsBacking });
+  const fixtureAuth = createFixtureAuth({ clock, origin: PUBLIC_ORIGIN });
   const fetch = createFetchContext({ config, store, clock, sleep: sleepFor(clock), lookup: o.lookup ?? privateResolver, minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS });
   const pending: Promise<unknown>[] = [];
   const errors: unknown[] = [];
@@ -94,6 +100,7 @@ export function testDeps(o: TestDepsOptions = {}): TestDeps {
     config,
     store,
     accounts,
+    auth: o.auth ?? fixtureAuth,
     clock,
     fetch,
     score: o.score ?? scoreSnapshot,
@@ -103,6 +110,7 @@ export function testDeps(o: TestDepsOptions = {}): TestDeps {
     },
     backing,
     accountsBacking,
+    fixtureAuth,
     errors,
     async settle() {
       while (pending.length > 0) await Promise.all(pending.splice(0));

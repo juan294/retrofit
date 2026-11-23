@@ -197,6 +197,66 @@ begin
 end;
 $$;
 
+-- delete_account_data (account deletion) deletes every row one account owns, and nothing of another's.
+insert into auth.users (id) values ('00000000-0000-4000-8000-0000000000d1'), ('00000000-0000-4000-8000-0000000000d2');
+do $$
+declare
+  v_id text;
+  v_n text;
+  r record;
+  v_left bigint;
+  v_bad text;
+begin
+  foreach v_n in array array['1', '2'] loop
+    v_id := '00000000-0000-4000-8000-0000000000d' || v_n;
+    insert into public.account_profiles (account_id) values (v_id::uuid);
+    insert into public.saved_reports (account_id, host, report, fetched_at) values (v_id::uuid, 'del.example', '{}', now());
+    insert into public.site_claims (id, account_id, host, method, token_hash) values (('00000000-0000-4000-8000-0000000000e' || v_n)::uuid, v_id::uuid, 'del' || v_n || '.example', 'dns', repeat(v_n, 64));
+    insert into public.published_sites (host, account_id, claim_id, snapshot, report) values ('del' || v_n || '.example', v_id::uuid, ('00000000-0000-4000-8000-0000000000e' || v_n)::uuid, '{}', '{}');
+    insert into public.billing_customers (account_id, stripe_customer_id) values (v_id::uuid, 'cus_del' || v_n);
+    insert into public.api_keys (account_id, key_hash) values (v_id::uuid, repeat('e' || v_n, 32));
+  end loop;
+
+  perform pg_temp.expect_denied('anon', $q$select public.delete_account_data('00000000-0000-4000-8000-0000000000d1')$q$);
+  perform pg_temp.expect_denied('authenticated', $q$select public.delete_account_data('00000000-0000-4000-8000-0000000000d1')$q$);
+  perform pg_temp.expect_allowed('service_role', $q$select public.delete_account_data('00000000-0000-4000-8000-0000000000d1')$q$);
+  -- A retry after a lost answer succeeds and changes nothing.
+  perform pg_temp.expect_allowed('service_role', $q$select public.delete_account_data('00000000-0000-4000-8000-0000000000d1')$q$);
+  perform pg_temp.expect_error('service_role', $q$select public.delete_account_data(null)$q$, '22004');
+
+  for r in select name from account_tables where owned loop
+    execute pg_catalog.format('select count(*) from public.%I where account_id = %L', r.name, '00000000-0000-4000-8000-0000000000d1') into v_left;
+    if v_left <> 0 then
+      raise exception 'accounts_access: delete_account_data left % rows in %', v_left, r.name;
+    end if;
+    execute pg_catalog.format('select count(*) from public.%I where account_id = %L', r.name, '00000000-0000-4000-8000-0000000000d2') into v_left;
+    if v_left <> 1 then
+      raise exception 'accounts_access: delete_account_data changed another account''s rows in % (% left)', r.name, v_left;
+    end if;
+  end loop;
+  if not exists (select 1 from auth.users where id = '00000000-0000-4000-8000-0000000000d1') then
+    raise exception 'accounts_access: delete_account_data must not delete the auth user';
+  end if;
+
+  -- Security invoker, empty search_path, EXECUTE for service_role only.
+  if not exists (select 1 from pg_catalog.pg_proc where pronamespace = 'public'::regnamespace and proname = 'delete_account_data') then
+    raise exception 'accounts_access: delete_account_data is missing';
+  end if;
+  select pg_catalog.string_agg(p.proname, ', ') into v_bad
+  from pg_catalog.pg_proc p
+  where p.pronamespace = 'public'::regnamespace and p.proname = 'delete_account_data'
+    and (p.prosecdef
+      or not ('search_path=""' = any (coalesce(p.proconfig, '{}')))
+      or pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+      or pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+      or exists (select 1 from pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) a where a.grantee = 0)
+      or not pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE'));
+  if v_bad is not null then
+    raise exception 'accounts_access: delete_account_data is security definer, without search_path = '''', or has the wrong EXECUTE grants';
+  end if;
+end;
+$$;
+
 -- Static checks: privileges, RLS and foreign keys.
 do $$
 declare

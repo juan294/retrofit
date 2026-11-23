@@ -16,6 +16,11 @@ export interface Analysis<R = unknown> {
   readonly version: number;
   readonly id: string;
   readonly ownerHash: string;
+  /**
+   * The account the analysis is attached to: set at creation for a signed-in visitor, or when the
+   * visitor signs in (src/lib/analysis/owner.ts). Absent on anonymous and older records.
+   */
+  readonly accountId?: string;
   readonly jobId: string;
   readonly inputOrigin: string;
   readonly createdAt: number;
@@ -55,19 +60,20 @@ export function newAnalysisId(): string {
   return randomBytes(16).toString("hex");
 }
 
-function storeTtl(a: Pick<Analysis, "expiresAt">, now: number): number {
+export function storeTtl(a: Pick<Analysis, "expiresAt">, now: number): number {
   return Math.max(1, Math.ceil((a.expiresAt + EXPIRED_GRACE_S * 1000 - now) / 1000));
 }
 
 export async function createAnalysis(
   deps: { store: Store; config: Config; clock: () => number },
-  o: { ownerHash: string; jobId: string; inputOrigin: string },
+  o: { ownerHash: string; jobId: string; inputOrigin: string; accountId?: string },
 ): Promise<Analysis> {
   const now = deps.clock();
   const analysis: Analysis = {
     version: 1,
     id: newAnalysisId(),
     ownerHash: o.ownerHash,
+    ...(o.accountId ? { accountId: o.accountId } : {}),
     jobId: o.jobId,
     inputOrigin: o.inputOrigin,
     createdAt: now,
@@ -124,9 +130,10 @@ export async function readAnalysisView<R>(deps: JobDeps, analysis: Analysis<R>):
       jobId: joinedTo ?? job.id,
       ...(job.status === "ready" ? { snapshot: job.snapshot, score: job.score, readyAt: job.updatedAt } : {}),
     };
-    // A lost compare-and-set means another reader (a second tab) copied first. Only these reads
-    // write an analysis after it is created, and ready and joined jobs no longer change, so that
-    // reader committed this same `next`: answer with it, with no extra read.
+    // A lost compare-and-set means another reader (a second tab) copied first, or sign-in attached
+    // the analysis to an account in between (owner.ts). Ready and joined jobs no longer change, so
+    // the copy is the same either way: answer with `next`, with no extra read. After an attach the
+    // next read copies again onto the attached record.
     await deps.store.compareAndSet(analysisKey(analysis.id), analysis, next, storeTtl(next, now));
     current = next;
   }

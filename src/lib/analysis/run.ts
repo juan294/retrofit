@@ -4,6 +4,7 @@ import { countClientAnalysis } from "@/lib/fetch/limits";
 import { validateUrl } from "@/lib/fetch/url";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { dispatchQueued, startCrawlJob, type Invocation } from "./capacity";
+import { indexVisitorAnalysis } from "./owner";
 import { createAnalysis } from "./record";
 import { COUNTING_RETRY_S, visitorTexts } from "./texts";
 
@@ -37,7 +38,7 @@ export type StartOutcome =
  */
 export async function startAnalysis(
   deps: ServerDeps,
-  o: { rawUrl: string; ownerHash: string; clientId: string; invocation?: Invocation },
+  o: { rawUrl: string; ownerHash: string; clientId: string; invocation?: Invocation; accountId?: string },
 ): Promise<StartOutcome> {
   const invocation = o.invocation ?? { startedAt: deps.clock() };
   // 1. Validate the URL.
@@ -61,8 +62,15 @@ export async function startAnalysis(
   if (!crawl.ok && crawl.code === "counting") return { ok: false, status: 503, code: "counting", message: visitorTexts.counting, retryAfterSeconds: COUNTING_RETRY_S };
   if (!crawl.ok) return { ok: false, status: 429, code: "daily_limit", message: visitorTexts.dailyLimit, retryAt: new Date(crawl.retryAt).toISOString() };
 
-  // 4. A new analysis owned by this visitor.
-  const analysis = await createAnalysis(deps, { ownerHash: o.ownerHash, jobId: crawl.jobId, inputOrigin: url.origin });
+  // 4. A new analysis owned by this visitor (and attached to the signed-in account, if any). An
+  // anonymous analysis is listed under its visitor so that sign-in can attach it; a failure there
+  // costs only that attachment, so it is logged and the analysis goes on.
+  const analysis = await createAnalysis(deps, { ownerHash: o.ownerHash, jobId: crawl.jobId, inputOrigin: url.origin, accountId: o.accountId });
+  if (!o.accountId) {
+    await indexVisitorAnalysis(deps, o.ownerHash, analysis.id).catch((e: unknown) => {
+      console.error("Visitor analysis list failed:", e instanceof Error ? e.name : "unknown error");
+    });
+  }
 
   // 5. Start queued work (this job, when a slot is free) through waitUntil.
   await dispatchQueued(deps, invocation);

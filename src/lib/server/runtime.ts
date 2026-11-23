@@ -3,6 +3,8 @@ import { after } from "next/server";
 import type { AccountData } from "@/lib/accounts/data";
 import { createMemoryAccountData } from "@/lib/accounts/memory";
 import { createSupabaseAccountData } from "@/lib/accounts/supabase";
+import { unavailableAuthGateway, type AuthGateway } from "@/lib/auth/gateway";
+import { createSupabaseAuthGateway } from "@/lib/auth/supabase";
 import { getConfig, type Config, type SupabaseConfig } from "@/lib/config";
 import { createFetchContext } from "@/lib/fetch/context";
 import type { FetchContext } from "@/lib/fetch/http";
@@ -11,6 +13,7 @@ import type { Snapshot } from "@/lib/snapshot/types";
 import { createMemoryStore } from "@/lib/store/memory";
 import { createSupabaseStore } from "@/lib/store/supabase";
 import { createServiceClient, type ServiceClient } from "@/lib/supabase/client";
+import { processFixtureAuth } from "@/lib/test-fixtures/auth";
 import { fixtureClock } from "@/lib/test-fixtures/clock";
 import { systemClock, type Clock, type Store } from "@/lib/store/types";
 
@@ -23,6 +26,8 @@ export interface ServerDeps {
   readonly store: Store;
   /** Relational account data (notify signups; accounts, claims, publishing and billing in later phases). */
   readonly accounts: AccountData;
+  /** Email-link sign-in (Supabase Auth; the fixture provider in fixtures mode). */
+  readonly auth: AuthGateway;
   readonly clock: Clock;
   readonly fetch: FetchContext;
   /** Keeps background work (crawl workers) alive after the response. `after()` in production. */
@@ -63,6 +68,7 @@ interface Singletons {
   supabase?: { readonly url: string; readonly serviceRoleKey: string; readonly client: ServiceClient };
   store?: Store;
   accounts?: AccountData;
+  auth?: AuthGateway;
   fetch?: FetchContext;
   deps?: ServerDeps;
 }
@@ -104,6 +110,22 @@ export function getAccountData(config: Config = getConfig()): AccountData {
   return singletons.accounts;
 }
 
+/**
+ * The process-wide AuthGateway: the fixture provider in fixtures mode (browser tests read its
+ * mailbox), Supabase Auth when SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_ANON_KEY are
+ * set, and otherwise (local development without Supabase) a gateway that answers unavailable, so
+ * sign-in shows the mail-unavailable text. loadConfig requires the anon key on Vercel.
+ */
+export function getAuthGateway(config: Config = getConfig()): AuthGateway {
+  if (!singletons.auth) {
+    if (config.fixturesEnabled) singletons.auth = processFixtureAuth({ clock: fixtureClock, origin: config.publicOrigin });
+    else if (config.supabase && config.supabaseAnonKey) {
+      singletons.auth = createSupabaseAuthGateway({ url: config.supabase.url, anonKey: config.supabaseAnonKey, admin: sharedServiceClient(config.supabase) });
+    } else singletons.auth = unavailableAuthGateway();
+  }
+  return singletons.auth;
+}
+
 /** The server clock. Fixtures mode only: e2e tests may offset it (src/lib/test-fixtures/clock.ts). */
 export function serverClock(config: Pick<Config, "fixturesEnabled">): Clock {
   return config.fixturesEnabled ? fixtureClock : systemClock;
@@ -132,6 +154,9 @@ export function getServerDeps(): ServerDeps {
       // Built on first use, so routes that never read account data do not create it.
       get accounts() {
         return getAccountData(config);
+      },
+      get auth() {
+        return getAuthGateway(config);
       },
       clock: serverClock(config),
       fetch: getFetchContext(config),

@@ -153,3 +153,30 @@ describe("billing start and notify limit", () => {
     expect(() => loadConfig({ SESSION_SECRET: secret, NOTIFY_PER_CLIENT_HOUR: "0" })).toThrow(/NOTIFY_PER_CLIENT_HOUR/);
   });
 });
+
+describe("accounts sign-in configuration", () => {
+  // Fails if a sign-in limit default moves (5 links per network and 3 per address an hour, the plan's design).
+  it("defaults SIGNIN_PER_CLIENT_HOUR to 5 and SIGNIN_PER_EMAIL_HOUR to 3, and reads both as positive numbers", () => {
+    const c = loadConfig({ SESSION_SECRET: secret });
+    expect(c.signInPerClientHour).toBe(5);
+    expect(c.signInPerEmailHour).toBe(3);
+    const set = loadConfig({ SESSION_SECRET: secret, SIGNIN_PER_CLIENT_HOUR: "50", SIGNIN_PER_EMAIL_HOUR: "30" });
+    expect([set.signInPerClientHour, set.signInPerEmailHour]).toEqual([50, 30]);
+    expect(() => loadConfig({ SESSION_SECRET: secret, SIGNIN_PER_EMAIL_HOUR: "0" })).toThrow(/SIGNIN_PER_EMAIL_HOUR/);
+  });
+
+  // Fails if production can start without the anon key that sign-in needs (every sign-in would answer 503).
+  it("refuses a missing SUPABASE_ANON_KEY on Vercel and reads it when set", () => {
+    const { SUPABASE_ANON_KEY: _omit, ...withoutAnon } = VERCEL_ENV;
+    expect(() => loadConfig(withoutAnon)).toThrow(/SUPABASE_ANON_KEY/);
+    expect(loadConfig(VERCEL_ENV).supabaseAnonKey).toBe(VERCEL_ENV.SUPABASE_ANON_KEY);
+  });
+
+  // Fails if local development without the anon key stops working, or an anon key without a Supabase URL is accepted.
+  it("leaves SUPABASE_ANON_KEY optional off Vercel and refuses it without SUPABASE_URL", () => {
+    expect(loadConfig({ SESSION_SECRET: secret }).supabaseAnonKey).toBeNull();
+    expect(loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721", SUPABASE_SERVICE_ROLE_KEY: "k" }).supabaseAnonKey).toBeNull();
+    expect(loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721", SUPABASE_SERVICE_ROLE_KEY: "k", SUPABASE_ANON_KEY: " a " }).supabaseAnonKey).toBe("a");
+    expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_ANON_KEY: "a" })).toThrow(/SUPABASE_URL/);
+  });
+});

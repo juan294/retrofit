@@ -18,6 +18,7 @@ tester.run("no-supabase-in-tests", rule, {
     { code: 'import { x } from "@/lib/accounts/memory";', filename: "/repo/tests/accounts/data.memory.test.ts" },
     { code: 'import { x } from "@/lib/supabase/client";', filename: "/repo/tests/db/store.test.ts" },
     { code: 'import { x } from "@/lib/supabase-helpers/format";', filename: "/repo/tests/api/x.test.ts" },
+    { code: 'import { x } from "@/lib/auth/supabase";', filename: "/repo/tests/accounts/auth-supabase.test.ts" },
   ],
   invalid: [
     { code: 'import { x } from "@/lib/store/supabase.js";', filename: "/repo/tests/api/x.test.ts", errors: [{ messageId: "forbidden" }] },
@@ -30,5 +31,6 @@ tester.run("no-supabase-in-tests", rule, {
     { code: 'import { x } from "@/lib/accounts/supabase";', filename: "/repo/tests/accounts/data.memory.test.ts", errors: [{ messageId: "forbidden" }] },
     { code: 'import { x } from "@/lib/claims/supabase";', filename: "/repo/tests/claims/verify.test.ts", errors: [{ messageId: "forbidden" }] },
     { code: 'import { x } from "@/lib/supabase/client";', filename: "/repo/tests/api/notify.test.ts", errors: [{ messageId: "forbidden" }] },
+    { code: 'import { x } from "@/lib/auth/supabase";', filename: "/repo/tests/accounts/sign-in.test.ts", errors: [{ messageId: "forbidden" }] },
   ],
 });

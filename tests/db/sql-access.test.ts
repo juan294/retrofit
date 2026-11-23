@@ -37,7 +37,8 @@ it("store access: anon and authenticated are denied, service_role works, later o
 
 // Fails if any of the eight account tables is usable by anon or authenticated, service_role lacks a
 // data privilege or has more, a table has RLS off or a policy, a constraint or default the later phases
-// rely on is missing, or deleting an auth user leaves the account's rows (or deletes another's).
+// rely on is missing, deleting an auth user leaves the account's rows (or deletes another's), or
+// delete_account_data leaves a row, touches another account's, or is executable by anon or authenticated.
 it("accounts access: anon and authenticated are denied on every account table, service_role works, account rows cascade", async () => {
   expect(await runSql("accounts_access.sql")).toBe("accounts_access: ok");
 }, 90_000);
