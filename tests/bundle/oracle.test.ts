@@ -6,8 +6,11 @@ import { promisify } from "node:util";
 import { beforeAll, expect, it } from "vitest";
 import { bundleFiles } from "@/lib/bundle/files";
 import type { PreviewManifest } from "@/lib/generate/network";
+import { BRIDGE_RUNTIME_FILES, handlePublishedFile } from "@/lib/publish/files";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { crawlFixtureSnapshots, SITES, type SiteName } from "../helpers/fixture-snapshots";
+import { testDeps } from "../helpers/server-deps";
+import { publishDirect, verifiedClaim } from "../publish/setup";
 
 const exec = promisify(execFile);
 const builder = path.resolve("tools/agentic-web/scripts/build_network.mjs");
@@ -54,6 +57,48 @@ async function compareWithOrganizer(snapshot: Snapshot, invalid = false) {
 
 it.each(Object.keys(SITES) as SiteName[])("matches the organizer's published bytes for %s", async name => {
   await compareWithOrganizer(snapshots.get(name)!);
+});
+
+// Phase 4. The files as /s/<host>/ serves them (src/lib/publish/files.ts), through the same build.
+async function comparePublishedWithOrganizer(snapshot: Snapshot, tamper = false) {
+  const d = testDeps();
+  await verifiedClaim(d, undefined, snapshot.host);
+  await publishDirect(d, snapshot);
+  const get = async (file: string) => {
+    const res = await handlePublishedFile(d, snapshot.host, file.split("/"));
+    expect(res.status, file).toBe(200);
+    return Buffer.from(await res.arrayBuffer());
+  };
+  const dir = await mkdtemp(path.join(tmpdir(), "retrofit-publish-oracle-"));
+  try {
+    const manifestBytes = await get("agent-manifest.json");
+    const manifest = JSON.parse(manifestBytes.toString()) as PreviewManifest;
+    const networkName = manifest.networks[0]!.name;
+    const networkFile = networkName + ".network.json";
+    const network = JSON.parse((await get(networkFile)).toString());
+    if (tamper) network.max_steps += 1;
+    await writeFile(path.join(dir, networkName + ".hocon"), JSON.stringify(network, null, 2));
+    await writeFile(path.join(dir, "agent-manifest.json"), manifestBytes);
+    await exec(process.execPath, [builder, networkName + ".hocon", "--manifest", "agent-manifest.json", "--runtime", runtime, "--out", networkFile], { cwd: dir });
+    const same = async (file: string) => (await get(file)).equals(await readFile(path.join(dir, file)));
+    expect(await same(networkFile)).toBe(!tamper);
+    for (const file of ["bridge/action-bridge.html", "bridge/agent-manifest.json"]) expect(await same(file), file).toBe(true);
+    // The build reads the served manifest as it is and does not rewrite it.
+    expect((await readFile(path.join(dir, "agent-manifest.json"))).equals(manifestBytes)).toBe(true);
+    for (const file of ["agent-manifest.json", networkFile, "site-content.json", "links.json", "bridge/agent-manifest.json", "bridge/action-bridge.html", "content-actions.js", ...BRIDGE_RUNTIME_FILES.map((f) => `runtime/${f}`)]) {
+      expect((await get(file)).includes("/api/inference"), file).toBe(false);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+it.each(Object.keys(SITES) as SiteName[])("the published files of %s match the organizer's bytes and name no Retrofit inference route", async name => {
+  await comparePublishedWithOrganizer(snapshots.get(name)!);
+});
+
+it("proves the published comparison sees a changed network", async () => {
+  await comparePublishedWithOrganizer(snapshots.get("bakery")!, true);
 });
 
 it("proves the organizer rejects a front agent that calls a missing tool", async () => {

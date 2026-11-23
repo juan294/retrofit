@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
   // The private artifact route reads the install bundle assets from disk.
   outputFileTracingIncludes: {
     "/p/**": ["./public/preview-assets/**/*", "./public/runtime/**/*", "./tools/agentic-web/templates/assistant.css"],
+    // A published site's agent files: content-actions.js, the bridge page and its runtime modules.
+    "/s/**": ["./public/preview-assets/**/*", "./public/runtime/*.js"],
     // The demo-harbor peer route reads its static site from disk.
     "/peer/[...path]": ["./peers/demo-harbor/public/**/*", "./peers/demo-harbor/public/.well-known/*"],
   },

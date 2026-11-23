@@ -4,15 +4,19 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import type { ClaimOption } from "@/lib/claims/sources";
 import type { ClaimView } from "@/lib/claims/view";
+import type { PublishedView } from "@/lib/publish/view";
+import { PublishControls } from "../publish/PublishControls";
 import { CLAIMS_TEXT as T } from "@/lib/site/claims-texts";
 import { localizeRetry } from "../analysis/retry-time";
 import { useHydrated } from "../useHydrated";
 
 type Status = { readonly ok: boolean; readonly text: string } | null;
-type Answer = { message?: unknown; retryAt?: unknown; token?: unknown; claim?: Partial<ClaimView> };
+type Answer = { message?: unknown; retryAt?: unknown; token?: unknown; claim?: Partial<ClaimView>; site?: PublishedView | null };
 
 /** The claim view of an answer, when it carries a whole one. */
 const viewOf = (answer: Answer | null): ClaimView | null => (typeof answer?.claim?.id === "string" && typeof answer.claim.statusText === "string" ? (answer.claim as ClaimView) : null);
+
+const NO_SITES: readonly PublishedView[] = [];
 
 const accent = { background: "var(--color-accent)", color: "var(--color-accent-text)" };
 const border = { borderColor: "var(--color-border)" };
@@ -21,13 +25,13 @@ const danger = { color: "var(--color-danger)" };
 
 /**
  * "Your sites" on /account: claim a site from a recent analysis or a saved report, and one panel per
- * claim with what to add, Check again, Start over, the other method and Remove. Every action is a
- * POST form sent as JSON to /api/claims/*; buttons stay disabled until hydration. A new token (after
+ * claim with what to add, Check again, Start over, the other method, Remove, and the publish controls
+ * (`sites`: the account's publications). Every action is a POST form sent as JSON to /api/claims/* or /api/publish; buttons stay disabled until hydration. A new token (after
  * a claim or Start over) lives only in this component's state, so it is shown once: a reload shows
  * only where the record goes. Check again and Start over show the claim their answer carries; a new
  * or removed claim reads the server data again (router.refresh).
  */
-export function ClaimsSection({ claims, options }: { claims: readonly ClaimView[]; options: readonly ClaimOption[] }) {
+export function ClaimsSection({ claims, options, sites = NO_SITES }: { claims: readonly ClaimView[]; options: readonly ClaimOption[]; sites?: readonly PublishedView[] }) {
   const router = useRouter();
   const hydrated = useHydrated();
   const [busy, setBusy] = useState<string | null>(null);
@@ -36,9 +40,12 @@ export function ClaimsSection({ claims, options }: { claims: readonly ClaimView[
   // The server's claims, with the claims later answers carried; new server data (after a refresh) replaces them.
   const [views, setViews] = useState(claims);
   const [fromServer, setFromServer] = useState(claims);
+  // The server's publications by host, with those later answers carried (null: unpublished).
+  const [published, setPublished] = useState<Record<string, PublishedView | null>>(() => byHost(sites));
   if (claims !== fromServer) {
     setFromServer(claims);
     setViews(claims);
+    setPublished(byHost(sites));
   }
 
   /** Posts `body` to `path`; shows the answer's message under `key` (a claim id, or "new"); keeps a returned token. */
@@ -52,6 +59,10 @@ export function ClaimsSection({ claims, options }: { claims: readonly ClaimView[
       const message = typeof answer?.message === "string" ? answer.message : T.unavailable;
       status = { ok: res.ok, text: res.ok ? message : localizeRetry(message, typeof answer?.retryAt === "string" ? answer.retryAt : undefined) };
       const view = viewOf(answer);
+      if (body.host && answer?.site !== undefined) {
+        const { site } = answer;
+        setPublished((p) => ({ ...p, [body.host as string]: site }));
+      }
       if (res.ok && view && typeof answer?.token === "string") {
         const token = answer.token;
         setTokens((t) => ({ ...t, [view.id]: token }));
@@ -117,13 +128,15 @@ export function ClaimsSection({ claims, options }: { claims: readonly ClaimView[
       ) : (
         <ul className="mt-4 flex flex-col gap-3">
           {views.map((c) => (
-            <ClaimPanel key={c.id} claim={c} token={tokens[c.id] ?? null} status={statuses[c.id] ?? null} busy={busy === c.id} disabled={disabled} send={(path, body) => send(path, { claimId: c.id, ...body }, c.id)} />
+            <ClaimPanel key={c.id} claim={c} site={published[c.host] ?? null} token={tokens[c.id] ?? null} status={statuses[c.id] ?? null} busy={busy === c.id} disabled={disabled} send={(path, body) => send(path, { claimId: c.id, ...body }, c.id)} />
           ))}
         </ul>
       )}
     </section>
   );
 }
+
+const byHost = (sites: readonly PublishedView[]): Record<string, PublishedView | null> => Object.fromEntries(sites.map((s) => [s.host, s]));
 
 function Message({ status, testId }: { status: Status; testId: string }) {
   if (!status) return null;
@@ -134,7 +147,7 @@ function Message({ status, testId }: { status: Status; testId: string }) {
   );
 }
 
-function ClaimPanel(p: { claim: ClaimView; token: string | null; status: Status; busy: boolean; disabled: boolean; send: (path: string, body?: Record<string, string>) => Promise<void> }) {
+function ClaimPanel(p: { claim: ClaimView; site: PublishedView | null; token: string | null; status: Status; busy: boolean; disabled: boolean; send: (path: string, body?: Record<string, string>) => Promise<void> }) {
   const { claim: c, token } = p;
   const action = (path: string, body: Record<string, string> = {}) => (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -182,6 +195,7 @@ function ClaimPanel(p: { claim: ClaimView; token: string | null; status: Status;
         {c.canStartOver ? button(c.method === "meta" ? T.useDns : T.useMeta, "/api/claims/start-over", { method: c.method === "meta" ? "dns" : "meta" }) : null}
         {button(T.remove, "/api/claims/remove")}
       </div>
+      <PublishControls verified={c.status === "verified"} site={p.site} button={(label, path, primary) => button(label, path, { host: c.host }, primary)} />
       <Message status={p.status} testId="claim-message" />
     </li>
   );

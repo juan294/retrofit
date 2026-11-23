@@ -6,6 +6,7 @@ import robots from "@/app/robots";
 import sitemap from "@/app/sitemap";
 import { GET as llmsGet } from "@/app/llms.txt/route";
 import { getConfig } from "@/lib/config";
+import { getServerDeps } from "@/lib/server/runtime";
 
 const ORIGIN = "https://retrofit.example";
 
@@ -42,9 +43,9 @@ describe("Retrofit's own site, scored by Retrofit", () => {
   });
 
   // Fails if a public page drops out of the sitemap or a private one (judges, results) enters it.
-  it("the sitemap lists the public pages only", () => {
+  it("the sitemap lists the public pages only", async () => {
     const origin = getConfig().publicOrigin;
-    const urls = sitemap().map((e) => e.url);
+    const urls = (await sitemap()).map((e) => e.url);
     expect(urls).toEqual(OWN_PAGES.map((p) => `${origin}${p.path}`));
     expect(urls.some((u) => /\/judges|\/r\/|\/p\//.test(u))).toBe(false);
   });
@@ -85,9 +86,9 @@ describe("pricing, privacy and terms pages", () => {
   const NEW_PAGES = ["/pricing", "/privacy", "/terms"];
 
   // Fails if one of the new public pages is missing from OWN_PAGES, and so from the sitemap and llms.txt.
-  it("are public pages in the sitemap and llms.txt", () => {
+  it("are public pages in the sitemap and llms.txt", async () => {
     const origin = getConfig().publicOrigin;
-    const urls = sitemap().map((e) => e.url);
+    const urls = (await sitemap()).map((e) => e.url);
     const body = llmsText(origin);
     for (const path of NEW_PAGES) {
       expect(OWN_PAGES.map((p) => p.path)).toContain(path);
@@ -103,6 +104,31 @@ describe("pricing, privacy and terms pages", () => {
     const blocked = rules.flatMap((r) => (Array.isArray(r.disallow) ? r.disallow : r.disallow ? [r.disallow] : []));
     for (const path of NEW_PAGES) expect(blocked.some((d) => path.startsWith(d))).toBe(false);
     expect(blocked).toContain("/unsubscribe");
+  });
+});
+
+describe("published pages and robots", () => {
+  // Fails if a crawler is kept from a published page or badge, or an account's publish route is listed as public.
+  it("robots allows /s/ and /badge/", () => {
+    const rules = robots().rules;
+    const blocked = (Array.isArray(rules) ? rules : [rules]).flatMap((r) => (Array.isArray(r.disallow) ? r.disallow : r.disallow ? [r.disallow] : []));
+    for (const path of ["/s/shop.example.com", "/badge/shop.example.com.svg"]) expect(blocked.some((d) => path.startsWith(d)), path).toBe(false);
+  });
+
+  // Fails if a published site's page is missing from the sitemap, or an unpublished one stays.
+  it("the sitemap lists a published site after Retrofit's own pages until it is unpublished", async () => {
+    const { origin } = new URL(getConfig().publicOrigin);
+    const { accounts } = getServerDeps();
+    const account = "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f";
+    const at = "2026-11-23T10:00:00.000Z";
+    const c = await accounts.createClaim(account, { host: "shop.example.com", method: "dns", tokenHash: "a".repeat(64) });
+    if (c.outcome !== "created") throw new Error(c.outcome);
+    await accounts.verifyClaim(c.claim.id, { tokenHash: "a".repeat(64), checkedAt: at });
+    await accounts.publishSite(account, { host: "shop.example.com", snapshot: {}, report: { score: 1 }, fetchedAt: at, now: at });
+    const own = OWN_PAGES.map((p) => `${origin}${p.path}`);
+    expect((await sitemap()).map((e) => e.url)).toEqual([...own, `${origin}/s/shop.example.com`]);
+    await accounts.unpublishSite(account, "shop.example.com");
+    expect((await sitemap()).map((e) => e.url)).toEqual(own);
   });
 });
 

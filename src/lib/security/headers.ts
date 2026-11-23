@@ -67,7 +67,7 @@ interface HeaderRule {
 /**
  * Retrofit's own public agent files (`pnpm agent:build`). Other sites' runtimes and
  * check_partner.mjs read them from another origin, so each one allows every origin.
- * The private previews under /p/ never get CORS.
+ * The private previews under /p/ never get CORS; a published site's JSON files set their own (src/lib/publish/files.ts).
  */
 const PUBLIC_AGENT_FILES = [
   "/agent-manifest.json",
@@ -88,6 +88,8 @@ export function staticSecurityHeaders(): HeaderRule[] {
     ...PUBLIC_AGENT_FILES.map((source) => ({ source, headers: [{ key: "Access-Control-Allow-Origin", value: "*" }] })),
     { source: "/bridge/:path*", headers: [{ key: "Content-Security-Policy", value: BRIDGE_CSP }] },
     { source: "/p/:id/bridge/:path*", headers: [{ key: "Content-Security-Policy", value: BRIDGE_CSP }] },
+    // One file, as src/proxy.ts skips one file: a deeper path keeps the page policy.
+    { source: "/s/:host/bridge/:file", headers: [{ key: "Content-Security-Policy", value: BRIDGE_CSP }] },
     { source: "/runtime/sandbox-worker.js", headers: [{ key: "Content-Security-Policy", value: SANDBOX_WORKER_CSP }] },
   ];
 }

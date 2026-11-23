@@ -16,3 +16,5 @@ export const CLAIM_RECHECK_AFTER_S = 24 * 3600;
 /** A claim lapsed longer than this is rechecked only weekly (CLAIM_SLOW_RECHECK_AFTER_S). */
 export const CLAIM_SLOW_AFTER_S = 30 * 24 * 3600;
 export const CLAIM_SLOW_RECHECK_AFTER_S = 7 * 24 * 3600;
+/** Publishes and refreshes of one account per hour (Unpublish does not count). */
+export const PUBLISH_PER_HOUR = 10;
