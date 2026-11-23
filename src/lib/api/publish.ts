@@ -70,6 +70,6 @@ export function handleUnpublish(request: Request, deps: PublishDeps): Promise<Re
     const host = hostOf(fields);
     if (!host) return invalid();
     const removed = await deps.accounts.unpublishSite(accountId, host);
-    return removed ? json(200, { site: null, message: T.unpublished }) : json(404, { error: "not_found", message: T.notPublished(host) });
+    return removed ? json(200, { site: null, message: T.unpublished }) : json(404, { error: "not_found", message: T.notPublished(host), site: null });
   });
 }

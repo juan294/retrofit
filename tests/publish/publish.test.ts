@@ -236,7 +236,8 @@ describe("POST /api/publish/remove (unpublish)", () => {
   it("removes only the account's own publication; the claim stays verified", async () => {
     const { d, unpublish, other } = await setup();
     const claim = await verifiedClaim(d);
-    expect(await unpublish()).toEqual({ status: 404, body: { error: "not_found", message: PUBLISH_TEXT.notPublished(HOST) } });
+    // `site: null`: an account page open in another tab drops its stale publication.
+    expect(await unpublish()).toEqual({ status: 404, body: { error: "not_found", message: PUBLISH_TEXT.notPublished(HOST), site: null } });
     await publishDirect(d, snapshotOf(HOST, T1));
     expect((await unpublish({ cookie: other })).status).toBe(404);
     expect(await d.accounts.getPublicSite(HOST)).not.toBeNull();
