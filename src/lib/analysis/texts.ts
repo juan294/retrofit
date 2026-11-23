@@ -33,6 +33,8 @@ export const visitorTexts = {
   robotsBlocked: "This site asks automated tools not to read it. Retrofit stopped and read nothing else.",
   robotsUnavailable: (retryAt: Date) => `Retrofit could not read this site's robots rules, so it stopped. Try again after ${hhmmUtc(retryAt)} UTC.`,
   clientLimit: (limit: number, retryAt: Date) => `You reached the limit of ${limit} analyses per hour. Try again at ${hhmmUtc(retryAt)} UTC.`,
+  // The accounts plan's stuck-state text: the sixth free analysis after BILLING_START (src/lib/billing/free-limit.ts).
+  freeLimit: "You've used your 5 free analyses. Sign in to keep going.",
   queued: "Retrofit is busy. Your analysis starts in a moment.",
   dailyLimit: "Retrofit reached today's analysis limit. Try again tomorrow.",
   queueExpired: "Retrofit is too busy right now. Try again in a few minutes.",

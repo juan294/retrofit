@@ -71,6 +71,11 @@ export function countClientAnalysis(store: Store, config: Pick<Config, "analyses
   return countClientWindow(store, ANALYSIS_WINDOW, config.analysesPerClientHour, clientId, now);
 }
 
+/** Counts one analysis of a signed-in account, whatever its network (from BILLING_START on). */
+export function countAccountAnalysis(store: Store, config: Pick<Config, "analysesPerClientHour">, accountId: string, now: number): Promise<LimitResult> {
+  return countClientWindow(store, "account-window", config.analysesPerClientHour, accountId, now);
+}
+
 /**
  * A count-once marker. `pending` while its first caller decides; `counted`
  * once the counter admitted it. A refused marker is deleted, never stored.

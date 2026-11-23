@@ -3,6 +3,8 @@ import { isSameOrigin, startAnalysis } from "@/lib/analysis/run";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { resolveVisitor } from "@/lib/analysis/visitor";
 import { readAccount } from "@/lib/accounts/session";
+import { billingStarted } from "@/lib/billing/entitlements";
+import { freeCountOf } from "@/lib/billing/free-limit";
 import { clientIdFromRequest } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { readLimitedBody } from "./body";
@@ -24,7 +26,8 @@ function urlFrom(text: string): string | null {
 /**
  * POST /api/analyze `{url}` -> 200 `{id}`. Same-origin only (403 otherwise).
  * Sets the visitor cookie when absent. A signed-in visitor's analysis is attached to the account. Errors: 400 not_public, 413 too_large,
- * 429 client_limit or daily_limit (`{error, message, retryAt?}`), 503 unavailable,
+ * 429 client_limit or daily_limit (`{error, message, retryAt?}`), 403 free_limit (after BILLING_START, a visitor
+ * without an account past the free analyses: the page shows the sign-in form), 503 unavailable,
  * and 503 counting (`{error, message, retryAfterSeconds}` with Retry-After) while
  * the site's daily count is undecided: no analysis is created, so the page retries.
  * Every request, including the early returns, dispatches queued work.
@@ -42,7 +45,8 @@ export async function handleAnalyze(request: Request, deps: ServerDeps): Promise
     const clientId = clientIdFromRequest(request, deps.config, deps.clock());
     // readAccount reads nothing without an account cookie, so the anonymous path is unchanged.
     const account = await readAccount(request, deps);
-    const outcome = await startAnalysis(deps, { rawUrl, ownerHash: visitor.hash, clientId, invocation, accountId: account?.accountId });
+    const free = !account && billingStarted(deps) ? freeCountOf(request, visitor.hash, deps) : null;
+    const outcome = await startAnalysis(deps, { rawUrl, ownerHash: visitor.hash, clientId, invocation, accountId: account?.accountId, free });
     if (outcome.ok) return json(200, { id: outcome.id }, visitor.setCookie);
     if (outcome.code === "counting") {
       const { status, code, message, retryAfterSeconds } = outcome;

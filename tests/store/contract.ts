@@ -188,6 +188,14 @@ export function runStoreContract(name: string, makeClients: () => Promise<Contra
         expect(await a.incrementWindow(k("w"), 3600, 5)).toBe(7);
       });
 
+      // Fails if a negative step (a free analysis given back, src/lib/billing/free-limit.ts) is refused, restarts the window, or is not atomic.
+      it("gives counts back with a negative step, also when callers race", async () => {
+        for (let i = 0; i < 6; i++) await a.incrementWindow(k("w"), 3600);
+        expect(await b.incrementWindow(k("w"), 3600, -1)).toBe(5);
+        await Promise.all(Array.from({ length: 10 }, (_, i) => (i % 2 ? a : b).incrementWindow(k("w"), 3600, i % 2 ? 1 : -1)));
+        expect(await a.incrementWindow(k("w"), 3600, 0)).toBe(5);
+      });
+
       // Fails if increments are not atomic (lost updates under concurrency).
       it("loses no increment under 20 concurrent calls", async () => {
         const counts = await Promise.all(
