@@ -9576,6 +9576,12 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/config-billing.test.ts",
+      "title": "test mode only reads a comma-separated list per plan, in order"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/config-billing.test.ts",
       "title": "test mode only refuses the same price id for both plans"
     },
     {
@@ -9589,6 +9595,114 @@
       "suite": "unit",
       "file": "tests/config-billing.test.ts",
       "title": "billing configuration off Vercel is frozen"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/config-billing.test.ts",
+      "title": "the daily sites of an account defaults to 50, 100 and 300, below the shared cap, and reads each as a positive number"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 404 without a code"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 404 with another code"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 404 with the code in another case"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 404 that is not JSON"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for user_not_found with another status"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 200 with an empty object"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 200 with null"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 200 with a list"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 200 without an email"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 200 with an empty email"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 200 for another user"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 401"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 403"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 429"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser throws AuthUnavailable for a 500"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway deleteUser throws AuthUnavailable for a 404 without a code"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway deleteUser throws AuthUnavailable for a 404 with another code"
     },
     {
       "rule": "accounts data",
@@ -9618,7 +9732,7 @@
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
-      "title": "AccountData contract: memory (two clients, one backing) billing a late event is recorded and not applied; an unknown customer's event is not recorded"
+      "title": "AccountData contract: memory (two clients, one backing) billing a late event changes nothing and is not recorded, so reading again applies it; an unknown customer's event is not recorded"
     },
     {
       "rule": "accounts data",
@@ -9631,6 +9745,24 @@
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
       "title": "AccountData contract: memory (two clients, one backing) billing deleteAccountData removes the account's billing and API keys only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) billing deleteAccountData marks the account's customer as deleted, and only that one"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) billing no customer is linked after the deletion until the account signs in again; linking then removes the mark"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) billing keeps the first start of an unpaid time while the same subscription stays past due"
     },
     {
       "rule": "accounts data",
@@ -9673,6 +9805,18 @@
       "suite": "unit",
       "file": "tests/accounts/delete.test.ts",
       "title": "account deletion with a subscription a retry after a partial failure is safe"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "account deletion with a subscription says that the plan is already cancelled when a later step fails, and stores the cancelled state"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "account deletion with a subscription says nothing about a plan when there was none to cancel"
     },
     {
       "rule": "accounts deletion",
@@ -9721,6 +9865,12 @@
       "suite": "unit",
       "file": "tests/accounts/supabase-failure.test.ts",
       "title": "Supabase AccountData on a closed port applyBillingEvent throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port isDeletedCustomer throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
     },
     {
       "rule": "accounts data",
@@ -9786,7 +9936,7 @@
       "rule": "API keys",
       "suite": "unit",
       "file": "tests/api/score-keys.test.ts",
-      "title": "GET /api/score with an API key before the start a key counts with the anonymous limit, per account"
+      "title": "GET /api/score with an API key before the start a key counts against the network exactly as an anonymous call, and also per account"
     },
     {
       "rule": "API keys",
@@ -9804,19 +9954,13 @@
       "rule": "API keys",
       "suite": "unit",
       "file": "tests/api/score-keys.test.ts",
-      "title": "GET /api/score with an API key refuses another product's key with 401 and starts nothing"
+      "title": "GET /api/score with an API key refuses another product's restricted key with 401 and starts nothing"
     },
     {
       "rule": "API keys",
       "suite": "unit",
       "file": "tests/api/score-keys.test.ts",
-      "title": "GET /api/score with an API key refuses an empty bearer with 401 and starts nothing"
-    },
-    {
-      "rule": "API keys",
-      "suite": "unit",
-      "file": "tests/api/score-keys.test.ts",
-      "title": "GET /api/score with an API key refuses a bare scheme with 401 and starts nothing"
+      "title": "GET /api/score with an API key refuses a key prefix alone with 401 and starts nothing"
     },
     {
       "rule": "API keys",
@@ -9864,6 +10008,18 @@
       "rule": "API keys",
       "suite": "unit",
       "file": "tests/api/score-keys.test.ts",
+      "title": "GET /api/score with an API key caps the sites of an account per day, whatever its hourly limit, and leaves the shared cap to others"
+    },
+    {
+      "rule": "API keys",
+      "suite": "unit",
+      "file": "tests/api/score-keys.test.ts",
+      "title": "GET /api/score with an API key the cap of an account is at most half of the shared daily cap"
+    },
+    {
+      "rule": "API keys",
+      "suite": "unit",
+      "file": "tests/api/score-keys.test.ts",
       "title": "GET /api/score with an API key keeps the preflight as it was"
     },
     {
@@ -9895,6 +10051,24 @@
       "suite": "unit",
       "file": "tests/billing/checkout.test.ts",
       "title": "POST /api/billing/checkout a double click opens one checkout for one customer"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/checkout.test.ts",
+      "title": "POST /api/billing/checkout requests that race, also for two plans, take turns and leave one payable checkout"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/checkout.test.ts",
+      "title": "POST /api/billing/checkout answers busy while another request holds the account's turn, and gives the turn back after a failure"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/checkout.test.ts",
+      "title": "POST /api/billing/checkout sells the first price of the list"
     },
     {
       "rule": "billing",
@@ -10236,6 +10410,24 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/entitlements.test.ts",
+      "title": "a plan whose stored period passed is read again from Stripe once its grace is over, and a renewal keeps it"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "a plan whose stored period passed ends when Stripe says so, and when Stripe cannot be asked"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
+      "title": "a plan whose stored period passed is not read again for ten minutes when it stays passed"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/entitlements.test.ts",
       "title": "billing data unreadable allows the Free features and denies the paid ones with a retry"
     },
     {
@@ -10344,6 +10536,24 @@
       "rule": "free-analysis limit",
       "suite": "unit",
       "file": "tests/billing/free-limit.test.ts",
+      "title": "the free-analysis limit parallel refused starts of one visitor never refuse another visitor on the network"
+    },
+    {
+      "rule": "free-analysis limit",
+      "suite": "unit",
+      "file": "tests/billing/free-limit.test.ts",
+      "title": "the free-analysis limit a place given back while another start is refused is found again"
+    },
+    {
+      "rule": "free-analysis limit",
+      "suite": "unit",
+      "file": "tests/billing/free-limit.test.ts",
+      "title": "the free-analysis limit an IPv6 network is its /64"
+    },
+    {
+      "rule": "free-analysis limit",
+      "suite": "unit",
+      "file": "tests/billing/free-limit.test.ts",
       "title": "the free-analysis limit a refused or failed start does not count"
     },
     {
@@ -10375,6 +10585,24 @@
       "suite": "unit",
       "file": "tests/billing/free-limit.test.ts",
       "title": "the analysis start before billing makes exactly the calls it made before billing existed, for a visitor and for a signed-in account"
+    },
+    {
+      "rule": "free-analysis limit",
+      "suite": "unit",
+      "file": "tests/billing/free-limit.test.ts",
+      "title": "signed-in accounts after the start the sites an account analyzes per day are capped by plan, never by more than half of the shared cap"
+    },
+    {
+      "rule": "free-analysis limit",
+      "suite": "unit",
+      "file": "tests/billing/free-limit.test.ts",
+      "title": "signed-in accounts after the start a site counts once a day for its account"
+    },
+    {
+      "rule": "free-analysis limit",
+      "suite": "unit",
+      "file": "tests/billing/free-limit.test.ts",
+      "title": "signed-in accounts after the start an unreadable plan does not stop an analysis"
     },
     {
       "rule": "free-analysis limit",
@@ -10440,7 +10668,37 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/prices.test.ts",
-      "title": "plan amounts names the configured prices only"
+      "title": "plan amounts a plan's offer for {\"started\":false,\"priced\":true,\"amount\":\"$11.00 per month\"}"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/prices.test.ts",
+      "title": "plan amounts a plan's offer for {\"started\":true,\"priced\":true,\"amount\":\"$11.00 per month\"}"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/prices.test.ts",
+      "title": "plan amounts a plan's offer for {\"started\":true,\"priced\":true}"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/prices.test.ts",
+      "title": "plan amounts a plan's offer for {\"started\":true,\"priced\":false}"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/prices.test.ts",
+      "title": "plan amounts a plan's offer for {\"started\":false,\"priced\":true}"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/prices.test.ts",
+      "title": "plan amounts shows the price for sale, the first of the list"
     },
     {
       "rule": "billing",
@@ -10471,6 +10729,42 @@
       "suite": "unit",
       "file": "tests/billing/reconcile.test.ts",
       "title": "the account page's billing shows the activating state after a checkout that Stripe does not show yet, and when Stripe is unreachable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/reconcile.test.ts",
+      "title": "the account page's billing a canceled plan is never activating, also after a checkout and when Stripe is unreachable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/reconcile.test.ts",
+      "title": "the account page's billing a unpaid plan is never activating, also after a checkout and when Stripe is unreachable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/reconcile.test.ts",
+      "title": "the account page's billing a past_due plan is never activating, also after a checkout and when Stripe is unreachable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/reconcile.test.ts",
+      "title": "the account page's billing a paused plan is never activating, also after a checkout and when Stripe is unreachable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/reconcile.test.ts",
+      "title": "the account page's billing a incomplete_expired plan is never activating, also after a checkout and when Stripe is unreachable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/reconcile.test.ts",
+      "title": "the account page's billing a state from a clock far ahead is read again"
     },
     {
       "rule": "billing",
@@ -10542,67 +10836,133 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules active: pro before the period end, pro after it"
+      "title": "subscription status rules active"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules trialing: pro before the period end, pro after it"
+      "title": "subscription status rules active at its end"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules past_due: pro before the period end, free after it"
+      "title": "subscription status rules active, 3 days less 1 ms past its end"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules unpaid: free before the period end, free after it"
+      "title": "subscription status rules active, 3 days past its end"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules incomplete: free before the period end, free after it"
+      "title": "subscription status rules active without a period end"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules incomplete_expired: free before the period end, free after it"
+      "title": "subscription status rules trialing in its trial"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules paused: free before the period end, free after it"
+      "title": "subscription status rules trialing, 3 days past its end"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules canceled: free before the period end, free after it"
+      "title": "subscription status rules cancelled at the period end, before it"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules a_status_stripe_adds_later: free before the period end, free after it"
+      "title": "subscription status rules cancelled at the period end, at it"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules constructor: free before the period end, free after it"
+      "title": "subscription status rules past due on the day"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/state.test.ts",
-      "title": "subscription status rules past_due ends exactly at the period end, and needs one"
+      "title": "subscription status rules past due, 7 days less 1 ms"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/state.test.ts",
+      "title": "subscription status rules past due, 7 days"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/state.test.ts",
+      "title": "subscription status rules past due without a period start"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/state.test.ts",
+      "title": "subscription status rules unpaid"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/state.test.ts",
+      "title": "subscription status rules incomplete"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/state.test.ts",
+      "title": "subscription status rules incomplete_expired"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/state.test.ts",
+      "title": "subscription status rules paused"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/state.test.ts",
+      "title": "subscription status rules canceled"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/state.test.ts",
+      "title": "subscription status rules a status Stripe adds later"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/state.test.ts",
+      "title": "subscription status rules an inherited name"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/state.test.ts",
+      "title": "subscription status rules past due counts from the stored start of the unpaid time"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/state.test.ts",
+      "title": "subscription status rules says when a stored plan ran out of time (so it is worth reading again)"
     },
     {
       "rule": "billing",
@@ -10752,6 +11112,24 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/stripe.test.ts",
+      "title": "Stripe adapter two racing checkouts (price_pro and price_pro) leave one payable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/stripe.test.ts",
+      "title": "Stripe adapter two racing checkouts (price_pro and price_agency) leave one payable"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/stripe.test.ts",
+      "title": "Stripe adapter reads the period, and a cancellation only when it ends this period"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/stripe.test.ts",
       "title": "Stripe adapter an inactive price and a price without a fixed amount have no amount"
     },
     {
@@ -10896,7 +11274,13 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/view.test.ts",
-      "title": "the billing section past due"
+      "title": "the billing section past due: 7 days from the last paid period, not the unpaid month"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/view.test.ts",
+      "title": "the billing section a renewal not read yet"
     },
     {
       "rule": "billing",
@@ -11010,6 +11394,24 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/webhook.test.ts",
+      "title": "events a newer read is applied although this instance's clock is behind the stored one"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "events a read overtaken by another instance is read again and applied"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "events a read that is always overtaken answers 503 and records nothing"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
       "title": "events a failure while applying answers 503 and the redelivery applies the event"
     },
     {
@@ -11022,13 +11424,67 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/webhook.test.ts",
-      "title": "customers without a billing record checkout.session.completed for a deleted account cancels its subscription and creates no row"
+      "title": "customers without a billing record checkout.session.completed for an account deleted here cancels its subscription and creates no row"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/webhook.test.ts",
-      "title": "customers without a billing record customer.subscription.updated for a deleted account cancels its subscription and creates no row"
+      "title": "customers without a billing record customer.subscription.updated for an account deleted here cancels its subscription and creates no row"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record checkout.session.completed while the deletion is not finished cancels too, although the auth user still exists"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record customer.subscription.updated while the deletion is not finished cancels too, although the auth user still exists"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record checkout.session.completed without a deletion mark never cancels: no account and no record only raise an alert"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record customer.subscription.updated without a deletion mark never cancels: no account and no record only raise an alert"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record an outage of the billing record answers 503, cancels nothing and records nothing; the redelivery works"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record an outage of the deletion mark answers 503, cancels nothing and records nothing; the redelivery works"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record an outage of the customer's owner answers 503, cancels nothing and records nothing; the redelivery works"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record an outage of the auth user answers 503, cancels nothing and records nothing; the redelivery works"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record an outage of the link answers 503, cancels nothing and records nothing; the redelivery works"
     },
     {
       "rule": "billing",
@@ -11046,19 +11502,31 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/webhook.test.ts",
-      "title": "customers without a billing record a completed checkout links the account again when its auth user exists"
+      "title": "customers without a billing record checkout.session.completed links a living account of this Retrofit that has no record"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/webhook.test.ts",
-      "title": "customers without a billing record never links a customer to another account, or a second customer to one account"
+      "title": "customers without a billing record customer.subscription.updated links a living account of this Retrofit that has no record"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/webhook.test.ts",
-      "title": "customers without a billing record leaves customers of another product or another deployment alone"
+      "title": "customers without a billing record customer.subscription.deleted links a living account of this Retrofit that has no record"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record never links a customer to another account, another deployment's account, an account without a profile, or a second customer to one account"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record leaves customers of another product alone, without an alert"
     },
     {
       "rule": "billing",
@@ -11088,7 +11556,73 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/webhook.test.ts",
+      "title": "account deletion against a checkout a checkout request overtaken by the deletion opens nothing"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
       "title": "account deletion against a checkout a record deleted while the event is applied is not recreated"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs after BILLING_START passes with 4 analyses left: the others get the limit's answer, and five scores prove the pages"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs after BILLING_START passes with 0 analyses left: the others get the limit's answer, and five scores prove the pages"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs after BILLING_START fails when the limit answers before the start, and asks for no scores without a limit"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs after BILLING_START fails for another text"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs after BILLING_START fails for another code"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs after BILLING_START fails for another status"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs after BILLING_START fails for a failed score"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs after BILLING_START fails for a score that is not ready"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs after BILLING_START the browser suite runs before the concurrent analyses"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs after BILLING_START uses the product's own limit text and earliest start"
     },
     {
       "rule": "privacy and terms drafts",
@@ -11113,6 +11647,24 @@
       "suite": "unit",
       "file": "tests/site/legal-texts.test.ts",
       "title": "payments, the free limit and API keys in the privacy notice and the terms says what is kept of an API key"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "payments, the free limit and API keys in the privacy notice and the terms says what is kept of a deleted account's Stripe customer, and why"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "payments, the free limit and API keys in the privacy notice and the terms is true about Retrofit's AI for visitors without an account, Free accounts and plans"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "payments, the free limit and API keys in the privacy notice and the terms says that an IPv6 address counts by its network part"
     },
     {
       "rule": "privacy and terms drafts",
@@ -11154,7 +11706,7 @@
       "rule": "accounts data",
       "suite": "db",
       "file": "tests/db/accounts.db.test.ts",
-      "title": "AccountData contract: supabase (two clients) billing a late event is recorded and not applied; an unknown customer's event is not recorded"
+      "title": "AccountData contract: supabase (two clients) billing a late event changes nothing and is not recorded, so reading again applies it; an unknown customer's event is not recorded"
     },
     {
       "rule": "accounts data",
@@ -11167,6 +11719,24 @@
       "suite": "db",
       "file": "tests/db/accounts.db.test.ts",
       "title": "AccountData contract: supabase (two clients) billing deleteAccountData removes the account's billing and API keys only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) billing deleteAccountData marks the account's customer as deleted, and only that one"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) billing no customer is linked after the deletion until the account signs in again; linking then removes the mark"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) billing keeps the first start of an unpaid time while the same subscription stays past due"
     },
     {
       "rule": "accounts data",
@@ -11203,6 +11773,18 @@
       "suite": "db",
       "file": "tests/db/billing.db.test.ts",
       "title": "twelve concurrent events of one customer, delivered twice each, leave the newest read"
+    },
+    {
+      "rule": "billing",
+      "suite": "db",
+      "file": "tests/db/billing.db.test.ts",
+      "title": "a customer link racing the data deletion leaves either no row or a marked customer"
+    },
+    {
+      "rule": "billing",
+      "suite": "db",
+      "file": "tests/db/billing.db.test.ts",
+      "title": "the data deletion waits for a link in progress and marks its customer"
     },
     {
       "rule": "store contract and database privileges",
