@@ -7,8 +7,9 @@
 // Page titles, text and record values reach the model only as tool results.
 
 import { createHash } from "node:crypto";
+import { normalizeHost } from "@/lib/fetch/url";
 import { PROVIDERS } from "@/lib/keys/providers";
-import { toSiteContent, type RecordCollections, type SiteContent, type Snapshot } from "@/lib/snapshot/types";
+import { toSiteContent, type AgentSnapshot, type RecordCollections, type SiteContent } from "@/lib/snapshot/types";
 import { runtimeValidationErrors } from "@/lib/score/network";
 
 // The Otari row of the provider table: its default model and its router for direct BYOK.
@@ -79,22 +80,11 @@ export function validateGenerated(network: unknown, name: string, validate: Netw
   if (errors.length > 0) throw new GenerationFailed(errors.join("; "));
 }
 
-const HOST = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::\d{1,5})?$/;
-
-/** The host in ASCII (punycode) lowercase form, or GenerationFailed when it is not a plain DNS name with an optional port. */
+/** The host in ASCII (punycode) lowercase form (normalizeHost), or GenerationFailed when it is not a plain DNS name with an optional port. */
 export function validatedHost(host: string): string {
-  const refuse = () => new GenerationFailed("The snapshot host is not a valid host name.");
-  // Whitespace and control characters first: the URL parser would silently strip tabs and newlines.
-  // eslint-disable-next-line no-control-regex -- matching control characters is the point of this check
-  if (host.length === 0 || host.length > 260 || /[\u0000-\u0020\u007f-\u009f]/.test(host)) throw refuse();
-  let parsed: URL;
-  try {
-    parsed = new URL(`http://${host}`);
-  } catch {
-    throw refuse();
-  }
-  if (parsed.pathname !== "/" || parsed.search || parsed.hash || parsed.username || parsed.password || !HOST.test(parsed.host)) throw refuse();
-  return parsed.host;
+  const normalized = normalizeHost(host);
+  if (normalized === null) throw new GenerationFailed("The snapshot host is not a valid host name.");
+  return normalized;
 }
 
 /** `site_<slug(host)>`: [a-z0-9_], at most 40 characters, starts with a letter, deterministic. */
@@ -160,7 +150,7 @@ function siteGuide(host: string, date: string, withRecords: boolean, installed: 
  * The network, manifest and site content for a ready analysis. Pure apart from hashing.
  * Throws GenerationFailed when the host is unusable or the vendored validator reports an error.
  */
-export function generateNetwork(input: { snapshot: Snapshot } & ({ target: "bundle" } | { target?: "preview"; publicOrigin: string }), options: { validate?: NetworkValidator } = {}): GeneratedPreview {
+export function generateNetwork(input: { snapshot: AgentSnapshot } & ({ target: "bundle" } | { target?: "preview"; publicOrigin: string }), options: { validate?: NetworkValidator } = {}): GeneratedPreview {
   const { snapshot } = input;
   const host = validatedHost(snapshot.host);
   const networkName = networkNameFor(host);

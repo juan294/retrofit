@@ -112,7 +112,7 @@ describe("loadConfig", () => {
 
   it("reads the Supabase variables on Vercel", () => {
     const c = loadConfig(VERCEL_ENV);
-    expect(c.supabase).toEqual({ url: "https://store.supabase.test", serviceRoleKey: "service-role-key-test" });
+    expect(c.supabase).toEqual({ url: "https://store.supabase.test", serviceRoleKey: "service-role-key-test", anonKey: "anon-key-test" });
   });
 
   // Fails if local development needs Supabase, or a half configuration silently uses memory.
@@ -128,5 +128,55 @@ describe("loadConfig", () => {
   it("refuses a SUPABASE_URL that is not an http or https origin", () => {
     expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "ftp://x.test", SUPABASE_SERVICE_ROLE_KEY: "k" })).toThrow(/SUPABASE_URL/);
     expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "not a url", SUPABASE_SERVICE_ROLE_KEY: "k" })).toThrow(/SUPABASE_URL/);
+  });
+});
+
+describe("billing start and notify limit", () => {
+  // Fails if billing could start before judging ends (the brief's free-access rule) or the default moves.
+  it("defaults BILLING_START to 2027-01-19T00:00:00Z and NOTIFY_PER_CLIENT_HOUR to 5", () => {
+    const c = loadConfig({ SESSION_SECRET: secret });
+    expect(c.billingStart).toBe(Date.parse("2027-01-19T00:00:00Z"));
+    expect(c.notifyPerClientHour).toBe(5);
+  });
+
+  // Fails if BILLING_START is ignored or a bad value falls back to the default instead of refusing.
+  it("reads BILLING_START as an ISO date and time and refuses anything else", () => {
+    expect(loadConfig({ SESSION_SECRET: secret, BILLING_START: "2027-02-01T12:00:00Z" }).billingStart).toBe(Date.parse("2027-02-01T12:00:00Z"));
+    for (const bad of ["soon", "2027-13-45"]) {
+      expect(() => loadConfig({ SESSION_SECRET: secret, BILLING_START: bad })).toThrow(/BILLING_START/);
+    }
+  });
+
+  // Fails if the notify limit cannot be set or a bad value is accepted.
+  it("reads NOTIFY_PER_CLIENT_HOUR as a positive number", () => {
+    expect(loadConfig({ SESSION_SECRET: secret, NOTIFY_PER_CLIENT_HOUR: "9" }).notifyPerClientHour).toBe(9);
+    expect(() => loadConfig({ SESSION_SECRET: secret, NOTIFY_PER_CLIENT_HOUR: "0" })).toThrow(/NOTIFY_PER_CLIENT_HOUR/);
+  });
+});
+
+describe("accounts sign-in configuration", () => {
+  // Fails if a sign-in limit default moves (5 links per network and 3 per address an hour, the plan's design).
+  it("defaults SIGNIN_PER_CLIENT_HOUR to 5 and SIGNIN_PER_EMAIL_HOUR to 3, and reads both as positive numbers", () => {
+    const c = loadConfig({ SESSION_SECRET: secret });
+    expect(c.signInPerClientHour).toBe(5);
+    expect(c.signInPerEmailHour).toBe(3);
+    const set = loadConfig({ SESSION_SECRET: secret, SIGNIN_PER_CLIENT_HOUR: "50", SIGNIN_PER_EMAIL_HOUR: "30" });
+    expect([set.signInPerClientHour, set.signInPerEmailHour]).toEqual([50, 30]);
+    expect(() => loadConfig({ SESSION_SECRET: secret, SIGNIN_PER_EMAIL_HOUR: "0" })).toThrow(/SIGNIN_PER_EMAIL_HOUR/);
+  });
+
+  // Fails if production can start without the anon key that sign-in needs (every sign-in would answer 503).
+  it("refuses a missing SUPABASE_ANON_KEY on Vercel and reads it when set", () => {
+    const { SUPABASE_ANON_KEY: _omit, ...withoutAnon } = VERCEL_ENV;
+    expect(() => loadConfig(withoutAnon)).toThrow(/SUPABASE_ANON_KEY/);
+    expect(loadConfig(VERCEL_ENV).supabase?.anonKey).toBe(VERCEL_ENV.SUPABASE_ANON_KEY);
+  });
+
+  // Fails if local development without the anon key stops working, or an anon key without a Supabase URL is accepted.
+  it("leaves SUPABASE_ANON_KEY optional off Vercel and refuses it without SUPABASE_URL", () => {
+    expect(loadConfig({ SESSION_SECRET: secret }).supabase).toBeNull();
+    expect(loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721", SUPABASE_SERVICE_ROLE_KEY: "k" }).supabase?.anonKey).toBeUndefined();
+    expect(loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721", SUPABASE_SERVICE_ROLE_KEY: "k", SUPABASE_ANON_KEY: " a " }).supabase?.anonKey).toBe("a");
+    expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_ANON_KEY: "a" })).toThrow(/SUPABASE_URL/);
   });
 });

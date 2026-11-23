@@ -55,12 +55,16 @@ export class PrivatePathRefused extends Error {
   }
 }
 
-/** The host's crawl delay puts the next request after the caller's deadline; nothing was sent or reserved. */
+/**
+ * The host's crawl delay puts the next request after the caller's deadline; nothing was sent or reserved.
+ * `intervalMs`: the spacing the pacer applies to the host (the Crawl-delay, at least the minimum interval).
+ */
 export class CrawlDelayTooLong extends Error {
   readonly code = "crawl_delay" as const;
   constructor(
     readonly host: string,
     readonly waitMs: number,
+    readonly intervalMs = 0,
   ) {
     super(`The next request to ${host} may start only in ${waitMs} ms, after the deadline`);
     this.name = "CrawlDelayTooLong";

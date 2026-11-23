@@ -1,0 +1,151 @@
+# Accounts, claims, publishing and billing implementation
+
+On 2026-11-23 Juan authorized all five phases of 2026-11-23-retrofit-accounts-claims-publishing-billing.md without acceptance stops, local integration into `develop` and removal of the implementation worktree. That authorization covers local work only. It does not cover any external action in the plan's phase table: the production migration, SES production access, SES SMTP credentials, Supabase Auth settings, Stripe accounts or keys, Vercel variables, pushes or releases. Those stay pending.
+
+- Base: `develop` `48c8e121e4e88bbc30c6804566e0ef3b2bcd6eb8` (the plan commit on top of `origin/develop` `e93c3d6`). Production `7aa6eb1` (`v0.2.0`).
+- Branch `feat/accounts` in `/Users/juan/code/retrofit-worktrees/accounts`.
+- Overlay: `.rpi/project/rpi-implement.md` is absent; no declared override applied.
+- Specification: `cognizant-ai-labs/agentic-web` HEAD `c178171d7ef3d0cf5c28208da1263bf954435e70` on 2026-11-23. Compared with the plan's `e342997` and the vendor pin `0516537`, only `docs/agentic_websites.md` changed (eight commits adding directory entries). No vendored file is affected.
+- Open UI-pass commits at entry: none (`develop` had only the plan commit beyond `origin/develop`).
+
+## Deviations
+
+- Retention. Plan said analyses live 24 hours plus a 7-day grace (Current state; `saved_reports` purpose). Found: the crawl cache lives 24 hours (`CRAWL_CACHE_TTL_S`), an analysis record 7 days (`ANALYSIS_TTL_S`) and then 7 more days as expired (`src/lib/analysis/record.ts`). Chose: the privacy draft states what the code does, and a test ties the text to the constants. Why: the policy must describe the stored data truthfully. Juan reviews the wording.
+- Production evidence pages. Plan said to update the page list in `tools/release/production-evidence.mjs`. Found: that list is the input of the five concurrent analyses, and an analysis uses only the origin, so new paths there would verify nothing. Chose: a new production Playwright case for `/pricing`, `/privacy`, `/terms` and the sitemap (`e2e-prod/pages.spec.ts`). Why: it checks the pages that ship.
+- `BILLING_START` on Vercel. Plan said the variable is required on Vercel. Chose: Phase 1 adds `billingStart` with the plan's instant as the default and does not yet require it; Phase 5 makes it required. Why: requiring it in Phase 1 would fail a release of Phase 1 alone before billing exists.
+- Unsubscribe. Phase 1 said `GET /unsubscribe?t=<token>` records `unsubscribed_at`. Chose: GET shows a confirmation button; the change happens on `POST /api/unsubscribe`, which also accepts the RFC 8058 one-click body from mailbox providers (so it does not require same-origin). Why: mail link scanners open GET links and would unsubscribe people silently.
+- Claim transfer. The parent plan's claim states were `pending`, `verified` and `lapsed`. Chose: the migration adds a terminal `superseded` status with `superseded_at` and `superseded_by`. Why: a host that moves to another account must keep a record of the change, and a lapsed claim of the old owner must never be restored over the new owner (review finding P1-R4).
+- Additions beyond the phase file: `findNotifySignup`, `NOTIFY_PER_CLIENT_HOUR` (default 5), a partial unique index for one verified claim per host, and `unique(account_id, host)` on claims.
+- Session secret. Phase 2 listed `ACCOUNT_SESSION_SECRET`. Chose: no new secret. The session id is 128 random bits and the Store keeps only its SHA-256; the per-email sign-in window key is an HMAC with the existing `SESSION_SECRET`. External action 4 therefore needs only `SUPABASE_ANON_KEY`.
+- Return page. Phase 2 said `emailRedirectTo /auth/confirm?next=returnTo`. Found: the pinned email template builds its own link and ignores the redirect. Chose: a one-hour `retrofit_signin` cookie (Path=/auth) carries the return page and the requesting browser's identity. Why: the link stays fixed and the return page never appears in mail.
+- Browser sign-in tests. Phase 2 said `e2e/account.spec.ts` signs in through the local mail catcher. Found: the gate removes the database stack before Playwright, and the browser tests run on the memory store. Chose: a fixtures-only mailbox (404 outside fixtures mode) for the browser test, and `tests/db/auth.db.test.ts` for real Supabase Auth with the local mail catcher. Why: both paths are covered without a second stack.
+- Attaching analyses. Chose: analyses attach at sign-in only in the browser that asked for the link, for the same address. Why: a forwarded link must not attach another person's analyses.
+- Confirm page. Plan said the confirm link verifies on GET. Chose: GET shows a "Sign in" button and only the same-origin POST verifies the token (review P2-R1). Why: mail link scanners open links and would use up the one-time token; the page also warns when the link was requested in another browser (login CSRF, P2-R8).
+- Account cookie lifetime. The cookie has a 400-day Max-Age and the Store record (30 days, sliding) decides when the session ends. Why: server components cannot reset a cookie on every request.
+- Account deletion order: provider check, the account's other sessions, all data in one database transaction (`delete_account_data`, a second migration), then the auth user, then this browser's session. A failure at the auth user step keeps this browser signed in so a retry finishes.
+- External action 3 (Supabase Auth settings) gains: use `supabase/templates/magic_link.html` for both the Confirm signup and Magic Link templates; the site URL is the origin only (the template builds `{{ .SiteURL }}/auth/confirm`); raise the Auth email rate limit to fit the sign-in limits.
+- Claim sources. Phase 3 said "Claim a site" from a saved report or a recent analysis. Found: the Store had no list of an account's analyses. Chose: a Store list `account-analyses:<id>` filled at analysis start and at sign-in attach, deleted with the account. The claimed host is the host the analysis scored (`snapshot.host`), so `example.com` that redirects to `www.example.com` gives a claim for `www.example.com` (review P3-R1).
+- Claim check results. The plan had no column for what a check found. Chose: `last_result` (result codes only, never page text) and `last_detail`, plus `lapsed_at` for the "Verification failed on <date>" text (P3-R8). A second claims migration `20261123150000_claims.sql` holds these columns and the atomic functions (create with the pending limit, start over, record failure, verify with transfer, due list).
+- Claim rules beyond the plan: a home page that redirects to another host answers `redirected`, never verified; "Start over" works only on pending and lapsed claims and can switch method; a superseded claim is terminal and offers only Remove; a pending claim counts failures but never lapses; checks apply only when the token is unchanged since the check began.
+- Claim limits. Plan said 5 checks per claim per hour. Chose: 5 checks per hour per account and host, and 20 claim creations or Start overs per account per hour (P3-R3). Why: removing and recreating a claim would otherwise reset the budget.
+- Recheck rules. A Crawl-delay longer than the check may wait records `crawl_delay` with the DNS hint, so a verified meta claim still lapses within three daily checks (P3-R2). The due list puts verified claims before lapsed ones; a claim lapsed more than 30 days ago is rechecked weekly; a run that finds more than 50 due claims logs the overflow count (P3-R4). User checks have a 20 s deadline and the daily run a 40 s budget; a DNS lookup races the remaining time (P3-R5).
+- Published files. Phase 4 said the file set mirrors the preview's. Found: the organizers' `check_partner.mjs` also needs `bridge/agent-manifest.json` and the bridge's runtime modules, and the template `bridge-actions.js` and `write-window.js` hold placeholder actions. Chose: add the manifest and six modules and omit the two templates, as the install bundle does.
+- Page policy exclusions. Phase 4 said to exclude `s/<host>/bridge/`. Chose: one plain file name under it, and also `/badge/<name>.svg`, because the request hook would override the badge's cache and CSP headers.
+- Publication and transfer. Chose: verifying a host deletes every other claim's publication of it, so an old owner's page can never return. `published_sites` gains `fetched_at`; a refresh must use a newer read of the site.
+- Cross-origin reads cover all published agent JSON, including `site-content.json` and the bridge manifest. A site with no score shows "Agent-ready check · verified by Retrofit" on the badge. An expired analysis cannot be published.
+- Production case `published-unknown` fails against a release without this phase.
+- Refresh and the crawl cache. Chose: keep the 24-hour cache (project rule: cache results and limit requests per site) and tell the owner when a new read is possible (review P4-R1). Letting a verified owner's refresh bypass the cache is an open product option for Juan.
+- Billing variables. `BILLING_START`, `STRIPE_SECRET_KEY` (test) and `STRIPE_WEBHOOK_SECRET` are required on Vercel as the plan's stuck-state row says; prices are optional. Effect: a release of any of these phases needs the Stripe test account first, because the configuration loads on every route. Set the variables before the deployment.
+- Live Stripe keys and live events are refused everywhere, not only on Vercel. An earlier `BILLING_START` than 2027-01-19T00:00:00Z is refused on Vercel, so manual check 4 works before that date only locally.
+- `BILLING_START` is 2027-01-18 16:00 in Pacific time. The instant follows the plan. Whether judging needs the rest of that day is an open owner decision (review P5-R4).
+- Score and key limits the plan left open: 20 an hour anonymous, 60 Pro, 300 Agency, with per-account daily caps; at most 5 keys per account; key prefix `rk_retrofit_` because Stripe's restricted keys also start with `rk_`.
+- Free limit: a fixed 30-day window from `BILLING_START`, per visitor cookie and per network (a keyed hash of the address kept up to 30 days, stated in the privacy draft).
+- When a plan ends, published pages, badges and saved reports stay; a new publish, refresh or save needs a plan. Juan may choose otherwise.
+- Retrofit's free AI ends only for signed-in Free accounts, as the phase file says, so signing out restores it. Juan may choose otherwise.
+- Stripe's customer portal needs a saved test configuration: one more external action.
+- A completed deletion records a hashed customer marker; a later event cancels a subscription only on that marker (review P5-R1).
+- Test servers use `BILLING_START` in 2036 so the local gate does not change by date; the post-start browser cases move the fixtures clock.
+
+## Phase 1
+
+Implementation commits `39fbdab`, `cb53803` and `12d1248` added the accounts migration with all eight tables, `AccountData` (memory and Supabase adapters behind one contract suite), `POST /api/notify`, unsubscribe, `/pricing`, `/privacy`, `/terms` and the plan table in `src/lib/billing/plans.ts`. Each unit test failed first on the missing module or route and passed after the change. The database probe passed on its first run, so a mutation that granted `anon` SELECT on `stripe_events` was used to prove it fails ("anon was not denied"); the grant was reverted. The new browser specs were written before the build and were not observed red.
+
+Independent review returned CHANGES REQUIRED with nine findings. Dispositions:
+
+- P1-R1 (S3) fixed in `626fded`: the notify form posts to the API and its button stays disabled until hydration, so an early click can never put an address into a page URL. A markup test failed first. `JudgeForm` and `UrlForm` have the same older pattern; they are outside this plan and stay as they are (recorded for the UI pass).
+- P1-R2 fixed in `626fded`: see the unsubscribe deviation.
+- P1-R3 deferred to the first mailer: Phase 1 sends no mail. Before any product-news send, the mailer must issue a fresh unsubscribe token at send time (only the hash is stored) and confirm the address (double opt-in). No phase of this plan sends notify mail.
+- P1-R4 fixed in `bc67808`: the `superseded` claim status. The probe failed first with `42703 column "superseded_at" ... does not exist`.
+- P1-R5 fixed: `/unsubscribe` joined the phone-width and color-scheme specs.
+- P1-R6 fixed in `2a8ed26`: production case `own-pages` (`e2e-prod/pages.spec.ts`). It fails against `v0.2.0` until a release ships these pages.
+- P1-R7 fixed by this notes file.
+- P1-R8 fixed: the privacy draft says the free AI keeps usage and cost counts and never the conversation (verified against the inference proxy log calls, which carry only error codes and pool names), and that Retrofit sends no email yet. Phase 2 (P2-R3) replaced that sentence: sign-in email now goes through Supabase Auth and Amazon SES.
+- P1-R9 fixed: the Playwright server raises `NOTIFY_PER_CLIENT_HOUR`.
+
+The integration owner reviewed the repair diffs and approved them. The simplify pass (four angles) produced `1bf7963`: one shared Supabase service client and failure wrapper, one adapter choice in the runtime with lazy account data, `countClientWindow`, one token module, a general lint rule for Supabase adapters, the `SitePage` shell, `PRIVATE_PATHS`, shared request texts, and removal of the unused unsubscribe URL builders (a mailer adds them back). Skipped with reasons: the `privacyHref` prop (the plan refuses the form without a privacy link), `findNotifySignup` (the contract suite reads it), a one-round-trip unsubscribe function (only the repeat path pays a second call), a shared client `post()` with the older `JudgeForm`, a per-spec Playwright client identity, and the memory adapter's linear token lookup (tests only).
+
+Owner manual check 1 (approve `/privacy` and `/terms`) is required before any release that includes this phase. The phase gate runs on the commit containing this entry; Phase 2 records its receipt.
+
+Phase 1 passed all 15 local checks on `52b1dd24ba614cba665a08a0c41f11cdb059a5ae`. The analyzer accepted 1,366 unit, 3 performance, 58 database and 100 browser tests (1,117 required). Coverage was 94.12% for statements and 88.47% for branches. The gate database teardown completed. The receipt and reports are kept under the canonical checkout's ignored `.local/runs/2026-11-23-accounts/phase1/`.
+
+## Phase 2
+
+Commits `3f5b800`, `e48a218`, `811a86f`, `84ec067` and `1c4ff47` added the `AuthGateway` (Supabase Auth with the anon key server side, a fake for unit tests, a fixtures-only gateway and mailbox for browser tests), the `retrofit_account` session, sign-in limits per network (5 an hour) and per keyed email hash (3 an hour), `/sign-in`, `/auth/confirm`, `/account`, saved reports with a read-only view, sign-out, account deletion with a marked step for Phase 5's subscription cancel, and owner checks that accept the visitor cookie or the attached account. The local stack now runs email sign-up and the Mailpit mail catcher (dev port 54724, gate port 54734), with `supabase/templates/magic_link.html`. Each unit test failed first on the missing module or behavior. `tests/db/auth.db.test.ts` first failed on a real 429 from an immediate resend; the test now asserts that answer. A mutation of `delete_account_data` that left `api_keys` behind failed the access probe and was reverted. The first full browser run failed `analyze.spec.ts` "sees progress", because the new account spec warmed the bakery crawl cache; the account spec now uses `agentified.fixture.test`.
+
+Independent review returned CHANGES REQUIRED with ten findings. Dispositions:
+
+- P2-R1 (S3) and P2-R8 fixed in `e630e3d`: see the confirm page deviation. Eight confirm tests failed first.
+- P2-R2 fixed: Supabase's project-wide email limit answers `mail_busy` ("try again later" with the lead address); the per-address limit keeps its wait.
+- P2-R3 fixed: the privacy and terms drafts describe sign-in mail through Supabase Auth and Amazon SES, the keyed address hash kept about an hour for limits, analyses private to the browser and the attached account, and that the sign-in provider may keep security logs. Owner manual check 1 covers these drafts.
+- P2-R4 fixed: confirm ends the browser's previous session before the new one.
+- P2-R5 fixed: migration `20261123140000_saved_reports_once.sql` makes a saved report unique per account, host and fetch time and caps an account at 100 (`save_report` rpc).
+- P2-R6 fixed: the failure after the token is used says to ask for a new link.
+- P2-R7 not applied, recorded as hardening: a `__Host-` cookie prefix needs a different cookie name over plain HTTP in tests. The cookies set no Domain attribute; a sibling subdomain of `thecreativetoken.com` could still plant a cookie. Revisit for the visitor and account cookies together.
+- P2-R9 fixed by this notes file (deviations and external action 3 additions).
+- P2-R10 fixed: one session read on the results page; the sign-in form states, confirm page states and save error at 320 px and in both color schemes.
+- The deletion failure text says other devices may already be signed out.
+
+The integration owner reviewed the confirm repair (POST-only verification, same-origin, previous session ended) and approved it. The simplify pass produced `54cac06`: one owned-analysis lookup (`findOwnedAnalysis`), shared cookie helpers (`src/lib/security/cookies.ts`, also used by the free-AI session cookie with identical output), one `seeOther`, one `useHydrated`, `anonKey` inside `SupabaseConfig`, gate-db requiring the anon key and mail URL, fewer sequential Store calls at sign-in, and test helpers. Skipped: a process memo for session reads, a fixtures control route in place of e2e route mocks for the sign-in failure states, and making `analyze.spec.ts` independent of spec order for its cold crawl.
+
+External actions 1 to 4 of Phase 2 and owner manual check 2 stay pending. The first Phase 2 gate rejected `1dc61aa`: the whitespace check found a blank line at the end of `src/lib/test-fixtures/auth.ts`. Every other check passed (1,474 unit, 69 database, 3 performance and 135 browser tests). The repair removes that line; the failed receipt is kept beside the accepted one. Later implementers run `git diff --check` before handing over. The phase gate runs on the commit containing this entry; Phase 3 records its receipt.
+
+Phase 2 passed all 15 local checks on `db774d1e66b08eb47f2af45f4bf9a55ca91b96cb` after the whitespace repair. The analyzer accepted 1,474 unit, 3 performance, 69 database and 135 browser tests (1,269 required). Coverage was 93.45% for statements and 87.52% for branches. The gate database teardown completed. The receipts are under `.local/runs/2026-11-23-accounts/phase2/` (accepted) and `phase2-first/` (the whitespace rejection).
+
+## Phase 3
+
+Commits `55d88d9` to `c63d923` added claims by meta tag or DNS, the atomic host transfer, the daily recheck (`/api/cron/claims`, `41 4 * * *`), the claim routes and limits, and the account page panels. The contract, route, transfer and recheck tests failed first on missing code. The verify, sources, TXT and panel tests were written before the code but not observed red; mutations proved that they fail. A mutation that skipped lapsed holders in the transfer failed the access probe and the Supabase contract. A second mutation in that run, an `anon` grant on `create_claim`, was masked by the first failure, so it proves nothing.
+
+Independent review returned CHANGES REQUIRED with nine findings. P3-R1 (S3, claim host), P3-R2 (S3, long Crawl-delay), P3-R3 (S3, limit reset), P3-R4 (recheck order), P3-R5 (TXT deadline), P3-R6 (whitespace in the tag), P3-R7 (the account's analysis list deleted with the account), P3-R8 (lapse date) were fixed in `c95cae4` and `4dc5f95`; 17 tests failed first. P3-R9 is this entry. The integration owner relied on the repair tests and the gate for these and read the source-host code again in the simplify commit.
+
+The simplify pass produced `3d46616`. Test-only branches left production modules (the fixtures claim token and TXT resolver moved to `src/lib/test-fixtures/`), one host normalizer and one 429 helper are shared, the account page reads one list instead of ten analysis records, `claims_due` uses two ordered queries, and `cronSecret` is a top-level configuration field. The integration owner read its behavior-bearing parts. Three effects go beyond a refactor: the first ready read of an attached analysis refreshes its list entry (one extra Store read, a write only when the host changed; the label can briefly show the typed host while the claim still uses the scored host from the analysis record); a Crawl-delay above one day is shown as 86,400 seconds; a host with an underscore is refused as a claim source with 404 (INFERRED, no test). Skipped: collapsing the verified and superseded refusals into one outcome, and a seeding route for the claim states that browser tests build through the UI. The random-token test, the `getSavedReportHost` contract case and the rewritten TXT tests were not observed red.
+
+One unit run during the simplify pass stalled for 7 hours 10 minutes with `tests/preview/bundle-route.test.ts` unreported and its worker idle. Nothing caught it because the run was an unattended background chain with no limit. Only that run's own processes were stopped; its log is `.local/runs/2026-11-23-accounts/p3-hung-unit.log` in the canonical checkout. The file then passed alone three times and the full unit suite passed twice (1,564 tests, 35 seconds). The cause is unknown and was not reproduced; this phase did not change that test.
+
+No external action belongs to Phase 3. The phase gate runs on the commit containing this entry; Phase 4 records its receipt.
+
+Phase 3 passed all 15 local checks on `7389399af9e0536ddcceca9dc2e85596694b8f96`. The analyzer accepted 1,566 unit, 3 performance, 84 database and 141 browser tests (1,383 required). Coverage was 92.2% for statements and 85.7% for branches. The gate database teardown completed. The receipt is under `.local/runs/2026-11-23-accounts/phase3/`.
+
+## Phase 4
+
+Commits `f44b1b6` to `8c70ccd` added the publishing migration, the one public rule (`site_is_public`: the publication exists, its claim is verified and belongs to the row's account) used by the page, files, badge and sitemap, `/s/<host>` with its files, publish, refresh and unpublish, the badge and the embed snippet. The contract failed first on both adapters (12 tests each) and the new unit files failed on missing modules. The access probe, the oracle extension, some negative cases and most browser specs passed on their first run; 34 mutations, one per run, were all caught. `expect_denied` in the probe does not catch an `anon` function grant because the table privilege also denies; the grants check catches it.
+
+Origin isolation: `/s/` shares an origin with `/account`. The implementer found no new path from a published page into a signed-in session, and the independent review reached the same conclusion from source. The site owner controls only the host, a date and JSON data; every script is a fixed Retrofit or vendored file; the bridge manifest registers no action. The repair below closed one gap the review raised as INFERRED: a key saved elsewhere on Retrofit connected by itself on a published page.
+
+Independent review returned CHANGES REQUIRED. Dispositions, all in `b82b182` unless stated:
+
+- P4-R1 (S3) fixed: inside the 24-hour read window a refresh says when a new read is possible, stores no error and does not count against the limit.
+- P4-R2 (S4) fixed: `delete_account_data` is replaced with the same lock order as publish and verify. Two database race tests failed first with a real `40P01` deadlock.
+- P4-R3 fixed: the newest read wins, not the newest start.
+- P4-R4 fixed: `/s/<host>` has an outage page (status 500 or above, no-store, noindex).
+- P4-R5 fixed: the policy exclusions accept only characters of a normalized host.
+- P4-R6 fixed: the key text says the key goes only to the provider.
+- P4-R7 fixed by this entry.
+- Saved keys (raised as INFERRED, then VERIFIED): a published page now offers "Use your saved key" on every page load and connects only after that click. The private preview is unchanged.
+
+The integration owner read the saved-key, deletion and matcher repairs and approved them. The simplify pass produced `c4743f6`. A publication now stores only the fields its files need (`agentSnapshot`), so link lists, forms, page markup data and probe bodies of the crawl are not kept; the generated files are byte-identical to those from the full snapshot. The route's trace lists only the eight served files (INFERRED that Vercel uses it as for `/p/`). Skipped: moving the matcher grammar into `proxy()`, a required saved-key policy type, a fetch-guard base set by the preview, an outline read for the manifest and network, caching the scored host and read time on the analysis list, a view for `public_hosts`, accepting ports only in fixtures mode, and dropping `movedFrom` and other adapter-only return fields.
+
+Open: a refresh inside the read window cannot bypass the cache (owner option); deleting the auth user may wait on a verification by the same account (INFERRED, untested); the time shown for a new read has no date, which is clear only while the window is 24 hours or less; a browser can show a cached badge for up to one hour after a lapse (planned and stated in the privacy draft). Owner manual checks 1 and 3 stay pending. The phase gate runs on the commit containing this entry; Phase 5 records its receipt.
+
+Phase 4 passed all 15 local checks on `7e3e9222bbaeeca6c04ea6b7e6070b3763ec37a9`. The analyzer accepted 1,732 unit, 3 performance, 98 database and 161 browser tests (1,583 required). Coverage was 92.48% for statements and 85.82% for branches. The gate database teardown completed. The receipt is under `.local/runs/2026-11-23-accounts/phase4/`.
+
+## Phase 5
+
+Commits `bba098c` to `c54d18d` added the billing gateway (the `stripe` package 23.2.0, exact pin, no install scripts, API version pinned, loaded lazily), the billing migration, entitlements from one plan table, the free-analysis limit, checkout, portal, webhook, reconciliation, API keys, the account and pricing changes and the deletion step that cancels first. No check contacted Stripe; the tests use an in-memory Stripe API and a fixtures gateway. Unit modules failed first on missing code; the database contract and race tests, a store case, `runtime.test.ts` and all browser specs were first seen green. Of 81 mutations in this first round, three survived at first: dropping the explicit API version (the package default is the same), a field the memory adapter never stores, and one signature check whose test was then strengthened.
+
+Independent review returned CHANGES REQUIRED with fourteen findings; a second reviewer checked the repairs and returned CHANGES REQUIRED with eight. Dispositions:
+
+- P5-R1 (S2) fixed in `2333920` and the commits after it: an orphan subscription is cancelled only on a hashed customer marker written in the deletion transaction; `getUser` and `deleteUser` accept only the provider's explicit user-not-found answer. Without a marker the webhook raises an alert and leaves the subscription alone.
+- P5-R2, P5-R3, P5-R6, P5-R7, P5-R8, P5-R9 (S3 and S4) fixed: access always ends (period end plus three days, no grace when cancelled; seven days from the first time Retrofit saw a past-due status); keys add no capacity before the start and have per-account daily caps after it; price variables accept a list; a living customer without a record is linked again; a lease and a second list keep one payable checkout.
+- P5-R4 (S3) not changed: the start instant is the plan's. It is 16:00 Pacific time on 2027-01-18. Owner decision.
+- P5-R5 and P5-RR1 (S3) fixed: after the start the production evidence runs the browser suite first and treats the exact limit answer as an expected result; before it, the order and the cold concurrent case are unchanged. No product bypass was added. The limit branch of `e2e-prod/probes.spec.ts` has not been run.
+- P5-R10 to P5-R13 and the nits fixed. P5-R14 is this entry.
+- P5-RR2, P5-RR4 to P5-RR8 fixed in `e9111a3`. P5-RR3 fixed as a correction: after the data deletion and before the auth user is deleted, a sign-in and checkout in another browser leaves an alert, not a cancellation. No automatic marker was added, because clearing billing rows by hand would then cancel subscriptions.
+- A judge who is signed in on a Free account could not submit the code after the start (raised in the simplify review). Fixed in `e9111a3`: a valid code opens the judge session under the same attempt and daily limits.
+
+The integration owner read the checkout, judge, entitlement and dependency changes of the second round and approved them. The simplify pass produced `513c2a5`. Skipped: a conditional two-key Store call for the free count, one call for key plus billing, an unreleased reconcile lease, one limits function for analysis start, and one layer for the hosted-URL check.
+
+Choices that need Juan: the start instant; the required Stripe test variables on Vercel; the score, key and daily limits (Free accounts 50 sites a day, Pro 100, Agency 300); the 30-day free window and its keyed address hash; what stays public when a plan ends; free AI after signing out; immediate cancellation at account deletion.
+
+Open risks: two checkouts paid in the same second can both charge, and nothing cancels one (INFERRED); a deletion stopped at the auth user shows the general text on retry; test-mode billing rows must be cleared before live mode; `deleted_customers` is kept on purpose; no check used the real Stripe API, Amazon SES or a hosted Supabase project.
+
+Pending external actions: the production migrations; SES production access and SMTP credentials; Supabase Auth settings and both email templates; the Stripe test account, products, webhook and portal configuration; the production variables; release. Owner manual checks 1 to 5 are pending. The phase gate runs on the commit containing this entry; the integrated result is verified again on `develop`.

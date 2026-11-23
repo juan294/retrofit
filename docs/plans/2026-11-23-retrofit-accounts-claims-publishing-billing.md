@@ -1,6 +1,6 @@
 # Plan: accounts, ownership claims, publishing, the badge and billing
 
-> Created 2026-11-23 with `rpi-plan`. Status: proposed, waiting for owner acceptance. Phase files: [phase-1](2026-11-23-retrofit-accounts-claims-publishing-billing-phases/phase-1.md) to [phase-5](2026-11-23-retrofit-accounts-claims-publishing-billing-phases/phase-5.md). Notes file (created at Phase 1 entry): `2026-11-23-retrofit-accounts-claims-publishing-billing-notes.md`.
+> Created 2026-11-23 with `rpi-plan`. Status: all five phases implemented locally on 2026-11-23 (Juan authorized all phases); not released. Deviations and receipts are in the notes file. Phase files: [phase-1](2026-11-23-retrofit-accounts-claims-publishing-billing-phases/phase-1.md) to [phase-5](2026-11-23-retrofit-accounts-claims-publishing-billing-phases/phase-5.md). Notes file (created at Phase 1 entry): `2026-11-23-retrofit-accounts-claims-publishing-billing-notes.md`.
 
 ## Objective
 

@@ -119,6 +119,11 @@ export interface Snapshot {
   excludedNoindex: string[];
 }
 
+/** What an agent's files are generated from (generateNetwork), and all a published site keeps of its pages. */
+export interface AgentSnapshot extends Pick<Snapshot, "source" | "host" | "fetchedAt" | "records"> {
+  pages: Pick<SnapshotPage, "url" | "title" | "text" | "noindex">[];
+}
+
 /** Exactly the organizers' site-content.json shape. */
 export interface SiteContent {
   source: string;
@@ -161,11 +166,25 @@ export function mergeRecords(pages: readonly Pick<PageExtract, "records">[]): Re
 }
 
 /** Build the organizers' site-content.json from a snapshot. Noindex pages are left out. */
-export function toSiteContent(snapshot: Snapshot): SiteContent {
+export function toSiteContent(snapshot: AgentSnapshot): SiteContent {
   return {
     source: snapshot.source,
     fetchedAt: snapshot.fetchedAt,
     pages: snapshot.pages.filter((page) => !page.noindex).map((page) => ({ url: page.url, title: page.title, text: page.text })),
+    records: copyRecords(snapshot.records),
+  };
+}
+
+/**
+ * The part of a snapshot that a published site keeps: nothing but what its files are generated from. No links,
+ * forms, JSON-LD, headers, probe bodies or per-page records, and no page marked noindex (no file shows it).
+ */
+export function agentSnapshot(snapshot: AgentSnapshot): AgentSnapshot {
+  return {
+    source: snapshot.source,
+    host: snapshot.host,
+    fetchedAt: snapshot.fetchedAt,
+    pages: snapshot.pages.filter((page) => !page.noindex).map(({ url, title, text, noindex }) => ({ url, title, text, noindex })),
     records: copyRecords(snapshot.records),
   };
 }

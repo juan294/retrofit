@@ -51,7 +51,7 @@ type Logger = (event: string, fields?: Record<string, unknown>) => void;
 /** Every proxy log line goes through the redaction helper, with the configured secrets. */
 function logger(deps: ServerDeps): Logger {
   const f = deps.config.free;
-  const secrets = [f.keyPublic, f.keyJudge, f.alertGithubToken, f.cronSecret, f.judgeCode, deps.config.sessionSecret];
+  const secrets = [f.keyPublic, f.keyJudge, f.alertGithubToken, deps.config.cronSecret, f.judgeCode, deps.config.sessionSecret];
   return (event, fields = {}) => console.error(redactText(`free inference: ${event} ${JSON.stringify(redact(fields, secrets))}`, secrets));
 }
 

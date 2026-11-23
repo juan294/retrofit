@@ -1,8 +1,18 @@
 import { vi } from "vitest";
+import type { AccountData } from "@/lib/accounts/data";
+import { createAccountMemoryBacking, createMemoryAccountData, type AccountMemoryBacking } from "@/lib/accounts/memory";
+import { ACCOUNT_COOKIE, createAccountSession } from "@/lib/accounts/session";
+import type { AuthGateway, VerifiedAccount } from "@/lib/auth/gateway";
+import type { BillingGateway } from "@/lib/billing/gateway";
+import { createFixtureAuth, type FixtureAuth } from "@/lib/test-fixtures/auth";
+import { createFixtureBilling, type FixtureBilling } from "@/lib/test-fixtures/billing";
 import { loadConfig, type Env } from "@/lib/config";
 import { slotKey } from "@/lib/analysis/capacity";
+import { analysisKey, type Analysis } from "@/lib/analysis/record";
+import { sha256Hex } from "@/lib/security/tokens";
 import { createFetchContext } from "@/lib/fetch/context";
 import type { Resolver } from "@/lib/fetch/guard";
+import type { TxtResolver } from "@/lib/claims/txt";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { scoreSnapshot } from "@/lib/score/score";
 import { createMemoryBacking, createMemoryStore, type MemoryBacking } from "@/lib/store/memory";
@@ -12,6 +22,11 @@ import { materialize, type FixtureSite } from "../fixtures/sites";
 
 export const PUBLIC_ORIGIN = "https://retrofit.test";
 
+/** A verified account for session tests (the fixture provider gives each address its own id). */
+export const TEST_ACCOUNT = { userId: "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "owner@example.test" } as const;
+/** A second account, for "another account is refused" cases. */
+export const OTHER_ACCOUNT = { userId: "5f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "other@example.test" } as const;
+
 /**
  * Pacing start tolerance for test contexts with a 1 ms interval, so a real-time crawl is not slowed by
  * the production 250 ms. A start later than this takes a new slot, which only adds a short wait.
@@ -20,6 +35,11 @@ export const FAST_TOLERANCE_MS = 20;
 
 /** Every non-fixture name "resolves" to a private address, so a test can never reach the network. */
 export const privateResolver: Resolver = async () => [{ address: "10.0.0.5", family: 4 }];
+
+/** No test may use real DNS for TXT records: every name answers ENOTFOUND unless a test passes its own resolver. */
+export const noRealTxt: TxtResolver = async (name) => {
+  throw Object.assign(new Error(`test TXT resolver: ${name} is not stubbed`), { code: "ENOTFOUND" });
+};
 
 /** No test may contact a non-loopback host: unknown names fail instead of reaching the system resolver. */
 export const noRealDns: Resolver = async (hostname) => {
@@ -65,10 +85,20 @@ export interface TestDepsOptions {
   instrument?: (op: string, key: string) => void;
   backing?: MemoryBacking;
   store?: Store;
+  accounts?: AccountData;
+  auth?: AuthGateway;
+  billing?: BillingGateway;
+  txt?: TxtResolver;
 }
 
 export interface TestDeps extends ServerDeps {
   readonly backing: MemoryBacking;
+  /** The memory account data behind `accounts` (unused when the test passes its own `accounts`). */
+  readonly accountsBacking: AccountMemoryBacking;
+  /** The fixture provider behind `auth` (unused when the test passes its own `auth`). */
+  readonly fixtureAuth: FixtureAuth;
+  /** The fixtures gateway behind `billing` (unused when the test passes its own `billing`). */
+  readonly fixtureBilling: FixtureBilling;
   /** Errors thrown by background tasks. Tests assert it stays empty. */
   readonly errors: unknown[];
   /** Awaits every background task, including tasks that background tasks add. */
@@ -76,29 +106,60 @@ export interface TestDeps extends ServerDeps {
 }
 
 export function testDeps(o: TestDepsOptions = {}): TestDeps {
-  const config = loadConfig({ SESSION_SECRET: "s".repeat(32), RETROFIT_TEST_FIXTURES: "1", PUBLIC_ORIGIN, ...o.env });
+  // BILLING_START far ahead: no test meets billing by the date it runs on. Billing tests set their own (tests/billing/setup.ts).
+  const config = loadConfig({ SESSION_SECRET: "s".repeat(32), RETROFIT_TEST_FIXTURES: "1", PUBLIC_ORIGIN, BILLING_START: "2036-01-19T00:00:00Z", ...o.env });
   const clock = o.clock ?? Date.now;
   const backing = o.backing ?? createMemoryBacking();
   const store = o.store ?? createMemoryStore({ clock, backing, instrument: o.instrument });
+  const accountsBacking = createAccountMemoryBacking();
+  const accounts = o.accounts ?? createMemoryAccountData({ clock, backing: accountsBacking });
+  const fixtureAuth = createFixtureAuth({ clock, origin: PUBLIC_ORIGIN });
+  const fixtureBilling = createFixtureBilling({ clock, origin: PUBLIC_ORIGIN, webhookSecret: config.billing?.webhookSecret ?? "", prices: config.billing?.prices ?? {} });
   const fetch = createFetchContext({ config, store, clock, sleep: sleepFor(clock), lookup: o.lookup ?? privateResolver, minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS });
   const pending: Promise<unknown>[] = [];
   const errors: unknown[] = [];
   return {
     config,
     store,
+    accounts,
+    auth: o.auth ?? fixtureAuth,
+    billing: o.billing ?? fixtureBilling,
     clock,
     fetch,
+    txt: o.txt ?? noRealTxt,
     score: o.score ?? scoreSnapshot,
     sleep: o.sleep,
     waitUntil: (task) => {
       pending.push(Promise.resolve(task).catch((e: unknown) => void errors.push(e)));
     },
     backing,
+    accountsBacking,
+    fixtureAuth,
+    fixtureBilling,
     errors,
     async settle() {
       while (pending.length > 0) await Promise.all(pending.splice(0));
     },
   };
+}
+
+/**
+ * Stores an analysis of `inputOrigin` (attached to `accountId` when given), as startAnalysis would, and
+ * returns it. The id defaults to a hash of the origin and account, so a test can call it again.
+ */
+export async function storeAnalysis(d: Pick<ServerDeps, "store" | "clock">, o: Partial<Analysis> & { readonly inputOrigin: string }): Promise<Analysis> {
+  const now = d.clock();
+  const analysis: Analysis = {
+    version: 1,
+    id: sha256Hex(`${o.inputOrigin}-${o.accountId}`).slice(0, 32),
+    ownerHash: sha256Hex("visitor"),
+    jobId: "j",
+    createdAt: now,
+    expiresAt: now + 3_600_000,
+    ...o,
+  };
+  await d.store.set(analysisKey(analysis.id), analysis, 7200);
+  return analysis;
 }
 
 /** Holds every crawl slot, so nothing is dispatched. */
@@ -217,10 +278,16 @@ export function statusRequest(id: string, o: { cookie?: string; include?: string
   return new Request(`${PUBLIC_ORIGIN}/api/analyze/${id}${q}`, { headers });
 }
 
-export function scoreRequest(query: string, o: { method?: string; ip?: string; cookie?: string } = {}): Request {
+export function scoreRequest(query: string, o: { method?: string; ip?: string; cookie?: string; auth?: string } = {}): Request {
   const headers = new Headers({ "x-forwarded-for": o.ip ?? "198.51.100.9" });
   if (o.cookie) headers.set("cookie", o.cookie);
+  if (o.auth !== undefined) headers.set("authorization", o.auth);
   return new Request(`${PUBLIC_ORIGIN}/api/score${query}`, { method: o.method ?? "GET", headers });
+}
+
+/** A new session for `account` as a Cookie header value (`retrofit_account=<id>`). */
+export async function accountCookie(d: Pick<ServerDeps, "store" | "clock">, account: VerifiedAccount = TEST_ACCOUNT): Promise<string> {
+  return `${ACCOUNT_COOKIE}=${(await createAccountSession(d, account)).token}`;
 }
 
 /** `name=value` from a Set-Cookie header, for the next request's Cookie header. */

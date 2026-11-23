@@ -39,10 +39,13 @@ export const config = {
   matcher: [
     {
       // Every response except static build assets, vendored files and the bridge,
-      // which carry their own policies (next.config.ts). Unknown paths, including
+      // and the badge image, which carry their own policies (next.config.ts, the badge
+      // route). A published site's bridge file and a badge are one plain file name each, and
+      // their host holds only what a normalized host may, so no dot segment, no encoded
+      // character and no deeper path is skipped. Unknown paths, including
       // unknown /api/ paths, and not-found pages get the page CSP too. Prefetch
       // requests return RSC payloads, never documents.
-      source: "/((?!_next/static/|_next/image|runtime/|preview-assets/|bridge/|p/[^/]+/bridge/|favicon.ico).*)",
+      source: "/((?!_next/static/|_next/image|runtime/|preview-assets/|bridge/|p/[^/]+/bridge/|s/[a-z0-9][a-z0-9.:-]*/bridge/[a-z0-9][a-z0-9.-]*$|badge/[a-z0-9][a-z0-9.:-]*\\.svg$|favicon.ico).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },

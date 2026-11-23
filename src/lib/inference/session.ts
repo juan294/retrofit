@@ -1,6 +1,11 @@
 import { randomBytes } from "node:crypto";
+import { readAccount } from "@/lib/accounts/session";
 import { isSameOrigin } from "@/lib/analysis/run";
-import { hashVisitor, isSecureRequest, sameHash } from "@/lib/analysis/visitor";
+import { isSecureRequest, sameHash } from "@/lib/analysis/visitor";
+import { buildCookie, cookieValue } from "@/lib/security/cookies";
+import { sha256Hex } from "@/lib/security/tokens";
+import { billingStarted } from "@/lib/billing/entitlements";
+import { refuseFeature } from "@/lib/api/entitled";
 import { json } from "@/lib/api/json";
 import { clientIdFromRequest, clientWindow, nextUtcMidnight, ttlUntil, utcDay } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
@@ -45,20 +50,10 @@ const judgeAttemptsKey = (client: string, bucket: number) => `inference:judge-at
 export const JUDGE_ATTEMPTS_PER_CLIENT_HOUR = 10;
 
 export function sessionSetCookie(token: string, secure: boolean): string {
-  const attrs = [`${SESSION_COOKIE}=${token}`, "HttpOnly", "SameSite=Strict", `Path=${SESSION_COOKIE_PATH}`, `Max-Age=${SESSION_TTL_S}`];
-  if (secure) attrs.push("Secure");
-  return attrs.join("; ");
+  return buildCookie(SESSION_COOKIE, token, { path: SESSION_COOKIE_PATH, maxAge: SESSION_TTL_S, secure, sameSite: "Strict" });
 }
 
-function readSessionToken(request: Request): string | null {
-  const header = request.headers.get("cookie");
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq !== -1 && part.slice(0, eq).trim() === SESSION_COOKIE) return part.slice(eq + 1).trim();
-  }
-  return null;
-}
+const readSessionToken = (request: Request) => cookieValue(request.headers.get("cookie"), SESSION_COOKIE);
 
 /**
  * The request's session: a valid, unexpired cookie whose Store record still
@@ -101,12 +96,19 @@ const logFailure = (route: string, e: unknown) => console.error(`POST ${route} f
  * POST /api/inference/session -> 200 `{pool, expiresAt}` with the session cookie.
  * Same-origin only (403). A valid cookie is renewed with the same sid, pool and
  * client; otherwise a new public session is created under the per-client hourly
- * cap (429 session_limit). 503 when the Store is unavailable.
+ * cap (429 session_limit). From BILLING_START a signed-in account whose plan lacks the free AI gets 403
+ * plan_required (also at renewal); a judge session and a visitor without an account are as before, and
+ * before that instant nothing is read for it. 503 when the Store, or the account's plan, cannot be read.
  */
 export async function handleSession(request: Request, deps: ServerDeps): Promise<Response> {
   if (!isSameOrigin(request, deps.config)) return crossOrigin();
   try {
     const existing = await readSession(request, deps);
+    if (billingStarted(deps) && existing?.claims.pool !== "judge") {
+      const account = await readAccount(request, deps);
+      const refused = account && (await refuseFeature(deps, account.accountId, "free_ai_preview", unavailable));
+      if (refused) return refused;
+    }
     if (existing) {
       const renewed = await updateState(deps.store, existing.claims.sid, (s) => ({ pool: s.pool, createdAt: s.createdAt }));
       if (renewed) return issue(request, deps, { sid: existing.claims.sid, client: existing.claims.client, pool: renewed.pool });
@@ -157,7 +159,8 @@ async function readCode(request: Request): Promise<string | null> {
 /**
  * POST /api/inference/session/judge `{code}` -> 200 `{pool: "judge", expiresAt}`
  * with a new cookie for the same sid. Same-origin only (403); 503 when no judge
- * code is configured; 401 without a valid session; 400 without a string code;
+ * code is configured; 401 without a valid session (from BILLING_START on a signed-in account needs none: a
+ * valid code opens its judge session, under the same checks and limits); 400 without a string code;
  * 403 for a wrong code; 429 judge_limit past the per-client daily cap. The code
  * is compared in constant time (equal-length digests) and never logged or echoed.
  */
@@ -167,7 +170,10 @@ export async function handleJudgeUpgrade(request: Request, deps: ServerDeps): Pr
   if (expected === null) return json(503, { error: "not_configured", message: sessionTexts.notConfigured });
   try {
     const session = await readSession(request, deps);
-    if (!session) return json(401, { error: "session_expired", message: sessionTexts.expired });
+    // From BILLING_START on a signed-in account may have no free session (its plan refuses one): a valid code opens
+    // the judge session itself. Everybody else asks for a session first, as before.
+    const opens = !session && billingStarted(deps) && (await readAccount(request, deps)) !== null;
+    if (!session && !opens) return json(401, { error: "session_expired", message: sessionTexts.expired });
     const code = await readCode(request);
     if (code === null) return json(400, { error: "bad_request", message: sessionTexts.badRequest });
     // Every attempt counts, atomically and before the compare, so parallel guesses cannot pass the limit.
@@ -175,10 +181,9 @@ export async function handleJudgeUpgrade(request: Request, deps: ServerDeps): Pr
     const requester0 = clientIdFromRequest(request, deps.config, now0);
     const attempts = await deps.store.incrementWindow(judgeAttemptsKey(requester0, Math.floor(now0 / 3_600_000)), 3600);
     if (attempts > JUDGE_ATTEMPTS_PER_CLIENT_HOUR) return json(429, { error: "too_many_codes", message: sessionTexts.tooManyCodes });
-    if (!sameHash(hashVisitor(code), hashVisitor(expected))) return json(403, { error: "invalid_code", message: sessionTexts.invalidCode });
+    if (!sameHash(sha256Hex(code), sha256Hex(expected))) return json(403, { error: "invalid_code", message: sessionTexts.invalidCode });
 
-    const { sid, client } = session.claims;
-    if (session.claims.pool !== "judge") {
+    if (session?.claims.pool !== "judge") {
       const now = deps.clock();
       const day = utcDay(now);
       const endsAt = nextUtcMidnight(now);
@@ -188,6 +193,12 @@ export async function handleJudgeUpgrade(request: Request, deps: ServerDeps): Pr
         return json(429, { error: "judge_limit", message: sessionTexts.judgeLimit, retryAt: new Date(endsAt).toISOString() });
       }
     }
+    if (!session) {
+      const sid = randomBytes(16).toString("hex");
+      await deps.store.putIfAbsent<SessionState>(sessionKey(sid), { version: 1, pool: "judge", createdAt: deps.clock() }, SESSION_TTL_S);
+      return issue(request, deps, { sid, client: requester0, pool: "judge" });
+    }
+    const { sid, client } = session.claims;
     const upgraded = await updateState(deps.store, sid, (s) => ({ pool: "judge", createdAt: s.createdAt }));
     if (!upgraded) return json(401, { error: "session_expired", message: sessionTexts.expired });
     return issue(request, deps, { sid, client, pool: "judge" });

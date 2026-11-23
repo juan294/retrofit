@@ -1,6 +1,7 @@
-// Forbids importing the Supabase store adapter from tests outside tests/db/**,
-// except the listed file that uses a closed port and needs no database.
-const ALLOWED = ["tests/store/supabase-failure.test.ts"];
+// Forbids importing a Supabase adapter (any lib/<dir>/supabase module) or the shared service client
+// (lib/supabase/client) from tests outside tests/db/**, except the listed files that use a closed
+// port or a fake provider fetch and need no database.
+const ALLOWED = ["tests/store/supabase-failure.test.ts", "tests/accounts/supabase-failure.test.ts", "tests/accounts/auth-supabase.test.ts"];
 
 export default {
   meta: { type: "problem", messages: { forbidden: "Import the Supabase adapter only from tests/db/** (or the listed exception)." }, schema: [] },
@@ -9,7 +10,7 @@ export default {
     const rel = file.slice(file.lastIndexOf("/tests/") + 1);
     if (!rel.startsWith("tests/") || rel.startsWith("tests/db/") || ALLOWED.includes(rel)) return {};
     const check = (node, source) => {
-      if (typeof source === "string" && /(^|\/)store\/supabase(\/index)?(\.[cm]?[jt]sx?)?$/.test(source)) context.report({ node, messageId: "forbidden" });
+      if (typeof source === "string" && /(^|\/)lib\/([^/]+\/supabase(\/index)?|supabase\/client)(\.[cm]?[jt]sx?)?$/.test(source)) context.report({ node, messageId: "forbidden" });
     };
     return {
       ImportDeclaration(node) { check(node, node.source.value); },

@@ -1,12 +1,15 @@
 "use client";
 
-import { FIX_HINTS, fixFirst } from "@/lib/score/fixes";
-import type { CheckId } from "@/lib/score/checks";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { COUNTING_RETRY_S, visitorTexts } from "@/lib/analysis/texts";
 import { AgentPanel } from "@/components/preview/AgentPanel";
 import { InstallPanel } from "./InstallPanel";
+import { signInHref } from "@/lib/accounts/return-to";
+import { SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
+import { SaveReportButton } from "./SaveReportButton";
+import { SignInForm } from "../SignInForm";
+import { ScoreReport, type ReportView } from "./ScoreReport";
 import { localizeRetry } from "./retry-time";
 import { COUNTING_ATTEMPTS } from "./request";
 import { createStartController, type StartController, type StartState } from "./start-controller";
@@ -23,22 +26,8 @@ interface Status {
   failure?: Failure;
   scoreReady: boolean;
 }
-interface Check {
-  id: string;
-  group: string;
-  weight: number;
-  result: "pass" | "fail" | "not-checked";
-  rule: string;
-  evidence: string;
-}
-interface Report {
+interface Report extends ReportView {
   bundleReady: boolean;
-  host: string;
-  score: number | null;
-  summary: string;
-  webmcp: string;
-  fetchedAt: string;
-  checks: Check[];
 }
 
 const STEP_TEXT: Record<string, string> = {
@@ -54,9 +43,8 @@ function stepText(s: Status): string {
   return STEP_TEXT[s.step] ?? "Reading the site";
 }
 
-const RESULT_TEXT = { pass: "pass", fail: "fail", "not-checked": "not checked" } as const;
-
-export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: string }) {
+/** `canSave`: the visitor is signed in, so the ready report offers "Save this report". */
+export function AnalysisView({ id, inputOrigin, canSave = false }: { id: string; inputOrigin: string; canSave?: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<Failure | null>(null);
@@ -138,42 +126,8 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
     );
   }
 
-  const groups = [...new Set(report.checks.map((c) => c.group))];
-  const checked = report.checks.filter((c) => c.result !== "not-checked").length;
-  const passed = report.checks.filter((c) => c.result === "pass").length;
-  const fixes = fixFirst(report.checks);
   return (
-    <section className="mt-8" aria-labelledby="score-heading">
-      <h2 id="score-heading" className="sr-only">
-        Score
-      </h2>
-      <p className="text-5xl font-semibold">
-        {report.score === null ? <span>No score</span> : <span data-testid="score-total">{report.score}</span>}
-        {report.score === null ? null : <span className="text-xl font-normal"> / 100</span>}
-      </p>
-      <p className="mt-2" data-testid="score-passed">
-        {passed} of {checked} checks passed.
-      </p>
-      <p className="mt-1 text-sm" style={{ color: "var(--color-muted)" }}>
-        Read on {new Date(report.fetchedAt).toLocaleString()}.
-      </p>
-
-      {fixes.length ? (
-        <div className="mt-8" data-testid="fix-first">
-          <h3 className="text-lg font-semibold">Fix these first</h3>
-          <ol className="mt-2 flex list-decimal flex-col gap-2 pl-5">
-            {fixes.map((c) => (
-              <li key={c.id}>
-                <span className="font-medium">{FIX_HINTS[c.id as CheckId] ?? c.rule}</span>{" "}
-                <span className="text-sm" style={{ color: "var(--color-muted)" }}>
-                  ({c.weight} points)
-                </span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      ) : null}
-
+    <ScoreReport report={report} readOn={new Date(report.fetchedAt).toLocaleString()}>
       <AgentPanel
         basePath={`/p/${id}`}
         title="Try the agent Retrofit built"
@@ -182,33 +136,16 @@ export function AnalysisView({ id, inputOrigin }: { id: string; inputOrigin: str
 
       <InstallPanel id={id} host={report.host} score={report.score} available={report.bundleReady} />
 
-      <h3 className="mt-12 text-lg font-semibold">All checks</h3>
-      <p className="mt-1 text-sm" style={{ color: "var(--color-muted)" }}>
-        {report.summary} WebMCP tools: {report.webmcp}.
-      </p>
-      {groups.map((g) => (
-        <div key={g} className="mt-6">
-          <h4 className="font-semibold">{g}</h4>
-          <ul className="mt-2 flex flex-col gap-2">
-            {report.checks
-              .filter((c) => c.group === g)
-              .map((c) => (
-                <li key={c.id} data-testid={`check-${c.id}`} className="rounded border p-3" style={{ borderColor: "var(--color-border)" }}>
-                  <p>
-                    <strong style={{ color: c.result === "pass" ? "var(--color-ok)" : c.result === "fail" ? "var(--color-danger)" : "var(--color-muted)" }}>
-                      {RESULT_TEXT[c.result]}
-                    </strong>{" "}
-                    {c.rule} <span style={{ color: "var(--color-muted)" }}>({c.weight} points)</span>
-                  </p>
-                  <p className="mt-1 text-sm" style={{ color: "var(--color-muted)" }}>
-                    {c.evidence}
-                  </p>
-                </li>
-              ))}
-          </ul>
-        </div>
-      ))}
-    </section>
+      {canSave ? (
+        <SaveReportButton analysisId={id} />
+      ) : (
+        <p className="mt-8">
+          <a href={signInHref(`/r/${id}`)} className="underline">
+            {SAVE_REPORT_TEXT.signIn}
+          </a>
+        </p>
+      )}
+    </ScoreReport>
   );
 }
 
@@ -235,18 +172,21 @@ function Notice({ failure, inputOrigin }: { failure: Failure; inputOrigin: strin
   }, [autoRetry, inputOrigin, router]);
   const shown = retryError ?? failure;
   return (
-    <div className="mt-8" role="alert">
-      <p>{waiting ?? localizeRetry(shown.message, shown.retryAt)}</p>
-      <p className="mt-4 flex gap-3">
-        {RETRYABLE.has(failure.code) && !(failure.retryAt && Date.parse(failure.retryAt) > Date.now()) ? (
-          <button type="button" onClick={() => starts.current?.start(inputOrigin)} disabled={busy} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
-            {busy ? "Starting…" : failure.code === "expired" ? "Analyze again" : "Retry"}
-          </button>
-        ) : null}
-        <a href="/" className="rounded border px-4 py-2" style={{ borderColor: "var(--color-border)" }}>
-          Analyze another site
-        </a>
-      </p>
-    </div>
+    <>
+      <div className="mt-8" role="alert">
+        <p>{waiting ?? localizeRetry(shown.message, shown.retryAt)}</p>
+        <p className="mt-4 flex gap-3">
+          {RETRYABLE.has(failure.code) && !(failure.retryAt && Date.parse(failure.retryAt) > Date.now()) ? (
+            <button type="button" onClick={() => starts.current?.start(inputOrigin)} disabled={busy} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
+              {busy ? "Starting…" : failure.code === "expired" ? "Analyze again" : "Retry"}
+            </button>
+          ) : null}
+          <a href="/" className="rounded border px-4 py-2" style={{ borderColor: "var(--color-border)" }}>
+            Analyze another site
+          </a>
+        </p>
+      </div>
+      {shown.code === "free_limit" ? <SignInForm returnTo="/" privacyHref="/privacy" /> : null}
+    </>
   );
 }

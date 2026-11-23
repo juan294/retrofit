@@ -1,18 +1,17 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { JUDGE_UNAVAILABLE, turnOnJudge, type JudgeAnswer } from "./judge";
 
-const UNAVAILABLE = "Judge access is not available right now. Try again in a minute.";
-
-async function post(path: string, body?: unknown): Promise<{ ok: boolean; message: string | null }> {
+async function post(path: string, body?: unknown): Promise<JudgeAnswer> {
   const res = await fetch(path, {
     method: "POST",
     credentials: "same-origin",
     headers: body === undefined ? undefined : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const parsed = (await res.json().catch(() => null)) as { message?: unknown } | null;
-  return { ok: res.ok, message: typeof parsed?.message === "string" ? parsed.message : null };
+  const parsed = (await res.json().catch(() => null)) as { error?: unknown; message?: unknown } | null;
+  return { ok: res.ok, error: typeof parsed?.error === "string" ? parsed.error : null, message: typeof parsed?.message === "string" ? parsed.message : null };
 }
 
 export function JudgeForm() {
@@ -30,16 +29,11 @@ export function JudgeForm() {
     setBusy(true);
     setStatus(null);
     try {
-      const session = await post("/api/inference/session");
-      if (!session.ok) {
-        setStatus({ ok: false, text: session.message ?? UNAVAILABLE });
-      } else {
-        const judge = await post("/api/inference/session/judge", { code });
-        setStatus(judge.ok ? { ok: true, text: "Judge access is on for this browser." } : { ok: false, text: judge.message ?? UNAVAILABLE });
-        if (judge.ok) form.reset();
-      }
+      const judge = await turnOnJudge(post, code);
+      setStatus(judge);
+      if (judge.ok) form.reset();
     } catch {
-      setStatus({ ok: false, text: UNAVAILABLE });
+      setStatus({ ok: false, text: JUDGE_UNAVAILABLE });
     }
     setBusy(false);
   }
