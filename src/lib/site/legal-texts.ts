@@ -84,7 +84,7 @@ export const PRIVACY: LegalDocument = {
     {
       heading: "Services that receive data",
       body: [
-        "Vercel hosts Retrofit. Supabase stores its data and sends sign-in links through Amazon SES. Retrofit sends no other email yet. Otari runs Retrofit's free AI. Stripe takes payments when paid plans start.",
+        "Vercel hosts Retrofit. Supabase stores its data. Otari runs Retrofit's free AI. Retrofit sends no email yet; Amazon SES will send Retrofit's email, starting with sign-in links. Stripe takes payments when paid plans start.",
         `Retrofit's source code is public: ${SOURCE_URL}.`,
       ],
     },

@@ -1,10 +1,12 @@
 import { test, expect } from "./fixtures/csp";
+import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
+import { newEmail, signIn } from "./support/account";
 import { analyzeFixture } from "./support/agent";
 
 test.use({ viewport: { width: 320, height: 640 } });
 
 // Pages with an agent panel wait for the free AI, so late content (key panel, preview) is measured too.
-for (const [path, hasAgent] of [["/", true], ["/conformance", true], ["/bot", false], ["/pricing", false], ["/privacy", false], ["/terms", false], ["/unsubscribe?t=0123456789abcdef0123456789abcdef", false], ["/unsubscribe?t=not-a-token", false]] as const) {
+for (const [path, hasAgent] of [["/", true], ["/conformance", true], ["/bot", false], ["/pricing", false], ["/privacy", false], ["/terms", false], ["/unsubscribe?t=0123456789abcdef0123456789abcdef", false], ["/unsubscribe?t=not-a-token", false], ["/sign-in", false], ["/sign-in?link=expired", false], ["/sign-in?link=unavailable", false], ["/sign-in?account=deleted", false]] as const) {
   test(`${path} fits a 320 px phone screen without sideways scrolling`, async ({ page }) => {
     await page.goto(path);
     if (hasAgent) await expect(page.getByText("Using Retrofit's free AI")).toBeVisible();
@@ -19,4 +21,20 @@ test("the install panel fits a 320 px results page", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Download the files" })).toBeVisible();
   await expect(page.getByTestId("preview-mount").locator(".ns-title").first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
+});
+
+const fits = async (page: import("@playwright/test").Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
+
+test("the account page, a saved report and the save button fit a 320 px phone screen", async ({ page }) => {
+  const id = await analyzeFixture(page, "bakery.fixture.test");
+  await signIn(page, newEmail("phone"), `/r/${id}`);
+  await page.getByRole("button", { name: SAVE_REPORT_TEXT.button }).click();
+  await expect(page.getByTestId("save-report").getByRole("status")).toBeVisible();
+  await fits(page);
+  await page.goto("/account?delete=failed");
+  await expect(page.getByText(ACCOUNT_TEXT.deleteFailed)).toBeVisible();
+  await fits(page);
+  await page.getByTestId("saved-reports").getByRole("link").first().click();
+  await expect(page.getByTestId("score-total")).toBeVisible();
+  await fits(page);
 });

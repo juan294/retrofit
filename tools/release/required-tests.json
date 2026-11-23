@@ -6709,6 +6709,702 @@
       "suite": "playwright",
       "file": "pricing.spec.ts",
       "title": "privacy, terms and unsubscribe a malformed unsubscribe link shows the invalid-link text and no button"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/config.test.ts",
+      "title": "accounts sign-in configuration defaults SIGNIN_PER_CLIENT_HOUR to 5 and SIGNIN_PER_EMAIL_HOUR to 3, and reads both as positive numbers"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/config.test.ts",
+      "title": "accounts sign-in configuration refuses a missing SUPABASE_ANON_KEY on Vercel and reads it when set"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/config.test.ts",
+      "title": "accounts sign-in configuration leaves SUPABASE_ANON_KEY optional off Vercel and refuses it without SUPABASE_URL"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp posts the address with create_user and the redirect target"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp maps 429 to AuthRateLimited and every other failure to AuthUnavailable"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway verifyOtp answers only the user id and the lower-case email, and drops the session tokens"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway verifyOtp answers expired for a 4xx answer and throws AuthUnavailable for a 5xx or a transport failure"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway deleteUser deletes through the admin API, counts a missing user as deleted, and throws AuthUnavailable on failure"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway getUser answers the account, null for a missing user, and throws AuthUnavailable on failure"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase tokens never leave the gateway keeps the provider's access and refresh tokens out of every header, body, Store value and console line"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "GET /auth/confirm sets retrofit_account, returns to the page sign-in started from and attaches the visitor's analyses"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "GET /auth/confirm attaches nothing and returns to /account when the browser that opens the link did not ask for it"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "GET /auth/confirm attaches nothing when the browser asked for a link to a different address"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "GET /auth/confirm sends an expired link to the expired page without signing in"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "GET /auth/confirm sends a reused link to the expired page and keeps the first session"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "GET /auth/confirm sends the malformed query \"?type=email\" to the expired page without asking the provider"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "GET /auth/confirm sends the malformed query \"?token_hash=abc&type=magiclink\" to the expired page without asking the provider"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "GET /auth/confirm sends the malformed query \"?token_hash=%3Cscript%3E&type=email\" to the expired page without asking the provider"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "GET /auth/confirm sends the malformed query \"\" to the expired page without asking the provider"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "GET /auth/confirm sends a provider outage to the unavailable page without signing in"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "GET /auth/confirm answers no-store with no referrer"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) profiles ensureProfile creates the profile once and keeps its creation time"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) profiles refuses an account id that is not a UUID"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) saved reports saves a report and lists it newest first with its host, score and fetch time"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) saved reports getSavedReport returns the whole report to its account only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) saved reports getSavedReport answers null for an unknown or malformed id"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) saved reports refuses an invalid account id, host, report or fetch time with RangeError"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) account deletion deleteAccountData removes the account's profile and saved reports only, and a second call succeeds"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "account deletion deletes the profile, saved reports and every session, and deletes the auth user last"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "account deletion deletes nothing when the provider is unavailable"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "account deletion keeps the data, the auth user and this session when the data deletion fails"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "account deletion reports a partial deletion when the auth user cannot be deleted, keeps this session, and a retry finishes"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "POST /api/account/delete deletes with the confirmation box ticked, clears the cookie and redirects to the deleted notice"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "POST /api/account/delete deletes nothing without the ticked box, from another site, or when signed out"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "POST /api/account/delete redirects a failure to the account page with its notice and keeps the cookie"
+    },
+    {
+      "rule": "accounts owner checks",
+      "suite": "unit",
+      "file": "tests/accounts/owner.test.ts",
+      "title": "owner checks accept the visitor or the attached account status: the attached account reads it without the visitor cookie; another account gets the 404 text"
+    },
+    {
+      "rule": "accounts owner checks",
+      "suite": "unit",
+      "file": "tests/accounts/owner.test.ts",
+      "title": "owner checks accept the visitor or the attached account preview files: the attached account gets them, another account gets the 404 text"
+    },
+    {
+      "rule": "accounts owner checks",
+      "suite": "unit",
+      "file": "tests/accounts/owner.test.ts",
+      "title": "owner checks accept the visitor or the attached account ownsAnalysis: visitor cookie or attached account yes; another visitor or account no"
+    },
+    {
+      "rule": "accounts owner checks",
+      "suite": "unit",
+      "file": "tests/accounts/owner.test.ts",
+      "title": "owner checks accept the visitor or the attached account keeps the first account when the same browser later signs in to another"
+    },
+    {
+      "rule": "accounts owner checks",
+      "suite": "unit",
+      "file": "tests/accounts/owner.test.ts",
+      "title": "analyses started while signed in are attached at creation and not listed under the visitor"
+    },
+    {
+      "rule": "accounts owner checks",
+      "suite": "unit",
+      "file": "tests/accounts/owner.test.ts",
+      "title": "analyses started while signed in anonymous analyses are listed under the visitor and have no account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/pages.test.ts",
+      "title": "sign-in form posts to /api/auth/sign-in and keeps its button disabled until the page is hydrated"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/pages.test.ts",
+      "title": "sign-in form save button starts disabled"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/pages.test.ts",
+      "title": "fixture mailbox route answers 404 outside fixtures mode"
+    },
+    {
+      "rule": "saved reports",
+      "suite": "unit",
+      "file": "tests/accounts/saved-reports.test.ts",
+      "title": "POST /api/account/reports (Save this report) saves the ready report of the visitor's analysis to the signed-in account"
+    },
+    {
+      "rule": "saved reports",
+      "suite": "unit",
+      "file": "tests/accounts/saved-reports.test.ts",
+      "title": "POST /api/account/reports (Save this report) refuses a signed-out visitor, another visitor's analysis, an unready analysis and a cross-site post"
+    },
+    {
+      "rule": "saved reports",
+      "suite": "unit",
+      "file": "tests/accounts/saved-reports.test.ts",
+      "title": "POST /api/account/reports (Save this report) answers 409 not_ready for an analysis that has no report yet"
+    },
+    {
+      "rule": "accounts sessions",
+      "suite": "unit",
+      "file": "tests/accounts/session.test.ts",
+      "title": "account session cookie is HttpOnly, SameSite=Lax and Path=/, and Secure over HTTPS only"
+    },
+    {
+      "rule": "accounts sessions",
+      "suite": "unit",
+      "file": "tests/accounts/session.test.ts",
+      "title": "account sessions stores only the SHA-256 of the session id, with the account id and email"
+    },
+    {
+      "rule": "accounts sessions",
+      "suite": "unit",
+      "file": "tests/accounts/session.test.ts",
+      "title": "account sessions reads no account for a missing, malformed or unknown cookie"
+    },
+    {
+      "rule": "accounts sessions",
+      "suite": "unit",
+      "file": "tests/accounts/session.test.ts",
+      "title": "account sessions slides: a session used within 30 days stays valid, an unused one ends after 30 days"
+    },
+    {
+      "rule": "accounts sessions",
+      "suite": "unit",
+      "file": "tests/accounts/session.test.ts",
+      "title": "account sessions refreshes the record at most once a day"
+    },
+    {
+      "rule": "accounts sessions",
+      "suite": "unit",
+      "file": "tests/accounts/session.test.ts",
+      "title": "account sessions keeps at most 10 sessions per account: a new sign-in ends the oldest"
+    },
+    {
+      "rule": "accounts sessions",
+      "suite": "unit",
+      "file": "tests/accounts/session.test.ts",
+      "title": "sign-out deletes the session record, clears the cookie and redirects home"
+    },
+    {
+      "rule": "accounts sessions",
+      "suite": "unit",
+      "file": "tests/accounts/session.test.ts",
+      "title": "sign-out refuses a cross-origin post and keeps the session"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in gives the same answer for a known and an unknown address"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in asks the provider for a link to PUBLIC_ORIGIN/auth/confirm whatever returnTo says"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in limits one network to 5 links an hour and answers 429 with retryAt"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in limits one address to 3 links an hour across networks, in any letter case"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in keeps the address out of the Store and the logs"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in answers 503 with the mail-unavailable text when the provider cannot send"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in answers 429 with a one-minute wait when the provider refuses to send again so soon"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in refuses a cross-origin post, an invalid address and a large body before sending anything"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in marks the asking browser with an HttpOnly cookie scoped to /auth for one hour"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"https://evil.example/r/x\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"//evil.example/r/x\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"/\\\\evil.example\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"\\\\\\\\evil.example\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"javascript:alert(1)\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"/r/x\\nSet-Cookie: a=b\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"/r/\\u0000x\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"r/relative\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"/api/account/delete\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"/auth/confirm?token_hash=x\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses \"/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" and falls back to /account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo keeps \"/r/0123456789abcdef0123456789abcdef\""
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo keeps \"/account\""
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo keeps \"/pricing?plan=pro\""
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "returnTo refuses a value that is not a string"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port ensureProfile throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port getProfile throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port saveReport throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port listSavedReports throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port getSavedReport throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port deleteAccountData throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "own pages",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "account pages and robots robots disallows /account, /auth/ and /sign-in, and no account page is listed as public"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: passes the gate mail catcher URL and the anon key to the db tests, and keeps the key out of the log"
+    },
+    {
+      "rule": "gate database",
+      "suite": "unit",
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: refuses a mail catcher URL outside the gate ports and runs no tests"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) profiles ensureProfile creates the profile once and keeps its creation time"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) profiles refuses an account id that is not a UUID"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) saved reports saves a report and lists it newest first with its host, score and fetch time"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) saved reports getSavedReport returns the whole report to its account only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) saved reports getSavedReport answers null for an unknown or malformed id"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) saved reports refuses an invalid account id, host, report or fetch time with RangeError"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) account deletion deleteAccountData removes the account's profile and saved reports only, and a second call succeeds"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "db",
+      "file": "tests/db/auth.db.test.ts",
+      "title": "a real sign-in email reaches the mail catcher and its link's token verifies exactly once"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "db",
+      "file": "tests/db/auth.db.test.ts",
+      "title": "getUser finds the account and deleteUser removes it, twice without error"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "playwright",
+      "file": "account.spec.ts",
+      "title": "accounts sign in from a results page, save the report, open it from the account page, sign out, and delete the account"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "playwright",
+      "file": "account.spec.ts",
+      "title": "accounts the sign-in form never puts the address in a URL"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "playwright",
+      "file": "account.spec.ts",
+      "title": "accounts the results page offers saving only when signed in"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/sign-in fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/sign-in?link=expired fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/sign-in?link=unavailable fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/sign-in?account=deleted fits a 320 px phone screen without sideways scrolling"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the account page, a saved report and the save button fit a 320 px phone screen"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /sign-in page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /sign-in?link=expired page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /sign-in?link=unavailable page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /sign-in?account=deleted page text is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /sign-in page text is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /sign-in?link=expired page text is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /sign-in?link=unavailable page text is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /sign-in?account=deleted page text is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the account pages are readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the account pages are readable in dark mode"
     }
   ],
   "repairs": {

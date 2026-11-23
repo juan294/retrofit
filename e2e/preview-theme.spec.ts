@@ -1,6 +1,9 @@
 import { test, expect } from "./fixtures/csp";
 import { PRIVACY, TERMS } from "@/lib/site/legal-texts";
 import { PRICING_TEXT, UNSUBSCRIBE_TEXT } from "@/lib/site/pricing-texts";
+import { ACCOUNT_TEXT, SAVE_REPORT_TEXT, SAVED_REPORT_TEXT } from "@/lib/site/account-texts";
+import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
+import { newEmail, signIn } from "./support/account";
 import { analyzeFixture, mockOtari } from "./support/agent";
 
 type Locator = import("@playwright/test").Locator;
@@ -85,6 +88,14 @@ const TEXT_PAGES: Record<string, (page: Page) => Record<string, Locator>> = {
     button: page.getByRole("button", { name: UNSUBSCRIBE_TEXT.confirmButton }),
   }),
   "/unsubscribe?t=not-a-token": (page) => ({ text: page.getByText(UNSUBSCRIBE_TEXT.invalid) }),
+  "/sign-in": (page) => ({
+    text: page.getByText(SIGN_IN_TEXT.intro),
+    button: page.getByRole("button", { name: SIGN_IN_TEXT.submit }),
+    privacy: page.getByRole("link", { name: "privacy notice" }),
+  }),
+  "/sign-in?link=expired": (page) => ({ text: page.getByText(SIGN_IN_TEXT.expired) }),
+  "/sign-in?link=unavailable": (page) => ({ alert: page.getByText(SIGN_IN_TEXT.linkUnavailable) }),
+  "/sign-in?account=deleted": (page) => ({ status: page.getByText(SIGN_IN_TEXT.deleted) }),
 };
 
 for (const colorScheme of ["light", "dark"] as const) {
@@ -104,4 +115,36 @@ for (const colorScheme of ["light", "dark"] as const) {
       }
     });
   }
+}
+
+// The account page (with a failure notice), a saved report and the save button: the page tokens only, readable in both schemes.
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`the account pages are readable in ${colorScheme} mode`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    const id = await analyzeFixture(page, "bakery.fixture.test");
+    await signIn(page, newEmail(`theme-${colorScheme}`), `/r/${id}`);
+    await page.getByRole("button", { name: SAVE_REPORT_TEXT.button }).click();
+    const saved = page.getByTestId("save-report").getByRole("status");
+    await expect(saved).toBeVisible();
+    const check = async (targets: Record<string, Locator>) => {
+      for (const [name, el] of Object.entries(targets)) {
+        await expect(el, name).toBeVisible();
+        const { ratio, color, background } = await contrastOf(el);
+        expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
+      }
+    };
+    await check({ saved, openAccount: page.getByRole("link", { name: SAVE_REPORT_TEXT.openAccount }) });
+    await page.goto("/account?delete=failed");
+    await check({
+      heading: page.getByRole("heading", { level: 1 }),
+      notice: page.getByText(ACCOUNT_TEXT.deleteFailed),
+      email: page.getByTestId("account-email"),
+      report: page.getByTestId("saved-reports").getByRole("link").first(),
+      signOut: page.getByRole("button", { name: ACCOUNT_TEXT.signOut }),
+      delete: page.getByRole("button", { name: ACCOUNT_TEXT.deleteButton }),
+      confirm: page.getByText(ACCOUNT_TEXT.deleteConfirm),
+    });
+    await page.getByTestId("saved-reports").getByRole("link").first().click();
+    await check({ heading: page.getByRole("heading", { level: 1 }), back: page.getByRole("link", { name: SAVED_REPORT_TEXT.back }), score: page.getByTestId("score-total") });
+  });
 }

@@ -51,11 +51,11 @@ describe("privacy notice accuracy", () => {
     expect(privacy).toContain("never stores the conversation");
   });
 
-  // Fails if the notice hides the sign-in email (Phase 2 sends it through Supabase and Amazon SES) or claims any other email is sent.
-  it("says sign-in links go through Amazon SES and that no other email is sent yet", () => {
-    expect(privacy).toContain("sends sign-in links through Amazon SES");
-    expect(privacy).toContain("Retrofit sends no other email yet");
-    expect(privacy).not.toContain("Retrofit sends no email yet");
+  // Fails if the notice says email is sent today (Phase 1 sends none) or drops the sign-in email it will send.
+  it("says Amazon SES will send email, starting with sign-in links, and that none is sent yet", () => {
+    expect(privacy).not.toContain("Amazon SES sends its email");
+    expect(privacy).toContain("Retrofit sends no email yet");
+    expect(privacy).toMatch(/Amazon SES will send Retrofit's email, starting with sign-in links/);
   });
 });
 
