@@ -126,7 +126,7 @@ test.describe("plans after BILLING_START", () => {
     await expect(page.getByTestId("api-key-item")).toContainText(`Key ending in ${key.slice(-4)}`);
     expect(await page.content()).not.toContain(key);
     await page.getByRole("button", { name: API_KEY_TEXT.revoke }).click();
-    await expect(page.getByTestId("api-keys-message")).toHaveText(new RegExp(`^${API_KEY_TEXT.revoked}`));
+    await expect(page.getByTestId("api-keys-message")).toHaveText(API_KEY_TEXT.revoked);
     const refused = await score();
     expect(refused.status()).toBe(401);
     expect(((await refused.json()) as { error: string }).error).toBe("invalid_key");

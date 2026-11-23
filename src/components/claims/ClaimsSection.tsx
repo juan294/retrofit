@@ -138,11 +138,14 @@ function Message({ status, testId }: { status: Status; testId: string }) {
   if (!status) return null;
   return (
     <p className="mt-2" role={status.ok ? "status" : "alert"} data-testid={testId} style={status.ok ? undefined : danger}>
-      {status.text}{" "}
+      {status.text}
       {status.href ? (
-        <a href={status.href} className="underline">
-          {PLAN_TEXT.seePlans}
-        </a>
+        <>
+          {" "}
+          <a href={status.href} className="underline">
+            {PLAN_TEXT.seePlans}
+          </a>
+        </>
       ) : null}
     </p>
   );

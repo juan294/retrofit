@@ -63,11 +63,14 @@ export function ApiKeysSection({ keys }: { keys: readonly ApiKeyView[] }) {
       </form>
       {status ? (
         <p className="mt-2" role={status.ok ? "status" : "alert"} data-testid="api-keys-message" style={status.ok ? undefined : { color: "var(--color-danger)" }}>
-          {status.text}{" "}
+          {status.text}
           {status.href ? (
-            <a href={status.href} className="underline">
-              {PLAN_TEXT.seePlans}
-            </a>
+            <>
+              {" "}
+              <a href={status.href} className="underline">
+                {PLAN_TEXT.seePlans}
+              </a>
+            </>
           ) : null}
         </p>
       ) : null}

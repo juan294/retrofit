@@ -35,7 +35,7 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
       <p className="mt-4">{PRICING_TEXT.intro}</p>
       {free ? (
         <p className="mt-4 rounded border p-3" style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}>
-          {PRICING_TEXT.freeNotice} {unpriced ? PRICING_TEXT.pricesNotSet : null}
+          {unpriced ? `${PRICING_TEXT.freeNotice} ${PRICING_TEXT.pricesNotSet}` : PRICING_TEXT.freeNotice}
         </p>
       ) : null}
       <ul className="mt-8 flex flex-col gap-4">

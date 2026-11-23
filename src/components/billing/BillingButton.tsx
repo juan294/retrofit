@@ -48,11 +48,14 @@ export function BillingButton({ path, body = {}, label, returnTo, fixtureOrigin,
       </button>
       {notice ? (
         <p role="alert" data-testid="billing-message" style={{ color: "var(--color-danger)" }}>
-          {notice.text}{" "}
+          {notice.text}
           {notice.href ? (
-            <a href={notice.href} className="underline">
-              {notice.linkText}
-            </a>
+            <>
+              {" "}
+              <a href={notice.href} className="underline">
+                {notice.linkText}
+              </a>
+            </>
           ) : null}
         </p>
       ) : null}
