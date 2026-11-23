@@ -7621,6 +7621,594 @@
       "suite": "playwright",
       "file": "preview-theme.spec.ts",
       "title": "the save button's error is readable in dark mode"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims createClaim stores a pending claim with its host, method and token hash, readable by its account only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims one claim per account and host: a repeat answers exists, also when two creates race; another account gets its own"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims keeps at most 10 pending claims per account"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims restartClaim gives a pending or lapsed claim a new token and method with no check result; verified, superseded and other accounts are refused"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims recordClaimFailure counts consecutive failures; 3 lapse a verified claim, a pending claim stays pending"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims a check against a replaced token is stale and changes nothing; an unknown claim is missing"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims verifyClaim verifies, resets failures, keeps verifiedAt on a recheck and restores a lapsed claim"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims a second account's verification supersedes the first account's verified or lapsed claim, and a superseded claim is terminal"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims two concurrent verifications of one host leave exactly one verified claim"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims listClaimsDueForRecheck lists verified and lapsed claims checked before the cutoff, least recently checked first, up to the limit"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims deleteClaim withdraws the account's own claim only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims refuses an invalid account id, host, method or token hash with RangeError"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) account deletion deleteAccountData removes the account's claims and keeps the claims of others, including one it superseded"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/api/version.test.ts",
+      "title": "vercel.json runs the cleanup, credit-check and claims crons and gives API routes 60 s"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/api/version.test.ts",
+      "title": "vercel.json rechecks claims once a day at a minute no other cron uses"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/page.test.ts",
+      "title": "claim panels before hydration every form posts to a claim route and every button starts disabled"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/page.test.ts",
+      "title": "claim panels before hydration shows where the tag goes and what was found, never the token or its hash"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/page.test.ts",
+      "title": "claim panels before hydration offers each state only its actions"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/page.test.ts",
+      "title": "claim panels before hydration without sources or claims it says how to start"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "lapse and restore three failed rechecks lapse a verified claim; the owner sees the paused text with the date"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "lapse and restore one passing recheck restores a lapsed claim"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "lapse and restore only consecutive failures count"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "what a run checks skips claims checked within 24 hours, pending claims and superseded claims"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "what a run checks checks at most 50 claims per run, least recently checked first"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "what a run checks starts no check after the time budget; the rest stay due"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "what a run checks a meta recheck reads robots.txt and the home page of the claimed host"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "GET /api/cron/claims refuses without the Bearer secret, with a wrong one, and when CRON_SECRET is unset"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "GET /api/cron/claims answers 503 when the account data is unavailable"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "POST /api/claims (create) refuses signed-out (401), cross-origin (403) and too large (413) requests"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "POST /api/claims (create) takes the host only from the account's own analysis or saved report: anything else is 400 or 404"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "POST /api/claims (create) creates a pending claim for the analysis's exact host and shows the token once; only its hash is stored"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "POST /api/claims (create) creates from a saved report; a host that is not a public website is 400"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "POST /api/claims (create) answers 409 full past 10 pending claims"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "check, start over and remove another account's claim, an unknown and a malformed id are 404 for every action"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "check, start over and remove Check again records the result and verifies when the record is there"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "check, start over and remove allows 5 checks per claim per hour, Start over included, then 429 with retryAt"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "check, start over and remove Start over shows a new token once, can switch the method, and refuses a verified claim"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "check, start over and remove Remove withdraws the claim"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "check, start over and remove answers 503 when the account data is unavailable"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost claimHost(\"WWW.Shop.Example.com\") -> \"www.shop.example.com\""
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost claimHost(\"bücher.example\") -> \"xn--bcher-kva.example\""
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost claimHost(\"shop.example.com:443\") -> \"shop.example.com\""
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost claimHost(\"bakery.fixture.test:3011\") -> \"bakery.fixture.test:3011\""
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost claimHost(\"\") -> null"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost claimHost(\"shop.example.com/path\") -> null"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost claimHost(\"user@shop.example.com\") -> null"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost claimHost(\"shop.example.com?x\") -> null"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost claimHost(\"shop example.com\") -> null"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost claimHost(\"a#b\") -> null"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost claimHost(\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\") -> null"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost the meta check reads https://<host>/, and http only for a fixture host in fixtures mode"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "claimHost uses the fixture token only for fixture hosts in fixtures mode"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "parseClaimSource accepts only report:<uuid> and analysis:<32 hex>"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "the account's analyses lists analyses started while signed in, newest first, and only the account's own"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "the account's analyses lists analyses attached at sign-in"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "the account's analyses claimOptions offers each host once, recent analyses first, without the hosts already claimed"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/transfer.test.ts",
+      "title": "a host moves to the account that verifies it later two accounts hold pending claims for one host; the first to verify holds it"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/transfer.test.ts",
+      "title": "a host moves to the account that verifies it later a second account's verification moves the host and the first account sees the change with its date"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/transfer.test.ts",
+      "title": "a host moves to the account that verifies it later a superseded claim is never restored: Check again answers 409 and the recheck skips it"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/transfer.test.ts",
+      "title": "a host moves to the account that verifies it later deleting the new holder's account keeps the earlier claim superseded"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/txt.test.ts",
+      "title": "fixtureTxtResolver answers the blocked fixture's record in two strings and ENOTFOUND for every other name"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/txt.test.ts",
+      "title": "fixtureTxtResolver isNoRecord is true only for ENOTFOUND and ENODATA"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method verifies a retrofit-site-verification meta tag in the <head> with the claim's token"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method matches the name without case, as HTML authors may write it"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method ignores the tag in the <body>"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method ignores a tag in a comment and a tag with another name"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method refuses a wrong token and reports how many tags it found"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method verifies when one of several tags carries the token"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method a site whose robots.txt blocks RetrofitBot gives robots_blocked and is never read"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method a fetch timeout stays pending with the timeout result"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method does not follow the home page to another host: redirected"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method reports an error status and a non-HTML home page"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method a host that resolves to a private address gives not_public"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "meta method reads a hostile home page as data: tag_missing"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "dns method joins the strings of each TXT record and accepts the one equal to retrofit-site-verification=<token>"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "dns method refuses a wrong token or a value with extra text, and reports how many records it found"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "dns method NXDOMAIN and ENODATA give record_missing; any other DNS error gives dns_failed"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "dns method looks up an IDN host in punycode"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/verify.test.ts",
+      "title": "recording a check runClaimCheck records a pass as verified and a failure with its result, never verifying on failure"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims createClaim stores a pending claim with its host, method and token hash, readable by its account only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims one claim per account and host: a repeat answers exists, also when two creates race; another account gets its own"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims keeps at most 10 pending claims per account"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims restartClaim gives a pending or lapsed claim a new token and method with no check result; verified, superseded and other accounts are refused"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims recordClaimFailure counts consecutive failures; 3 lapse a verified claim, a pending claim stays pending"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims a check against a replaced token is stale and changes nothing; an unknown claim is missing"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims verifyClaim verifies, resets failures, keeps verifiedAt on a recheck and restores a lapsed claim"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims a second account's verification supersedes the first account's verified or lapsed claim, and a superseded claim is terminal"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims two concurrent verifications of one host leave exactly one verified claim"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims listClaimsDueForRecheck lists verified and lapsed claims checked before the cutoff, least recently checked first, up to the limit"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims deleteClaim withdraws the account's own claim only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims refuses an invalid account id, host, method or token hash with RangeError"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) account deletion deleteAccountData removes the account's claims and keeps the claims of others, including one it superseded"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "playwright",
+      "file": "claims.spec.ts",
+      "title": "ownership claims claim a fixture site by meta tag, see it verified, and see it move to a second account"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "playwright",
+      "file": "claims.spec.ts",
+      "title": "ownership claims a robots-blocked site gets the DNS hint, and the DNS record verifies it"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "playwright",
+      "file": "claims.spec.ts",
+      "title": "ownership claims three failed daily rechecks lapse a claim, and one passing check restores it"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the claim panels fit a 320 px phone screen"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the claim panels are readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the claim panels are readable in dark mode"
     }
   ],
   "repairs": {
