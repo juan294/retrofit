@@ -15,15 +15,17 @@ export interface PreviewDeps extends JobDeps {
   readonly assetsDir?: string;
 }
 
-const DEFAULT_ASSETS = path.join(process.cwd(), "public", "preview-assets");
-const JSON_TYPE = "application/json";
+/** Folder holding content-actions.js and bridge/, for the private preview and the published page. */
+export const PREVIEW_ASSETS = path.join(process.cwd(), "public", "preview-assets");
+export const JSON_TYPE = "application/json";
 const TYPES: Record<string, string> = { ".js": "text/javascript; charset=utf-8", ".html": "text/html; charset=utf-8", ".json": JSON_TYPE };
 // One plain file name inside bridge/: no dot files, no separators, no traversal.
 const BRIDGE_FILE = /^[a-z0-9][a-z0-9-]*\.(?:html|js|json)$/;
 /** What the runtime's links loader reads: `doc.networks[<name>]`, here nothing (runtime/engine.js `_loadPublishedLinks`). */
 const EMPTY_LINKS = { version: 1, networks: {} } as const;
 
-function respond(status: number, body: BodyInit, contentType: string): Response {
+/** An agent file: never cached, sniffed or indexed. */
+export function respond(status: number, body: BodyInit, contentType: string): Response {
   return new Response(body, {
     status,
     headers: {
@@ -65,17 +67,18 @@ function resolveArtifact(g: GeneratedPreview, segments: readonly string[]): Arti
   return null;
 }
 
-async function serveAsset(assetsDir: string, relative: string): Promise<Response> {
-  const root = path.resolve(assetsDir);
+/** A file under `dir` with its type, or null (outside it, of another type, or missing). The caller admits only known names. */
+export async function assetResponse(dir: string, relative: string): Promise<Response | null> {
+  const root = path.resolve(dir);
   const file = path.resolve(root, relative);
   // Defense in depth: the allowlist already admits no separator or dot segment.
-  if (!file.startsWith(root + path.sep)) return notFound();
+  if (!file.startsWith(root + path.sep)) return null;
   const type = TYPES[path.extname(file)];
-  if (!type) return notFound();
+  if (!type) return null;
   try {
     return respond(200, await readFile(file, "utf8"), type);
   } catch {
-    return notFound();
+    return null;
   }
 }
 
@@ -119,5 +122,5 @@ export async function handlePreviewFile(request: Request, deps: PreviewDeps, id:
   const artifact = resolveArtifact(generated, segments);
   if (!artifact) return notFound();
   if (artifact.kind === "json") return jsonResponse(200, artifact.body);
-  return serveAsset(deps.assetsDir ?? DEFAULT_ASSETS, artifact.relative);
+  return (await assetResponse(deps.assetsDir ?? PREVIEW_ASSETS, artifact.relative)) ?? notFound();
 }

@@ -1,14 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
+import { useCallback, useId, useState, type ReactNode } from "react";
 import { KeyPanel } from "@/components/key-panel/KeyPanel";
-import type { Connection } from "@/lib/keys/connect";
-import { providerForRouter } from "@/lib/keys/providers";
-import { loadKey } from "@/lib/keys/storage";
 import { pageGuard } from "@/lib/preview/page-guard";
 import type { Notice } from "@/lib/preview/notices";
-import { Preview, type Inference } from "./Preview";
+import { Preview } from "./Preview";
 import { useFreeSession } from "./useFreeSession";
+import { useOwnKey } from "./useOwnKey";
 
 export interface AgentPanelProps {
   /** Path of the network base on this origin: `""` for Retrofit's own agent, `/p/<id>` for a preview. */
@@ -25,23 +23,7 @@ export interface AgentPanelProps {
  * provider, and "Forget my key" returns to the free path.
  */
 export function AgentPanel({ basePath, label, title, network }: AgentPanelProps) {
-  const [ownKey, setOwnKey] = useState<Inference | null>(null);
-  // The runtime needs an absolute base (research §4); the origin is known only in the browser.
-  const [originUrl, setOriginUrl] = useState<string | null>(null);
-  // A remembered key restores itself in the key panel; the free path must not start (and count a session) first.
-  const [hasStoredKey, setHasStoredKey] = useState(false);
-  useEffect(() => {
-    // Same rule as the key panel's restore: only a saved key whose router maps to a known provider counts.
-    const saved = loadKey();
-    setHasStoredKey(saved !== null && providerForRouter(saved.router) !== null);
-    setOriginUrl(`${window.location.origin}${basePath}`);
-  }, [basePath]);
-
-  const onConnect = useCallback((c: Connection) => setOwnKey({ router: c.router, key: c.key, model: c.model }), []);
-  const onForget = useCallback(() => {
-    setHasStoredKey(false);
-    setOwnKey(null);
-  }, []);
+  const { ownKey, originUrl, hasStoredKey, onConnect, onForget } = useOwnKey(basePath);
   const free = useFreeSession(originUrl !== null && ownKey === null && !hasStoredKey);
   const inference = ownKey ?? (free.status === "ready" ? free.inference : null);
   // A free-path refusal seen in chat (cap, hold, provider error) also shows as a banner with the key offer.

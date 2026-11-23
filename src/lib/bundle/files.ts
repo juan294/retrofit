@@ -1,4 +1,4 @@
-import { generateNetwork, validatedHost, type NetworkValidator } from "@/lib/generate/network";
+import { generateNetwork, validatedHost, type GeneratedPreview, type NetworkValidator } from "@/lib/generate/network";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { bundleAssets } from "./assets";
 import { assistantHtml, assistantScript } from "./assistant";
@@ -17,9 +17,27 @@ function textEntries(files: Record<string, string>): BundleEntry[] {
   return Object.entries(files).map(([path, text]) => ({ path, bytes: Buffer.from(text) }));
 }
 
+/** No published links: what the runtime's links loader reads (runtime/engine.js `_loadPublishedLinks`). */
+export const linksJson = () => asJson({ version: 1, networks: {} });
+
+/** The bridge's own manifest: the network's name and no action, module, page or catalog, so the bridge shares nothing. */
+export const bridgeManifestJson = (networkName: string) => asJson({ networks: [{ name: networkName }], actions: { version: 1 } });
+
+/** The agent's JSON files by path, byte for byte as the organizers' build writes them. Shared by the install bundle and the published page. */
+export function agentJsonFiles({ network, manifest, networkName, siteContent }: GeneratedPreview): Record<string, string> {
+  return {
+    "agent-manifest.json": asJson(manifest),
+    [networkName + ".network.json"]: asJson(network),
+    "site-content.json": asJson(siteContent),
+    "links.json": linksJson(),
+    "bridge/agent-manifest.json": bridgeManifestJson(networkName),
+  };
+}
+
 /** Files for an owner's static installation. Only site-content.json carries fetched page data. */
 export async function bundleFiles(snapshot: Snapshot, validate?: NetworkValidator) {
-  const { network, manifest, networkName, siteContent } = generateNetwork({ snapshot, target: "bundle" }, { validate });
+  const generated = generateNetwork({ snapshot, target: "bundle" }, { validate });
+  const { manifest, networkName } = generated;
   const host = validatedHost(snapshot.host);
   const date = snapshot.fetchedAt.slice(0, 10);
   // A colon cannot appear in a Windows filename. Leave room for "retrofit-", the date and ".zip" within 255 bytes.
@@ -29,14 +47,10 @@ export async function bundleFiles(snapshot: Snapshot, validate?: NetworkValidato
   const site: BundleEntry[] = [
     ...await bundleAssets(),
     ...textEntries({
-      "agent-manifest.json": asJson(manifest),
-      [networkName + ".network.json"]: asJson(network),
-      "site-content.json": asJson(siteContent),
-      "links.json": asJson({ version: 1, networks: {} }),
+      ...agentJsonFiles(generated),
       "agent-mcp.json": agentMcp,
       ".well-known/nsdeploy.json": asJson(manifest.linking),
       ".well-known/nsdeploy-agent.json": agentMcp,
-      "bridge/agent-manifest.json": asJson({ networks: [{ name: networkName }], actions: { version: 1 } }),
       "assistant/index.html": assistantHtml(host, date),
       "assistant/site.js": assistantScript(host, date),
     }),

@@ -1,6 +1,5 @@
 import { CLAIM_CHANGES_PER_HOUR, CLAIM_CHECKS_PER_HOUR } from "@/lib/accounts/limits";
-import { readAccount, type Account } from "@/lib/accounts/session";
-import { isSameOrigin } from "@/lib/analysis/run";
+import type { Account } from "@/lib/accounts/session";
 import { claimPageUrl } from "@/lib/claims/host";
 import { hostOfSource, parseClaimSource } from "@/lib/claims/sources";
 import { runClaimCheck } from "@/lib/claims/verify";
@@ -10,14 +9,12 @@ import { countClientWindow } from "@/lib/fetch/limits";
 import { newToken, sha256Hex } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { CLAIMS_TEXT as T } from "@/lib/site/claims-texts";
-import { readSmallBody } from "./body";
+import { accountPost, type Fields } from "./account-post";
 import { json, limitOr429 } from "./json";
 
 /**
- * The claim API behind the account page's claim panels (phase-3.md). Every route: POST, same-origin
- * only (403 cross_origin), a JSON body of at most 2 KB (413 too_large), a signed-in account (401
- * signed_out), and a claim or source of that account (404 not_found). 503 unavailable when the
- * account data or the Store fails. Answers carry `message` (CLAIMS_TEXT) and the claim as the page
+ * The claim API behind the account page's claim panels (phase-3.md). Every route is an accountPost, for
+ * a claim or source of the account (404 not_found). Answers carry `message` (CLAIMS_TEXT) and the claim as the page
  * shows it (claimView: never the token or its hash); the create and Start over answers also carry
  * the new token, the only time it is ever shown.
  */
@@ -28,25 +25,6 @@ type Deps = Pick<ServerDeps, "config" | "store" | "accounts" | "clock" | "fetch"
 export const CHECK_DEADLINE_MS = 20_000;
 const CHECK_WINDOW = "claim-check";
 const CHANGE_WINDOW = "claim-change";
-
-type Fields = Record<string, unknown>;
-
-/** The shared preconditions; a Response when one fails. */
-async function claimRequest(request: Request, deps: Deps): Promise<{ account: Account; fields: Fields } | Response> {
-  if (!isSameOrigin(request, deps.config)) return json(403, { error: "cross_origin", message: T.crossOrigin });
-  const text = await readSmallBody(request);
-  if (text === "too large") return json(413, { error: "too_large", message: T.tooLarge });
-  let fields: Fields = {};
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) fields = parsed as Fields;
-  } catch {
-    fields = {};
-  }
-  const account = await readAccount(request, deps);
-  if (!account) return json(401, { error: "signed_out", message: T.signedOut });
-  return { account, fields };
-}
 
 const methodOf = (raw: unknown): ClaimMethod | null => (raw === "meta" || raw === "dns" ? raw : null);
 const notFound = () => json(404, { error: "not_found", message: T.notFound });
@@ -75,16 +53,7 @@ const countCheck = (deps: Deps, account: Account, host: string) => countIn(deps,
 /** Counts one claim creation or Start over of the account (CLAIM_CHANGES_PER_HOUR). */
 const countChange = (deps: Deps, account: Account) => countIn(deps, CHANGE_WINDOW, CLAIM_CHANGES_PER_HOUR, account.accountId, T.changeLimit);
 
-async function guarded(name: string, request: Request, deps: Deps, body: (account: Account, fields: Fields) => Promise<Response>): Promise<Response> {
-  try {
-    const pre = await claimRequest(request, deps);
-    if (pre instanceof Response) return pre;
-    return await body(pre.account, pre.fields);
-  } catch (e) {
-    console.error(`POST ${name} failed:`, e instanceof Error ? e.name : "unknown error");
-    return json(503, { error: "unavailable", message: T.unavailable });
-  }
-}
+const guarded = (name: string, request: Request, deps: Deps, body: (account: Account, fields: Fields) => Promise<Response>) => accountPost(name, T, request, deps, body);
 
 /**
  * POST /api/claims `{source, method}` -> 201 `{claim, token, message}`. `source` is `analysis:<id>`

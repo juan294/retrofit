@@ -21,6 +21,12 @@ export interface ReportView {
   checks: CheckView[];
 }
 
+/** A stored report (saved or published) as the page shows it: a stored value, so a missing check list is empty. */
+export function storedReportView(report: Record<string, unknown>): ReportView {
+  const view = report as unknown as ReportView;
+  return { ...view, checks: Array.isArray(view.checks) ? view.checks : [] };
+}
+
 const RESULT_TEXT = { pass: "pass", fail: "fail", "not-checked": "not checked" } as const;
 
 /**

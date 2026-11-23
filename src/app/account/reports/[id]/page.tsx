@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ScoreReport, type ReportView } from "@/components/analysis/ScoreReport";
+import { ScoreReport, storedReportView } from "@/components/analysis/ScoreReport";
 import { isUuid } from "@/lib/accounts/data";
 import { signInHref } from "@/lib/accounts/return-to";
 import { ACCOUNT_COOKIE, readAccountByToken } from "@/lib/accounts/session";
@@ -23,7 +23,6 @@ export default async function SavedReportPage({ params }: { params: Promise<{ id
   if (!account) redirect(signInHref(`/account/reports/${id}`));
   const saved = await deps.accounts.getSavedReport(account.accountId, id);
   if (!saved) notFound();
-  const report = saved.report as unknown as ReportView;
   return (
     <main className="mx-auto max-w-3xl px-4 py-12 [overflow-wrap:anywhere]">
       <p>
@@ -39,7 +38,7 @@ export default async function SavedReportPage({ params }: { params: Promise<{ id
       <p className="mt-2" style={{ color: "var(--color-muted)" }}>
         {T.notice(dateText(saved.savedAt))}
       </p>
-      <ScoreReport report={{ ...report, checks: Array.isArray(report.checks) ? report.checks : [] }} readOn={dateText(saved.fetchedAt)} />
+      <ScoreReport report={storedReportView(saved.report)} readOn={dateText(saved.fetchedAt)} />
     </main>
   );
 }
