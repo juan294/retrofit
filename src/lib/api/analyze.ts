@@ -4,32 +4,12 @@ import { visitorTexts } from "@/lib/analysis/texts";
 import { resolveVisitor } from "@/lib/analysis/visitor";
 import { clientIdFromRequest } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
+import { readLimitedBody } from "./body";
 import { json } from "./json";
 
 export const MAX_BODY_BYTES = 8192;
 
 const tooLarge = () => json(413, { error: "too_large", message: visitorTexts.tooLarge });
-
-/** Reads at most MAX_BODY_BYTES; "too large" past that, whatever Content-Length said. */
-async function readBody(request: Request): Promise<string | "too large"> {
-  const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return "too large";
-  if (!request.body) return "";
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > MAX_BODY_BYTES) {
-      await reader.cancel().catch(() => {});
-      return "too large";
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString("utf8");
-}
 
 function urlFrom(text: string): string | null {
   try {
@@ -54,7 +34,7 @@ export async function handleAnalyze(request: Request, deps: ServerDeps): Promise
   if (!isSameOrigin(request, deps.config)) return json(403, { error: "cross_origin", message: visitorTexts.crossOrigin });
   const visitor = resolveVisitor(request, deps.config);
   try {
-    const text = await readBody(request);
+    const text = await readLimitedBody(request, MAX_BODY_BYTES);
     if (text === "too large") return tooLarge();
     const rawUrl = urlFrom(text);
     if (rawUrl === null) return json(400, { error: "not_public", message: visitorTexts.notPublic }, visitor.setCookie);
