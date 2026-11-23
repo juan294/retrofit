@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { SAVE_REPORT_TEXT as T } from "@/lib/site/account-texts";
+import { PLAN_TEXT } from "@/lib/site/billing-texts";
 import { useHydrated } from "../useHydrated";
 
-type Status = { readonly ok: boolean; readonly text: string } | null;
+type Status = { readonly ok: boolean; readonly text: string; readonly href?: string; readonly linkText?: string } | null;
 
 
 /** "Save this report" for a signed-in visitor: copies the ready report to the account (POST /api/account/reports). */
@@ -24,8 +25,9 @@ export function SaveReportButton({ analysisId }: { analysisId: string }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ analysisId }),
       });
-      const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
-      setStatus({ ok: res.ok, text: typeof body?.message === "string" ? body.message : T.unavailable });
+      const body = (await res.json().catch(() => null)) as { message?: unknown; href?: unknown } | null;
+      const link = res.ok ? { href: "/account", linkText: T.openAccount } : body?.href === "/pricing" ? { href: "/pricing", linkText: PLAN_TEXT.seePlans } : {};
+      setStatus({ ok: res.ok, text: typeof body?.message === "string" ? body.message : T.unavailable, ...link });
       if (res.ok) setSaved(true);
     } catch {
       setStatus({ ok: false, text: T.unavailable });
@@ -47,9 +49,9 @@ export function SaveReportButton({ analysisId }: { analysisId: string }) {
       {status ? (
         <p role={status.ok ? "status" : "alert"} style={status.ok ? undefined : { color: "var(--color-danger)" }}>
           {status.text}{" "}
-          {status.ok ? (
-            <a href="/account" className="underline">
-              {T.openAccount}
+          {status.href ? (
+            <a href={status.href} className="underline">
+              {status.linkText}
             </a>
           ) : null}
         </p>

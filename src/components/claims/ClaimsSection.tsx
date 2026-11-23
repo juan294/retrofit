@@ -6,12 +6,13 @@ import type { ClaimOption } from "@/lib/claims/sources";
 import type { AccountClaimView, ClaimView } from "@/lib/claims/view";
 import type { PublishedView } from "@/lib/publish/view";
 import { PublishControls } from "../publish/PublishControls";
+import { PLAN_TEXT } from "@/lib/site/billing-texts";
 import { CLAIMS_TEXT as T } from "@/lib/site/claims-texts";
 import { localizeRetry } from "../analysis/retry-time";
 import { useHydrated } from "../useHydrated";
 
-type Status = { readonly ok: boolean; readonly text: string } | null;
-type Answer = { message?: unknown; retryAt?: unknown; token?: unknown; claim?: Partial<ClaimView>; site?: PublishedView | null };
+type Status = { readonly ok: boolean; readonly text: string; readonly href?: string } | null;
+type Answer = { message?: unknown; retryAt?: unknown; href?: unknown; token?: unknown; claim?: Partial<ClaimView>; site?: PublishedView | null };
 
 /** The claim view of an answer, when it carries a whole one. */
 const viewOf = (answer: Answer | null): ClaimView | null => (typeof answer?.claim?.id === "string" && typeof answer.claim.statusText === "string" ? (answer.claim as ClaimView) : null);
@@ -56,7 +57,7 @@ export function ClaimsSection({ claims, options }: { claims: readonly AccountCla
       const res = await fetch(path, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const answer = (await res.json().catch(() => null)) as Answer | null;
       const message = typeof answer?.message === "string" ? answer.message : T.unavailable;
-      status = { ok: res.ok, text: res.ok ? message : localizeRetry(message, typeof answer?.retryAt === "string" ? answer.retryAt : undefined) };
+      status = { ok: res.ok, text: res.ok ? message : localizeRetry(message, typeof answer?.retryAt === "string" ? answer.retryAt : undefined), ...(answer?.href === "/pricing" ? { href: answer.href } : {}) };
       const view = viewOf(answer);
       // A publish answer (`key` is the claim's id).
       if (answer?.site !== undefined) merge(key, { site: answer.site });
@@ -137,7 +138,12 @@ function Message({ status, testId }: { status: Status; testId: string }) {
   if (!status) return null;
   return (
     <p className="mt-2" role={status.ok ? "status" : "alert"} data-testid={testId} style={status.ok ? undefined : danger}>
-      {status.text}
+      {status.text}{" "}
+      {status.href ? (
+        <a href={status.href} className="underline">
+          {PLAN_TEXT.seePlans}
+        </a>
+      ) : null}
     </p>
   );
 }

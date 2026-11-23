@@ -22,6 +22,22 @@ export const PLAN_TEXT = {
 } as const;
 
 export const BILLING_TEXT = {
+  heading: "Your plan",
+  renews: (date: string) => `Renews on ${date}.`,
+  ends: (date: string) => `Cancelled. It ends on ${date}.`,
+  pastDue: (date: string) => `The last payment failed. Choose Manage billing to update your card. Your plan stays until ${date}.`,
+  ended: "Your plan has ended.",
+  notPaid: "Your plan is not active because a payment is missing. Choose Manage billing.",
+  /** The parent plan's stuck-state text: a purchase that Stripe does not show yet. */
+  activating: "Activating your plan. Reload in a minute.",
+  unreadable: "Retrofit could not load your plan right now. Try again in a few minutes.",
+  manage: "Manage billing",
+  busy: "Opening…",
+  upgrade: (plan: string) => `Upgrade to ${plan}`,
+  signIn: "Sign in",
+  openAccount: "Open your account",
+  /** The parent plan's stuck-state text, on /pricing. */
+  cancelled: "Checkout was cancelled. Nothing was charged.",
   notStarted: "Paid plans have not started yet. Every feature is free until they do.",
   noPrice: "This plan has no price yet. Join the list to hear when it does.",
   subscribed: "Your account already has a plan. Change or cancel it with Manage billing on your account page.",

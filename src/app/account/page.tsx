@@ -2,9 +2,17 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ApiKeysSection } from "@/components/billing/ApiKeysSection";
+import { BillingSection } from "@/components/billing/BillingSection";
 import { ClaimsSection } from "@/components/claims/ClaimsSection";
 import { SitePage } from "@/components/SitePage";
 import type { SavedReportSummary } from "@/lib/accounts/data";
+import { apiKeyView, type ApiKeyView } from "@/lib/api/api-keys";
+import { fixtureOriginOf } from "@/lib/billing/checkout";
+import { billingStarted } from "@/lib/billing/entitlements";
+import { accountBilling } from "@/lib/billing/reconcile";
+import { logBillingFailure } from "@/lib/billing/sync";
+import { billingView, type BillingView } from "@/lib/billing/view";
 import { listAccountAnalyses } from "@/lib/analysis/account-list";
 import { CLAIM_RECENT_ANALYSES, claimOptions, type ClaimOption } from "@/lib/claims/sources";
 import { accountClaimViews, type AccountClaimView } from "@/lib/claims/view";
@@ -20,23 +28,39 @@ const DELETE_NOTICES = { confirm: T.deleteNeedsConfirm, failed: T.deleteFailed, 
 const buttonStyle = { background: "var(--color-accent)", color: "var(--color-accent-text)" };
 const borderStyle = { borderColor: "var(--color-border)" };
 
-/** /account[?delete=confirm|failed|partial]: the signed-in account. Signed out -> /sign-in?returnTo=/account. */
+/**
+ * /account[?delete=confirm|failed|subscription|partial][&checkout=success]: the signed-in account.
+ * Signed out -> /sign-in?returnTo=/account. From BILLING_START on it shows the plan, read again from
+ * Stripe when it is old or the visitor returns from checkout (accountBilling, bounded in time).
+ */
 export default async function AccountPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { delete: deleteState } = await searchParams;
+  const { delete: deleteState, checkout } = await searchParams;
   const deps = getServerDeps();
   let account: Account | null = null;
   let reports: SavedReportSummary[] | null = null;
   let claims: AccountClaimView[] = [];
   let options: ClaimOption[] = [];
+  let keys: ApiKeyView[] = [];
+  // Undefined before BILLING_START; null when the plan could not be read.
+  let billing: BillingView | null | undefined;
   try {
     account = await readAccountByToken((await cookies()).get(ACCOUNT_COOKIE)?.value, deps);
     if (account) {
-      const [saved, held, published, analyses] = await Promise.all([
+      const [saved, held, published, analyses, apiKeys, plan] = await Promise.all([
         deps.accounts.listSavedReports(account.accountId),
         deps.accounts.listClaims(account.accountId),
         deps.accounts.listPublishedSites(account.accountId),
         listAccountAnalyses(deps, account.accountId, CLAIM_RECENT_ANALYSES),
+        deps.accounts.listApiKeys(account.accountId),
+        billingStarted(deps)
+          ? accountBilling(deps, account.accountId, { checkout: checkout === "success" }).then(billingView, (e: unknown) => {
+              logBillingFailure("GET /account billing", e);
+              return null;
+            })
+          : undefined,
       ]);
+      keys = apiKeys.map(apiKeyView);
+      billing = plan;
       reports = saved;
       claims = accountClaimViews(held, published, deps.config);
       options = claimOptions(analyses, saved, held);
@@ -70,6 +94,8 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         </button>
       </form>
 
+      {billing === undefined ? null : <BillingSection view={billing} fixtureOrigin={fixtureOriginOf(deps.config)} />}
+
       <h2 className="mt-10 text-xl font-semibold">{T.reportsHeading}</h2>
       {reports.length === 0 ? (
         <p className="mt-2">{T.noReports}</p>
@@ -90,6 +116,8 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
       )}
 
       <ClaimsSection claims={claims} options={options} />
+
+      <ApiKeysSection keys={keys} />
 
       <h2 className="mt-10 text-xl font-semibold">{T.deleteHeading}</h2>
       <p className="mt-2">{T.deleteIntro}</p>

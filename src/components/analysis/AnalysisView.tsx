@@ -8,6 +8,7 @@ import { InstallPanel } from "./InstallPanel";
 import { signInHref } from "@/lib/accounts/return-to";
 import { SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { SaveReportButton } from "./SaveReportButton";
+import { SignInForm } from "../SignInForm";
 import { ScoreReport, type ReportView } from "./ScoreReport";
 import { localizeRetry } from "./retry-time";
 import { COUNTING_ATTEMPTS } from "./request";
@@ -171,18 +172,21 @@ function Notice({ failure, inputOrigin }: { failure: Failure; inputOrigin: strin
   }, [autoRetry, inputOrigin, router]);
   const shown = retryError ?? failure;
   return (
-    <div className="mt-8" role="alert">
-      <p>{waiting ?? localizeRetry(shown.message, shown.retryAt)}</p>
-      <p className="mt-4 flex gap-3">
-        {RETRYABLE.has(failure.code) && !(failure.retryAt && Date.parse(failure.retryAt) > Date.now()) ? (
-          <button type="button" onClick={() => starts.current?.start(inputOrigin)} disabled={busy} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
-            {busy ? "Starting…" : failure.code === "expired" ? "Analyze again" : "Retry"}
-          </button>
-        ) : null}
-        <a href="/" className="rounded border px-4 py-2" style={{ borderColor: "var(--color-border)" }}>
-          Analyze another site
-        </a>
-      </p>
-    </div>
+    <>
+      <div className="mt-8" role="alert">
+        <p>{waiting ?? localizeRetry(shown.message, shown.retryAt)}</p>
+        <p className="mt-4 flex gap-3">
+          {RETRYABLE.has(failure.code) && !(failure.retryAt && Date.parse(failure.retryAt) > Date.now()) ? (
+            <button type="button" onClick={() => starts.current?.start(inputOrigin)} disabled={busy} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
+              {busy ? "Starting…" : failure.code === "expired" ? "Analyze again" : "Retry"}
+            </button>
+          ) : null}
+          <a href="/" className="rounded border px-4 py-2" style={{ borderColor: "var(--color-border)" }}>
+            Analyze another site
+          </a>
+        </p>
+      </div>
+      {shown.code === "free_limit" ? <SignInForm returnTo="/" privacyHref="/privacy" /> : null}
+    </>
   );
 }

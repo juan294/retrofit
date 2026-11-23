@@ -13,7 +13,9 @@ export const PRICING_TEXT = {
   title: "Pricing",
   intro: "Retrofit checks how ready a website is for AI agents and builds an agent for it. These are the plans.",
   /** Shown only before BILLING_START. */
-  freeNotice: "Free during the hackathon judging period. Every feature is free for everyone until paid plans start. Prices are not set yet.",
+  freeNotice: "Free during the hackathon judging period. Every feature is free for everyone until paid plans start.",
+  /** Beside the notice, while no plan has a price. */
+  pricesNotSet: "Prices are not set yet.",
   notifyHeading: "Hear when paid plans start",
 } as const;
 

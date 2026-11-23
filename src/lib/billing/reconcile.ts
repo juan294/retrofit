@@ -1,13 +1,17 @@
 import type { BillingRecord } from "@/lib/accounts/data";
+import { countClientWindow } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
 import type { PlanId } from "./plans";
 import { entitledPlan } from "./state";
 import { logBillingFailure, readStripe } from "./sync";
+import { withTimeout } from "./timeout";
 
 /** A stored state this old is read again from Stripe when its owner opens the account page. */
 export const RECONCILE_AFTER_MS = 10 * 60_000;
-/** One read of Stripe per account in this time, whatever the number of tabs, reloads and instances. */
+/** The lease of one read (released when it ends), so tabs and instances never read one account at the same time. */
 const LEASE_S = 10;
+/** Reads of Stripe per account and hour on the account page; past them the stored state is shown. */
+const READS_PER_HOUR = 60;
 /** The longest the page waits for Stripe. */
 const WAIT_MS = 2_500;
 
@@ -24,7 +28,7 @@ type Deps = Pick<ServerDeps, "config" | "clock" | "store" | "accounts" | "billin
 /**
  * The account's billing for its account page. A state older than RECONCILE_AFTER_MS, and any state when
  * the visitor returns from checkout, is read again from Stripe first (a missed webhook is fixed here),
- * once at a time per account (a Store lease that is left to expire) and for at most `waitMs`. When
+ * once at a time per account (a Store lease), at most READS_PER_HOUR times, and for at most `waitMs`. When
  * Stripe cannot be asked, the stored state stands. Throws only when the billing record cannot be read.
  */
 export async function accountBilling(deps: Deps, accountId: string, o: { readonly checkout: boolean; readonly waitMs?: number }): Promise<AccountBilling> {
@@ -44,27 +48,22 @@ export async function accountBilling(deps: Deps, accountId: string, o: { readonl
   return overview(fresh, o.checkout);
 }
 
-/** The state read from Stripe and stored; "busy" while another read runs; null when Stripe or the Store cannot be asked. Never throws. */
+/** The state read from Stripe and stored; "busy" while another read runs or past the hourly limit; null when Stripe or the Store cannot be asked. Never throws. */
 async function refresh(deps: Deps, record: BillingRecord): Promise<BillingRecord | "busy" | null> {
+  const leaseKey = `billing-reconcile:${record.accountId}`;
   try {
-    if ((await deps.store.acquireLease(`billing-reconcile:${record.accountId}`, LEASE_S)) === null) return "busy";
-    const { observed } = await readStripe(deps, record.customerId, { timeoutMs: WAIT_MS });
-    const applied = await deps.accounts.applyBillingState(record.customerId, observed);
-    return "billing" in applied ? applied.billing : null;
+    const token = await deps.store.acquireLease(leaseKey, LEASE_S);
+    if (token === null) return "busy";
+    try {
+      if (!(await countClientWindow(deps.store, "billing-read", READS_PER_HOUR, record.accountId, deps.clock())).ok) return "busy";
+      const { observed } = await readStripe(deps, record.customerId, { timeoutMs: WAIT_MS });
+      const applied = await deps.accounts.applyBillingState(record.customerId, observed);
+      return "billing" in applied ? applied.billing : null;
+    } finally {
+      await deps.store.releaseLease(leaseKey, token);
+    }
   } catch (e) {
     logBillingFailure("Billing reconciliation", e);
     return null;
-  }
-}
-
-async function withTimeout<T>(task: Promise<T>, ms: number): Promise<T | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), ms);
-  });
-  try {
-    return await Promise.race([task, timeout]);
-  } finally {
-    clearTimeout(timer);
   }
 }

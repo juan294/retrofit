@@ -112,12 +112,32 @@ describe("the account page's billing", () => {
     expect(reads(d)).toBe(1);
     expect(all.filter((r) => r.plan === "pro").length).toBeGreaterThanOrEqual(1);
     for (const r of all) expect(r.plan === "pro" || r.activating).toBe(true);
-    // A reload loop is bounded too.
-    for (let i = 0; i < 5; i++) await load(d, { checkout: true });
-    expect(reads(d)).toBe(1);
-    clock.advance(11_000);
+    // The read that ended does not hold up the next one: paying right after a load is seen at once.
+    clock.advance(1);
     await load(d, { checkout: true });
     expect(reads(d)).toBe(2);
+  });
+
+  // Fails if a read that failed keeps the lease (the next load would wait for it to expire).
+  it("a failed read gives its lease back", async () => {
+    const { d } = billingDeps(0);
+    const cus = await customer(d);
+    d.fixtureBilling.subscribe(cus, { priceIds: [PRICES.pro] });
+    d.fixtureBilling.fail(true);
+    await load(d);
+    d.fixtureBilling.fail(false);
+    expect((await load(d)).plan).toBe("pro");
+  });
+
+  // Fails if a reload loop asks Stripe without limit.
+  it("asks Stripe at most 60 times an hour per account", async () => {
+    const { d, clock } = billingDeps(0);
+    await customer(d);
+    for (let i = 0; i < 70; i++) await load(d, { checkout: true });
+    expect(reads(d)).toBe(60);
+    clock.advance(3600_000);
+    await load(d, { checkout: true });
+    expect(reads(d)).toBe(61);
   });
 
   // Fails if the page fails when only the lease Store fails.
