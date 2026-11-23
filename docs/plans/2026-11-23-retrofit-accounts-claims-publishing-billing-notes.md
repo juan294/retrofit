@@ -29,6 +29,12 @@ On 2026-11-23 Juan authorized all five phases of 2026-11-23-retrofit-accounts-cl
 - Claim rules beyond the plan: a home page that redirects to another host answers `redirected`, never verified; "Start over" works only on pending and lapsed claims and can switch method; a superseded claim is terminal and offers only Remove; a pending claim counts failures but never lapses; checks apply only when the token is unchanged since the check began.
 - Claim limits. Plan said 5 checks per claim per hour. Chose: 5 checks per hour per account and host, and 20 claim creations or Start overs per account per hour (P3-R3). Why: removing and recreating a claim would otherwise reset the budget.
 - Recheck rules. A Crawl-delay longer than the check may wait records `crawl_delay` with the DNS hint, so a verified meta claim still lapses within three daily checks (P3-R2). The due list puts verified claims before lapsed ones; a claim lapsed more than 30 days ago is rechecked weekly; a run that finds more than 50 due claims logs the overflow count (P3-R4). User checks have a 20 s deadline and the daily run a 40 s budget; a DNS lookup races the remaining time (P3-R5).
+- Published files. Phase 4 said the file set mirrors the preview's. Found: the organizers' `check_partner.mjs` also needs `bridge/agent-manifest.json` and the bridge's runtime modules, and the template `bridge-actions.js` and `write-window.js` hold placeholder actions. Chose: add the manifest and six modules and omit the two templates, as the install bundle does.
+- Page policy exclusions. Phase 4 said to exclude `s/<host>/bridge/`. Chose: one plain file name under it, and also `/badge/<name>.svg`, because the request hook would override the badge's cache and CSP headers.
+- Publication and transfer. Chose: verifying a host deletes every other claim's publication of it, so an old owner's page can never return. `published_sites` gains `fetched_at`; a refresh must use a newer read of the site.
+- Cross-origin reads cover all published agent JSON, including `site-content.json` and the bridge manifest. A site with no score shows "Agent-ready check · verified by Retrofit" on the badge. An expired analysis cannot be published.
+- Production case `published-unknown` fails against a release without this phase.
+- Refresh and the crawl cache. Chose: keep the 24-hour cache (project rule: cache results and limit requests per site) and tell the owner when a new read is possible (review P4-R1). Letting a verified owner's refresh bypass the cache is an open product option for Juan.
 
 ## Phase 1
 
@@ -86,3 +92,26 @@ The simplify pass produced `3d46616`. Test-only branches left production modules
 One unit run during the simplify pass stalled for 7 hours 10 minutes with `tests/preview/bundle-route.test.ts` unreported and its worker idle. Nothing caught it because the run was an unattended background chain with no limit. Only that run's own processes were stopped; its log is `.local/runs/2026-11-23-accounts/p3-hung-unit.log` in the canonical checkout. The file then passed alone three times and the full unit suite passed twice (1,564 tests, 35 seconds). The cause is unknown and was not reproduced; this phase did not change that test.
 
 No external action belongs to Phase 3. The phase gate runs on the commit containing this entry; Phase 4 records its receipt.
+
+Phase 3 passed all 15 local checks on `7389399af9e0536ddcceca9dc2e85596694b8f96`. The analyzer accepted 1,566 unit, 3 performance, 84 database and 141 browser tests (1,383 required). Coverage was 92.2% for statements and 85.7% for branches. The gate database teardown completed. The receipt is under `.local/runs/2026-11-23-accounts/phase3/`.
+
+## Phase 4
+
+Commits `f44b1b6` to `8c70ccd` added the publishing migration, the one public rule (`site_is_public`: the publication exists, its claim is verified and belongs to the row's account) used by the page, files, badge and sitemap, `/s/<host>` with its files, publish, refresh and unpublish, the badge and the embed snippet. The contract failed first on both adapters (12 tests each) and the new unit files failed on missing modules. The access probe, the oracle extension, some negative cases and most browser specs passed on their first run; 34 mutations, one per run, were all caught. `expect_denied` in the probe does not catch an `anon` function grant because the table privilege also denies; the grants check catches it.
+
+Origin isolation: `/s/` shares an origin with `/account`. The implementer found no new path from a published page into a signed-in session, and the independent review reached the same conclusion from source. The site owner controls only the host, a date and JSON data; every script is a fixed Retrofit or vendored file; the bridge manifest registers no action. The repair below closed one gap the review raised as INFERRED: a key saved elsewhere on Retrofit connected by itself on a published page.
+
+Independent review returned CHANGES REQUIRED. Dispositions, all in `b82b182` unless stated:
+
+- P4-R1 (S3) fixed: inside the 24-hour read window a refresh says when a new read is possible, stores no error and does not count against the limit.
+- P4-R2 (S4) fixed: `delete_account_data` is replaced with the same lock order as publish and verify. Two database race tests failed first with a real `40P01` deadlock.
+- P4-R3 fixed: the newest read wins, not the newest start.
+- P4-R4 fixed: `/s/<host>` has an outage page (status 500 or above, no-store, noindex).
+- P4-R5 fixed: the policy exclusions accept only characters of a normalized host.
+- P4-R6 fixed: the key text says the key goes only to the provider.
+- P4-R7 fixed by this entry.
+- Saved keys (raised as INFERRED, then VERIFIED): a published page now offers "Use your saved key" on every page load and connects only after that click. The private preview is unchanged.
+
+The integration owner read the saved-key, deletion and matcher repairs and approved them. The simplify pass produced `c4743f6`. A publication now stores only the fields its files need (`agentSnapshot`), so link lists, forms, page markup data and probe bodies of the crawl are not kept; the generated files are byte-identical to those from the full snapshot. The route's trace lists only the eight served files (INFERRED that Vercel uses it as for `/p/`). Skipped: moving the matcher grammar into `proxy()`, a required saved-key policy type, a fetch-guard base set by the preview, an outline read for the manifest and network, caching the scored host and read time on the analysis list, a view for `public_hosts`, accepting ports only in fixtures mode, and dropping `movedFrom` and other adapter-only return fields.
+
+Open: a refresh inside the read window cannot bypass the cache (owner option); deleting the auth user may wait on a verification by the same account (INFERRED, untested); the time shown for a new read has no date, which is clear only while the window is 24 hours or less; a browser can show a cached badge for up to one hour after a lapse (planned and stated in the privacy draft). Owner manual checks 1 and 3 stay pending. The phase gate runs on the commit containing this entry; Phase 5 records its receipt.
