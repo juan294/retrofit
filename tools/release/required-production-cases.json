@@ -18,10 +18,10 @@
     { "id": "spec6-over-budget", "kind": "e2e-prod", "target": "peer calls over the runtime's per-message limits show the over-budget error" },
     { "id": "spec6-denied-origin", "kind": "e2e-prod", "target": "the demo-denied tool shows the denied-origin error and no request reaches that host" },
     { "id": "analyze-own-site", "kind": "probe", "target": "analyze https://retrofit.thecreativetoken.com/: score ready, the three agentic-web checks pass, the preview answers one question on the free path" },
-    { "id": "concurrent-analyses-five", "kind": "probe", "target": "five concurrent analyses of Retrofit's own pages, with timings and status latency" },
+    { "id": "concurrent-analyses-five", "kind": "probe", "target": "five concurrent analyses of Retrofit's own pages, with timings and status latency (from 2027-01-19 the free limit's exact answer is expected, with five scores of the same pages)" },
     { "id": "no-preview-deployments", "kind": "probe", "target": "vercel list shows no deployment with the preview target" },
     { "id": "judge-path", "kind": "probe", "target": "/judges with the code gives pool: judge" },
-    { "id": "own-pages", "kind": "e2e-prod", "target": "/pricing, /privacy and /terms serve their headings, the pricing page shows the notify form with its privacy link, and sitemap.xml lists all three" },
+    { "id": "own-pages", "kind": "e2e-prod", "target": "/pricing, /privacy and /terms serve their headings, the pricing page shows the notify form with its privacy link (after billing starts: or each plan's price with its upgrade button), and sitemap.xml lists all three" },
     { "id": "published-unknown", "kind": "e2e-prod", "target": "a host nobody published answers 404 for /s/<host>, its agent files and /badge/<host>.svg, none of it cached" }
   ]
 }

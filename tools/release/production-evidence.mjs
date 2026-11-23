@@ -29,6 +29,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
+import { FREE_LIMIT_TEXT, billingMayHaveStarted } from "../../e2e-prod/support/billing-start.mjs";
 import { DEPLOYMENT_ID, caseReport, prodUrl, writeCaseFile } from "../../e2e-prod/support/case-report.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -143,6 +144,8 @@ async function oneAnalysis(o, pagePath) {
   const setCookies = typeof post.headers.getSetCookie === "function" ? post.headers.getSetCookie() : [post.headers.get("set-cookie") ?? ""];
   const cookie = setCookies.map((c) => c.split(";")[0].trim()).filter(Boolean).join("; ");
   const result = { url, postStatus: post.status, postMs: post.ms, id, polls: 0, statusLatencyMs: null, finalStatus: null, scoreReady: false, readyAfterMs: null };
+  // The product's free limit, word for word. Whether it is expected is decided by the case (concurrentAnalyses).
+  if (post.status === 403 && post.json?.error === "free_limit" && post.json?.message === FREE_LIMIT_TEXT) return { ...result, finalStatus: "limited" };
   if (post.status !== 200 || !id) return { ...result, finalStatus: "not-started", error: post.json?.error ?? post.error ?? null };
   const latencies = [];
   const deadline = performance.now() + ANALYSIS_DEADLINE_MS;
@@ -156,6 +159,23 @@ async function oneAnalysis(o, pagePath) {
     await new Promise((resolve) => setTimeout(resolve, POLL_MS));
   }
   result.statusLatencyMs = stats(latencies);
+  if (result.finalStatus === "ready") result.readyAfterMs = ms(start);
+  return result;
+}
+
+/** One page's score from the open score API, polled while it runs. No key: a key would be another account's limit. */
+async function oneScore(o, pagePath) {
+  const url = `${o.prod}${pagePath}`;
+  const result = { url, polls: 0, finalStatus: null, readyAfterMs: null };
+  const start = performance.now();
+  const deadline = start + ANALYSIS_DEADLINE_MS;
+  for (;;) {
+    const res = await http("GET", `${o.prod}/api/score?url=${encodeURIComponent(url)}`);
+    result.polls += 1;
+    result.finalStatus = res.status === 200 ? (res.json?.status === "ready" ? "ready" : "unreadable") : `http-${res.status}`;
+    if (res.status !== 202 || performance.now() > deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+  }
   if (result.finalStatus === "ready") result.readyAfterMs = ms(start);
   return result;
 }
@@ -194,15 +214,6 @@ function steps(o, cases, pwCases) {
       run: (ctx) => checkPartners(ctx, partners),
     },
     {
-      name: "concurrent-analyses",
-      produces: ["concurrent-analyses-five"],
-      show: [
-        `POST ${o.prod}/api/analyze x5 (concurrent): ${OWN_PAGES.map((p) => `${o.prod}${p}`).join(", ")}`,
-        `GET ${o.prod}/api/analyze/<id> for each, every ${POLL_MS / 1000} s until ready, at most ${ANALYSIS_DEADLINE_MS / 1000} s`,
-      ],
-      run: concurrentAnalyses,
-    },
-    {
       name: "no-preview-deployments",
       produces: ["no-preview-deployments"],
       show: [`$ vercel list ${VERCEL_PROJECT} --environment preview --scope ${VERCEL_SCOPE}`],
@@ -218,6 +229,17 @@ function steps(o, cases, pwCases) {
         ...(o.skipPlaywright ? ["  skipped (--skip-playwright): its cases will be missing"] : []),
       ],
       run: (ctx) => runPlaywright(ctx, pwCases),
+    },
+    {
+      name: "concurrent-analyses",
+      produces: ["concurrent-analyses-five"],
+      show: [
+        `POST ${o.prod}/api/analyze x5 (concurrent): ${OWN_PAGES.map((p) => `${o.prod}${p}`).join(", ")}`,
+        `GET ${o.prod}/api/analyze/<id> for each, every ${POLL_MS / 1000} s until ready, at most ${ANALYSIS_DEADLINE_MS / 1000} s`,
+        "  after the browser suite, whose own analysis needs one of the network's free places after BILLING_START",
+        `  from 2027-01-19 the free limit is an expected answer (403 free_limit); then also GET ${o.prod}/api/score?url=<page> x5 until ready`,
+      ],
+      run: concurrentAnalyses,
     },
     {
       name: "alias-binding",
@@ -402,9 +424,16 @@ function checkPartners(ctx, partners) {
 async function concurrentAnalyses(ctx) {
   const start = performance.now();
   const analyses = await Promise.all(OWN_PAGES.map((p) => oneAnalysis(ctx.o, p)));
-  const passed = analyses.every((a) => a.finalStatus === "ready" && a.scoreReady);
+  const limited = analyses.filter((a) => a.finalStatus === "limited").length;
+  // From the earliest BILLING_START on, a network without an account has a few analyses in 30 days, also this one: the
+  // limit's exact answer is expected then, and the open score API proves that the same pages can be read and scored.
+  const expected = billingMayHaveStarted();
+  const scores = expected && limited > 0 ? await Promise.all(OWN_PAGES.map((p) => oneScore(ctx.o, p))) : [];
+  const passed = analyses.every((a) => (a.finalStatus === "ready" && a.scoreReady) || (expected && a.finalStatus === "limited")) && scores.every((s) => s.finalStatus === "ready");
   record(ctx, "concurrent-analyses-five", passed, {
     wallMs: ms(start),
+    limited,
+    scores,
     readyAfterMs: stats(analyses.map((a) => a.readyAfterMs).filter((v) => typeof v === "number")),
     statusLatencyMedianMs: stats(analyses.map((a) => a.statusLatencyMs?.median).filter((v) => typeof v === "number")),
     analyses,
