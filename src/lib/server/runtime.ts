@@ -5,6 +5,8 @@ import { createMemoryAccountData } from "@/lib/accounts/memory";
 import { createSupabaseAccountData } from "@/lib/accounts/supabase";
 import { unavailableAuthGateway, type AuthGateway } from "@/lib/auth/gateway";
 import { createSupabaseAuthGateway } from "@/lib/auth/supabase";
+import { unavailableBillingGateway, type BillingGateway } from "@/lib/billing/gateway";
+import { createStripeGateway } from "@/lib/billing/stripe";
 import { systemTxtResolver, type TxtResolver } from "@/lib/claims/txt";
 import { getConfig, type Config, type SupabaseConfig } from "@/lib/config";
 import { createFetchContext } from "@/lib/fetch/context";
@@ -15,6 +17,7 @@ import { createMemoryStore } from "@/lib/store/memory";
 import { createSupabaseStore } from "@/lib/store/supabase";
 import { createServiceClient, type ServiceClient } from "@/lib/supabase/client";
 import { createFixtureAuth, type FixtureAuth } from "@/lib/test-fixtures/auth";
+import { createFixtureBilling, type FixtureBilling } from "@/lib/test-fixtures/billing";
 import { fixtureClock } from "@/lib/test-fixtures/clock";
 import { fixtureOutage } from "@/lib/test-fixtures/outage";
 import { fixtureTxtResolver } from "@/lib/test-fixtures/txt";
@@ -31,6 +34,8 @@ export interface ServerDeps {
   readonly accounts: AccountData;
   /** Email-link sign-in (Supabase Auth; the fixture provider in fixtures mode). */
   readonly auth: AuthGateway;
+  /** Stripe (test mode; the fixtures gateway in fixtures mode, unavailable without configuration). */
+  readonly billing: BillingGateway;
   readonly clock: Clock;
   readonly fetch: FetchContext;
   /** DNS TXT lookups for ownership claims: the system resolver, or the fixtures resolver in fixtures mode. */
@@ -75,6 +80,8 @@ interface Singletons {
   accounts?: AccountData;
   auth?: AuthGateway;
   fixtureAuth?: FixtureAuth;
+  billing?: BillingGateway;
+  fixtureBilling?: FixtureBilling;
   fetch?: FetchContext;
   deps?: ServerDeps;
 }
@@ -143,6 +150,23 @@ export function getFixtureAuth(config: Config = getConfig()): FixtureAuth | null
   return singletons.fixtureAuth;
 }
 
+/**
+ * The process-wide BillingGateway: the fixtures gateway in fixtures mode (it never contacts Stripe),
+ * Stripe when STRIPE_SECRET_KEY is set, and otherwise one that answers unavailable. loadConfig
+ * requires the key on Vercel and accepts test-mode keys only.
+ */
+export function getBillingGateway(config: Config = getConfig()): BillingGateway {
+  singletons.billing ??= getFixtureBilling(config) ?? (config.billing ? createStripeGateway({ ...config.billing, origin: config.publicOrigin }) : unavailableBillingGateway());
+  return singletons.billing;
+}
+
+/** Fixtures mode only: the process-wide fixtures gateway (its checkout page is /test-fixtures/billing/checkout). Null otherwise. */
+export function getFixtureBilling(config: Config = getConfig()): FixtureBilling | null {
+  if (!config.fixturesEnabled) return null;
+  singletons.fixtureBilling ??= createFixtureBilling({ clock: fixtureClock, origin: config.publicOrigin, webhookSecret: config.billing?.webhookSecret ?? "", prices: config.billing?.prices ?? {} });
+  return singletons.fixtureBilling;
+}
+
 /** The server clock. Fixtures mode only: e2e tests may offset it (src/lib/test-fixtures/clock.ts). */
 export function serverClock(config: Pick<Config, "fixturesEnabled">): Clock {
   return config.fixturesEnabled ? fixtureClock : systemClock;
@@ -174,6 +198,9 @@ export function getServerDeps(): ServerDeps {
       },
       get auth() {
         return getAuthGateway(config);
+      },
+      get billing() {
+        return getBillingGateway(config);
       },
       clock: serverClock(config),
       fetch: getFetchContext(config),

@@ -3,7 +3,9 @@ import type { AccountData } from "@/lib/accounts/data";
 import { createAccountMemoryBacking, createMemoryAccountData, type AccountMemoryBacking } from "@/lib/accounts/memory";
 import { ACCOUNT_COOKIE, createAccountSession } from "@/lib/accounts/session";
 import type { AuthGateway, VerifiedAccount } from "@/lib/auth/gateway";
+import type { BillingGateway } from "@/lib/billing/gateway";
 import { createFixtureAuth, type FixtureAuth } from "@/lib/test-fixtures/auth";
+import { createFixtureBilling, type FixtureBilling } from "@/lib/test-fixtures/billing";
 import { loadConfig, type Env } from "@/lib/config";
 import { slotKey } from "@/lib/analysis/capacity";
 import { analysisKey, type Analysis } from "@/lib/analysis/record";
@@ -85,6 +87,7 @@ export interface TestDepsOptions {
   store?: Store;
   accounts?: AccountData;
   auth?: AuthGateway;
+  billing?: BillingGateway;
   txt?: TxtResolver;
 }
 
@@ -94,6 +97,8 @@ export interface TestDeps extends ServerDeps {
   readonly accountsBacking: AccountMemoryBacking;
   /** The fixture provider behind `auth` (unused when the test passes its own `auth`). */
   readonly fixtureAuth: FixtureAuth;
+  /** The fixtures gateway behind `billing` (unused when the test passes its own `billing`). */
+  readonly fixtureBilling: FixtureBilling;
   /** Errors thrown by background tasks. Tests assert it stays empty. */
   readonly errors: unknown[];
   /** Awaits every background task, including tasks that background tasks add. */
@@ -108,6 +113,7 @@ export function testDeps(o: TestDepsOptions = {}): TestDeps {
   const accountsBacking = createAccountMemoryBacking();
   const accounts = o.accounts ?? createMemoryAccountData({ clock, backing: accountsBacking });
   const fixtureAuth = createFixtureAuth({ clock, origin: PUBLIC_ORIGIN });
+  const fixtureBilling = createFixtureBilling({ clock, origin: PUBLIC_ORIGIN, webhookSecret: config.billing?.webhookSecret ?? "", prices: config.billing?.prices ?? {} });
   const fetch = createFetchContext({ config, store, clock, sleep: sleepFor(clock), lookup: o.lookup ?? privateResolver, minIntervalMs: 1, lateStartToleranceMs: FAST_TOLERANCE_MS });
   const pending: Promise<unknown>[] = [];
   const errors: unknown[] = [];
@@ -116,6 +122,7 @@ export function testDeps(o: TestDepsOptions = {}): TestDeps {
     store,
     accounts,
     auth: o.auth ?? fixtureAuth,
+    billing: o.billing ?? fixtureBilling,
     clock,
     fetch,
     txt: o.txt ?? noRealTxt,
@@ -127,6 +134,7 @@ export function testDeps(o: TestDepsOptions = {}): TestDeps {
     backing,
     accountsBacking,
     fixtureAuth,
+    fixtureBilling,
     errors,
     async settle() {
       while (pending.length > 0) await Promise.all(pending.splice(0));
