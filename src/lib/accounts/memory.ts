@@ -104,12 +104,14 @@ export interface AccountMemoryBacking {
   readonly billing: Map<string, BillingRecord>;
   /** Recorded Stripe event ids and their types. */
   readonly stripeEvents: Map<string, string>;
+  /** SHA-256 of the customer ids of deleted accounts. */
+  readonly deletedCustomers: Set<string>;
   /** Keyed by key id. */
   readonly apiKeys: Map<string, ApiKeyRow>;
 }
 
 export function createAccountMemoryBacking(): AccountMemoryBacking {
-  return { notify: new Map(), profiles: new Map(), savedReports: new Map(), claims: new Map(), published: new Map(), billing: new Map(), stripeEvents: new Map(), apiKeys: new Map() };
+  return { notify: new Map(), profiles: new Map(), savedReports: new Map(), claims: new Map(), published: new Map(), billing: new Map(), stripeEvents: new Map(), deletedCustomers: new Set(), apiKeys: new Map() };
 }
 
 let seq = 0;
@@ -133,7 +135,7 @@ const iso = (t: number | string) => new Date(t).toISOString();
  */
 export function createMemoryAccountData(options: MemoryAccountDataOptions = {}): AccountData {
   const clock = options.clock ?? systemClock;
-  const { notify, profiles, savedReports, claims, published, billing, stripeEvents, apiKeys } = options.backing ?? createAccountMemoryBacking();
+  const { notify, profiles, savedReports, claims, published, billing, stripeEvents, deletedCustomers, apiKeys } = options.backing ?? createAccountMemoryBacking();
   const accountClaims = (accountId: string) => [...claims.values()].filter((r) => r.claim.accountId === accountId).sort((x, y) => x.seq - y.seq);
   const pendingCount = (accountId: string) => accountClaims(accountId).filter((r) => r.claim.status === "pending").length;
   const copy = (claim: Claim): Claim => ({ ...claim });
@@ -178,7 +180,9 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
     const row = byCustomer(customerId);
     if (!row) return { outcome: "unknown" };
     if (row.stateAt !== null && Date.parse(row.stateAt) > Date.parse(observedAt)) return { outcome: "stale", billing: { ...row } };
-    const next: BillingRecord = { ...row, ...state, stateAt: observedAt };
+    const stillUnpaid = state.status === "past_due" && row.status === "past_due" && row.subscriptionId === state.subscriptionId;
+    const unpaid = [stillUnpaid ? row.unpaidSince : null, state.unpaidSince].filter((t) => t !== null).sort((x, y) => Date.parse(x) - Date.parse(y));
+    const next: BillingRecord = { ...row, ...state, unpaidSince: state.status === "past_due" ? (unpaid[0] ?? null) : null, stateAt: observedAt };
     billing.set(row.accountId, next);
     return { outcome: "applied", billing: { ...next } };
   };
@@ -279,6 +283,8 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       // One synchronous step after the yield, so it is atomic like the database function.
       return op(() => {
         profiles.delete(accountId);
+        const customer = billing.get(accountId)?.customerId;
+        if (customer) deletedCustomers.add(sha256Hex(customer));
         billing.delete(accountId);
         for (const [id, row] of apiKeys) if (row.accountId === accountId) apiKeys.delete(id);
         for (const [id, row] of savedReports) if (row.accountId === accountId) savedReports.delete(id);
@@ -507,11 +513,13 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       const accountId = requireAccountId(rawId);
       const customerId = requireCustomerId(rawCustomer);
       return op((): LinkCustomerResult => {
+        if (!profiles.has(accountId)) return { outcome: "no_account" };
         const existing = billing.get(accountId);
         if (existing) return { outcome: "existing", billing: { ...existing } };
         if (byCustomer(customerId)) return { outcome: "taken" };
-        const row: BillingRecord = { accountId, customerId, plan: "free", status: "none", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, stateAt: null };
+        const row: BillingRecord = { accountId, customerId, plan: "free", status: "none", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, unpaidSince: null, stateAt: null };
         billing.set(accountId, row);
+        deletedCustomers.delete(sha256Hex(customerId));
         return { outcome: "linked", billing: { ...row } };
       });
     },
@@ -529,9 +537,14 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       return op(() => {
         if (!byCustomer(customerId)) return { outcome: "unknown" };
         if (stripeEvents.has(event.id)) return { outcome: "duplicate" };
-        stripeEvents.set(event.id, event.type);
-        return applyState(customerId, state);
+        const applied = applyState(customerId, state);
+        if (applied.outcome === "applied") stripeEvents.set(event.id, event.type);
+        return applied;
       });
+    },
+
+    async isDeletedCustomer(customerId) {
+      return op(() => deletedCustomers.has(sha256Hex(customerId)));
     },
 
     async createApiKey(rawId, input) {

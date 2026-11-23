@@ -56,7 +56,7 @@ begin
 end;
 $$;
 
--- The eight tables of the parent plan, one column each for an UPDATE probe, and whether an account owns the row.
+-- The eight tables of the parent plan and the deletion marks, one column each for an UPDATE probe, and whether an account owns the row.
 create temp table account_tables (name text primary key, col text not null, owned boolean not null);
 insert into account_tables values
   ('notify_signups', 'created_at', false),
@@ -66,6 +66,7 @@ insert into account_tables values
   ('published_sites', 'published_at', true),
   ('billing_customers', 'updated_at', true),
   ('stripe_events', 'received_at', false),
+  ('deleted_customers', 'deleted_at', false),
   ('api_keys', 'created_at', true);
 
 do $$
@@ -585,9 +586,10 @@ declare
 begin
   foreach v_fn in array array[
     $q$select public.link_billing_customer('00000000-0000-4000-8000-0000000000f5', 'cus_probe')$q$,
-    $q$select public.apply_billing_state('cus_probe', 'pro', 'active', null, false, null, now())$q$,
-    $q$select public.apply_billing_event('evt_probe', 'customer.subscription.updated', 'cus_probe', 'pro', 'active', null, false, null, now())$q$,
+    $q$select public.apply_billing_state('cus_probe', 'pro', 'active', null, false, null, null, now())$q$,
+    $q$select public.apply_billing_event('evt_probe', 'customer.subscription.updated', 'cus_probe', 'pro', 'active', null, false, null, null, now())$q$,
     $q$select public.create_api_key('00000000-0000-4000-8000-0000000000f5', repeat('7', 64), 'beef', 5)$q$,
+    $q$select public.customer_hash('cus_probe')$q$,
     $q$select public.billing_json(null::public.billing_customers)$q$
   ] loop
     perform pg_temp.expect_denied('anon', v_fn);
@@ -595,6 +597,11 @@ begin
   end loop;
 
   set local role service_role;
+  -- Without a profile (its data was deleted) nothing is linked.
+  if public.link_billing_customer('00000000-0000-4000-8000-0000000000f5', 'cus_probe') ->> 'outcome' <> 'no_account' then
+    raise exception 'accounts_access: link_billing_customer linked an account without a profile';
+  end if;
+  insert into public.account_profiles (account_id) values ('00000000-0000-4000-8000-0000000000f5'), ('00000000-0000-4000-8000-0000000000f6');
   v := public.link_billing_customer('00000000-0000-4000-8000-0000000000f5', 'cus_probe');
   if v ->> 'outcome' <> 'linked' or v -> 'billing' ->> 'plan' <> 'free' or v -> 'billing' ->> 'status' <> 'none' or v -> 'billing' ->> 'state_at' is not null then
     raise exception 'accounts_access: link_billing_customer did not link a free customer: %', v;
@@ -610,33 +617,50 @@ begin
     raise exception 'accounts_access: link_billing_customer answered wrongly for a deleted account';
   end if;
   -- The newest read wins; an equal time applies. Each step is its own statement, so the next one sees it.
-  if public.apply_billing_state('cus_probe', 'pro', 'active', '2027-03-01T00:00:00Z', false, 'sub_1', '2027-02-01T10:00:00Z') ->> 'outcome' <> 'applied' then
+  if public.apply_billing_state('cus_probe', 'pro', 'active', '2027-03-01T00:00:00Z', false, 'sub_1', null, '2027-02-01T10:00:00Z') ->> 'outcome' <> 'applied' then
     raise exception 'accounts_access: apply_billing_state did not apply';
   end if;
-  if public.apply_billing_state('cus_probe', 'free', 'canceled', null, false, null, '2027-02-01T09:59:59.999Z') ->> 'outcome' <> 'stale' then
+  if public.apply_billing_state('cus_probe', 'free', 'canceled', null, false, null, null, '2027-02-01T09:59:59.999Z') ->> 'outcome' <> 'stale' then
     raise exception 'accounts_access: an older read was not stale';
   end if;
   if (select plan from public.billing_customers where stripe_customer_id = 'cus_probe') is distinct from 'pro' then
     raise exception 'accounts_access: an older read changed the plan';
   end if;
-  if public.apply_billing_state('cus_probe', 'pro', 'past_due', '2027-03-01T00:00:00Z', true, 'sub_1', '2027-02-01T10:00:00Z') ->> 'outcome' <> 'applied' then
+  if public.apply_billing_state('cus_probe', 'pro', 'past_due', '2027-03-01T00:00:00Z', true, 'sub_1', null, '2027-02-01T10:00:00Z') ->> 'outcome' <> 'applied' then
     raise exception 'accounts_access: a read with an equal time was refused';
   end if;
   -- An event applies once; an unknown customer's event is not recorded and creates no row.
-  if public.apply_billing_event('evt_probe', 'customer.subscription.updated', 'cus_probe', 'agency', 'active', null, false, 'sub_1', '2027-02-02T10:00:00Z') ->> 'outcome' <> 'applied' then
+  if public.apply_billing_event('evt_probe', 'customer.subscription.updated', 'cus_probe', 'agency', 'active', null, false, 'sub_1', null, '2027-02-02T10:00:00Z') ->> 'outcome' <> 'applied' then
     raise exception 'accounts_access: apply_billing_event did not apply';
   end if;
-  if public.apply_billing_event('evt_probe', 'customer.subscription.updated', 'cus_probe', 'free', 'canceled', null, false, null, '2027-02-03T10:00:00Z') ->> 'outcome' <> 'duplicate' then
+  if public.apply_billing_event('evt_probe', 'customer.subscription.updated', 'cus_probe', 'free', 'canceled', null, false, null, null, '2027-02-03T10:00:00Z') ->> 'outcome' <> 'duplicate' then
     raise exception 'accounts_access: a replayed event was not a duplicate';
   end if;
   if (select plan from public.billing_customers where stripe_customer_id = 'cus_probe') is distinct from 'agency' then
     raise exception 'accounts_access: a replayed event changed the plan';
   end if;
-  if public.apply_billing_event('evt_unknown', 'customer.subscription.updated', 'cus_nobody', 'pro', 'active', null, false, null, now()) ->> 'outcome' <> 'unknown' then
+  if public.apply_billing_event('evt_unknown', 'customer.subscription.updated', 'cus_nobody', 'pro', 'active', null, false, null, null, now()) ->> 'outcome' <> 'unknown' then
     raise exception 'accounts_access: an unknown customer''s event was not unknown';
   end if;
   if exists (select 1 from public.stripe_events where event_id = 'evt_unknown') or exists (select 1 from public.billing_customers where stripe_customer_id = 'cus_nobody') then
     raise exception 'accounts_access: an unknown customer''s event was recorded or created a row';
+  end if;
+  -- A stale event is not recorded: reading again can apply it.
+  if public.apply_billing_event('evt_stale', 'customer.subscription.updated', 'cus_probe', 'free', 'canceled', null, false, null, null, '2027-02-01T10:00:00Z') ->> 'outcome' <> 'stale' then
+    raise exception 'accounts_access: an older event was not stale';
+  end if;
+  if exists (select 1 from public.stripe_events where event_id = 'evt_stale') then
+    raise exception 'accounts_access: a stale event was recorded';
+  end if;
+  -- The first start of an unpaid time is kept while the same subscription stays past due.
+  perform public.apply_billing_state('cus_probe', 'pro', 'past_due', null, false, 'sub_1', '2027-02-03T00:00:00Z', '2027-02-03T10:00:00Z');
+  v := public.apply_billing_state('cus_probe', 'pro', 'past_due', null, false, 'sub_1', '2027-03-03T00:00:00Z', '2027-02-03T11:00:00Z');
+  if (v -> 'billing' ->> 'unpaid_since')::timestamptz <> '2027-02-03T00:00:00Z' then
+    raise exception 'accounts_access: the start of the unpaid time moved: %', v;
+  end if;
+  v := public.apply_billing_state('cus_probe', 'pro', 'active', null, false, 'sub_1', '2027-03-03T00:00:00Z', '2027-02-03T12:00:00Z');
+  if v -> 'billing' ->> 'unpaid_since' is not null then
+    raise exception 'accounts_access: a paid subscription kept its unpaid time: %', v;
   end if;
   -- At most p_max active keys; a revoked key frees its place.
   if public.create_api_key('00000000-0000-4000-8000-0000000000f5', repeat('7', 64), 'beef', 1) ->> 'outcome' <> 'created' then
@@ -649,29 +673,45 @@ begin
   if public.create_api_key('00000000-0000-4000-8000-0000000000f5', repeat('8', 64), 'beef', 1) ->> 'outcome' <> 'created' then
     raise exception 'accounts_access: a revoked key still counts';
   end if;
+  -- The deletion marks the account's customer, in the hash the application computes, and only that one; a retry keeps it.
+  perform public.link_billing_customer('00000000-0000-4000-8000-0000000000f6', 'cus_marked');
+  perform public.delete_account_data('00000000-0000-4000-8000-0000000000f6');
+  perform public.delete_account_data('00000000-0000-4000-8000-0000000000f6');
+  if (select count(*) from public.deleted_customers where customer_hash = public.customer_hash('cus_marked')) <> 1
+     or exists (select 1 from public.deleted_customers where customer_hash = public.customer_hash('cus_probe'))
+     or public.customer_hash('cus_marked') <> '7c408137c538f4a8e30dea7ad39c656bfa7dd9d6d458cb51b4948d44e3ecbdae' then
+    raise exception 'accounts_access: delete_account_data did not mark exactly its customer';
+  end if;
+  insert into public.account_profiles (account_id) values ('00000000-0000-4000-8000-0000000000f6');
+  perform public.link_billing_customer('00000000-0000-4000-8000-0000000000f6', 'cus_marked');
+  if exists (select 1 from public.deleted_customers where customer_hash = public.customer_hash('cus_marked')) then
+    raise exception 'accounts_access: linking a customer kept its deletion mark';
+  end if;
   reset role;
 
   -- A failure while applying records no event (one transaction), so the redelivery applies it.
-  perform pg_temp.expect_error('service_role', $q$select public.apply_billing_event('evt_crash', 'customer.subscription.updated', 'cus_probe', 'gold', 'active', null, false, null, '2027-02-04T10:00:00Z')$q$, '23514');
+  perform pg_temp.expect_error('service_role', $q$select public.apply_billing_event('evt_crash', 'customer.subscription.updated', 'cus_probe', 'gold', 'active', null, false, null, null, '2027-02-04T10:00:00Z')$q$, '23514');
   if exists (select 1 from public.stripe_events where event_id = 'evt_crash') then
     raise exception 'accounts_access: a failed event was recorded';
   end if;
-  if public.apply_billing_event('evt_crash', 'customer.subscription.updated', 'cus_probe', 'pro', 'active', null, false, null, '2027-02-04T10:00:00Z') ->> 'outcome' <> 'applied' then
+  if public.apply_billing_event('evt_crash', 'customer.subscription.updated', 'cus_probe', 'pro', 'active', null, false, null, null, '2027-02-04T10:00:00Z') ->> 'outcome' <> 'applied' then
     raise exception 'accounts_access: the redelivery after a failure was not applied';
   end if;
-  perform pg_temp.expect_error('service_role', $q$select public.apply_billing_state('cus_probe', 'pro', 'Active!', null, false, null, '2030-01-01T00:00:00Z')$q$, '23514');
-  perform pg_temp.expect_error('service_role', $q$select public.apply_billing_state('cus_probe', 'pro', 'active', null, false, 'nope', '2030-01-01T00:00:00Z')$q$, '23514');
+  perform pg_temp.expect_error('service_role', $q$select public.apply_billing_state('cus_probe', 'pro', 'Active!', null, false, null, null, '2030-01-01T00:00:00Z')$q$, '23514');
+  perform pg_temp.expect_error('service_role', $q$select public.apply_billing_state('cus_probe', 'pro', 'active', null, false, 'nope', null, '2030-01-01T00:00:00Z')$q$, '23514');
+  perform pg_temp.expect_error('service_role', $q$insert into public.deleted_customers (customer_hash) values ('cus_raw')$q$, '23514');
+  delete from public.billing_customers where account_id = '00000000-0000-4000-8000-0000000000f6';
   perform pg_temp.expect_error('service_role', $q$select public.link_billing_customer('00000000-0000-4000-8000-0000000000f6', 'acct_1')$q$, '23514');
   perform pg_temp.expect_error('service_role', $q$select public.create_api_key('00000000-0000-4000-8000-0000000000f6', repeat('9', 64), 'key!', 5)$q$, '23514');
   perform pg_temp.expect_error('service_role', $q$select public.link_billing_customer(null, 'cus_x')$q$, '22004');
-  perform pg_temp.expect_error('service_role', $q$select public.apply_billing_state('cus_probe', 'pro', 'active', null, false, null, null)$q$, '22004');
-  perform pg_temp.expect_error('service_role', $q$select public.apply_billing_event(null, 't', 'cus_probe', 'pro', 'active', null, false, null, now())$q$, '22004');
+  perform pg_temp.expect_error('service_role', $q$select public.apply_billing_state('cus_probe', 'pro', 'active', null, false, null, null, null)$q$, '22004');
+  perform pg_temp.expect_error('service_role', $q$select public.apply_billing_event(null, 't', 'cus_probe', 'pro', 'active', null, false, null, null, now())$q$, '22004');
   perform pg_temp.expect_error('service_role', $q$select public.create_api_key('00000000-0000-4000-8000-0000000000f6', repeat('9', 64), 'beef', null)$q$, '22004');
 
   select pg_catalog.string_agg(p.proname, ', ') into v_bad
   from pg_catalog.pg_proc p
   where p.pronamespace = 'public'::regnamespace
-    and p.proname in ('billing_json', 'link_billing_customer', 'apply_billing_state', 'apply_billing_event', 'create_api_key')
+    and p.proname in ('billing_json', 'customer_hash', 'link_billing_customer', 'apply_billing_state', 'apply_billing_event', 'create_api_key')
     and (p.prosecdef
       or not ('search_path=""' = any (coalesce(p.proconfig, '{}')))
       or pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
@@ -679,7 +719,7 @@ begin
       or exists (select 1 from pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) x where x.grantee = 0)
       or not pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE'));
   if v_bad is not null or (select count(*) from pg_catalog.pg_proc where pronamespace = 'public'::regnamespace
-      and proname in ('billing_json', 'link_billing_customer', 'apply_billing_state', 'apply_billing_event', 'create_api_key')) <> 5 then
+      and proname in ('billing_json', 'customer_hash', 'link_billing_customer', 'apply_billing_state', 'apply_billing_event', 'create_api_key')) <> 6 then
     raise exception 'accounts_access: billing functions missing, security definer, without search_path = '''', or with wrong EXECUTE: %', coalesce(v_bad, 'missing');
   end if;
 end;

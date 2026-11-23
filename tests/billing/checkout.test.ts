@@ -8,6 +8,8 @@ afterEach(() => vi.restoreAllMocks());
 
 async function setup(offsetMs = 0, o: TestDepsOptions = {}) {
   const r = billingDeps(offsetMs, o);
+  // Signing in created the profiles.
+  for (const id of [OWNER, OTHER_ACCOUNT.userId]) await r.d.accounts.ensureProfile(id);
   return { ...r, cookie: await accountCookie(r.d) };
 }
 const checkout = async (d: TestDeps, cookie: string, body: unknown = { plan: "pro" }, o = {}) => {
@@ -71,6 +73,39 @@ describe("POST /api/billing/checkout", () => {
     const other = await accountCookie(d, OTHER_ACCOUNT);
     await checkout(d, other);
     expect((await d.accounts.getBilling(OTHER_ACCOUNT.userId))?.customerId).not.toBe(customer);
+  });
+
+  // P5-R9. Fails if requests of one account (two tabs, two plans, two instances) open checkouts at the same time, so two can be paid.
+  it("requests that race, also for two plans, take turns and leave one payable checkout", async () => {
+    const { d, cookie } = await setup();
+    let open = 0;
+    let most = 0;
+    const counted: TestDeps = { ...d, billing: { ...d.billing, createCheckout: async (input) => { most = Math.max(most, ++open); await new Promise((r) => setTimeout(r, 5)); try { return await d.billing.createCheckout(input); } finally { open--; } } }, sleep: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 5))) };
+    const results = await Promise.all([checkout(counted, cookie), checkout(counted, cookie, { plan: "agency" }), checkout(counted, cookie), checkout(counted, cookie, { plan: "agency" })]);
+    expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200]);
+    expect(most).toBe(1);
+    expect(new Set(results.map((r) => sessionOf(r.body.url))).size).toBeGreaterThanOrEqual(2);
+    expect([...new Set(results.map((r) => sessionOf(r.body.url)))].filter((id) => d.fixtureBilling.session(id)?.status === "open")).toHaveLength(1);
+  });
+
+  // Fails if a request that cannot take its turn opens a checkout anyway, or a failed one blocks the next.
+  it("answers busy while another request holds the account's turn, and gives the turn back after a failure", async () => {
+    const { d, cookie } = await setup();
+    const token = await d.store.acquireLease(`billing-checkout:${OWNER}`, 600);
+    expect(await checkout(d, cookie)).toEqual({ status: 409, body: { error: "busy", message: BILLING_TEXT.checkoutBusy } });
+    expect(d.fixtureBilling.calls).toEqual([]);
+    await d.store.releaseLease(`billing-checkout:${OWNER}`, token as string);
+    captureConsole([]);
+    d.fixtureBilling.fail(true);
+    expect((await checkout(d, cookie)).status).toBe(503);
+    d.fixtureBilling.fail(false);
+    expect((await checkout(d, cookie)).status).toBe(200);
+  });
+
+  // P5-R5. Fails if the checkout sells a price that is only kept for its subscribers.
+  it("sells the first price of the list", async () => {
+    const { d, cookie } = await setup(0, { env: { STRIPE_PRICE_PRO: "price_unit_new,price_unit_pro" } });
+    expect(d.fixtureBilling.session(sessionOf((await checkout(d, cookie)).body.url))).toMatchObject({ priceId: "price_unit_new" });
   });
 
   // Fails if a customer whose subscription is open, also one the webhook has not delivered yet, can buy a second one.

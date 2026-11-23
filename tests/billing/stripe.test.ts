@@ -3,7 +3,7 @@ import Stripe from "stripe";
 import { BillingUnavailable } from "@/lib/billing/gateway";
 import { createStripeGateway, STRIPE_API_VERSION } from "@/lib/billing/stripe";
 import { captureConsole } from "../helpers/server-deps";
-import { createFakeStripe } from "./fake-stripe";
+import { createFakeStripe, PERIOD_END_S, PERIOD_START_S } from "./fake-stripe";
 import { NOW, runGatewayContract } from "./gateway-contract";
 
 const ORIGIN = "https://retrofit.test";
@@ -69,7 +69,13 @@ describe("Stripe adapter", () => {
     const { stripe, gateway } = harness();
     const customerId = await gateway.createCustomer({ accountId: ACCOUNT, email: "a@example.test" });
     const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
-    stripe.fail((c) => (c.path.startsWith("/v1/checkout/sessions/") || c.method === "POST" ? reply({ id: "x", object: "session", status: "open", url: "https://evil.example/" }) : null));
+    const evil = { id: "x", object: "checkout.session", status: "open", url: "https://evil.example/", created: 1, metadata: { retrofit_price: "price_pro" } };
+    let created = false;
+    stripe.fail((c) => {
+      if (c.method === "POST") created = true;
+      if (c.path === "/v1/checkout/sessions" && c.method === "GET") return reply({ object: "list", data: created ? [evil] : [], has_more: false, url: "/v1/checkout/sessions" });
+      return c.method === "POST" || c.path.startsWith("/v1/checkout/sessions/") ? reply(evil) : null;
+    });
     await expect(gateway.createPortal({ customerId, returnUrl: ORIGIN })).rejects.toMatchObject({ code: "bad_url" });
     await expect(gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId: "price_pro", attempt: "x", successUrl: ORIGIN, cancelUrl: ORIGIN })).rejects.toMatchObject({ code: "bad_url" });
   });
@@ -81,12 +87,13 @@ describe("Stripe adapter", () => {
     const customerId = await gateway.createCustomer({ accountId: ACCOUNT, email: "a@example.test" });
     stripe.subscribe(customerId, "price_pro", "past_due");
     stripe.subscribe(customerId, "price_agency", "incomplete");
-    await gateway.cancelSubscriptions(customerId);
+    expect(await gateway.cancelSubscriptions(customerId)).toBe(2);
     const deletes = stripe.calls.filter((c) => c.method === "DELETE");
     expect(deletes).toHaveLength(2);
     for (const d of deletes) expect([...d.params.values()]).not.toContain("true");
+    expect(await gateway.cancelSubscriptions(customerId)).toBe(0);
     stripe.deleteCustomer(customerId);
-    await gateway.cancelSubscriptions(customerId);
+    expect(await gateway.cancelSubscriptions(customerId)).toBe(0);
     expect(await gateway.getSubscriptions(customerId)).toEqual([]);
     expect(await gateway.customerOwner(customerId)).toBeNull();
     for (const run of [() => gateway.cancelSubscriptions("cus_elsewhere"), () => gateway.getSubscriptions("cus_elsewhere")]) await expect(run()).rejects.toBeInstanceOf(BillingUnavailable);
@@ -111,6 +118,40 @@ describe("Stripe adapter", () => {
     });
     await gateway.cancelSubscriptions(customerId);
     expect((await gateway.getSubscriptions(customerId)).map((s) => s.status)).toEqual(["canceled"]);
+  });
+
+  // P5-R9. Fails if two requests that race without a lease (an expired one, two instances) leave two payable checkouts.
+  it.each([["price_pro", "price_pro"], ["price_pro", "price_agency"]])("two racing checkouts (%s and %s) leave one payable", async (first, second) => {
+    const { stripe, gateway } = harness();
+    const customerId = await gateway.createCustomer({ accountId: ACCOUNT, email: "a@example.test" });
+    const open = (priceId: string, attempt: string) => gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId, attempt, successUrl: ORIGIN, cancelUrl: ORIGIN });
+    const results = await Promise.allSettled([open(first, "a"), open(second, "b")]);
+    const payable = [...stripe.sessions.values()].filter((s) => s.status === "open");
+    expect(payable).toHaveLength(1);
+    expect(results.some((r) => r.status === "fulfilled" && r.value === payable[0]?.url)).toBe(true);
+    // Nobody is sent to the checkout of a plan they did not choose.
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") expect([...stripe.sessions.values()].find((x) => x.url === r.value)?.params.get("line_items[0][price]")).toBe([first, second][i]);
+    });
+    // Whoever is refused is told to try again; whoever gets an URL for the same price gets the payable one.
+    for (const r of results) if (r.status === "rejected") expect(r.reason).toMatchObject({ code: "superseded" });
+    if (first === second) expect(results.map((r) => r.status === "fulfilled" && r.value)).toEqual([payable[0]?.url, payable[0]?.url]);
+  });
+
+  // P5-R2, P5-R7. Fails if the period's start or end is lost, or a cancellation set for another time is taken for the period's end.
+  it("reads the period, and a cancellation only when it ends this period", async () => {
+    const { stripe, gateway } = harness();
+    const customerId = await gateway.createCustomer({ accountId: ACCOUNT, email: "a@example.test" });
+    const id = stripe.subscribe(customerId, "price_pro");
+    const iso = (s: number) => new Date(s * 1000).toISOString();
+    const read = async () => (await gateway.getSubscriptions(customerId))[0];
+    expect(await read()).toMatchObject({ currentPeriodStart: iso(PERIOD_START_S), currentPeriodEnd: iso(PERIOD_END_S), cancelAtPeriodEnd: false });
+    stripe.setSubscription(id, { cancelAt: PERIOD_END_S + 86_400 });
+    expect(await read()).toMatchObject({ currentPeriodEnd: iso(PERIOD_END_S), cancelAtPeriodEnd: false });
+    stripe.setSubscription(id, { cancelAt: PERIOD_END_S - 86_400 });
+    expect(await read()).toMatchObject({ currentPeriodEnd: iso(PERIOD_END_S - 86_400), cancelAtPeriodEnd: true });
+    stripe.setSubscription(id, { cancelAt: undefined, cancelAtPeriodEnd: true });
+    expect(await read()).toMatchObject({ currentPeriodEnd: iso(PERIOD_END_S), cancelAtPeriodEnd: true });
   });
 
   // Fails if an inactive price, or one without a fixed amount, shows an amount.

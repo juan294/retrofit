@@ -24,8 +24,9 @@ export const PLAN_TEXT = {
 export const BILLING_TEXT = {
   heading: "Your plan",
   renews: (date: string) => `Renews on ${date}.`,
+  renewalPending: (date: string) => `The renewal on ${date} is not confirmed yet.`,
   ends: (date: string) => `Cancelled. It ends on ${date}.`,
-  pastDue: (date: string) => `The last payment failed. Choose Manage billing to update your card. Your plan stays until ${date}.`,
+  pastDue: (date: string) => `The last payment failed. Choose Manage billing to update your card. Your plan stays until ${date} while Stripe tries again.`,
   ended: "Your plan has ended.",
   notPaid: "Your plan is not active because a payment is missing. Choose Manage billing.",
   /** The parent plan's stuck-state text: a purchase that Stripe does not show yet. */
@@ -41,6 +42,7 @@ export const BILLING_TEXT = {
   notStarted: "Paid plans have not started yet. Every feature is free until they do.",
   noPrice: "This plan has no price yet. Join the list to hear when it does.",
   subscribed: "Your account already has a plan. Change or cancel it with Manage billing on your account page.",
+  checkoutBusy: "Another checkout of your account is opening. Try again in a moment.",
   noCustomer: "Your account has no plan to manage yet.",
   invalid: "Choose one of the plans on the pricing page.",
   limit: (retryAt: Date) => `You can open checkout or billing ${BILLING_ACTIONS_PER_HOUR} times an hour. Try again at ${hhmmUtc(retryAt)} UTC.`,

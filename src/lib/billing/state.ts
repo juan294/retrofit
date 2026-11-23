@@ -13,7 +13,9 @@ export interface StripeSubscription {
   readonly status: string;
   /** The price ids of its items. */
   readonly priceIds: readonly string[];
-  /** ISO 8601: the end of the paid period, or null. */
+  /** ISO 8601: the start of the current period (of the unpaid one while past due), or null. */
+  readonly currentPeriodStart: string | null;
+  /** ISO 8601: the end of the current period, or null. */
   readonly currentPeriodEnd: string | null;
   readonly cancelAtPeriodEnd: boolean;
   /** Seconds since the epoch. */
@@ -29,20 +31,29 @@ export interface BillingState {
   readonly currentPeriodEnd: string | null;
   readonly cancelAtPeriodEnd: boolean;
   readonly subscriptionId: string | null;
+  /** ISO 8601: while past due, the start of the first unpaid period (the end of the last paid one); else null. Stored once per unpaid time (AccountData). */
+  readonly unpaidSince: string | null;
 }
 
-export type StatusRule = "entitled" | "until_period_end" | "none";
+export type StatusRule = "period_end_plus_grace" | "unpaid_plus_grace" | "none";
+
+/** After the paid period an active plan waits this long for its renewal to be read (a late webhook). Not when it was cancelled. */
+export const RENEWAL_GRACE_MS = 3 * 24 * 3600_000;
+/** A plan whose renewal payment failed keeps its access this long after the end of the last paid period, while Stripe retries. */
+export const UNPAID_GRACE_MS = 7 * 24 * 3600_000;
 
 /**
- * Access by status. `past_due`: Stripe is still retrying the payment, so access continues until the
- * stored period ends. `unpaid`: the retries failed. `incomplete`, `incomplete_expired`: the first
- * payment never succeeded. `paused`: a trial ended without a payment method. `canceled`: ended now
- * (a cancellation at the period end keeps the status `active` until then). Any other status: none.
+ * Access by status, always up to an instant, so a lost webhook can never leave a plan open for ever.
+ * `active`, `trialing`: until the period ends, and RENEWAL_GRACE_MS more unless it was cancelled.
+ * `past_due`: Stripe is retrying the payment; UNPAID_GRACE_MS from the start of the first unpaid period.
+ * `unpaid`: the retries failed. `incomplete`, `incomplete_expired`: the first payment never succeeded.
+ * `paused`: a trial ended without a payment method. `canceled`: ended now (a cancellation at the period
+ * end keeps the status `active` until then). Any other status: none.
  */
 export const STATUS_RULES: Readonly<Record<string, StatusRule>> = {
-  active: "entitled",
-  trialing: "entitled",
-  past_due: "until_period_end",
+  active: "period_end_plus_grace",
+  trialing: "period_end_plus_grace",
+  past_due: "unpaid_plus_grace",
   unpaid: "none",
   incomplete: "none",
   incomplete_expired: "none",
@@ -52,34 +63,52 @@ export const STATUS_RULES: Readonly<Record<string, StatusRule>> = {
 
 const ruleOf = (status: string): StatusRule => (Object.hasOwn(STATUS_RULES, status) ? STATUS_RULES[status]! : "none");
 
-function givesAccess(s: Pick<BillingState, "status" | "currentPeriodEnd">, now: number): boolean {
+type Access = Pick<BillingState, "status" | "currentPeriodEnd" | "cancelAtPeriodEnd" | "unpaidSince">;
+
+/** When the state's access ends (ms since the epoch), or null when its status gives none. */
+export function accessUntil(s: Access): number | null {
   const rule = ruleOf(s.status);
-  if (rule === "until_period_end") return s.currentPeriodEnd !== null && now < Date.parse(s.currentPeriodEnd);
-  return rule === "entitled";
+  if (rule === "period_end_plus_grace") return s.currentPeriodEnd === null ? null : Date.parse(s.currentPeriodEnd) + (s.cancelAtPeriodEnd ? 0 : RENEWAL_GRACE_MS);
+  if (rule === "unpaid_plus_grace") return s.unpaidSince === null ? null : Date.parse(s.unpaidSince) + UNPAID_GRACE_MS;
+  return null;
 }
 
-/** The plan the stored state gives now: its plan while the status gives access, else free. */
-export function entitledPlan(state: Pick<BillingState, "plan" | "status" | "currentPeriodEnd"> | null, now: number): PlanId {
+function givesAccess(s: Access, now: number): boolean {
+  const until = accessUntil(s);
+  return until !== null && now < until;
+}
+
+/** True when the status would give access but its time ran out in the stored state: Stripe may know of a renewal, so it is worth reading again. */
+export function timeBoundPassed(s: Access, now: number): boolean {
+  return ruleOf(s.status) !== "none" && !givesAccess(s, now);
+}
+
+/** The plan the stored state gives now: its plan while the state gives access, else free. */
+export function entitledPlan(state: (Access & Pick<BillingState, "plan">) | null, now: number): PlanId {
   return state && givesAccess(state, now) ? state.plan : "free";
 }
 
 const RANK: Readonly<Record<PlanId, number>> = { free: 0, pro: 1, agency: 2 };
 
-function planOfPrices(priceIds: readonly string[], prices: Readonly<Partial<Record<PaidPlanId, string>>>): PlanId {
-  if (prices.agency && priceIds.includes(prices.agency)) return "agency";
-  return prices.pro && priceIds.includes(prices.pro) ? "pro" : "free";
+/** The price ids that mean each paid plan: the first is for sale, the others are kept for their subscribers. */
+export type PlanPrices = Readonly<Partial<Record<PaidPlanId, readonly string[]>>>;
+
+function planOfPrices(priceIds: readonly string[], prices: PlanPrices): PlanId {
+  const has = (plan: PaidPlanId) => prices[plan]?.some((id) => priceIds.includes(id)) ?? false;
+  return has("agency") ? "agency" : has("pro") ? "pro" : "free";
 }
 
-const NONE: BillingState = { plan: "free", status: "none", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null };
+const NONE: BillingState = { plan: "free", status: "none", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, unpaidSince: null };
 
 /** The state to store for a customer: the subscription that gives the highest plan now, else the newest one, else none. */
-export function billingState(subscriptions: readonly StripeSubscription[], prices: Readonly<Partial<Record<PaidPlanId, string>>>, now: number): BillingState {
+export function billingState(subscriptions: readonly StripeSubscription[], prices: PlanPrices, now: number): BillingState {
   const best = subscriptions
+    .map((s) => ({ ...s, unpaidSince: s.status === "past_due" ? s.currentPeriodStart : null }))
     .map((s) => ({ s, plan: planOfPrices(s.priceIds, prices), access: givesAccess(s, now) }))
     .sort((x, y) => (y.access ? RANK[y.plan] : 0) - (x.access ? RANK[x.plan] : 0) || Number(y.access) - Number(x.access) || y.s.created - x.s.created)[0];
   if (!best) return NONE;
   const { s, plan } = best;
-  return { plan, status: s.status, currentPeriodEnd: s.currentPeriodEnd, cancelAtPeriodEnd: s.cancelAtPeriodEnd, subscriptionId: s.id };
+  return { plan, status: s.status, currentPeriodEnd: s.currentPeriodEnd, cancelAtPeriodEnd: s.cancelAtPeriodEnd, subscriptionId: s.id, unpaidSince: s.unpaidSince };
 }
 
 /** Statuses of a subscription that can still charge: a second checkout would charge twice, so it is sent to the portal. */

@@ -10,7 +10,8 @@ export interface BillingGateway {
   createCustomer(input: { readonly accountId: string; readonly email: string }): Promise<string>;
   /**
    * The URL of the customer's one open subscription checkout for the price: an open one for the same
-   * price is reused, one for another price is closed first, so a customer never has two payable checkouts.
+   * price is reused, one for another price is closed first. After creating one it looks again, so that also
+   * callers that race leave one payable checkout.
    */
   createCheckout(input: CheckoutInput): Promise<string>;
   /** The URL of a customer portal session (change the card, switch the plan, cancel). */
@@ -19,8 +20,8 @@ export interface BillingGateway {
   getSubscriptions(customerId: string, options?: { readonly timeoutMs?: number }): Promise<readonly StripeSubscription[]>;
   /** The account and Retrofit origin the customer was created for, or null (another product's, or deleted). */
   customerOwner(customerId: string): Promise<CustomerOwner | null>;
-  /** Closes the customer's open checkouts and cancels every subscription now, without a new invoice. Safe to repeat. */
-  cancelSubscriptions(customerId: string): Promise<void>;
+  /** Closes the customer's open checkouts and cancels every subscription now, without a new invoice. Returns how many it cancelled. Safe to repeat. */
+  cancelSubscriptions(customerId: string): Promise<number>;
   /** The fixed amount of an active price, or null (unknown, inactive, or no fixed amount). */
   getPrice(priceId: string): Promise<PriceAmount | null>;
   /** The event of a signed webhook body at `now` (ms). Throws WebhookRefused for anything else. */

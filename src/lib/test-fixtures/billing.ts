@@ -1,6 +1,6 @@
 import { BillingUnavailable, type BillingGateway, type CheckoutInput } from "@/lib/billing/gateway";
 import type { PaidPlanId } from "@/lib/billing/plans";
-import type { StripeSubscription } from "@/lib/billing/state";
+import type { PlanPrices, StripeSubscription } from "@/lib/billing/state";
 import { verifyStripeEvent } from "@/lib/billing/stripe";
 import { FIXTURE_BILLING_PATH } from "@/lib/billing/urls";
 import type { Clock } from "@/lib/store/types";
@@ -38,7 +38,7 @@ export interface FixtureBilling extends BillingGateway {
   before(operation: keyof BillingGateway, hook: (() => void | Promise<void>) | null): void;
 }
 
-export function createFixtureBilling(options: { clock: Clock; origin: string; webhookSecret: string; prices: Readonly<Partial<Record<PaidPlanId, string>>> }): FixtureBilling {
+export function createFixtureBilling(options: { clock: Clock; origin: string; webhookSecret: string; prices: PlanPrices }): FixtureBilling {
   const customers = new Map<string, { readonly accountId: string; readonly email: string }>();
   const sessions = new Map<string, FixtureSession>();
   const subscriptions = new Map<string, StripeSubscription & { readonly customerId: string }>();
@@ -91,11 +91,17 @@ export function createFixtureBilling(options: { clock: Clock; origin: string; we
     async cancelSubscriptions(customerId) {
       await enter("cancelSubscriptions");
       for (const s of openOf(customerId)) s.status = "expired";
-      for (const [id, s] of subscriptions) if (s.customerId === customerId) subscriptions.set(id, { ...s, status: "canceled" });
+      let cancelled = 0;
+      for (const [id, s] of subscriptions) {
+        if (s.customerId !== customerId || s.status === "canceled") continue;
+        subscriptions.set(id, { ...s, status: "canceled" });
+        cancelled += 1;
+      }
+      return cancelled;
     },
     async getPrice(priceId) {
       await enter("getPrice");
-      const plan = (Object.keys(options.prices) as PaidPlanId[]).find((p) => options.prices[p] === priceId);
+      const plan = (Object.keys(options.prices) as PaidPlanId[]).find((p) => options.prices[p]?.includes(priceId));
       return plan ? { amount: AMOUNTS[plan], currency: "usd", interval: "month" } : null;
     },
     async verifyWebhook(payload, signature, now) {
@@ -115,6 +121,7 @@ export function createFixtureBilling(options: { clock: Clock; origin: string; we
         id: `sub_fixture${++n}`,
         status: "active",
         priceIds: [],
+        currentPeriodStart: new Date(now).toISOString(),
         currentPeriodEnd: new Date(now + MONTH_MS).toISOString(),
         cancelAtPeriodEnd: false,
         created: Math.floor(now / 1000) + n,

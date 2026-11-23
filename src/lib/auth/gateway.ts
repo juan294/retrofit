@@ -27,7 +27,7 @@ export interface AuthGateway {
   signInWithOtp(email: string, redirectTo: string): Promise<void>;
   /** Verifies the link's token hash once. Throws AuthUnavailable when the provider cannot answer. */
   verifyOtp(tokenHash: string, type: "email"): Promise<VerifyResult>;
-  /** The account, or null when it does not exist. Throws AuthUnavailable. Account deletion calls it first, so a provider outage deletes nothing. */
+  /** The account, or null only on the provider's own "user not found" answer. Throws AuthUnavailable for every other answer without this account. Account deletion calls it first, so a provider outage deletes nothing. */
   getUser(userId: string): Promise<VerifiedAccount | null>;
   /** Deletes the provider's user. An account that no longer exists counts as deleted. Throws AuthUnavailable. */
   deleteUser(userId: string): Promise<void>;

@@ -42,6 +42,7 @@ const deliver = (d: TestDeps, e: EventSpec) => send(d, eventBody(e));
 /** A customer linked to OWNER and created at the gateway for it. */
 async function customer(d: TestDeps): Promise<string> {
   const id = await d.billing.createCustomer({ accountId: OWNER, email: TEST_ACCOUNT.email });
+  await d.accounts.ensureProfile(OWNER);
   await d.accounts.linkBillingCustomer(OWNER, id);
   return id;
 }
@@ -168,7 +169,8 @@ describe("events", () => {
       slow = false;
       await held;
     });
-    const first = { ...d, billing: { ...d.billing, getSubscriptions: async (c: string) => { const now = await d.billing.getSubscriptions(c); return now.map((s) => ({ ...s, status: "past_due" })); } } };
+    let old = true;
+    const first = { ...d, billing: { ...d.billing, getSubscriptions: async (c: string) => { const now = await d.billing.getSubscriptions(c); const was = old; old = false; return was ? now.map((s) => ({ ...s, status: "unpaid" })) : now; } } };
     const late = deliver(first, { customer: cus });
     await new Promise((r) => setTimeout(r, 10));
     clock.advance(1000);
@@ -176,6 +178,43 @@ describe("events", () => {
     release();
     expect((await late).status).toBe(200);
     expect(await d.accounts.getBilling(OWNER)).toMatchObject({ status: "active" });
+  });
+
+  // Review nit. Fails if an instance whose clock is behind cannot apply what Stripe says now, or records the event without it.
+  it("a newer read is applied although this instance's clock is behind the stored one", async () => {
+    const { d, cus, clock } = await setup();
+    const sub = d.fixtureBilling.subscribe(cus, { priceIds: [PRICES.pro] });
+    await deliver(d, { customer: cus });
+    clock.advance(-5 * 60_000 + 120_000);
+    d.fixtureBilling.update(sub.id, { status: "canceled" });
+    expect((await deliver(d, { customer: cus })).status).toBe(200);
+    expect(await d.accounts.getBilling(OWNER)).toMatchObject({ status: "canceled" });
+    expect(d.accountsBacking.stripeEvents.size).toBe(2);
+  });
+
+  // Review nit. Fails if a read that another instance overtook is recorded as handled without being applied, or is given up.
+  it("a read overtaken by another instance is read again and applied", async () => {
+    const { d, cus, clock } = await setup();
+    const sub = d.fixtureBilling.subscribe(cus, { priceIds: [PRICES.pro] });
+    let first = true;
+    d.fixtureBilling.before("getSubscriptions", async () => {
+      if (!first) return;
+      first = false;
+      // Another instance, whose clock is ahead, stores its read while this one reads.
+      await d.accounts.applyBillingState(cus, { plan: "free", status: "incomplete", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: sub.id, unpaidSince: null, observedAt: new Date(clock.now() + 60_000).toISOString() });
+    });
+    expect((await deliver(d, { customer: cus })).status).toBe(200);
+    expect(await d.accounts.getBilling(OWNER)).toMatchObject({ plan: "pro", status: "active" });
+    expect(d.accountsBacking.stripeEvents.size).toBe(1);
+  });
+
+  // Fails if a customer whose state keeps being overtaken is acknowledged without its state.
+  it("a read that is always overtaken answers 503 and records nothing", async () => {
+    const { d, cus } = await setup();
+    d.fixtureBilling.subscribe(cus, { priceIds: [PRICES.pro] });
+    const ahead: TestDeps = { ...d, accounts: { ...d.accounts, applyBillingEvent: async () => ({ outcome: "stale", billing: (await d.accounts.getBilling(OWNER))! }) } };
+    expect((await deliver(ahead, { customer: cus })).status).toBe(503);
+    expect(d.accountsBacking.stripeEvents.size).toBe(0);
   });
 
   // Fails if a crash after the event arrived loses it: Stripe must get an error, and the redelivery must apply it.
@@ -204,31 +243,82 @@ describe("events", () => {
 });
 
 describe("customers without a billing record", () => {
-  /** A checkout paid for an account whose record is gone; `userExists`: whether its auth user still is. */
-  async function orphan(userExists: boolean) {
+  /**
+   * A customer with a live subscription and no billing record. `deleted`: its account was deleted here (the mark exists);
+   * `user`: its auth user exists; `profile`: so does its profile.
+   */
+  async function lone(o: { deleted?: boolean; user?: boolean; profile?: boolean } = {}) {
     const { d } = billingDeps(0);
-    await d.auth.signInWithOtp("orphan@example.test", `${PUBLIC_ORIGIN}/auth/confirm`);
-    const userId = d.fixtureAuth.userIdOf("orphan@example.test") as string;
-    const cus = await d.billing.createCustomer({ accountId: userId, email: "orphan@example.test" });
+    await d.auth.signInWithOtp("lone@example.test", `${PUBLIC_ORIGIN}/auth/confirm`);
+    const userId = d.fixtureAuth.userIdOf("lone@example.test") as string;
+    const cus = await d.billing.createCustomer({ accountId: userId, email: "lone@example.test" });
     const sub = d.fixtureBilling.subscribe(cus, { priceIds: [PRICES.pro] });
-    if (!userExists) await d.auth.deleteUser(userId);
+    if (o.deleted) {
+      await d.accounts.ensureProfile(userId);
+      await d.accounts.linkBillingCustomer(userId, cus);
+      await d.accounts.deleteAccountData(userId);
+    }
+    if (!o.user) await d.auth.deleteUser(userId);
+    if (o.profile) await d.accounts.ensureProfile(userId);
     const status = async () => (await d.billing.getSubscriptions(cus)).find((s) => s.id === sub.id)?.status;
     return { d, userId, cus, status };
   }
+  const TYPES = [COMPLETED, UPDATED] as const;
+  const quiet = (secrets: readonly string[]) => {
+    for (const s of secrets) expect(lines.join("\n")).not.toContain(s);
+  };
 
   // Fails if a subscription paid during account deletion goes on charging, or a row comes back for the deleted account.
-  it.each([COMPLETED, UPDATED])("%s for a deleted account cancels its subscription and creates no row", async (type) => {
-    const { d, userId, cus, status } = await orphan(false);
+  it.each(TYPES)("%s for an account deleted here cancels its subscription and creates no row", async (type) => {
+    const { d, userId, cus, status } = await lone({ deleted: true });
     expect((await deliver(d, { type, customer: cus, ref: userId })).status).toBe(200);
     expect(await status()).toBe("canceled");
     expect(await d.accounts.getBilling(userId)).toBeNull();
     expect(d.accountsBacking.stripeEvents.size).toBe(0);
-    for (const s of [userId, cus, "orphan@example.test"]) expect(lines.join("\n")).not.toContain(s);
+    quiet([userId, cus, "lone@example.test"]);
+  });
+
+  // Fails if a deletion that stopped before the auth user (it will be retried) leaves the subscription charging, or binds the customer again.
+  it.each(TYPES)("%s while the deletion is not finished cancels too, although the auth user still exists", async (type) => {
+    const { d, userId, cus, status } = await lone({ deleted: true, user: true });
+    expect((await deliver(d, { type, customer: cus, ref: userId })).status).toBe(200);
+    expect(await status()).toBe("canceled");
+    expect(await d.accounts.getBilling(userId)).toBeNull();
+  });
+
+  // P5-R1. Fails if a missing record or a missing auth user is taken for a deletion: after a restored database or in a new project
+  // every paying customer would lose the subscription.
+  it.each(TYPES)("%s without a deletion mark never cancels: no account and no record only raise an alert", async (type) => {
+    const { d, userId, cus, status } = await lone();
+    expect((await deliver(d, { type, customer: cus, ref: userId })).status).toBe(200);
+    expect(await status()).toBe("active");
+    expect(d.fixtureBilling.calls).not.toContain("cancelSubscriptions");
+    expect(await d.accounts.getBilling(userId)).toBeNull();
+    expect(d.accountsBacking.stripeEvents.size).toBe(0);
+    expect(lines.join("\n")).toContain("[BILLING_ALERT]");
+    quiet([userId, cus, "lone@example.test"]);
+  });
+
+  // P5-R1. Fails if an outage at any step cancels, acknowledges the event (Stripe would never send it again) or records it.
+  it.each([
+    ["the billing record", (d: TestDeps): TestDeps => ({ ...d, accounts: brokenBilling(d.accounts, ["getBillingByCustomer"]) })],
+    ["the deletion mark", (d: TestDeps): TestDeps => ({ ...d, accounts: brokenBilling(d.accounts, ["isDeletedCustomer"]) })],
+    ["the customer's owner", (d: TestDeps): TestDeps => ({ ...d, billing: { ...d.billing, customerOwner: async () => { throw new Error("down"); } } })],
+    ["the auth user", (d: TestDeps): TestDeps => ({ ...d, auth: { ...d.auth, getUser: async () => { throw new Error("down"); } } })],
+    ["the link", (d: TestDeps): TestDeps => ({ ...d, accounts: brokenBilling(d.accounts, ["linkBillingCustomer"]) })],
+  ])("an outage of %s answers 503, cancels nothing and records nothing; the redelivery works", async (_step, broken) => {
+    const { d, userId, cus, status } = await lone({ user: true, profile: true });
+    const body = eventBody({ customer: cus });
+    expect((await send(broken(d), body)).status).toBe(503);
+    expect(await status()).toBe("active");
+    expect(d.accountsBacking.stripeEvents.size).toBe(0);
+    expect((await send(d, body)).status).toBe(200);
+    expect(await d.accounts.getBilling(userId)).toMatchObject({ customerId: cus, plan: "pro" });
   });
 
   // Fails if a failed cancellation is acknowledged (Stripe would never send the event again).
   it("a cancellation that fails answers 503, and the redelivery cancels", async () => {
-    const { d, cus, status } = await orphan(false);
+    const { d, cus, status } = await lone({ deleted: true });
     const body = eventBody({ customer: cus });
     d.fixtureBilling.fail(true, "cancelSubscriptions");
     expect((await send(d, body)).status).toBe(503);
@@ -240,44 +330,53 @@ describe("customers without a billing record", () => {
 
   // Fails if the deletion's own cancellation events start work again.
   it("a deleted subscription's event for a deleted account does nothing", async () => {
-    const { d, cus } = await orphan(false);
+    const { d, cus } = await lone({ deleted: true });
     const calls = d.fixtureBilling.calls.length;
     expect((await deliver(d, { type: DELETED, customer: cus })).status).toBe(200);
     expect(d.fixtureBilling.calls.length).toBe(calls);
   });
 
-  // Fails if a paid checkout of a living account without a record is lost or cancelled.
-  it("a completed checkout links the account again when its auth user exists", async () => {
-    const { d, userId, cus, status } = await orphan(true);
-    expect((await deliver(d, { customer: cus })).status).toBe(200);
-    expect(await d.accounts.getBilling(userId)).toBeNull();
-    expect(await status()).toBe("active");
-    expect((await deliver(d, { type: COMPLETED, customer: cus, ref: userId })).status).toBe(200);
+  // P5-R8. Fails if a paying, living account whose record was lost stays Free although Stripe reports it, whatever the event.
+  it.each([COMPLETED, UPDATED, DELETED])("%s links a living account of this Retrofit that has no record", async (type) => {
+    const { d, userId, cus, status } = await lone({ user: true, profile: true });
+    expect((await deliver(d, { type, customer: cus, ref: userId })).status).toBe(200);
     expect(await d.accounts.getBilling(userId)).toMatchObject({ customerId: cus, plan: "pro", status: "active" });
-  });
-
-  // Fails if a checkout can bind a customer made for another account, or an account that has another customer.
-  it("never links a customer to another account, or a second customer to one account", async () => {
-    const { d, userId, cus, status } = await orphan(true);
-    await d.auth.signInWithOtp("thief@example.test", `${PUBLIC_ORIGIN}/auth/confirm`);
-    const thief = d.fixtureAuth.userIdOf("thief@example.test") as string;
-    await deliver(d, { type: COMPLETED, customer: cus, ref: thief });
-    expect(await d.accounts.getBilling(thief)).toBeNull();
-    await d.accounts.linkBillingCustomer(userId, "cus_first");
-    await deliver(d, { type: COMPLETED, customer: cus, ref: userId });
-    expect((await d.accounts.getBilling(userId))?.customerId).toBe("cus_first");
-    expect(await d.accounts.getBillingByCustomer(cus)).toBeNull();
     expect(await status()).toBe("active");
   });
 
-  // Fails if Retrofit cancels another product's subscription, or one another Retrofit deployment made (the same Stripe account).
-  it("leaves customers of another product or another deployment alone", async () => {
-    for (const owner of [null, { accountId: "00000000-0000-4000-8000-000000000001", origin: "https://other.example" }, { accountId: "not-an-account", origin: PUBLIC_ORIGIN }]) {
-      const { d, cus, status } = await orphan(false);
-      const elsewhere = { ...d, billing: { ...d.billing, customerOwner: async () => owner } };
-      for (const type of [UPDATED, COMPLETED]) expect((await deliver(elsewhere, { type, customer: cus, ref: "00000000-0000-4000-8000-000000000001" })).status).toBe(200);
-      expect(await status()).toBe("active");
+  // Fails if a customer is bound to an account it was not created for, of another deployment, without a profile, or that has another customer.
+  it("never links a customer to another account, another deployment's account, an account without a profile, or a second customer to one account", async () => {
+    const a = await lone({ user: true, profile: true });
+    await a.d.auth.signInWithOtp("thief@example.test", `${PUBLIC_ORIGIN}/auth/confirm`);
+    const thief = a.d.fixtureAuth.userIdOf("thief@example.test") as string;
+    await a.d.accounts.ensureProfile(thief);
+    await deliver(a.d, { type: COMPLETED, customer: a.cus, ref: thief });
+    expect(await a.d.accounts.getBilling(thief)).toBeNull();
+    expect(await a.d.accounts.getBilling(a.userId)).toBeNull();
+    for (const owner of [{ accountId: a.userId, origin: "https://other.example" }, { accountId: "not-an-account", origin: PUBLIC_ORIGIN }, null]) {
+      const elsewhere = { ...a.d, billing: { ...a.d.billing, customerOwner: async () => owner } };
+      await deliver(elsewhere, { customer: a.cus });
+      expect(await a.d.accounts.getBilling(a.userId)).toBeNull();
     }
+    await a.d.accounts.linkBillingCustomer(a.userId, "cus_first");
+    await deliver(a.d, { type: COMPLETED, customer: a.cus, ref: a.userId });
+    expect((await a.d.accounts.getBilling(a.userId))?.customerId).toBe("cus_first");
+    expect(await a.d.accounts.getBillingByCustomer(a.cus)).toBeNull();
+    expect(await a.status()).toBe("active");
+
+    const noProfile = await lone({ user: true });
+    await deliver(noProfile.d, { customer: noProfile.cus });
+    expect(await noProfile.d.accounts.getBilling(noProfile.userId)).toBeNull();
+    expect(await noProfile.status()).toBe("active");
+  });
+
+  // Fails if another product's customer (the same Stripe account) raises an alert for each of its events, or is touched.
+  it("leaves customers of another product alone, without an alert", async () => {
+    const { d, cus, status } = await lone();
+    const elsewhere = { ...d, billing: { ...d.billing, customerOwner: async () => null } };
+    for (const type of [UPDATED, COMPLETED, DELETED]) expect((await deliver(elsewhere, { type, customer: cus, ref: null })).status).toBe(200);
+    expect(await status()).toBe("active");
+    expect(lines).toEqual([]);
   });
 });
 
@@ -287,6 +386,7 @@ describe("account deletion against a checkout", () => {
     const { d } = billingDeps(0);
     await d.auth.signInWithOtp("race@example.test", `${PUBLIC_ORIGIN}/auth/confirm`);
     const userId = d.fixtureAuth.userIdOf("race@example.test") as string;
+    await d.accounts.ensureProfile(userId);
     const { token } = await createAccountSession(d, { userId, email: "race@example.test" });
     const cookie = `retrofit_account=${token}`;
     const res = await handleCheckout(postRequest("/api/billing/checkout", { plan: "pro" }, { cookie }), d);
@@ -306,6 +406,24 @@ describe("account deletion against a checkout", () => {
     expect(await d.accounts.getBilling(userId)).toBeNull();
   });
 
+  // P5-R1. Fails if a checkout request that was already under way when its account was deleted can still bind a customer and open a
+  // checkout, or leaves a row for the deleted account.
+  it("a checkout request overtaken by the deletion opens nothing", async () => {
+    const { d } = billingDeps(0);
+    await d.auth.signInWithOtp("late@example.test", `${PUBLIC_ORIGIN}/auth/confirm`);
+    const userId = d.fixtureAuth.userIdOf("late@example.test") as string;
+    await d.accounts.ensureProfile(userId);
+    const { token } = await createAccountSession(d, { userId, email: "late@example.test" });
+    const account = await readAccountByToken(token, d);
+    d.fixtureBilling.before("createCustomer", async () => {
+      expect(await deleteAccount(d, account!)).toBe("deleted");
+    });
+    const res = await handleCheckout(postRequest("/api/billing/checkout", { plan: "pro" }, { cookie: `retrofit_account=${token}` }), d);
+    expect(res.status).toBe(401);
+    expect(d.fixtureBilling.calls).not.toContain("createCheckout");
+    expect(await d.accounts.getBilling(userId)).toBeNull();
+  });
+
   // Fails if a late event of a customer whose record is gone in the middle of the write creates it again.
   it("a record deleted while the event is applied is not recreated", async () => {
     const { d, cus } = await setup();
@@ -315,7 +433,7 @@ describe("account deletion against a checkout", () => {
     });
     expect((await deliver(d, { customer: cus })).status).toBe(200);
     expect(await d.accounts.getBilling(OWNER)).toBeNull();
-    // No auth user: the subscription ends too.
+    // The deletion marked the customer: its subscription ends too.
     expect((await d.billing.getSubscriptions(cus)).map((s) => s.status)).toEqual(["canceled"]);
   });
 });

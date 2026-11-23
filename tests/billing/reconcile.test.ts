@@ -13,6 +13,7 @@ afterEach(() => vi.restoreAllMocks());
 const MIN = 60_000;
 async function customer(d: TestDeps): Promise<string> {
   const id = await d.billing.createCustomer({ accountId: OWNER, email: TEST_ACCOUNT.email });
+  await d.accounts.ensureProfile(OWNER);
   await d.accounts.linkBillingCustomer(OWNER, id);
   return id;
 }
@@ -76,6 +77,26 @@ describe("the account page's billing", () => {
     d.fixtureBilling.fail(true);
     expect(await load(d)).toMatchObject({ plan: "free", activating: true });
     expect(lines.join("\n")).not.toContain(SECRET_KEY);
+  });
+
+  // P5-R12. Fails if a customer whose plan ended, or whose payment failed, is told that a plan is on its way.
+  it.each(["canceled", "unpaid", "past_due", "paused", "incomplete_expired"])("a %s plan is never activating, also after a checkout and when Stripe is unreachable", async (status) => {
+    const { d, clock } = billingDeps(0);
+    const cus = await customer(d);
+    d.fixtureBilling.subscribe(cus, { priceIds: [PRICES.pro], status, currentPeriodStart: new Date(clock.now() - 8 * 24 * 3600_000).toISOString() });
+    expect(await load(d, { checkout: true })).toMatchObject({ plan: "free", activating: false });
+    clock.advance(11 * MIN);
+    d.fixtureBilling.fail(true);
+    expect(await load(d, { checkout: true })).toMatchObject({ plan: "free", activating: false });
+  });
+
+  // Review nit. Fails if a state stored by an instance whose clock is far ahead is never read again.
+  it("a state from a clock far ahead is read again", async () => {
+    const { d, clock } = billingDeps(0);
+    const cus = await customer(d);
+    d.fixtureBilling.subscribe(cus, { priceIds: [PRICES.pro] });
+    await d.accounts.applyBillingState(cus, { plan: "free", status: "incomplete", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, unpaidSince: null, observedAt: new Date(clock.now() + 24 * 3600_000).toISOString() });
+    expect(await load(d)).toMatchObject({ plan: "pro" });
   });
 
   // Fails if a Stripe outage takes a paid plan away.

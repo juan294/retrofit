@@ -52,6 +52,12 @@ function rateLimited(message: string): AuthRateLimited {
 }
 
 
+/**
+ * True only for the provider's own "user not found" answer. A 404 of anything else (a wrong URL, a proxy,
+ * another service) says nothing about the user, so it stays a failure.
+ */
+const userNotFound = (error: unknown): boolean => isAuthApiError(error) && error.status === 404 && error.code === "user_not_found";
+
 export function createSupabaseAuthGateway(options: SupabaseAuthOptions): AuthGateway {
   const base = options.fetch ?? fetch;
   const ms = options.timeoutMs ?? 10_000;
@@ -102,9 +108,12 @@ export function createSupabaseAuthGateway(options: SupabaseAuthOptions): AuthGat
         throw unavailable("getUser", e);
       }
       const { data, error } = result;
-      if (isAuthApiError(error) && error.status === 404) return null;
+      if (userNotFound(error)) return null;
       if (error) throw unavailable("getUser", error);
-      return data.user?.email ? { userId: data.user.id, email: data.user.email.toLowerCase() } : null;
+      const user = data?.user;
+      // An answer without this user is not an answer about this user.
+      if (user?.id !== userId || typeof user.email !== "string" || !user.email) throw unavailable("getUser", null);
+      return { userId, email: user.email.toLowerCase() };
     },
 
     async deleteUser(userId) {
@@ -117,7 +126,7 @@ export function createSupabaseAuthGateway(options: SupabaseAuthOptions): AuthGat
       }
       if (!error) return;
       // Already deleted (an earlier attempt whose answer was lost): the deletion is done.
-      if (isAuthApiError(error) && error.status === 404) return;
+      if (userNotFound(error)) return;
       throw unavailable("deleteUser", error);
     },
   };

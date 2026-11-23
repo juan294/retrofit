@@ -31,7 +31,8 @@ export function formatAmount({ amount, currency, interval }: PriceAmount): strin
 
 /** The amount of each paid plan that has a price, read from Stripe (cached). A plan is left out while it has none or Stripe cannot be asked. */
 export async function planAmounts(deps: Pick<ServerDeps, "config" | "clock" | "billing">, waitMs = WAIT_MS): Promise<Partial<Record<PaidPlanId, string>>> {
-  const prices = Object.entries(deps.config.billing?.prices ?? {}) as [PaidPlanId, string][];
+  // The price for sale: the first of each plan.
+  const prices = Object.entries(deps.config.billing?.prices ?? {}).map(([plan, ids]) => [plan as PaidPlanId, ids[0]!] as const);
   if (prices.length === 0) return {};
   const { billing } = deps;
   const cache = caches.get(billing) ?? new Map<string, Cached>();

@@ -9,7 +9,7 @@ import { accountPost, type Fields } from "./account-post";
 import { json } from "./json";
 import { countIn } from "./limits";
 
-type Deps = Pick<ServerDeps, "config" | "store" | "accounts" | "billing" | "clock">;
+type Deps = Pick<ServerDeps, "config" | "store" | "accounts" | "billing" | "clock" | "sleep">;
 
 /** An accountPost whose Stripe failures are 503 unavailable, logged with an operation and a code only. */
 function billingPost(name: string, request: Request, deps: Deps, body: (account: Account, fields: Fields) => Promise<Response>): Promise<Response> {
@@ -30,12 +30,13 @@ const REFUSED = {
   no_price: [409, T.noPrice],
   subscribed: [409, T.subscribed],
   no_account: [401, T.signedOut],
+  busy: [409, T.checkoutBusy],
 } as const;
 
 /**
  * POST /api/billing/checkout `{plan}` -> 200 `{url}`: a hosted Stripe Checkout for the plan's configured
  * price. The page navigates to it with location.assign, so the page policy's form-action stays 'self'.
- * An accountPost; 400 invalid (not a paid plan), 403 not_started, 409 no_price or subscribed
+ * An accountPost; 400 invalid (not a paid plan), 403 not_started, 409 no_price, busy or subscribed
  * `{portal: true}`, 429 limit past BILLING_ACTIONS_PER_HOUR, 503 unavailable.
  */
 export function handleCheckout(request: Request, deps: Deps): Promise<Response> {

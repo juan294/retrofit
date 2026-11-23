@@ -9,7 +9,7 @@ import { refuseFeature } from "./entitled";
 import { json } from "./json";
 import { countIn } from "./limits";
 
-type Deps = Pick<ServerDeps, "config" | "store" | "accounts" | "clock">;
+type Deps = Pick<ServerDeps, "config" | "store" | "accounts" | "billing" | "clock">;
 
 /** A key as the account page shows it. */
 export interface ApiKeyView {

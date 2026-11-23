@@ -8,7 +8,7 @@ import { json } from "./json";
  * plan_required with the way to the plans, or 503 billing_unavailable when the plan cannot be read: a
  * paid write then waits, and nothing is changed.
  */
-export async function refuseFeature(deps: Pick<ServerDeps, "config" | "clock" | "accounts">, accountId: string, feature: GatedFeature): Promise<Response | null> {
+export async function refuseFeature(deps: Pick<ServerDeps, "config" | "clock" | "store" | "accounts" | "billing">, accountId: string, feature: GatedFeature): Promise<Response | null> {
   const e = await entitlement(deps, accountId, feature);
   if (e.allowed) return null;
   if (e.reason === "unavailable") return json(503, { error: "billing_unavailable", message: PLAN_TEXT.unavailable });

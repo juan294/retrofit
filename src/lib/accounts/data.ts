@@ -239,7 +239,7 @@ export interface BillingEventId {
 
 /** `linked`: stored now. `existing`: the account already has a customer (returned). `taken`: the customer is another account's. `no_account`: no such account. */
 export type LinkCustomerResult = { readonly outcome: "linked" | "existing"; readonly billing: BillingRecord } | { readonly outcome: "taken" | "no_account" };
-/** `stale`: a newer read is stored; nothing changed. `unknown`: no account has this customer; nothing stored. */
+/** `stale`: a newer read is stored; nothing changed (and no event recorded). `unknown`: no account has this customer; nothing stored. */
 export type ApplyBillingResult = { readonly outcome: "applied" | "stale"; readonly billing: BillingRecord } | { readonly outcome: "unknown" };
 /** `duplicate`: the event was recorded before; nothing changed. */
 export type ApplyEventResult = ApplyBillingResult | { readonly outcome: "duplicate" };
@@ -297,7 +297,8 @@ export interface AccountData {
 
   /**
    * Deletes every row the account owns (claims, published sites, saved reports, API keys, billing
-   * and the profile) in one atomic step: on failure nothing is deleted. Idempotent. Throws
+   * and the profile) and marks its Stripe customer as deleted (isDeletedCustomer) in one atomic step: on
+   * failure nothing is deleted. Idempotent. Throws
    * RangeError for an id that is not a UUID. Account deletion (src/lib/accounts/delete.ts) calls
    * it before it deletes the Supabase Auth user.
    */
@@ -373,16 +374,26 @@ export interface AccountData {
   getBillingByCustomer(customerId: string): Promise<BillingRecord | null>;
   /**
    * Binds a Stripe customer to the account, once: one customer per account and one account per customer,
-   * atomic across instances. Throws RangeError for an invalid id before any write.
+   * atomic across instances. `no_account` without a profile (its data was deleted, or it never signed in), also
+   * against a deletion in progress. Linking removes the customer's deletion mark. Throws RangeError for an invalid
+   * id before any write.
    */
   linkBillingCustomer(accountId: string, customerId: string): Promise<LinkCustomerResult>;
   /** Stores the state read from Stripe for a linked customer, unless a newer read is stored. Throws RangeError for invalid input. */
   applyBillingState(customerId: string, state: ObservedBilling): Promise<ApplyBillingResult>;
   /**
    * applyBillingState for one webhook event, in one transaction with the event's record: an event is applied at most
-   * once, and a failure records nothing, so its redelivery applies. An unknown customer's event is not recorded.
+   * once, and a failure records nothing, so its redelivery applies. A stale event, and one of an unknown customer, is
+   * not recorded, so that reading Stripe again, or the redelivery, can apply it. applyBillingState and this one keep
+   * the first `unpaidSince` while the same subscription stays past due.
    */
   applyBillingEvent(event: BillingEventId, customerId: string, state: ObservedBilling): Promise<ApplyEventResult>;
+
+  /**
+   * True when deleteAccountData deleted the account of this customer (and nobody linked it since): the only proof that
+   * a customer without a billing record belongs to a deleted account. Keeps a hash of the customer id and the time only.
+   */
+  isDeletedCustomer(customerId: string): Promise<boolean>;
 
   /** Stores a new API key's hash, at most MAX_API_KEYS active keys per account. Atomic across instances. Throws RangeError for invalid input. */
   createApiKey(accountId: string, input: NewApiKey): Promise<CreateApiKeyResult>;
@@ -493,6 +504,7 @@ export function requireBillingState(state: ObservedBilling): ObservedBilling {
     currentPeriodEnd: state.currentPeriodEnd === null ? null : requireTime("currentPeriodEnd", state.currentPeriodEnd),
     cancelAtPeriodEnd: state.cancelAtPeriodEnd === true,
     subscriptionId: state.subscriptionId,
+    unpaidSince: state.unpaidSince === null ? null : requireTime("unpaidSince", state.unpaidSince),
     observedAt: requireTime("observedAt", state.observedAt),
   };
 }

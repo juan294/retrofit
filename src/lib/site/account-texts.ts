@@ -23,6 +23,9 @@ export const ACCOUNT_TEXT = {
   /** The parent plan's stuck-state text: Stripe refused the cancellation, which comes before anything else. */
   deleteSubscriptionKept: `We could not cancel your subscription. Nothing was deleted. Try again or email ${LEAD_EMAIL}.`,
   deletePartial: `We deleted your saved reports and other data, but could not finish deleting your account. Try again or email ${LEAD_EMAIL}.`,
+  /** deleteFailed and deletePartial, after the plan was already cancelled. */
+  deleteFailedCancelled: `We cancelled your plan, but could not delete your account. Your data was not deleted, but you may have been signed out on other devices. Try again or email ${LEAD_EMAIL}.`,
+  deletePartialCancelled: `We cancelled your plan and deleted your saved reports and other data, but could not finish deleting your account. Try again or email ${LEAD_EMAIL}.`,
   unavailable: "Retrofit could not load your account right now. Try again in a few minutes.",
   crossOrigin: "Open Retrofit at its own address to change your account.",
 } as const;

@@ -11,7 +11,8 @@ import { BILLING_TEXT, PLAN_TEXT } from "@/lib/site/billing-texts";
 import { ACTIVE, OWNER } from "./setup";
 
 const record = (o: Partial<BillingRecord> = {}): BillingRecord => ({ ...ACTIVE, accountId: OWNER, customerId: "cus_secretview", stateAt: "2027-02-01T00:00:00.000Z", ...o });
-const view = (o: Partial<BillingRecord> | null, plan: "free" | "pro" | "agency", activating = false) => billingView({ plan, record: o === null ? null : record(o), activating });
+const NOW = Date.parse("2027-02-10T00:00:00.000Z");
+const view = (o: Partial<BillingRecord> | null, plan: "free" | "pro" | "agency", activating = false) => billingView({ plan, record: o === null ? null : record(o), activating }, NOW);
 
 describe("the billing section", () => {
   // Fails if the plan, its renewal or end date, or the way to fix a failed payment is missing or wrong.
@@ -20,7 +21,8 @@ describe("the billing section", () => {
     ["an abandoned checkout", view({ status: "none", plan: "free", currentPeriodEnd: null }, "free"), { planName: "Free", detail: null, manage: true, activating: false }],
     ["active", view({}, "pro"), { planName: "Pro", detail: BILLING_TEXT.renews("1 March 2027"), manage: true, activating: false }],
     ["cancelled at the period end", view({ cancelAtPeriodEnd: true }, "pro"), { planName: "Pro", detail: BILLING_TEXT.ends("1 March 2027"), manage: true, activating: false }],
-    ["past due", view({ status: "past_due", plan: "agency" }, "agency"), { planName: "Agency", detail: BILLING_TEXT.pastDue("1 March 2027"), manage: true, activating: false }],
+    ["past due: 7 days from the last paid period, not the unpaid month", view({ status: "past_due", plan: "agency", unpaidSince: "2027-02-09T00:00:00.000Z" }, "agency"), { planName: "Agency", detail: BILLING_TEXT.pastDue("16 February 2027"), manage: true, activating: false }],
+    ["a renewal not read yet", view({ currentPeriodEnd: "2027-02-09T00:00:00.000Z" }, "pro"), { planName: "Pro", detail: BILLING_TEXT.renewalPending("9 February 2027"), manage: true, activating: false }],
     ["unpaid", view({ status: "unpaid" }, "free"), { planName: "Free", detail: BILLING_TEXT.notPaid, manage: true, activating: false }],
     ["canceled", view({ status: "canceled" }, "free"), { planName: "Free", detail: BILLING_TEXT.ended, manage: true, activating: false }],
     ["activating", view({ status: "incomplete" }, "free", true), { planName: "Free", detail: null, manage: true, activating: true }],

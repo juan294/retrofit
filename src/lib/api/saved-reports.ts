@@ -25,7 +25,7 @@ function analysisIdFrom(text: string): string | null {
  * already-saved text. 403 plan_required or 503 billing_unavailable (entitled.ts), 409 not_ready before the score exists, 409 full past MAX_SAVED_REPORTS;
  * 503 unavailable.
  */
-export async function handleSaveReport(request: Request, deps: Pick<ServerDeps, "config" | "store" | "accounts" | "clock">): Promise<Response> {
+export async function handleSaveReport(request: Request, deps: Pick<ServerDeps, "config" | "store" | "accounts" | "billing" | "clock">): Promise<Response> {
   if (!isSameOrigin(request, deps.config)) return json(403, { error: "cross_origin", message: SAVE_REPORT_TEXT.crossOrigin });
   try {
     const text = await readSmallBody(request);

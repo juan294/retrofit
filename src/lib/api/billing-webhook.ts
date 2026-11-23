@@ -1,5 +1,5 @@
 import { isCustomerId, isUuid, type BillingRecord } from "@/lib/accounts/data";
-import { WebhookRefused, type BillingEvent } from "@/lib/billing/gateway";
+import { BillingUnavailable, WebhookRefused, type BillingEvent } from "@/lib/billing/gateway";
 import { logBillingFailure, readStripe } from "@/lib/billing/sync";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { readLimitedBody } from "./body";
@@ -13,6 +13,8 @@ export const MAX_WEBHOOK_BYTES = 512 * 1024;
 const COMPLETED = "checkout.session.completed";
 const UPDATED = "customer.subscription.updated";
 const DELETED = "customer.subscription.deleted";
+/** Reads of Stripe for one event, when other instances keep storing newer ones. */
+const APPLY_ATTEMPTS = 3;
 
 /**
  * POST /api/billing/webhook: Stripe's events (phase-5.md). No cookie and no same-origin rule: the
@@ -22,7 +24,8 @@ const DELETED = "customer.subscription.deleted";
  *
  * An event only says which customer changed. Its state is read again from Stripe and applied together
  * with the event's record in one transaction (AccountData applyBillingEvent): a replay applies nothing,
- * an event that arrives late finds the current state, and an older read never replaces a newer one.
+ * an event that arrives late finds the current state, and an older read never replaces a newer one. A
+ * subscription is cancelled only for a customer that deleteAccountData marked as deleted.
  */
 export async function handleBillingWebhook(request: Request, deps: Deps): Promise<Response> {
   if (!deps.config.billing) return json(503, { error: "not_configured" });
@@ -50,48 +53,56 @@ async function applyEvent(event: BillingEvent, deps: Deps): Promise<void> {
   if (event.type === COMPLETED && event.mode !== "subscription") return;
 
   let record = await deps.accounts.getBillingByCustomer(customerId);
-  if (event.type === COMPLETED) {
-    if (record && record.accountId !== event.clientReferenceId) {
-      console.error("POST /api/billing/webhook ignored a checkout whose reference is not its customer's account.");
-      return;
-    }
-    record ??= await relink(customerId, event.clientReferenceId, deps);
-  }
-  if (record) {
-    const { observed } = await readStripe(deps, customerId);
-    const applied = await deps.accounts.applyBillingEvent({ id: event.id, type: event.type }, customerId, observed);
-    if (applied.outcome !== "unknown") return;
-  }
-  if (event.type !== DELETED) await cancelOrphan(customerId, deps);
-}
-
-/**
- * A completed checkout of a customer without a record (its account's data was deleted, or restored from
- * before the checkout): bound again only to the account the customer was created for by this Retrofit,
- * which the checkout also names and which still exists, and which has no other customer.
- */
-async function relink(customerId: string, reference: string | null, deps: Deps): Promise<BillingRecord | null> {
-  if (reference === null || !isUuid(reference)) return null;
-  const owner = await deps.billing.customerOwner(customerId);
-  if (owner?.accountId !== reference || owner.origin !== deps.config.publicOrigin) return null;
-  if ((await deps.auth.getUser(reference)) === null) return null;
-  const linked = await deps.accounts.linkBillingCustomer(reference, customerId);
-  return linked.outcome === "linked" || (linked.outcome === "existing" && linked.billing.customerId === customerId) ? linked.billing : null;
-}
-
-/**
- * An event of a customer without a record. When this Retrofit created the customer for an account that
- * no longer exists, a checkout was paid while the account was being deleted: its subscription is
- * cancelled, and no row is created. Every other customer is another product's, another deployment's or
- * a living account's, and is left alone.
- */
-async function cancelOrphan(customerId: string, deps: Deps): Promise<void> {
-  const owner = await deps.billing.customerOwner(customerId);
-  if (!owner || owner.origin !== deps.config.publicOrigin || !isUuid(owner.accountId)) return;
-  if ((await deps.auth.getUser(owner.accountId)) !== null) {
-    console.error("POST /api/billing/webhook: a customer of an existing account has no billing record.");
+  if (record && event.type === COMPLETED && record.accountId !== event.clientReferenceId) {
+    console.error("POST /api/billing/webhook ignored a checkout whose reference is not its customer's account.");
     return;
   }
-  await deps.billing.cancelSubscriptions(customerId);
-  console.error("POST /api/billing/webhook cancelled the subscription of a deleted account.");
+  if (!record) {
+    // Only this mark proves that the account was deleted here; a missing record or account proves nothing.
+    if (await deps.accounts.isDeletedCustomer(customerId)) return cancelDeleted(event, customerId, deps);
+    record = await relink(event, customerId, deps);
+    if (!record) return;
+  }
+  // The record went away while it was read: the account is being deleted.
+  if (!(await applyState(event, record, deps)) && (await deps.accounts.isDeletedCustomer(customerId))) await cancelDeleted(event, customerId, deps);
+}
+
+/** Applies what Stripe says now with the event's record. False when the billing record is gone. A read that another one overtook is taken again. */
+async function applyState(event: BillingEvent, record: BillingRecord, deps: Deps): Promise<boolean> {
+  let known = record;
+  for (let attempt = 0; attempt < APPLY_ATTEMPTS; attempt++) {
+    const { observed } = await readStripe(deps, known);
+    const applied = await deps.accounts.applyBillingEvent({ id: event.id, type: event.type }, known.customerId, observed);
+    if (applied.outcome !== "stale") return applied.outcome !== "unknown";
+    known = applied.billing;
+  }
+  throw new BillingUnavailable("applyBillingEvent", "overtaken");
+}
+
+/**
+ * The account of this customer was deleted here (a checkout was paid meanwhile, or a step of the deletion
+ * was missed): its subscription is cancelled, and no row is created.
+ */
+async function cancelDeleted(event: BillingEvent, customerId: string, deps: Deps): Promise<void> {
+  if (event.type === DELETED) return;
+  const cancelled = await deps.billing.cancelSubscriptions(customerId);
+  if (cancelled > 0) console.error("POST /api/billing/webhook cancelled the subscription of a deleted account.");
+}
+
+/**
+ * A customer without a record and without a deletion mark (a restored database, or a record lost another
+ * way): bound again only to the account the customer was created for by this Retrofit, which a checkout
+ * must also name, which exists, has a profile and has no other customer. Otherwise nothing is changed,
+ * and Retrofit's own customers raise an alert for the owner.
+ */
+async function relink(event: BillingEvent, customerId: string, deps: Deps): Promise<BillingRecord | null> {
+  const owner = await deps.billing.customerOwner(customerId);
+  if (!owner || owner.origin !== deps.config.publicOrigin || !isUuid(owner.accountId)) return null;
+  const named = event.type !== COMPLETED || event.clientReferenceId === owner.accountId;
+  if (named && (await deps.auth.getUser(owner.accountId)) !== null) {
+    const linked = await deps.accounts.linkBillingCustomer(owner.accountId, customerId);
+    if ("billing" in linked && linked.billing.customerId === customerId) return linked.billing;
+  }
+  console.error("[BILLING_ALERT] POST /api/billing/webhook: a customer of this Retrofit has no billing record and no deletion mark. Nothing was changed. Check it in Stripe.");
+  return null;
 }

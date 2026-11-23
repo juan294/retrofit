@@ -31,8 +31,8 @@ describe("billing configuration on Vercel", () => {
   // Fails if a price must exist before Juan decides the amounts.
   it("accepts no price ids, and reads them when set", () => {
     expect(loadConfig(VERCEL_ENV).billing).toEqual({ secretKey: VERCEL_ENV.STRIPE_SECRET_KEY, webhookSecret: VERCEL_ENV.STRIPE_WEBHOOK_SECRET, prices: {} });
-    expect(loadConfig({ ...VERCEL_ENV, STRIPE_PRICE_PRO: " price_p1 ", STRIPE_PRICE_AGENCY: "price_a1" }).billing?.prices).toEqual({ pro: "price_p1", agency: "price_a1" });
-    expect(loadConfig({ ...VERCEL_ENV, STRIPE_PRICE_PRO: "", STRIPE_PRICE_AGENCY: "price_a1" }).billing?.prices).toEqual({ agency: "price_a1" });
+    expect(loadConfig({ ...VERCEL_ENV, STRIPE_PRICE_PRO: " price_p1 ", STRIPE_PRICE_AGENCY: "price_a1" }).billing?.prices).toEqual({ pro: ["price_p1"], agency: ["price_a1"] });
+    expect(loadConfig({ ...VERCEL_ENV, STRIPE_PRICE_PRO: "", STRIPE_PRICE_AGENCY: "price_a1" }).billing?.prices).toEqual({ agency: ["price_a1"] });
   });
 });
 
@@ -52,13 +52,19 @@ describe("test mode only", () => {
     const hook = errorOf(() => local({ STRIPE_SECRET_KEY: KEY, STRIPE_WEBHOOK_SECRET: "topsecretvalue" }));
     expect(hook.variable).toBe("STRIPE_WEBHOOK_SECRET");
     expect(hook.message).not.toContain("topsecretvalue");
-    for (const bad of ["prod_1", "price_", "price_a b", "19.00"]) {
+    for (const bad of ["prod_1", "price_", "price_a b", "19.00", "price_1,", ",price_1", "price_1,,price_2", "price_1;price_2", "price_1,19.00", "price_1,price_1"]) {
       expect(errorOf(() => local({ STRIPE_SECRET_KEY: KEY, STRIPE_WEBHOOK_SECRET: WEBHOOK, STRIPE_PRICE_PRO: bad })).variable).toBe("STRIPE_PRICE_PRO");
     }
   });
 
-  // Fails if one price id can mean two plans (the plan is mapped from the price id).
+  // P5-R5. Fails if a price that is no longer for sale cannot stay recognised, the price for sale is not the first, or the order is lost.
+  it("reads a comma-separated list per plan, in order", () => {
+    expect(local({ STRIPE_SECRET_KEY: KEY, STRIPE_WEBHOOK_SECRET: WEBHOOK, STRIPE_PRICE_PRO: "price_new, price_old ,price_older", STRIPE_PRICE_AGENCY: "price_a" }).billing?.prices).toEqual({ pro: ["price_new", "price_old", "price_older"], agency: ["price_a"] });
+  });
+
+  // Fails if one price id can mean two plans (the plan is mapped from the price id), also deep in the lists.
   it("refuses the same price id for both plans", () => {
+    expect(errorOf(() => local({ STRIPE_SECRET_KEY: KEY, STRIPE_WEBHOOK_SECRET: WEBHOOK, STRIPE_PRICE_PRO: "price_1,price_2", STRIPE_PRICE_AGENCY: "price_3,price_2" })).variable).toBe("STRIPE_PRICE_AGENCY");
     expect(errorOf(() => local({ STRIPE_SECRET_KEY: KEY, STRIPE_WEBHOOK_SECRET: WEBHOOK, STRIPE_PRICE_PRO: "price_1", STRIPE_PRICE_AGENCY: "price_1" })).variable).toBe("STRIPE_PRICE_AGENCY");
   });
 });
@@ -76,8 +82,20 @@ describe("billing configuration off Vercel", () => {
   // Fails if the configuration object, which routes may log by mistake, can be changed.
   it("is frozen", () => {
     const { billing } = local({ STRIPE_SECRET_KEY: KEY, STRIPE_WEBHOOK_SECRET: WEBHOOK, STRIPE_PRICE_PRO: "price_1" });
-    expect(billing).toMatchObject({ prices: { pro: "price_1" } });
+    expect(billing).toMatchObject({ prices: { pro: ["price_1"] } });
+    expect(Object.isFrozen(billing?.prices.pro)).toBe(true);
     expect(Object.isFrozen(billing)).toBe(true);
     expect(Object.isFrozen(billing?.prices)).toBe(true);
+  });
+});
+
+describe("the daily sites of an account", () => {
+  // P5-R3. Fails if a default lets one account use the shared daily crawl cap, or the limits cannot be set.
+  it("defaults to 50, 100 and 300, below the shared cap, and reads each as a positive number", () => {
+    const c = local();
+    expect([c.accountSitesPerDayFree, c.accountSitesPerDayPro, c.accountSitesPerDayAgency]).toEqual([50, 100, 300]);
+    expect(c.accountSitesPerDayAgency * 2).toBeLessThan(c.crawlMaxHostsPerDay);
+    expect(local({ ACCOUNT_SITES_PER_DAY_PRO: "7" }).accountSitesPerDayPro).toBe(7);
+    expect(errorOf(() => local({ ACCOUNT_SITES_PER_DAY_AGENCY: "0" })).variable).toBe("ACCOUNT_SITES_PER_DAY_AGENCY");
   });
 });

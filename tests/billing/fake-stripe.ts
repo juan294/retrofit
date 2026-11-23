@@ -17,6 +17,7 @@ interface Session {
   customer: string;
   status: "open" | "complete" | "expired";
   url: string;
+  created: number;
   params: URLSearchParams;
 }
 
@@ -27,8 +28,10 @@ interface Sub {
   price: string;
   created: number;
   cancelAtPeriodEnd: boolean;
+  cancelAt?: number;
 }
 
+export const PERIOD_START_S = Date.UTC(2027, 1, 1) / 1000;
 export const PERIOD_END_S = Date.UTC(2027, 2, 1) / 1000;
 
 export function createFakeStripe() {
@@ -51,10 +54,11 @@ export function createFakeStripe() {
     status: s.status,
     created: s.created,
     cancel_at_period_end: s.cancelAtPeriodEnd,
+    cancel_at: s.cancelAt ?? null,
     livemode: false,
-    items: { object: "list", data: [{ id: `si_${s.id}`, object: "subscription_item", current_period_end: PERIOD_END_S, price: { id: s.price, object: "price" } }], has_more: false, url: "" },
+    items: { object: "list", data: [{ id: `si_${s.id}`, object: "subscription_item", current_period_start: PERIOD_START_S, current_period_end: PERIOD_END_S, price: { id: s.price, object: "price" } }], has_more: false, url: "" },
   });
-  const sessionBody = (s: Session) => ({ id: s.id, object: "checkout.session", customer: s.customer, status: s.status, url: s.status === "open" ? s.url : null, mode: s.params.get("mode"), metadata: Object.fromEntries([...s.params].filter(([k]) => k.startsWith("metadata[")).map(([k, v]) => [k.slice(9, -1), v])), client_reference_id: s.params.get("client_reference_id") });
+  const sessionBody = (s: Session) => ({ id: s.id, object: "checkout.session", created: s.created, customer: s.customer, status: s.status, url: s.status === "open" ? s.url : null, mode: s.params.get("mode"), metadata: Object.fromEntries([...s.params].filter(([k]) => k.startsWith("metadata[")).map(([k, v]) => [k.slice(9, -1), v])), client_reference_id: s.params.get("client_reference_id") });
 
   function route(call: StripeCall): { status: number; body: unknown } {
     const { method, path, params } = call;
@@ -75,7 +79,7 @@ export function createFakeStripe() {
       const customer = params.get("customer") ?? "";
       if (!customers.has(customer)) return error(400, "resource_missing");
       const cs = id("cs");
-      const s: Session = { id: cs, customer, status: "open", url: `https://checkout.stripe.com/c/pay/${cs}`, params };
+      const s: Session = { id: cs, customer, status: "open", url: `https://checkout.stripe.com/c/pay/${cs}`, created: n, params };
       sessions.set(cs, s);
       return { status: 200, body: sessionBody(s) };
     }

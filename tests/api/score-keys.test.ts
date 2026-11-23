@@ -165,7 +165,7 @@ describe("GET /api/score with an API key", () => {
     const { d, cookie } = await setup();
     const customer = await withBilling(d, OWNER);
     const { key } = (await create(d, cookie)).body;
-    await d.accounts.applyBillingState(customer, { plan: "pro", status: "canceled", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, observedAt: new Date(d.clock() + 1).toISOString() });
+    await d.accounts.applyBillingState(customer, { plan: "pro", status: "canceled", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, unpaidSince: null, observedAt: new Date(d.clock() + 1).toISOString() });
     const r = await score(d, `Bearer ${key}`);
     expect(r.status).toBe(403);
     expect(r.body).toEqual({ status: "error", error: "plan_required", message: agentTexts.plan_required });

@@ -18,7 +18,7 @@ const HASH = "a".repeat(64);
 const ACCOUNT = "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f";
 const CUSTOMER = "cus_secretcustomer";
 const EVENT = "evt_secretevent";
-const STATE = { plan: "pro", status: "active", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: "sub_secretsub", observedAt: "2027-02-01T10:00:00.000Z" } as const;
+const STATE = { plan: "pro", status: "active", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: "sub_secretsub", unpaidSince: null, observedAt: "2027-02-01T10:00:00.000Z" } as const;
 const closed = () => createSupabaseAccountData({ url: CLOSED, serviceRoleKey: SERVICE_KEY, timeoutMs: 2000 });
 
 let errorLog: ReturnType<typeof vi.spyOn>;
@@ -55,6 +55,7 @@ describe("Supabase AccountData on a closed port", () => {
     ["linkBillingCustomer", (d) => d.linkBillingCustomer(ACCOUNT, CUSTOMER)],
     ["applyBillingState", (d) => d.applyBillingState(CUSTOMER, STATE)],
     ["applyBillingEvent", (d) => d.applyBillingEvent({ id: EVENT, type: "customer.subscription.updated" }, CUSTOMER, STATE)],
+    ["isDeletedCustomer", (d) => d.isDeletedCustomer(CUSTOMER)],
     ["createApiKey", (d) => d.createApiKey(ACCOUNT, { keyHash: HASH, hint: "beef" })],
     ["listApiKeys", (d) => d.listApiKeys(ACCOUNT)],
     ["revokeApiKey", (d) => d.revokeApiKey(ACCOUNT, ACCOUNT)],

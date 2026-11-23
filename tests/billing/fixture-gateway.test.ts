@@ -6,7 +6,7 @@ import { NOW, runGatewayContract } from "./gateway-contract";
 const ORIGIN = "http://127.0.0.1:3010";
 const WEBHOOK = "whsec_fixture_Zq9x";
 const PRICES = { pro: "price_fixture_pro", agency: "price_fixture_agency" };
-const make = () => createFixtureBilling({ clock: () => NOW, origin: ORIGIN, webhookSecret: WEBHOOK, prices: PRICES });
+const make = () => createFixtureBilling({ clock: () => NOW, origin: ORIGIN, webhookSecret: WEBHOOK, prices: { pro: [PRICES.pro], agency: [PRICES.agency] } });
 const sessionOf = (url: string) => new URL(url).searchParams.get("session") ?? "";
 
 runGatewayContract("fixtures gateway", () => {

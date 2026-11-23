@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { billingStarted, entitlement } from "@/lib/billing/entitlements";
 import { FEATURE_LABELS, PLANS, planIncludes, type Feature, type PlanId } from "@/lib/billing/plans";
 import { createMemoryAccountData } from "@/lib/accounts/memory";
-import { BILLING_ENV, billingDeps, brokenBilling, OWNER, spiedAccounts, START, withBilling } from "./setup";
+import type { StripeSubscription } from "@/lib/billing/state";
+import { BILLING_ENV, billingDeps, brokenBilling, OWNER, PRICES, spiedAccounts, START, withBilling } from "./setup";
 import { testDeps } from "../helpers/server-deps";
 
 const FEATURES = Object.keys(FEATURE_LABELS) as Feature[];
@@ -59,6 +60,58 @@ describe("entitlements by plan and feature", () => {
     expect(await entitlement(d, null, "publish")).toEqual({ allowed: false, reason: "plan_required" });
     expect(await entitlement(d, null, "analyze")).toEqual({ allowed: true });
     expect(spy.calls).toEqual([]);
+  });
+});
+
+// P5-R2: a stored plan whose time ran out.
+describe("a plan whose stored period passed", () => {
+  const DAY = 24 * 3600_000;
+  /** A Pro account whose stored period ended `days` days after the start, seen `seen` days after it; Stripe has `sub`. */
+  async function lapsed(seen: number, sub: Partial<StripeSubscription> | null) {
+    const { d, clock } = billingDeps(0);
+    const cus = await d.billing.createCustomer({ accountId: OWNER, email: "o@example.test" });
+    await d.accounts.ensureProfile(OWNER);
+    await d.accounts.linkBillingCustomer(OWNER, cus);
+    await d.accounts.applyBillingState(cus, { plan: "pro", status: "active", currentPeriodEnd: new Date(START + DAY).toISOString(), cancelAtPeriodEnd: false, subscriptionId: "sub_unit", unpaidSince: null, observedAt: new Date(START).toISOString() });
+    if (sub) d.fixtureBilling.subscribe(cus, { id: "sub_unit", priceIds: [PRICES.pro], ...sub });
+    clock.set(START + seen * DAY);
+    const reads = () => d.fixtureBilling.calls.filter((c) => c === "getSubscriptions").length;
+    return { d, clock, reads };
+  }
+  const renewed = { currentPeriodEnd: new Date(START + 40 * DAY).toISOString() };
+
+  // Fails if a plan inside its period or its grace asks Stripe, or a missed renewal webhook ends a paid plan.
+  it("is read again from Stripe once its grace is over, and a renewal keeps it", async () => {
+    const grace = await lapsed(3, renewed);
+    expect(await entitlement(grace.d, OWNER, "publish")).toEqual({ allowed: true });
+    expect(grace.reads()).toBe(0);
+    const over = await lapsed(5, renewed);
+    expect(await entitlement(over.d, OWNER, "publish")).toEqual({ allowed: true });
+    expect(await entitlement(over.d, OWNER, "publish")).toEqual({ allowed: true });
+    expect(over.reads()).toBe(1);
+    expect(await over.d.accounts.getBilling(OWNER)).toMatchObject({ currentPeriodEnd: renewed.currentPeriodEnd });
+  });
+
+  // Fails if a lost cancellation webhook leaves a plan open for ever.
+  it("ends when Stripe says so, and when Stripe cannot be asked", async () => {
+    const ended = await lapsed(5, { status: "canceled" });
+    expect(await entitlement(ended.d, OWNER, "publish")).toEqual({ allowed: false, reason: "plan_required" });
+    const down = await lapsed(5, renewed);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    down.d.fixtureBilling.fail(true);
+    expect(await entitlement(down.d, OWNER, "publish")).toEqual({ allowed: false, reason: "plan_required" });
+    down.d.fixtureBilling.fail(false);
+    expect(await entitlement(down.d, OWNER, "publish")).toEqual({ allowed: true });
+  });
+
+  // Fails if requests of an account whose plan stays ended ask Stripe each time.
+  it("is not read again for ten minutes when it stays passed", async () => {
+    const { d, clock, reads } = await lapsed(5, { currentPeriodEnd: new Date(START + DAY).toISOString() });
+    for (let i = 0; i < 5; i++) expect(await entitlement(d, OWNER, "publish")).toEqual({ allowed: false, reason: "plan_required" });
+    expect(reads()).toBe(1);
+    clock.advance(10 * 60_000);
+    await entitlement(d, OWNER, "publish");
+    expect(reads()).toBe(2);
   });
 });
 

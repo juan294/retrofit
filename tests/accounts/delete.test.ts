@@ -208,11 +208,37 @@ describe("account deletion with a subscription", () => {
     const s = await subscribed();
     vi.spyOn(console, "error").mockImplementation(() => {});
     s.fixture.fail("deleteUser");
-    expect(await deleteAccount(s.d, s.account)).toBe("partial");
+    expect(await deleteAccount(s.d, s.account)).toBe("partial_cancelled");
     expect(await s.statuses()).toEqual(["canceled"]);
     s.fixture.heal();
     expect(await deleteAccount(s.d, s.account)).toBe("deleted");
     expect(s.fixture.userIdOf("gone@example.test")).toBeNull();
+  });
+
+  // P5-R10. Fails if a later failure hides that the plan already ended, a retry forgets it, or the account page shows the old plan.
+  it("says that the plan is already cancelled when a later step fails, and stores the cancelled state", async () => {
+    const s = await subscribed();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let failData = true;
+    const d = { ...s.d, accounts: { ...s.accounts, deleteAccountData: async (id: string) => { if (failData) throw new Error("down"); return s.accounts.deleteAccountData(id); } } };
+    expect(await deleteAccount(d, s.account)).toBe("cancelled_only");
+    expect(await s.accounts.getBilling(s.userId)).toMatchObject({ status: "canceled" });
+    expect(await deleteAccount(d, s.account)).toBe("cancelled_only");
+    const post = () => handleAccountDelete(new Request(`${PUBLIC_ORIGIN}/api/account/delete`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", cookie: `${ACCOUNT_COOKIE}=${s.here}`, "sec-fetch-site": "same-origin" }, body: "confirm=yes" }), d);
+    expect((await post()).headers.get("location")).toBe(`${PUBLIC_ORIGIN}/account?delete=cancelled`);
+    for (const text of [ACCOUNT_TEXT.deleteFailedCancelled, ACCOUNT_TEXT.deletePartialCancelled]) expect(text).toMatch(/^We cancelled your plan/);
+    failData = false;
+    s.fixture.fail("deleteUser");
+    expect((await post()).headers.get("location")).toBe(`${PUBLIC_ORIGIN}/account?delete=partial-cancelled`);
+  });
+
+  // Fails if an account that never had a plan is told that one was cancelled.
+  it("says nothing about a plan when there was none to cancel", async () => {
+    const s = await signedIn({ failData: true });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const customer = await s.d.billing.createCustomer({ accountId: s.userId, email: "gone@example.test" });
+    await s.accounts.linkBillingCustomer(s.userId, customer);
+    expect(await deleteAccount(s.d, s.account)).toBe("nothing_deleted");
   });
 
   // Fails if an unreadable billing record lets the deletion run past a live subscription.

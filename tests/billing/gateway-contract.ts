@@ -67,6 +67,7 @@ export function runGatewayContract(name: string, make: () => GatewayHarness): vo
       expect(rest).toEqual([]);
       expect(sub).toMatchObject({ id: expect.stringMatching(/^sub_\w+$/), status: "active", priceIds: [h.prices.pro], cancelAtPeriodEnd: false });
       expect(Date.parse(sub?.currentPeriodEnd as string)).toBeGreaterThan(NOW);
+      expect(Date.parse(sub?.currentPeriodStart as string)).toBeLessThanOrEqual(NOW);
       expect(sub?.created).toEqual(expect.any(Number));
     });
 
@@ -76,10 +77,10 @@ export function runGatewayContract(name: string, make: () => GatewayHarness): vo
       const customer = await customerOf(h);
       h.pay(await checkout(h, customer));
       const open = await checkout(h, customer, { priceId: h.prices.agency, attempt: "sub-2" });
-      await h.gateway.cancelSubscriptions(customer);
+      expect(await h.gateway.cancelSubscriptions(customer)).toBe(1);
       expect((await h.gateway.getSubscriptions(customer)).map((s) => s.status)).toEqual(["canceled"]);
       expect(h.isOpen(open)).toBe(false);
-      await h.gateway.cancelSubscriptions(customer);
+      expect(await h.gateway.cancelSubscriptions(customer)).toBe(0);
     });
 
     it("gives a portal link and a price's amount; an unknown price has none", async () => {

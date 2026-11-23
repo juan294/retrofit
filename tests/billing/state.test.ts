@@ -1,20 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { billingState, entitledPlan, needsPortal, STATUS_RULES, type StripeSubscription } from "@/lib/billing/state";
+import { billingState, entitledPlan, needsPortal, STATUS_RULES, timeBoundPassed, type StripeSubscription } from "@/lib/billing/state";
 
 const NOW = Date.parse("2027-02-10T12:00:00.000Z");
-const LATER = "2027-02-28T00:00:00.000Z";
-const PAST = "2027-02-10T11:59:59.999Z";
-const PRICES = { pro: "price_pro", agency: "price_agency" } as const;
-const sub = (o: Partial<StripeSubscription> = {}): StripeSubscription => ({ id: "sub_1", status: "active", priceIds: ["price_pro"], currentPeriodEnd: LATER, cancelAtPeriodEnd: false, created: 100, ...o });
+const DAY = 24 * 3600_000;
+const at = (ms: number) => new Date(NOW + ms).toISOString();
+const PRICES = { pro: ["price_pro", "price_pro_old"], agency: ["price_agency"] } as const;
+const sub = (o: Partial<StripeSubscription> = {}): StripeSubscription => ({ id: "sub_1", status: "active", priceIds: ["price_pro"], currentPeriodStart: at(-10 * DAY), currentPeriodEnd: at(18 * DAY), cancelAtPeriodEnd: false, created: 100, ...o });
 const planNow = (o: Partial<StripeSubscription>, now = NOW) => entitledPlan(billingState([sub(o)], PRICES, now), now);
 
 describe("subscription status rules", () => {
   // Fails if a status gains or loses access, or a status Stripe has is missing from the table.
   it("names every Stripe status and its rule", () => {
     expect(STATUS_RULES).toEqual({
-      active: "entitled",
-      trialing: "entitled",
-      past_due: "until_period_end",
+      active: "period_end_plus_grace",
+      trialing: "period_end_plus_grace",
+      past_due: "unpaid_plus_grace",
       unpaid: "none",
       incomplete: "none",
       incomplete_expired: "none",
@@ -23,28 +23,49 @@ describe("subscription status rules", () => {
     });
   });
 
-  // Fails if a status rule is not what the entitlement check applies: each status before and after the period end.
+  // P5-R2, P5-R7. Fails if a paid plan has no end in stored state (a lost cancellation would be free for ever), loses its 3 days of
+  // grace, keeps them although it was cancelled, or a past due plan keeps a whole unpaid month.
   it.each([
-    ["active", "pro", "pro"],
-    ["trialing", "pro", "pro"],
-    ["past_due", "pro", "free"],
-    ["unpaid", "free", "free"],
-    ["incomplete", "free", "free"],
-    ["incomplete_expired", "free", "free"],
-    ["paused", "free", "free"],
-    ["canceled", "free", "free"],
-    ["a_status_stripe_adds_later", "free", "free"],
-    ["constructor", "free", "free"],
-  ])("%s: %s before the period end, %s after it", (status, before, after) => {
-    expect(planNow({ status, currentPeriodEnd: LATER })).toBe(before);
-    expect(planNow({ status, currentPeriodEnd: PAST })).toBe(after);
+    ["active", { currentPeriodEnd: at(1) }, "pro"],
+    ["active at its end", { currentPeriodEnd: at(0) }, "pro"],
+    ["active, 3 days less 1 ms past its end", { currentPeriodEnd: at(-3 * DAY + 1) }, "pro"],
+    ["active, 3 days past its end", { currentPeriodEnd: at(-3 * DAY) }, "free"],
+    ["active without a period end", { currentPeriodEnd: null }, "free"],
+    ["trialing in its trial", { status: "trialing", currentPeriodEnd: at(1) }, "pro"],
+    ["trialing, 3 days past its end", { status: "trialing", currentPeriodEnd: at(-3 * DAY) }, "free"],
+    ["cancelled at the period end, before it", { cancelAtPeriodEnd: true, currentPeriodEnd: at(1) }, "pro"],
+    ["cancelled at the period end, at it", { cancelAtPeriodEnd: true, currentPeriodEnd: at(0) }, "free"],
+    ["past due on the day", { status: "past_due", currentPeriodStart: at(0) }, "pro"],
+    ["past due, 7 days less 1 ms", { status: "past_due", currentPeriodStart: at(-7 * DAY + 1) }, "pro"],
+    ["past due, 7 days", { status: "past_due", currentPeriodStart: at(-7 * DAY), currentPeriodEnd: at(21 * DAY) }, "free"],
+    ["past due without a period start", { status: "past_due", currentPeriodStart: null }, "free"],
+    ["unpaid", { status: "unpaid" }, "free"],
+    ["incomplete", { status: "incomplete" }, "free"],
+    ["incomplete_expired", { status: "incomplete_expired" }, "free"],
+    ["paused", { status: "paused" }, "free"],
+    ["canceled", { status: "canceled" }, "free"],
+    ["a status Stripe adds later", { status: "a_status_stripe_adds_later" }, "free"],
+    ["an inherited name", { status: "constructor" }, "free"],
+  ] as const)("%s", (_name, o, expected) => {
+    expect(planNow(o)).toBe(expected);
   });
 
-  // Fails if past_due without a known period end, or exactly at it, keeps access.
-  it("past_due ends exactly at the period end, and needs one", () => {
-    expect(planNow({ status: "past_due", currentPeriodEnd: new Date(NOW + 1).toISOString() })).toBe("pro");
-    expect(planNow({ status: "past_due", currentPeriodEnd: new Date(NOW).toISOString() })).toBe("free");
-    expect(planNow({ status: "past_due", currentPeriodEnd: null })).toBe("free");
+  // P5-R7. Fails if the stored start of the unpaid time is ignored for the newer period's start.
+  it("past due counts from the stored start of the unpaid time", () => {
+    const state = billingState([sub({ status: "past_due", currentPeriodStart: at(-DAY) })], PRICES, NOW);
+    expect(state.unpaidSince).toBe(at(-DAY));
+    expect(entitledPlan(state, NOW)).toBe("pro");
+    expect(entitledPlan({ ...state, unpaidSince: at(-8 * DAY) }, NOW)).toBe("free");
+    expect(billingState([sub()], PRICES, NOW).unpaidSince).toBeNull();
+  });
+
+  // P5-R2. Fails if a plan that only ran out of time in the stored state is not read again from Stripe, or one that ended is.
+  it("says when a stored plan ran out of time (so it is worth reading again)", () => {
+    const passed = (o: Partial<StripeSubscription>) => timeBoundPassed(billingState([sub(o)], PRICES, NOW), NOW);
+    expect(passed({ currentPeriodEnd: at(-3 * DAY) })).toBe(true);
+    expect(passed({ status: "past_due", currentPeriodStart: at(-7 * DAY) })).toBe(true);
+    expect(passed({ currentPeriodEnd: at(1) })).toBe(false);
+    for (const status of ["canceled", "unpaid", "incomplete", "paused"]) expect(passed({ status, currentPeriodEnd: at(-9 * DAY) }), status).toBe(false);
   });
 });
 
@@ -55,6 +76,8 @@ describe("plan mapping", () => {
     expect(billingState([sub({ priceIds: ["price_other"] })], PRICES, NOW).plan).toBe("free");
     expect(billingState([sub()], {}, NOW).plan).toBe("free");
     expect(billingState([sub({ priceIds: ["price_other", "price_pro"] })], PRICES, NOW).plan).toBe("pro");
+    // P5-R5: a price that is no longer for sale still means its plan.
+    expect(billingState([sub({ priceIds: ["price_pro_old"] })], PRICES, NOW).plan).toBe("pro");
     expect(billingState([sub({ priceIds: ["pro", "agency", "constructor"] })], PRICES, NOW).plan).toBe("free");
   });
 
@@ -72,7 +95,7 @@ describe("plan mapping", () => {
     const old = sub({ id: "sub_1", status: "canceled", created: 1 });
     const fresh = sub({ id: "sub_2", status: "incomplete", created: 2 });
     expect(billingState([fresh, old], PRICES, NOW)).toMatchObject({ subscriptionId: "sub_2", status: "incomplete", plan: "pro" });
-    expect(billingState([], PRICES, NOW)).toEqual({ plan: "free", status: "none", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null });
+    expect(billingState([], PRICES, NOW)).toEqual({ plan: "free", status: "none", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, unpaidSince: null });
     expect(entitledPlan(null, NOW)).toBe("free");
     expect(entitledPlan(billingState([], PRICES, NOW), NOW)).toBe("free");
   });

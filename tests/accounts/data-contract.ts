@@ -736,13 +736,19 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
 
     describe("billing", () => {
       const customer = (label: string) => `cus_${label}_${tag}`;
-      const pro: BillingState = { plan: "pro", status: "active", currentPeriodEnd: "2027-03-01T00:00:00.000Z", cancelAtPeriodEnd: false, subscriptionId: "sub_1" };
-      const none: BillingState = { plan: "free", status: "canceled", currentPeriodEnd: null, cancelAtPeriodEnd: true, subscriptionId: null };
+      const pro: BillingState = { plan: "pro", status: "active", currentPeriodEnd: "2027-03-01T00:00:00.000Z", cancelAtPeriodEnd: false, subscriptionId: "sub_1", unpaidSince: null };
+      const none: BillingState = { plan: "free", status: "canceled", currentPeriodEnd: null, cancelAtPeriodEnd: true, subscriptionId: null, unpaidSince: null };
       const AT = "2027-02-01T10:00:00.500Z";
       const BEFORE = "2027-02-01T10:00:00.499Z";
       const AFTER = "2027-02-01T10:00:00.501Z";
+      /** An account that signed in (its profile exists, as after every sign-in). */
+      const signedIn = async (): Promise<string> => {
+        const id = await newAccount();
+        await a.ensureProfile(id);
+        return id;
+      };
       const linked = async (label: string): Promise<string> => {
-        const owner = await newAccount();
+        const owner = await signedIn();
         expect((await a.linkBillingCustomer(owner, customer(label))).outcome).toBe("linked");
         return owner;
       };
@@ -750,11 +756,11 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
 
       // Fails if a new account has billing state, a linked customer is not free, or either read misses it on another instance.
       it("an account has no billing until its customer is linked; then it is free, found by account and by customer", async () => {
-        const owner = await newAccount();
+        const owner = await signedIn();
         expect(await a.getBilling(owner)).toBeNull();
         expect(await a.getBillingByCustomer(customer("new"))).toBeNull();
         const r = await a.linkBillingCustomer(owner, customer("new"));
-        const record = { accountId: owner, customerId: customer("new"), plan: "free", status: "none", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, stateAt: null };
+        const record = { accountId: owner, customerId: customer("new"), plan: "free", status: "none", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: null, unpaidSince: null, stateAt: null };
         expect(r).toEqual({ outcome: "linked", billing: record });
         expect(await b.getBilling(owner)).toEqual(record);
         expect(await b.getBillingByCustomer(customer("new"))).toEqual(record);
@@ -763,13 +769,13 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
 
       // Fails if one account gets two customers (also when two checkouts race), or one customer belongs to two accounts.
       it("one customer per account and one account per customer, also when two links race", async () => {
-        const owner = await newAccount();
+        const owner = await signedIn();
         const raced = await Promise.all([a.linkBillingCustomer(owner, customer("r1")), b.linkBillingCustomer(owner, customer("r2"))]);
         expect(raced.map((r) => r.outcome).sort()).toEqual(["existing", "linked"]);
         const ids = raced.map((r) => ("billing" in r ? r.billing.customerId : null));
         expect(ids[0]).toBe(ids[1]);
         expect((await a.linkBillingCustomer(owner, customer("r3"))).outcome).toBe("existing");
-        expect(await b.linkBillingCustomer(await newAccount(), ids[0] as string)).toEqual({ outcome: "taken" });
+        expect(await b.linkBillingCustomer(await signedIn(), ids[0] as string)).toEqual({ outcome: "taken" });
       });
 
       // Fails if a state is not stored, an older read overwrites a newer one, or an unknown customer gets a row.
@@ -795,16 +801,17 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         expect(await a.getBilling(owner)).toMatchObject({ status: "canceled", stateAt: AFTER });
       });
 
-      // Fails if an event delivered late overwrites newer state, or an event for an unknown customer is recorded as handled
-      // (its redelivery after the customer is linked would be lost).
-      it("a late event is recorded and not applied; an unknown customer's event is not recorded", async () => {
+      // Fails if an event delivered late overwrites newer state, or an event whose state was not applied (stale, or for an unknown
+      // customer) is recorded as handled: the read again after it, or its redelivery, would be lost.
+      it("a late event changes nothing and is not recorded, so reading again applies it; an unknown customer's event is not recorded", async () => {
         const owner = await linked("late");
         await a.applyBillingEvent(event("new"), customer("late"), { ...pro, observedAt: AT });
         expect((await b.applyBillingEvent(event("old"), customer("late"), { ...none, observedAt: BEFORE })).outcome).toBe("stale");
         expect(await b.getBilling(owner)).toMatchObject({ plan: "pro", stateAt: AT });
-        expect(await b.applyBillingEvent(event("old"), customer("late"), { ...none, observedAt: AFTER })).toEqual({ outcome: "duplicate" });
+        expect((await b.applyBillingEvent(event("old"), customer("late"), { ...none, observedAt: AFTER })).outcome).toBe("applied");
+        expect(await b.getBilling(owner)).toMatchObject({ status: "canceled", stateAt: AFTER });
         expect(await a.applyBillingEvent(event("early"), customer("unlinked"), { ...pro, observedAt: AT })).toEqual({ outcome: "unknown" });
-        await a.linkBillingCustomer(await newAccount(), customer("unlinked"));
+        await a.linkBillingCustomer(await signedIn(), customer("unlinked"));
         expect((await a.applyBillingEvent(event("early"), customer("unlinked"), { ...pro, observedAt: AT })).outcome).toBe("applied");
       });
 
@@ -814,7 +821,7 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         await expect(a.linkBillingCustomer("nope", customer("x"))).rejects.toThrow(RangeError);
         for (const id of ["", "cus 1", "sub_1", "x".repeat(300)]) await expect(a.linkBillingCustomer(owner, id), id).rejects.toThrow(RangeError);
         const ok = { ...pro, observedAt: AT };
-        for (const bad of [{ plan: "gold" }, { status: "" }, { status: "Active!" }, { currentPeriodEnd: "soon" }, { observedAt: "now" }, { subscriptionId: "not a sub" }]) {
+        for (const bad of [{ plan: "gold" }, { status: "" }, { status: "Active!" }, { currentPeriodEnd: "soon" }, { observedAt: "now" }, { subscriptionId: "not a sub" }, { unpaidSince: "long ago" }]) {
           await expect(a.applyBillingEvent(event("bad"), customer("bad"), { ...ok, ...bad } as typeof ok), JSON.stringify(bad)).rejects.toThrow(RangeError);
           await expect(a.applyBillingState(customer("bad"), { ...ok, ...bad } as typeof ok), JSON.stringify(bad)).rejects.toThrow(RangeError);
         }
@@ -835,6 +842,49 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         expect(await a.findApiKeyAccount(sha256Hex(`${tag}-${kept}`))).toBe(kept);
         expect(await a.applyBillingEvent(event("gone"), customer("gone"), { ...pro, observedAt: AT })).toEqual({ outcome: "unknown" });
         expect(await b.getBilling(gone)).toBeNull();
+      });
+
+      // P5-R1. Fails if a deletion leaves no mark of its customer (a payment that arrives late could not be told from a lost database),
+      // any other customer looks deleted, or a retry fails.
+      it("deleteAccountData marks the account's customer as deleted, and only that one", async () => {
+        const gone = await linked("marked");
+        await linked("living");
+        expect(await a.isDeletedCustomer(customer("marked"))).toBe(false);
+        await b.deleteAccountData(gone);
+        await b.deleteAccountData(gone);
+        expect(await a.isDeletedCustomer(customer("marked"))).toBe(true);
+        for (const other of ["living", "never_seen"]) expect(await b.isDeletedCustomer(customer(other))).toBe(false);
+        expect(await b.isDeletedCustomer("not a customer")).toBe(false);
+        // An account without a customer marks nothing.
+        await a.deleteAccountData(await signedIn());
+      });
+
+      // P5-R1. Fails if a checkout in flight can bind a customer after the account's data was deleted (a row without an account, and no
+      // mark), or a person who signs in again cannot buy.
+      it("no customer is linked after the deletion until the account signs in again; linking then removes the mark", async () => {
+        const id = await linked("again");
+        await a.deleteAccountData(id);
+        expect(await b.linkBillingCustomer(id, customer("again"))).toEqual({ outcome: "no_account" });
+        expect(await b.getBilling(id)).toBeNull();
+        expect(await a.linkBillingCustomer(await newAccount(), customer("no_profile"))).toEqual({ outcome: "no_account" });
+        await a.ensureProfile(id);
+        expect((await b.linkBillingCustomer(id, customer("again"))).outcome).toBe("linked");
+        expect(await a.isDeletedCustomer(customer("again"))).toBe(false);
+      });
+
+      // P5-R7. Fails if the start of the unpaid time moves with each new unpaid period (access would never end), or is kept for a
+      // payment that succeeded or another subscription.
+      it("keeps the first start of an unpaid time while the same subscription stays past due", async () => {
+        const owner = await linked("unpaid");
+        const due = (unpaidSince: string, o: Partial<BillingState> = {}): BillingState => ({ ...pro, status: "past_due", unpaidSince, ...o });
+        const apply = async (state: BillingState, n: number) => (await a.applyBillingState(customer("unpaid"), { ...state, observedAt: new Date(Date.parse(AT) + n).toISOString() }), (await b.getBilling(owner))?.unpaidSince);
+        const [first, second] = ["2027-02-01T00:00:00.000Z", "2027-03-01T00:00:00.000Z"] as const;
+        expect(await apply(due(first), 1)).toBe(first);
+        expect(await apply(due(second), 2)).toBe(first);
+        expect(await apply(due(second, { subscriptionId: "sub_2" }), 3)).toBe(second);
+        expect(await apply(due(first, { subscriptionId: "sub_2" }), 4)).toBe(first);
+        expect(await apply({ ...pro, subscriptionId: "sub_2" }, 5)).toBeNull();
+        expect(await apply(due(second, { subscriptionId: "sub_2" }), 6)).toBe(second);
       });
     });
 

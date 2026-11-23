@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { PaidPlanId } from "./billing/plans";
+import type { PlanPrices } from "./billing/state";
 
 export class ConfigError extends Error {
   constructor(
@@ -30,6 +30,10 @@ export interface Config {
   readonly signInPerClientHour: number;
   /** Sign-in links per email address per hour; the window is keyed by a keyed hash of the address. */
   readonly signInPerEmailHour: number;
+  /** Distinct sites one account may analyze or score in a UTC day, by plan, from BILLING_START on (never more than half of CRAWL_MAX_HOSTS_PER_DAY). */
+  readonly accountSitesPerDayFree: number;
+  readonly accountSitesPerDayPro: number;
+  readonly accountSitesPerDayAgency: number;
   readonly staleAfterS: number;
   readonly analysisTtlS: number;
   readonly scoreWaitMs: number;
@@ -58,8 +62,8 @@ export interface BillingConfig {
   readonly secretKey: string;
   /** Server only. Signs the webhook's events. */
   readonly webhookSecret: string;
-  /** The Stripe price id of each paid plan that has one. The amounts live in Stripe. */
-  readonly prices: Readonly<Partial<Record<PaidPlanId, string>>>;
+  /** The Stripe price ids of each paid plan that has one: the first is for sale, all are recognised. The amounts live in Stripe. */
+  readonly prices: PlanPrices;
 }
 
 export interface SupabaseConfig {
@@ -124,6 +128,9 @@ const NUMBERS = {
   notifyPerClientHour: ["NOTIFY_PER_CLIENT_HOUR", 5],
   signInPerClientHour: ["SIGNIN_PER_CLIENT_HOUR", 5],
   signInPerEmailHour: ["SIGNIN_PER_EMAIL_HOUR", 3],
+  accountSitesPerDayFree: ["ACCOUNT_SITES_PER_DAY_FREE", 50],
+  accountSitesPerDayPro: ["ACCOUNT_SITES_PER_DAY_PRO", 100],
+  accountSitesPerDayAgency: ["ACCOUNT_SITES_PER_DAY_AGENCY", 300],
   staleAfterS: ["STALE_AFTER_S", 90],
   analysisTtlS: ["ANALYSIS_TTL_S", 604800],
   scoreWaitMs: ["SCORE_WAIT_MS", 25000],
@@ -220,7 +227,8 @@ const EARLIEST_BILLING_START = "2027-01-19T00:00:00Z";
 
 /**
  * STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET: required on Vercel; off Vercel both or neither.
- * STRIPE_PRICE_PRO and STRIPE_PRICE_AGENCY: optional, and only with the secret key. Test mode only:
+ * STRIPE_PRICE_PRO and STRIPE_PRICE_AGENCY: optional, and only with the secret key; a comma-separated
+ * list, the first price for sale and the others kept for their subscribers. Test mode only:
  * a live key is refused everywhere (the live switch is a separate authorized release). No message
  * contains any part of a value.
  */
@@ -228,8 +236,9 @@ function loadBillingConfig(env: Env, onVercel: boolean): BillingConfig | null {
   const value = (name: string) => env[name]?.trim() || null;
   const secretKey = value("STRIPE_SECRET_KEY");
   const webhookSecret = value("STRIPE_WEBHOOK_SECRET");
-  const pro = value("STRIPE_PRICE_PRO");
-  const agency = value("STRIPE_PRICE_AGENCY");
+  const list = (name: string) => value(name)?.split(",").map((id) => id.trim()) ?? null;
+  const pro = list("STRIPE_PRICE_PRO");
+  const agency = list("STRIPE_PRICE_AGENCY");
   if (onVercel && !secretKey) throw new ConfigError("STRIPE_SECRET_KEY", "is required on Vercel");
   if (onVercel && !webhookSecret) throw new ConfigError("STRIPE_WEBHOOK_SECRET", "is required on Vercel");
   if (!secretKey && (webhookSecret || pro || agency)) throw new ConfigError("STRIPE_SECRET_KEY", "is required with any other Stripe variable");
@@ -237,11 +246,13 @@ function loadBillingConfig(env: Env, onVercel: boolean): BillingConfig | null {
   if (!webhookSecret) throw new ConfigError("STRIPE_WEBHOOK_SECRET", "is required when STRIPE_SECRET_KEY is set");
   if (!/^(sk|rk)_test_/.test(secretKey)) throw new ConfigError("STRIPE_SECRET_KEY", "must be a test-mode key (sk_test_ or rk_test_)");
   if (!webhookSecret.startsWith("whsec_")) throw new ConfigError("STRIPE_WEBHOOK_SECRET", "must start with whsec_");
-  for (const [name, id] of [["STRIPE_PRICE_PRO", pro], ["STRIPE_PRICE_AGENCY", agency]] as const) {
-    if (id && !/^price_\w+$/.test(id)) throw new ConfigError(name, "must be a Stripe price id (price_...)");
+  for (const [name, ids] of [["STRIPE_PRICE_PRO", pro], ["STRIPE_PRICE_AGENCY", agency]] as const) {
+    if (ids?.some((id) => !/^price_\w+$/.test(id))) throw new ConfigError(name, "must be a Stripe price id (price_...), or a comma-separated list of them");
+    if (ids && new Set(ids).size < ids.length) throw new ConfigError(name, "must name each price once");
   }
-  if (pro && pro === agency) throw new ConfigError("STRIPE_PRICE_AGENCY", "must differ from STRIPE_PRICE_PRO");
-  return Object.freeze({ secretKey, webhookSecret, prices: Object.freeze({ ...(pro ? { pro } : {}), ...(agency ? { agency } : {}) }) });
+  if (pro?.some((id) => agency?.includes(id))) throw new ConfigError("STRIPE_PRICE_AGENCY", "must not share a price with STRIPE_PRICE_PRO");
+  const prices: PlanPrices = { ...(pro ? { pro: Object.freeze(pro) } : {}), ...(agency ? { agency: Object.freeze(agency) } : {}) };
+  return Object.freeze({ secretKey, webhookSecret, prices: Object.freeze(prices) });
 }
 
 /**

@@ -23,13 +23,13 @@ import { ACCOUNT_TEXT as T, dateText } from "@/lib/site/account-texts";
 
 export const metadata: Metadata = { title: "Your account · Retrofit", robots: { index: false, follow: false } };
 
-const DELETE_NOTICES = { confirm: T.deleteNeedsConfirm, failed: T.deleteFailed, subscription: T.deleteSubscriptionKept, partial: T.deletePartial } as const;
+const DELETE_NOTICES = { confirm: T.deleteNeedsConfirm, failed: T.deleteFailed, subscription: T.deleteSubscriptionKept, partial: T.deletePartial, cancelled: T.deleteFailedCancelled, "partial-cancelled": T.deletePartialCancelled } as const;
 
 const buttonStyle = { background: "var(--color-accent)", color: "var(--color-accent-text)" };
 const borderStyle = { borderColor: "var(--color-border)" };
 
 /**
- * /account[?delete=confirm|failed|subscription|partial][&checkout=success]: the signed-in account.
+ * /account[?delete=confirm|failed|subscription|partial|cancelled|partial-cancelled][&checkout=success]: the signed-in account.
  * Signed out -> /sign-in?returnTo=/account. From BILLING_START on it shows the plan, read again from
  * Stripe when it is old or the visitor returns from checkout (accountBilling, bounded in time).
  */
@@ -53,7 +53,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         listAccountAnalyses(deps, account.accountId, CLAIM_RECENT_ANALYSES),
         deps.accounts.listApiKeys(account.accountId),
         billingStarted(deps)
-          ? accountBilling(deps, account.accountId, { checkout: checkout === "success" }).then(billingView, (e: unknown) => {
+          ? accountBilling(deps, account.accountId, { checkout: checkout === "success" }).then((b) => billingView(b, deps.clock()), (e: unknown) => {
               logBillingFailure("GET /account billing", e);
               return null;
             })

@@ -68,7 +68,7 @@ describe("publishing and saving", () => {
     const customer = await withBilling(o.d, OWNER);
     expect((await o.publish()).status).toBe(200);
     o.clock.advance(2 * DAY_MS);
-    await o.d.accounts.applyBillingState(customer, { plan: "pro", status: "canceled", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: "sub_unit", observedAt: new Date(o.d.clock()).toISOString() });
+    await o.d.accounts.applyBillingState(customer, { plan: "pro", status: "canceled", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: "sub_unit", unpaidSince: null, observedAt: new Date(o.d.clock()).toISOString() });
     await listedAnalysis(o.d, { snapshot: snapshotOf(HOST, new Date(o.d.clock()).toISOString()) });
     const refresh = await o.publish();
     expect([refresh.status, (await bodyOf(refresh)).error]).toEqual([403, "plan_required"]);

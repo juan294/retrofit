@@ -118,6 +118,7 @@ interface BillingRow {
   current_period_end: string | null;
   cancel_at_period_end: boolean;
   subscription_id: string | null;
+  unpaid_since: string | null;
   state_at: string | null;
 }
 
@@ -159,7 +160,7 @@ const SUMMARY = "id, host, fetched_at, created_at, score:report->score";
 
 const PUBLISHED_COLUMNS = "host, claim_id, fetched_at, published_at, refreshed_at, last_refresh_error, score";
 
-const BILLING_COLUMNS = "account_id, stripe_customer_id, plan, status, current_period_end, cancel_at_period_end, subscription_id, state_at";
+const BILLING_COLUMNS = "account_id, stripe_customer_id, plan, status, current_period_end, cancel_at_period_end, subscription_id, unpaid_since, state_at";
 
 function billingOf(row: BillingRow): BillingRecord {
   return {
@@ -170,6 +171,7 @@ function billingOf(row: BillingRow): BillingRecord {
     currentPeriodEnd: isoOrNull(row.current_period_end),
     cancelAtPeriodEnd: row.cancel_at_period_end,
     subscriptionId: row.subscription_id,
+    unpaidSince: isoOrNull(row.unpaid_since),
     stateAt: isoOrNull(row.state_at),
   };
 }
@@ -230,6 +232,7 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
     p_current_period_end: s.currentPeriodEnd,
     p_cancel_at_period_end: s.cancelAtPeriodEnd,
     p_subscription_id: s.subscriptionId,
+    p_unpaid_since: s.unpaidSince,
     p_observed_at: s.observedAt,
   });
   /** The applied, stale or unknown answer of a billing function; anything else is AccountDataUnavailable. */
@@ -482,6 +485,12 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
       // One database function, one transaction: the event and its state together (supabase/migrations/*_billing.sql).
       const answer = await call<BillingAnswer>("applyBillingEvent", () => client.rpc("apply_billing_event", { p_event_id: event.id, p_type: event.type, ...stateArgs(customerId, state) }));
       return answer?.outcome === "duplicate" ? { outcome: "duplicate" } : applied("applyBillingEvent", answer);
+    },
+
+    async isDeletedCustomer(customerId) {
+      if (!isCustomerId(customerId)) return false;
+      const row = await call<{ deleted_at: string }>("isDeletedCustomer", () => client.from("deleted_customers").select("deleted_at").eq("customer_hash", sha256Hex(customerId)).maybeSingle());
+      return row !== null;
     },
 
     async createApiKey(rawId, input) {

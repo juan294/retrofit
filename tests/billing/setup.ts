@@ -15,11 +15,12 @@ export function billingDeps(offsetMs: number, o: TestDepsOptions = {}) {
   return { clock, d: testDeps({ clock: clock.clock, sleep: async (ms) => clock.advance(ms), ...o, env: { ...BILLING_ENV, ...o.env } }) };
 }
 
-export const ACTIVE: BillingState = { plan: "pro", status: "active", currentPeriodEnd: "2027-03-01T00:00:00.000Z", cancelAtPeriodEnd: false, subscriptionId: "sub_unit" };
+export const ACTIVE: BillingState = { plan: "pro", status: "active", currentPeriodEnd: "2027-03-01T00:00:00.000Z", cancelAtPeriodEnd: false, subscriptionId: "sub_unit", unpaidSince: null };
 
 /** Stores `state` as the account's billing (its customer linked first). Returns the customer id. */
 export async function withBilling(d: Pick<TestDeps, "accounts" | "clock">, accountId: string, state: Partial<BillingState> = {}): Promise<string> {
   const customerId = `cus_unit${accountId.slice(0, 4)}`;
+  await d.accounts.ensureProfile(accountId);
   await d.accounts.linkBillingCustomer(accountId, customerId);
   await d.accounts.applyBillingState(customerId, { ...ACTIVE, ...state, observedAt: new Date(d.clock()).toISOString() });
   return customerId;

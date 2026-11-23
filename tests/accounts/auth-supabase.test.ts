@@ -125,6 +125,38 @@ describe("Supabase auth gateway", () => {
     await expect(fakeProvider({ [path]: new TypeError("fetch failed") }).gateway.getUser(USER_ID)).rejects.toBeInstanceOf(AuthUnavailable);
     expect(await fakeProvider({}).gateway.getUser("not-a-uuid")).toBeNull();
   });
+
+  // P5-R1. Fails if anything but the provider's own "user not found" reads as a deleted account: a wrong URL, a proxy's 404, a new
+  // project or a changed answer would make every account look gone.
+  it.each([
+    ["a 404 without a code", { status: 404, body: { message: "not found" } }],
+    ["a 404 with another code", { status: 404, body: { code: "not_stubbed", message: "x" } }],
+    ["a 404 with the code in another case", { status: 404, body: { code: "USER_NOT_FOUND", message: "x" } }],
+    ["a 404 that is not JSON", { status: 404 }],
+    ["user_not_found with another status", { status: 400, body: { code: "user_not_found", message: "x" } }],
+    ["a 200 with an empty object", { status: 200, body: {} }],
+    ["a 200 with null", { status: 200, body: null }],
+    ["a 200 with a list", { status: 200, body: [] }],
+    ["a 200 without an email", { status: 200, body: { id: USER_ID } }],
+    ["a 200 with an empty email", { status: 200, body: { id: USER_ID, email: "" } }],
+    ["a 200 for another user", { status: 200, body: { id: "5f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "x@example.test" } }],
+    ["a 401", { status: 401, body: { code: "no_authorization", message: "x" } }],
+    ["a 403", { status: 403, body: { code: "not_admin", message: "x" } }],
+    ["a 429", { status: 429, body: { code: "over_request_rate_limit", message: "x" } }],
+    ["a 500", { status: 500, body: { code: "user_not_found", message: "x" } }],
+  ])("getUser throws AuthUnavailable for %s", async (_name, answer) => {
+    await expect(fakeProvider({ [`GET /auth/v1/admin/users/${USER_ID}`]: answer }).gateway.getUser(USER_ID)).rejects.toBeInstanceOf(AuthUnavailable);
+  });
+
+  // P5-R1. Fails if a deletion that a wrong URL or a proxy answered with 404 counts as done: the auth user would live on.
+  it.each([
+    ["a 404 without a code", { status: 404, body: { message: "not found" } }],
+    ["a 404 with another code", { status: 404, body: { code: "not_stubbed", message: "x" } }],
+  ])("deleteUser throws AuthUnavailable for %s", async (_name, answer) => {
+    const user = { status: 200, body: session.user };
+    await expect(fakeProvider({ [`GET /auth/v1/admin/users/${USER_ID}`]: user, [`DELETE /auth/v1/admin/users/${USER_ID}`]: answer }).gateway.deleteUser(USER_ID)).rejects.toBeInstanceOf(AuthUnavailable);
+    await expect(fakeProvider({ [`GET /auth/v1/admin/users/${USER_ID}`]: answer }).gateway.deleteUser(USER_ID)).rejects.toBeInstanceOf(AuthUnavailable);
+  });
 });
 
 describe("Supabase tokens never leave the gateway", () => {

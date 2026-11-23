@@ -56,14 +56,19 @@ export async function verifyStripeEvent(payload: string, signature: string | nul
 }
 
 function subscriptionOf(s: Stripe.Subscription): StripeSubscription {
-  // The period is on the items: the subscription's paid period ends with its earliest item.
-  const ends = s.items.data.map((i) => i.current_period_end);
+  // The period is on the items: the subscription's period is its earliest ending item's. A cancellation
+  // set for an earlier time ends it there; one set for a later time is not this period's end.
+  const item = [...s.items.data].sort((x, y) => x.current_period_end - y.current_period_end)[0];
+  const cancelAt = typeof s.cancel_at === "number" ? s.cancel_at : null;
+  const end = item && (cancelAt === null ? item.current_period_end : Math.min(item.current_period_end, cancelAt));
+  const iso = (seconds: number | undefined) => (seconds === undefined ? null : new Date(seconds * 1000).toISOString());
   return {
     id: s.id,
     status: s.status,
     priceIds: s.items.data.map((i) => i.price.id),
-    currentPeriodEnd: ends.length > 0 ? new Date(Math.min(...ends) * 1000).toISOString() : null,
-    cancelAtPeriodEnd: s.cancel_at_period_end || typeof s.cancel_at === "number",
+    currentPeriodStart: iso(item?.current_period_start),
+    currentPeriodEnd: iso(end),
+    cancelAtPeriodEnd: s.cancel_at_period_end || (cancelAt !== null && cancelAt === end),
     created: s.created,
   };
 }
@@ -113,6 +118,18 @@ export function createStripeGateway(options: StripeGatewayOptions): BillingGatew
     return items;
   }
 
+  const openSessions = (s: Stripe, customerId: string) => all(s.checkout.sessions.list({ customer: customerId, status: "open", limit: 100 }));
+  const priceOf = (session: Stripe.Checkout.Session) => session.metadata?.retrofit_price ?? null;
+
+  /** Closes a checkout; one that is already paid or closed is left as it is. */
+  async function closeSession(s: Stripe, id: string): Promise<void> {
+    try {
+      await s.checkout.sessions.expire(id);
+    } catch (e) {
+      if ((await s.checkout.sessions.retrieve(id)).status === "open") throw e;
+    }
+  }
+
   /** A new checkout for the key, or the one an equal key already opened; never one that is closed. */
   async function openSession(s: Stripe, params: Stripe.Checkout.SessionCreateParams, key: string): Promise<Stripe.Checkout.Session> {
     for (let attempt = 0; attempt < REPLAY_ATTEMPTS; attempt++) {
@@ -135,11 +152,11 @@ export function createStripeGateway(options: StripeGatewayOptions): BillingGatew
 
     createCheckout({ accountId, customerId, priceId, attempt, successUrl, cancelUrl }) {
       return call("createCheckout", async (s) => {
-        const open = await all(s.checkout.sessions.list({ customer: customerId, status: "open", limit: 100 }));
-        const same = open.find((x) => x.metadata?.retrofit_price === priceId && x.url);
-        for (const other of open) if (other !== same) await s.checkout.sessions.expire(other.id);
+        const open = await openSessions(s, customerId);
+        const same = open.find((x) => priceOf(x) === priceId && x.url);
+        for (const other of open) if (other !== same) await closeSession(s, other.id);
         if (same) return hosted("createCheckout", same.url);
-        const session = await openSession(
+        await openSession(
           s,
           {
             mode: "subscription",
@@ -153,7 +170,14 @@ export function createStripeGateway(options: StripeGatewayOptions): BillingGatew
           },
           `retrofit-checkout-${accountId}-${priceId}-${attempt}`,
         );
-        return hosted("createCheckout", session.url);
+        // Another caller may have opened one meanwhile. Every caller that sees the same list keeps the same one:
+        // the newest price, and of it the oldest checkout.
+        const now = (await openSessions(s, customerId)).sort((x, y) => x.created - y.created || (x.id < y.id ? -1 : 1));
+        const newest = now.at(-1);
+        const keeper = now.find((x) => newest && priceOf(x) === priceOf(newest));
+        for (const other of now) if (other !== keeper) await closeSession(s, other.id);
+        if (!keeper || priceOf(keeper) !== priceId) throw new BillingUnavailable("createCheckout", "superseded");
+        return hosted("createCheckout", keeper.url);
       });
     },
 
@@ -184,19 +208,20 @@ export function createStripeGateway(options: StripeGatewayOptions): BillingGatew
           customerId,
           async () => {
             // First no checkout can be paid any more; one paid in this moment shows as a subscription below.
-            for (const session of await all(s.checkout.sessions.list({ customer: customerId, status: "open", limit: 100 }))) {
-              await s.checkout.sessions.expire(session.id).catch(async (e: unknown) => {
-                if ((await s.checkout.sessions.retrieve(session.id)).status === "open") throw e;
-              });
-            }
+            for (const session of await openSessions(s, customerId)) await closeSession(s, session.id);
+            let cancelled = 0;
             for (const sub of await all(s.subscriptions.list({ customer: customerId, limit: 100 }))) {
               if (sub.status === "canceled" || sub.status === "incomplete_expired") continue;
-              await s.subscriptions.cancel(sub.id).catch(async (e: unknown) => {
+              try {
+                await s.subscriptions.cancel(sub.id);
+                cancelled += 1;
+              } catch (e) {
                 if (codeOf(e) !== "resource_missing") throw e;
-              });
+              }
             }
+            return cancelled;
           },
-          () => undefined,
+          () => 0,
         ),
       );
     },
