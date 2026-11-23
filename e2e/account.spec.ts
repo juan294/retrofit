@@ -5,13 +5,17 @@ import { BASE_URL } from "../playwright.config";
 import { askForLink, newEmail, signIn } from "./support/account";
 import { analyzeFixture } from "./support/agent";
 
+// This spec runs before analyze.spec.ts, which needs bakery's first crawl (it watches the progress state), so it
+// analyzes a fixture site no earlier spec uses.
+const SITE = "agentified.fixture.test";
+
 test.describe("accounts", () => {
   // Fails if any step of the account path breaks: the link returns to the results page, the report saves and
   // opens read-only from the account page, the attached analysis opens on another browser with the account
   // alone, sign-out ends the session, a used link shows the send-again page, and deletion removes the account.
   test("sign in from a results page, save the report, open it from the account page, sign out, and delete the account", async ({ page, browser }) => {
     const email = newEmail("path");
-    const id = await analyzeFixture(page, "bakery.fixture.test");
+    const id = await analyzeFixture(page, SITE);
     await page.getByRole("link", { name: SAVE_REPORT_TEXT.signIn }).click();
     await expect(page).toHaveURL(new RegExp(`/sign-in\\?returnTo=%2Fr%2F${id}$`));
     await expect(page.getByRole("button", { name: SIGN_IN_TEXT.submit })).toBeEnabled();
@@ -27,10 +31,10 @@ test.describe("accounts", () => {
     await page.getByRole("link", { name: SAVE_REPORT_TEXT.openAccount }).click();
     await expect(page).toHaveURL(/\/account$/);
     await expect(page.getByTestId("account-email")).toHaveText(email);
-    const saved = page.getByTestId("saved-reports").getByRole("link", { name: /bakery\.fixture\.test/ });
+    const saved = page.getByTestId("saved-reports").getByRole("link", { name: new RegExp(SITE.replaceAll(".", "\\.")) });
     await saved.click();
     await expect(page).toHaveURL(/\/account\/reports\/[0-9a-f-]{36}$/);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Saved report: bakery\.fixture\.test/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(new RegExp(`^Saved report: ${SITE.replaceAll(".", "\\.")}`));
     await expect(page.getByTestId("score-total")).toBeVisible();
     await expect(page.getByTestId("preview-mount")).toHaveCount(0);
 
@@ -79,7 +83,7 @@ test.describe("accounts", () => {
 
   // Fails if a page served to a signed-out visitor offers saving, or a signed-in visitor's results page does not.
   test("the results page offers saving only when signed in", async ({ page }) => {
-    const id = await analyzeFixture(page, "bakery.fixture.test");
+    const id = await analyzeFixture(page, SITE);
     await expect(page.getByRole("button", { name: SAVE_REPORT_TEXT.button })).toHaveCount(0);
     await signIn(page, newEmail("offer"), `/r/${id}`);
     await expect(page.getByTestId("score-total")).toBeVisible({ timeout: 30_000 });
