@@ -108,4 +108,3 @@ export function createFixtureAuth(options: { clock: Clock; origin: string }): Fi
     },
   };
 }
-
