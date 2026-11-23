@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import type { PaidPlanId } from "./billing/plans";
 
 export class ConfigError extends Error {
   constructor(
@@ -39,14 +40,26 @@ export interface Config {
   /**
    * The instant billing and the free-analysis limit start (ms since epoch; BILLING_START, default
    * 2027-01-19T00:00:00Z, the day after judging ends). Before it every visitor keeps open access.
+   * Required on Vercel, and never earlier than that default there.
    */
   readonly billingStart: number;
+  /** Stripe (test mode only). Required on Vercel; null off Vercel without it (checkout and the webhook answer unavailable). */
+  readonly billing: BillingConfig | null;
   /** Bearer secret of every Vercel Cron route (CRON_SECRET). Required on Vercel; null off Vercel without it (the crons refuse). */
   readonly cronSecret: string | null;
   /** Phase 6: Retrofit's free inference path. */
   readonly free: FreeConfig;
   /** Phase 7: the Supabase store. Required on Vercel; null off Vercel without it (memory store). */
   readonly supabase: SupabaseConfig | null;
+}
+
+export interface BillingConfig {
+  /** Server only. Never sent to a browser, logged or written to evidence. A test-mode key. */
+  readonly secretKey: string;
+  /** Server only. Signs the webhook's events. */
+  readonly webhookSecret: string;
+  /** The Stripe price id of each paid plan that has one. The amounts live in Stripe. */
+  readonly prices: Readonly<Partial<Record<PaidPlanId, string>>>;
 }
 
 export interface SupabaseConfig {
@@ -193,9 +206,42 @@ export function loadConfig(env: Env): Config {
 
   const supabase = loadSupabaseConfig(env, onVercel);
 
-  const billingStart = parseInstant(env, "BILLING_START", "2027-01-19T00:00:00Z");
+  if (onVercel && !env.BILLING_START?.trim()) throw new ConfigError("BILLING_START", "is required on Vercel");
+  const billingStart = parseInstant(env, "BILLING_START", EARLIEST_BILLING_START);
+  // Judges have free access until 2027-01-18: no Vercel setting can start billing earlier.
+  if (onVercel && billingStart < Date.parse(EARLIEST_BILLING_START)) throw new ConfigError("BILLING_START", `must not be before ${EARLIEST_BILLING_START} on Vercel`);
+  const billing = loadBillingConfig(env, onVercel);
 
-  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, cronSecret, free, supabase });
+  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, billing, cronSecret, free, supabase });
+}
+
+/** The day after judging ends: the default and, on Vercel, the earliest BILLING_START. */
+const EARLIEST_BILLING_START = "2027-01-19T00:00:00Z";
+
+/**
+ * STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET: required on Vercel; off Vercel both or neither.
+ * STRIPE_PRICE_PRO and STRIPE_PRICE_AGENCY: optional, and only with the secret key. Test mode only:
+ * a live key is refused everywhere (the live switch is a separate authorized release). No message
+ * contains any part of a value.
+ */
+function loadBillingConfig(env: Env, onVercel: boolean): BillingConfig | null {
+  const value = (name: string) => env[name]?.trim() || null;
+  const secretKey = value("STRIPE_SECRET_KEY");
+  const webhookSecret = value("STRIPE_WEBHOOK_SECRET");
+  const pro = value("STRIPE_PRICE_PRO");
+  const agency = value("STRIPE_PRICE_AGENCY");
+  if (onVercel && !secretKey) throw new ConfigError("STRIPE_SECRET_KEY", "is required on Vercel");
+  if (onVercel && !webhookSecret) throw new ConfigError("STRIPE_WEBHOOK_SECRET", "is required on Vercel");
+  if (!secretKey && (webhookSecret || pro || agency)) throw new ConfigError("STRIPE_SECRET_KEY", "is required with any other Stripe variable");
+  if (!secretKey) return null;
+  if (!webhookSecret) throw new ConfigError("STRIPE_WEBHOOK_SECRET", "is required when STRIPE_SECRET_KEY is set");
+  if (!/^(sk|rk)_test_/.test(secretKey)) throw new ConfigError("STRIPE_SECRET_KEY", "must be a test-mode key (sk_test_ or rk_test_)");
+  if (!webhookSecret.startsWith("whsec_")) throw new ConfigError("STRIPE_WEBHOOK_SECRET", "must start with whsec_");
+  for (const [name, id] of [["STRIPE_PRICE_PRO", pro], ["STRIPE_PRICE_AGENCY", agency]] as const) {
+    if (id && !/^price_\w+$/.test(id)) throw new ConfigError(name, "must be a Stripe price id (price_...)");
+  }
+  if (pro && pro === agency) throw new ConfigError("STRIPE_PRICE_AGENCY", "must differ from STRIPE_PRICE_PRO");
+  return Object.freeze({ secretKey, webhookSecret, prices: Object.freeze({ ...(pro ? { pro } : {}), ...(agency ? { agency } : {}) }) });
 }
 
 /**

@@ -1,6 +1,6 @@
 /**
  * Retrofit's plans and the features each one includes: one table that the
- * pricing page, the entitlement check (Phase 5) and the tests read. Plan ids
+ * pricing page, the entitlement check (entitlements.ts) and the tests read. Plan ids
  * match `billing_customers.plan` in supabase/migrations/*_accounts.sql.
  *
  * No amounts here: prices are Stripe configuration, decided later. Before
@@ -8,6 +8,7 @@
  */
 
 export type PlanId = "free" | "pro" | "agency";
+export type PaidPlanId = Exclude<PlanId, "free">;
 
 export type Feature =
   | "analyze"
@@ -25,6 +26,8 @@ export interface Plan {
   readonly name: string;
   readonly summary: string;
   readonly features: readonly Feature[];
+  /** Site scores per hour of the account's API keys together (GET /api/score); null without API keys. */
+  readonly scoresPerHour: number | null;
 }
 
 /** The text the pricing page shows for each feature. */
@@ -45,7 +48,17 @@ const PRO: readonly Feature[] = [...FREE, "publish", "badge", "saved_reports", "
 const AGENCY: readonly Feature[] = [...PRO, "api_high_volume"];
 
 export const PLANS: readonly Plan[] = [
-  { id: "free", name: "Free", summary: "Check your site and try its agent with your own AI key.", features: FREE },
-  { id: "pro", name: "Pro", summary: "Publish the agent for a site you own, with the badge and saved reports.", features: PRO },
-  { id: "agency", name: "Agency", summary: "For agencies that check many client and prospect sites.", features: AGENCY },
+  { id: "free", name: "Free", summary: "Check your site and try its agent with your own AI key.", features: FREE, scoresPerHour: null },
+  { id: "pro", name: "Pro", summary: "Publish the agent for a site you own, with the badge and saved reports.", features: PRO, scoresPerHour: 60 },
+  { id: "agency", name: "Agency", summary: "For agencies that check many client and prospect sites.", features: AGENCY, scoresPerHour: 300 },
 ];
+
+export const isPaidPlan = (id: unknown): id is PaidPlanId => id === "pro" || id === "agency";
+
+export function planOf(id: PlanId): Plan {
+  return PLANS.find((p) => p.id === id) ?? PLANS[0]!;
+}
+
+export function planIncludes(id: PlanId, feature: Feature): boolean {
+  return planOf(id).features.includes(feature);
+}
