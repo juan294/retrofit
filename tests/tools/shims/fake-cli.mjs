@@ -34,6 +34,8 @@ fs.appendFileSync(
     args,
     ppid: process.ppid,
     gateEnv: Boolean(process.env.SUPABASE_GATE_URL && process.env.SUPABASE_GATE_SERVICE_ROLE_KEY && process.env.SUPABASE_GATE_DB_URL),
+    mailEnv: process.env.SUPABASE_GATE_MAIL_URL ?? null,
+    anonEnv: Boolean(process.env.SUPABASE_GATE_ANON_KEY),
   })}\n`,
 );
 
@@ -114,7 +116,8 @@ function configOf(workdir) {
   const project = /^project_id\s*=\s*"([^"]+)"/m.exec(toml)?.[1];
   const apiPort = /\[api\][^[]*?\bport\s*=\s*(\d+)/s.exec(toml)?.[1];
   const dbPort = /\[db\][^[]*?\bport\s*=\s*(\d+)/s.exec(toml)?.[1];
-  return { project, apiPort, dbPort };
+  const mailPort = /\[local_smtp\][^[]*?\bport\s*=\s*(\d+)/s.exec(toml)?.[1];
+  return { project, apiPort, dbPort, mailPort };
 }
 
 function supabase() {
@@ -150,13 +153,17 @@ function supabase() {
       return out("Finished supabase db reset on branch main.");
     }
     case "status": {
-      const { project, apiPort, dbPort } = configOf(workdir);
+      const { project, apiPort, dbPort, mailPort } = configOf(workdir);
       if (!state.containers.some((c) => c.labels[LABEL_PROJECT] === project)) fail(1, `${project} is not running.`);
+      // Like CLI 3.x: the mail catcher (Mailpit) URL only when [local_smtp] is configured.
+      const mail = scenario.statusMailPort ?? mailPort;
       return out(
         JSON.stringify({
           API_URL: `http://127.0.0.1:${apiPort}`,
           DB_URL: `postgresql://postgres:postgres@127.0.0.1:${dbPort}/postgres`,
           SERVICE_ROLE_KEY: "eyJhbGciOiJIUzI1NiJ9.e30.fake-service-role",
+          ANON_KEY: "eyJhbGciOiJIUzI1NiJ9.e30.fake-anon",
+          ...(mail ? { MAILPIT_URL: `http://127.0.0.1:${mail}` } : {}),
         }),
       );
     }

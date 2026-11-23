@@ -49,7 +49,7 @@ type State = {
   networks: Resource[];
   scenario: Record<string, unknown>;
 };
-type Call = { tool: string; args: string[]; ppid: number; gateEnv: boolean };
+type Call = { tool: string; args: string[]; ppid: number; gateEnv: boolean; mailEnv?: string | null; anonEnv?: boolean };
 
 let base: string;
 let root: string;
@@ -335,6 +335,32 @@ describe("gate-db run", () => {
     const result = gate();
     expect(result.status).toBe(4);
     expect(result.stderr).toContain("first failure: vitest-db.json has no testResults with assertionResults");
+    expect(logLines()).toContain(MARKER);
+  });
+
+  // Fails if the auth db test cannot find the mail catcher or the anon key, if the mail catcher port escapes the gate
+  // range, or if the anon key reaches the log.
+  it("gate-db: passes the gate mail catcher URL and the anon key to the db tests, and keeps the key out of the log", () => {
+    const config = path.join(root, "supabase", "config.toml");
+    fs.appendFileSync(config, "[local_smtp]\nenabled = true\nport = 54724\n");
+    expect(gate().status).toBe(0);
+    const toml = fs.readFileSync(path.join(gateWorkdir(), "supabase", "config.toml"), "utf8");
+    expect(toml).toMatch(/\[local_smtp\]\nenabled = true\nport = 54734/);
+    const tests = calls().find((c) => c.tool === "pnpm");
+    expect(tests?.mailEnv).toBe("http://127.0.0.1:54734");
+    expect(tests?.anonEnv).toBe(true);
+    const log = fs.readFileSync(logPath(), "utf8");
+    expect(log).toContain("mail catcher http://127.0.0.1:54734");
+    expect(log).not.toContain("fake-anon");
+  });
+
+  // Fails if a mail catcher outside 54730-54739 (another stack's) is handed to the tests.
+  it("gate-db: refuses a mail catcher URL outside the gate ports and runs no tests", () => {
+    setScenario({ statusMailPort: "54324" });
+    const result = gate();
+    expect(result.status).toBe(4);
+    expect(result.stderr).toContain("supabase status MAILPIT_URL uses port 54324, not a gate port");
+    expect(calls().some((c) => c.tool === "pnpm")).toBe(false);
     expect(logLines()).toContain(MARKER);
   });
 
