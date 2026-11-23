@@ -8305,6 +8305,948 @@
       "suite": "db",
       "file": "tests/db/accounts.db.test.ts",
       "title": "AccountData contract: supabase (two clients) saved reports getSavedReportHost answers the report's host to its account only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites publishSite needs the account's own verified claim for the host"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites a published site is readable whole, as its report and as a light read, and listed for its account only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites a newer analysis refreshes the site and clears the last error; the same or an older one is not_newer and changes nothing"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites recordRefreshError stores a known code on the account's own site and keeps the snapshot"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites a lapse or Start over hides the site at once, and a passing check makes the same publication public again"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites a transfer ends the old owner's publication for good, also when the new owner loses the host and the old owner verifies a new claim"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites a transfer ends a paused publication whose claim is pending, so a later check of that claim does not bring it back"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites the new owner's publish replaces the publication; the old owner cannot change or remove it"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites unpublishing, removing the claim and deleting the account each remove the site and leave other accounts' sites"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites a publish racing another account's verification never leaves the old account's snapshot public"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites two concurrent refreshes leave the newer snapshot"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) published sites refuses an invalid account id, host, time or object, and an oversized snapshot or report, with RangeError"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port publishSite throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port recordRefreshError throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port unpublishSite throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port listPublishedSites throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port getPublicSite throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port getPublicReport throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port getPublicSnapshot throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/supabase-failure.test.ts",
+      "title": "Supabase AccountData on a closed port listPublicHosts throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG shows the score 0 with the fixed text only"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG shows the score 7 with the fixed text only"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG shows the score 100 with the fixed text only"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG a score of null shows no number"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG a score of -1 shows no number"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG a score of 101 shows no number"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG a score of 7.5 shows no number"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG a score of NaN shows no number"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG a score of Infinity shows no number"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG a score of 7 shows no number"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG a score of <b> shows no number"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge SVG the hostile fixture's host and text never appear"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "GET /badge/<host>.svg answers an SVG image cached for one hour that any site may load, with a policy that allows nothing"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "GET /badge/<host>.svg answers an uncached 404 for an unknown, unpublished, lapsed or differently written host and for another file name"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "GET /badge/<host>.svg uses the light read; an outage answers an uncached 503"
+    },
+    {
+      "rule": "badge",
+      "suite": "unit",
+      "file": "tests/badge/badge.test.ts",
+      "title": "badge embed snippet links the badge to the published page and escapes its values"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "the published files of bakery match the organizer's bytes and name no Retrofit inference route"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "the published files of spaOnly match the organizer's bytes and name no Retrofit inference route"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "the published files of agentified match the organizer's bytes and name no Retrofit inference route"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "the published files of hostile match the organizer's bytes and name no Retrofit inference route"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "the published files of noindexPage match the organizer's bytes and name no Retrofit inference route"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/bundle/oracle.test.ts",
+      "title": "proves the published comparison sees a changed network"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files serves the whole set with its types; only the agent JSON files allow every origin"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files bakery: the files are the install bundle's bytes, with the BYOK router and no /api/inference"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files spaOnly: the files are the install bundle's bytes, with the BYOK router and no /api/inference"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files agentified: the files are the install bundle's bytes, with the BYOK router and no /api/inference"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files hostile: the files are the install bundle's bytes, with the BYOK router and no /api/inference"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files noindexPage: the files are the install bundle's bytes, with the BYOK router and no /api/inference"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files the bridge's runtime files are exactly its module's imports"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files the bridge manifest shares no action, module, page or catalog"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files answers 404 for every other path"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files answers the same 404 for an unknown, claimed-but-unpublished and differently written host"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files scripts use the light read; an outage answers 503"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "published agent files a stored snapshot the validator refuses answers 404, never a broken network"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/files.test.ts",
+      "title": "exactHost accepts only the normalized form"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/guard.test.ts",
+      "title": "the fetch guard on a published page refuses a redirect from /s/shop.example.com/agent-manifest.json"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/guard.test.ts",
+      "title": "the fetch guard on a published page refuses a redirect from /s/shop.example.com/site_shop_example_com.network.json"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/guard.test.ts",
+      "title": "the fetch guard on a published page refuses a redirect from /s/shop.example.com/site-content.json"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/guard.test.ts",
+      "title": "the fetch guard on a published page refuses a redirect from /s/shop.example.com/links.json"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/guard.test.ts",
+      "title": "the fetch guard on a published page refuses a redirect from /s/shop.example.com/content-actions.js"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/guard.test.ts",
+      "title": "the fetch guard on a published page leaves other same-origin paths alone"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/lifecycle.test.ts",
+      "title": "what ends and restores the public state three failed daily rechecks hide the page, every file, the badge and the sitemap entry; one pass restores them"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/lifecycle.test.ts",
+      "title": "what ends and restores the public state remove the claim ends every surface at once"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/lifecycle.test.ts",
+      "title": "what ends and restores the public state unpublish ends every surface at once"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/lifecycle.test.ts",
+      "title": "what ends and restores the public state delete the account ends every surface at once"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/lifecycle.test.ts",
+      "title": "what ends and restores the public state a transfer ends it; the new owner publishes their own; the old owner's re-claim does not bring the old page back"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/lifecycle.test.ts",
+      "title": "the public page read reads the report once, for the exact host only"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/lifecycle.test.ts",
+      "title": "the sitemap asks for a bounded number of hosts and answers none when the account data is unavailable"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/panel.test.ts",
+      "title": "publish controls every form is a POST form and every button starts disabled"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/panel.test.ts",
+      "title": "publish controls offers Publish for a verified claim only"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/panel.test.ts",
+      "title": "publish controls shows the public link, the saved date, Refresh, Unpublish and the badge snippet"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/panel.test.ts",
+      "title": "publish controls shows the last refresh error with Try again"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/panel.test.ts",
+      "title": "publish controls a lapsed or pending claim shows the paused state with Unpublish only"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/panel.test.ts",
+      "title": "the published agent panel renders the own-key notice with no free AI, no unofficial label and no inference route"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/panel.test.ts",
+      "title": "the published agent panel imports nothing that calls /api/inference"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "POST /api/publish preconditions refuses cross-origin (403), signed-out (401), too large (413) and invalid hosts (400)"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "POST /api/publish preconditions needs the account's own verified claim: no claim 403; pending, lapsed and superseded 409"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "POST /api/publish preconditions a claim that lapses between the check and the write is refused with 409"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "the analysis that is published without a ready analysis of the exact host attached to the account it answers 409 and says to analyze it first"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "the analysis that is published publishes the newest ready analysis of the scored host, whatever was typed, and answers the page, the saved date and the snippet"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "the analysis that is published a network the validator refuses is not published (422), and nothing is stored"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "the analysis that is published a snapshot over the size limit is not published (422 too_large)"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "refresh publishing again with a newer analysis replaces the snapshot and clears the last error"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "refresh a refresh that fails with no_analysis keeps the published snapshot and stores the code"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "refresh a refresh that fails with not_newer keeps the published snapshot and stores the code"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "refresh a refresh that fails with generation_failed keeps the published snapshot and stores the code"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "refresh a refresh that fails with too_large keeps the published snapshot and stores the code"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "refresh after a failing crawl the refresh keeps the published snapshot, and the next ready analysis refreshes it"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "limit and outages allows 10 publishes and refreshes per account and hour, then 429 with the retry time"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "limit and outages answers 503 when the account data is unavailable"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "POST /api/publish/remove (unpublish) removes only the account's own publication; the claim stays verified"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/publish.test.ts",
+      "title": "POST /api/publish/remove (unpublish) removes a paused publication too"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher skips /s/shop.example.com/bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher skips /s/shop.example.com/bridge/agent-manifest.json"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher skips /s/bakery.fixture.test:3011/bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher skips /p/0123456789abcdef0123456789abcdef/bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher skips /badge/shop.example.com.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher skips /badge/bakery.fixture.test:3011.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/shop.example.com"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/shop.example.com/agent-manifest.json"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/shop.example.com/content-actions.js"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/shop.example.com/runtime/action-bridge.js"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/shop.example.com/bridge"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/shop.example.com/bridge/"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/shop.example.com/bridge/a/b.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/shop.example.com/bridge/%2e%2e/%2e%2e/account"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/shop.example.com/x/bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /s/bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /x/s/shop.example.com/bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /signs/shop.example.com/bridge/action-bridge.html"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/a/b.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/unknown"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/..svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badge/shop.example.com.svg/x"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /badges/x.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /x/badge/shop.example.com.svg"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /account"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /account/reports/x"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher runs on /sitemap.xml"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "the request hook's matcher the bridge exclusion never covers a dot segment"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "headers of published files the page and the agent files get the page CSP and no-store"
+    },
+    {
+      "rule": "published page policies",
+      "suite": "unit",
+      "file": "tests/security/proxy-matcher.test.ts",
+      "title": "headers of published files the published bridge has the bridge policy"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "publishing in the privacy notice and the terms says what a published page makes public, and that it does not name the account"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "publishing in the privacy notice and the terms says how to unpublish, what that deletes, and how long a badge can stay cached"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "publishing in the privacy notice and the terms says what happens on a lapse, a transfer, removing the claim and account deletion"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "publishing in the privacy notice and the terms says a published agent uses only the visitor's own key and the page sets no cookie"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "publishing in the privacy notice and the terms the terms keep the claim rule and say when a published page pauses or ends"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "published pages and robots robots allows /s/ and /badge/"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "published pages and robots the sitemap lists a published site after Retrofit's own pages until it is unpublished"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites publishSite needs the account's own verified claim for the host"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites a published site is readable whole, as its report and as a light read, and listed for its account only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites a newer analysis refreshes the site and clears the last error; the same or an older one is not_newer and changes nothing"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites recordRefreshError stores a known code on the account's own site and keeps the snapshot"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites a lapse or Start over hides the site at once, and a passing check makes the same publication public again"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites a transfer ends the old owner's publication for good, also when the new owner loses the host and the old owner verifies a new claim"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites a transfer ends a paused publication whose claim is pending, so a later check of that claim does not bring it back"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites the new owner's publish replaces the publication; the old owner cannot change or remove it"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites unpublishing, removing the claim and deleting the account each remove the site and leave other accounts' sites"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites a publish racing another account's verification never leaves the old account's snapshot public"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites two concurrent refreshes leave the newer snapshot"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) published sites refuses an invalid account id, host, time or object, and an oversized snapshot or report, with RangeError"
+    },
+    {
+      "rule": "publishing",
+      "suite": "playwright",
+      "file": "publish.spec.ts",
+      "title": "published sites an owner publishes; a visitor without cookies reads the report and asks the agent with their own key; check_partner accepts it"
+    },
+    {
+      "rule": "badge",
+      "suite": "playwright",
+      "file": "publish.spec.ts",
+      "title": "published sites the badge and the sitemap show a published site; unpublishing ends the page, the files, the badge and the sitemap entry"
+    },
+    {
+      "rule": "publishing",
+      "suite": "playwright",
+      "file": "publish.spec.ts",
+      "title": "published sites a failed refresh keeps the page; a lapse pauses it and one passing check restores it"
+    },
+    {
+      "rule": "publishing",
+      "suite": "playwright",
+      "file": "publish.spec.ts",
+      "title": "published sites unknown and differently written hosts answer 404 for the page and the badge"
+    },
+    {
+      "rule": "publishing",
+      "suite": "playwright",
+      "file": "publish.spec.ts",
+      "title": "published sites a dot path after the bridge or badge folder keeps the page policy"
+    },
+    {
+      "rule": "publishing",
+      "suite": "playwright",
+      "file": "publish.spec.ts",
+      "title": "published sites a hostile site's published page is inert for a signed-in visitor"
+    },
+    {
+      "rule": "publishing",
+      "suite": "playwright",
+      "file": "publish.spec.ts",
+      "title": "published sites the published bridge gives a framing site no action and no access"
+    },
+    {
+      "rule": "publishing",
+      "suite": "playwright",
+      "file": "publish.spec.ts",
+      "title": "published sites with no unexpired analysis a refresh says to analyze first, and a new analysis then refreshes the page"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the publish controls and the published page fit a 320 px phone screen"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the Publish offer and a limit answer fit a 320 px phone screen"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the publish controls and the published page are readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the Publish offer and a limit answer are readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the publish controls and the published page are readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the Publish offer and a limit answer are readable in dark mode"
     }
   ],
   "repairs": {
