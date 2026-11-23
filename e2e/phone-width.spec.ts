@@ -1,9 +1,11 @@
 import { test, expect } from "./fixtures/csp";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
-import { analyzeFixture } from "./support/agent";
-import { claimPanel, claimStates, FRESH_HOST, MISSING_HOST, mockCheckLimit } from "./support/claims";
+import { analyzeFixture, mockOtari } from "./support/agent";
+import { claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockCheckLimit } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
+import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
+import { connectOwnKey, mockPublishLimit, publishStates, verifiedOwner } from "./support/publish";
 
 test.use({ viewport: { width: 320, height: 640 } });
 
@@ -84,4 +86,42 @@ test("the claim panels fit a 320 px phone screen", async ({ page, browser }) => 
   await expect(other.getByTestId("claim-status")).toHaveText(/^Verified on /);
   await fits(other);
   await close();
+});
+
+// Phase 4. Fails if the publish controls (Publish, published with the snippet and a failed refresh, paused), the public page (with its key
+// panel and its agent) or its 404 page scrolls sideways at 320 px.
+test("the publish controls and the published page fit a 320 px phone screen", async ({ page, browser }) => {
+  test.setTimeout(120_000);
+  const { visitor, pause, close } = await publishStates(page, browser, "phone");
+  await expect(claimPanel(page, FLAKY_HOST).getByTestId("badge-snippet")).toBeVisible();
+  await fits(page);
+  await visitor.setViewportSize({ width: 320, height: 640 });
+  await mockOtari(visitor);
+  await expect(visitor.getByLabel("Paste your key")).toBeVisible();
+  await fits(visitor);
+  await connectOwnKey(visitor);
+  await expect(visitor.getByTestId("preview-mount").locator(".ns-title").first()).toBeVisible();
+  await fits(visitor);
+  await pause();
+  await fits(page);
+  expect((await visitor.goto(visitor.url()))?.status()).toBe(404);
+  await expect(visitor.getByRole("heading", { level: 1, name: PUBLISHED_PAGE_TEXT.notFoundTitle })).toBeVisible();
+  await fits(visitor);
+  await close();
+  await claimPanel(page, FLAKY_HOST).getByRole("button", { name: PUBLISH_TEXT.unpublish }).click();
+  await expect(claimPanel(page, FLAKY_HOST).getByTestId("claim-message")).toHaveText(PUBLISH_TEXT.unpublished);
+  await fits(page);
+});
+
+// Phase 4. Fails if the Publish offer or a limit answer scrolls sideways at 320 px.
+test("the Publish offer and a limit answer fit a 320 px phone screen", async ({ page }) => {
+  test.setTimeout(60_000);
+  await verifiedOwner(page, FLAKY_HOST, "phone-offer");
+  const panel = claimPanel(page, FLAKY_HOST);
+  await expect(panel.getByText(PUBLISH_TEXT.intro)).toBeVisible();
+  await fits(page);
+  await mockPublishLimit(page);
+  await panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }).click();
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await fits(page);
 });

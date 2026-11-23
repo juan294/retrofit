@@ -101,7 +101,7 @@ export async function mockCheckLimit(page: Page): Promise<void> {
 }
 
 /** Claims `host` by meta, registers the tag and checks it: verified. */
-async function verifyByTag(page: Page, host: string): Promise<void> {
+export async function verifyByTag(page: Page, host: string): Promise<void> {
   const { panel, token } = await claimSite(page, host, "meta");
   await addClaimTag(page.request, host, token);
   await checkAgain(panel);

@@ -7,6 +7,8 @@ import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./
 import { analyzeFixture, mockOtari } from "./support/agent";
 import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockCheckLimit } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
+import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
+import { connectOwnKey, mockPublishLimit, publishStates, verifiedOwner } from "./support/publish";
 
 type Locator = import("@playwright/test").Locator;
 
@@ -216,5 +218,57 @@ for (const colorScheme of ["light", "dark"] as const) {
     await other.goto("/account");
     await readable({ verified: other.getByTestId("claim-status"), verifiedReason: other.getByTestId("claim-reason") });
     await close();
+  });
+}
+
+// Phase 4. Fails if any text of the publish controls, the public page, its key panel, its agent or its 404 page is unreadable in either scheme.
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`the publish controls and the published page are readable in ${colorScheme} mode`, async ({ page, browser }) => {
+    test.setTimeout(120_000);
+    await page.emulateMedia({ colorScheme });
+    const { visitor, pause, close } = await publishStates(page, browser, `theme-${colorScheme}`);
+    const panel = claimPanel(page, FLAKY_HOST);
+    await readable({
+      link: panel.getByTestId("publish-link"),
+      saved: panel.getByTestId("publish-saved"),
+      error: panel.getByTestId("publish-error"),
+      tryAgain: panel.getByRole("button", { name: PUBLISH_TEXT.tryAgain, exact: true }),
+      unpublish: panel.getByRole("button", { name: PUBLISH_TEXT.unpublish }),
+      badgeHeading: panel.getByText(PUBLISH_TEXT.badgeHeading),
+      snippet: panel.getByTestId("badge-snippet"),
+    });
+    await visitor.emulateMedia({ colorScheme });
+    await mockOtari(visitor);
+    await readable({
+      heading: visitor.getByRole("heading", { level: 1 }),
+      publishedBy: visitor.getByTestId("published-by"),
+      score: visitor.getByTestId("score-total"),
+      agentHeading: visitor.getByTestId("published-agent").getByRole("heading", { level: 2 }).first(),
+      ownKey: visitor.getByText(PUBLISHED_PAGE_TEXT.ownKey),
+      keyLabel: visitor.getByText("Paste your key", { exact: true }),
+      connect: visitor.getByRole("button", { name: "Connect", exact: true }),
+      check: visitor.getByTestId("check-aw.manifest").locator("strong"),
+    });
+    await connectOwnKey(visitor);
+    const mount = visitor.getByTestId("preview-mount");
+    await readable({ title: mount.locator(".ns-title").first(), actions: mount.getByText(/website actions? connected/).first() });
+    await pause();
+    await readable({ paused: panel.getByTestId("publish-paused") });
+    await visitor.goto(visitor.url());
+    await readable({ heading: visitor.getByRole("heading", { level: 1, name: PUBLISHED_PAGE_TEXT.notFoundTitle }), text: visitor.getByText(PUBLISHED_PAGE_TEXT.notFound), analyze: visitor.getByRole("link", { name: PUBLISHED_PAGE_TEXT.analyze }) });
+    await close();
+    await panel.getByRole("button", { name: PUBLISH_TEXT.unpublish }).click();
+    await readable({ unpublished: panel.getByText(PUBLISH_TEXT.unpublished) });
+  });
+
+  test(`the Publish offer and a limit answer are readable in ${colorScheme} mode`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.emulateMedia({ colorScheme });
+    await verifiedOwner(page, FLAKY_HOST, `theme-offer-${colorScheme}`);
+    const panel = claimPanel(page, FLAKY_HOST);
+    await readable({ intro: panel.getByText(PUBLISH_TEXT.intro), publish: panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }) });
+    await mockPublishLimit(page);
+    await panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }).click();
+    await readable({ limit: panel.getByRole("alert") });
   });
 }

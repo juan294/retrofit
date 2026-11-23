@@ -20,9 +20,9 @@ export const ALL = [IMG, SCRIPT, JS_LINK, RAW_JS_LINK, CSS].join(" ");
  * so the content tools (search_site_content, get_site_records) return them. The hostile
  * fixture itself carries only the injection phrase (tests/fixtures/sites/index.ts:150-158).
  */
-export async function injectHostileContent(page: Page): Promise<{ served: number }> {
+export async function injectHostileContent(page: Page, file: RegExp = /\/p\/[0-9a-f]{32}\/site-content\.json$/): Promise<{ served: number }> {
   const state = { served: 0 };
-  await page.route(/\/p\/[0-9a-f]{32}\/site-content\.json$/, async (route) => {
+  await page.route(file, async (route) => {
     const response = await route.fetch();
     const snapshot = (await response.json()) as { source?: string; pages?: unknown[]; records?: Record<string, unknown[]> };
     const source = snapshot.source ?? "http://hostile.fixture.test:3011";
