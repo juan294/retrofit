@@ -107,6 +107,12 @@ describe("publishing in the privacy notice and the terms", () => {
     expect(privacy).toContain("It does not show your email address or account");
   });
 
+  // Fails if the notice is wrong about what a publication keeps: agentSnapshot's fields, the report, the dates and the last refresh's code.
+  it("says what is kept of a published site, and what is not", () => {
+    expect(privacy).toContain("the host, the time of the read, the address, title and text of each page (pages marked noindex are left out), the structured records, and the score with its checks, with the dates of the publish and the latest refresh and the result code of a failed refresh");
+    expect(privacy).toContain("It keeps no links, forms or other page code.");
+  });
+
   // Fails if the notice does not say how to unpublish, or promises more than the badge's cache allows.
   it("says how to unpublish, what that deletes, and how long a badge can stay cached", () => {
     expect(privacy).toContain("Unpublish on your account page deletes the published copy and ends the page, its files and the badge");

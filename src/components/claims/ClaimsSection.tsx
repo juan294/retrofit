@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import type { ClaimOption } from "@/lib/claims/sources";
-import type { ClaimView } from "@/lib/claims/view";
+import type { AccountClaimView, ClaimView } from "@/lib/claims/view";
 import type { PublishedView } from "@/lib/publish/view";
 import { PublishControls } from "../publish/PublishControls";
 import { CLAIMS_TEXT as T } from "@/lib/site/claims-texts";
@@ -16,8 +16,6 @@ type Answer = { message?: unknown; retryAt?: unknown; token?: unknown; claim?: P
 /** The claim view of an answer, when it carries a whole one. */
 const viewOf = (answer: Answer | null): ClaimView | null => (typeof answer?.claim?.id === "string" && typeof answer.claim.statusText === "string" ? (answer.claim as ClaimView) : null);
 
-const NO_SITES: readonly PublishedView[] = [];
-
 const accent = { background: "var(--color-accent)", color: "var(--color-accent-text)" };
 const border = { borderColor: "var(--color-border)" };
 const muted = { color: "var(--color-muted)" };
@@ -25,28 +23,29 @@ const danger = { color: "var(--color-danger)" };
 
 /**
  * "Your sites" on /account: claim a site from a recent analysis or a saved report, and one panel per
- * claim with what to add, Check again, Start over, the other method, Remove, and the publish controls
- * (`sites`: the account's publications). Every action is a POST form sent as JSON to /api/claims/* or /api/publish; buttons stay disabled until hydration. A new token (after
- * a claim or Start over) lives only in this component's state, so it is shown once: a reload shows
- * only where the record goes. Check again and Start over show the claim their answer carries; a new
- * or removed claim reads the server data again (router.refresh).
+ * claim with what to add, Check again, Start over, the other method, Remove, and the publish controls.
+ * Every action is a POST form sent as JSON to /api/claims/* or /api/publish; buttons stay disabled until
+ * hydration. A new token (after a claim or Start over) lives only in this component's state, so it is
+ * shown once: a reload shows only where the record goes. Check again and Start over show the claim their
+ * answer carries, and Publish and Unpublish the site theirs carries; a new or removed claim reads the
+ * server data again (router.refresh).
  */
-export function ClaimsSection({ claims, options, sites = NO_SITES }: { claims: readonly ClaimView[]; options: readonly ClaimOption[]; sites?: readonly PublishedView[] }) {
+export function ClaimsSection({ claims, options }: { claims: readonly AccountClaimView[]; options: readonly ClaimOption[] }) {
   const router = useRouter();
   const hydrated = useHydrated();
   const [busy, setBusy] = useState<string | null>(null);
   const [tokens, setTokens] = useState<Record<string, string>>({});
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
-  // The server's claims, with the claims later answers carried; new server data (after a refresh) replaces them.
+  // The server's claims, with the claims and sites later answers carried; new server data (after a refresh) replaces them.
   const [views, setViews] = useState(claims);
   const [fromServer, setFromServer] = useState(claims);
-  // The server's publications by host, with those later answers carried (null: unpublished).
-  const [published, setPublished] = useState<Record<string, PublishedView | null>>(() => byHost(sites));
   if (claims !== fromServer) {
     setFromServer(claims);
     setViews(claims);
-    setPublished(byHost(sites));
   }
+
+  /** Puts what an answer carried into the claim's panel. */
+  const merge = (claimId: string, change: Partial<AccountClaimView>) => setViews((vs) => vs.map((v) => (v.id === claimId ? { ...v, ...change } : v)));
 
   /** Posts `body` to `path`; shows the answer's message under `key` (a claim id, or "new"); keeps a returned token. */
   async function send(path: string, body: Record<string, string>, key: string): Promise<void> {
@@ -59,10 +58,8 @@ export function ClaimsSection({ claims, options, sites = NO_SITES }: { claims: r
       const message = typeof answer?.message === "string" ? answer.message : T.unavailable;
       status = { ok: res.ok, text: res.ok ? message : localizeRetry(message, typeof answer?.retryAt === "string" ? answer.retryAt : undefined) };
       const view = viewOf(answer);
-      if (body.host && answer?.site !== undefined) {
-        const { site } = answer;
-        setPublished((p) => ({ ...p, [body.host as string]: site }));
-      }
+      // A publish answer (`key` is the claim's id).
+      if (answer?.site !== undefined) merge(key, { site: answer.site });
       if (res.ok && view && typeof answer?.token === "string") {
         const token = answer.token;
         setTokens((t) => ({ ...t, [view.id]: token }));
@@ -72,7 +69,7 @@ export function ClaimsSection({ claims, options, sites = NO_SITES }: { claims: r
         if (res.ok && view && key === "new") key = view.id;
         if (res.ok) router.refresh();
       } else if (view) {
-        setViews((vs) => vs.map((v) => (v.id === view.id ? view : v)));
+        merge(view.id, view);
       }
     } catch {
       status = { ok: false, text: T.unavailable };
@@ -128,15 +125,13 @@ export function ClaimsSection({ claims, options, sites = NO_SITES }: { claims: r
       ) : (
         <ul className="mt-4 flex flex-col gap-3">
           {views.map((c) => (
-            <ClaimPanel key={c.id} claim={c} site={published[c.host] ?? null} token={tokens[c.id] ?? null} status={statuses[c.id] ?? null} busy={busy === c.id} disabled={disabled} send={(path, body) => send(path, { claimId: c.id, ...body }, c.id)} />
+            <ClaimPanel key={c.id} claim={c} token={tokens[c.id] ?? null} status={statuses[c.id] ?? null} busy={busy === c.id} disabled={disabled} send={(path, body) => send(path, { claimId: c.id, ...body }, c.id)} />
           ))}
         </ul>
       )}
     </section>
   );
 }
-
-const byHost = (sites: readonly PublishedView[]): Record<string, PublishedView | null> => Object.fromEntries(sites.map((s) => [s.host, s]));
 
 function Message({ status, testId }: { status: Status; testId: string }) {
   if (!status) return null;
@@ -147,7 +142,7 @@ function Message({ status, testId }: { status: Status; testId: string }) {
   );
 }
 
-function ClaimPanel(p: { claim: ClaimView; site: PublishedView | null; token: string | null; status: Status; busy: boolean; disabled: boolean; send: (path: string, body?: Record<string, string>) => Promise<void> }) {
+function ClaimPanel(p: { claim: AccountClaimView; token: string | null; status: Status; busy: boolean; disabled: boolean; send: (path: string, body?: Record<string, string>) => Promise<void> }) {
   const { claim: c, token } = p;
   const action = (path: string, body: Record<string, string> = {}) => (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -195,7 +190,7 @@ function ClaimPanel(p: { claim: ClaimView; site: PublishedView | null; token: st
         {c.canStartOver ? button(c.method === "meta" ? T.useDns : T.useMeta, "/api/claims/start-over", { method: c.method === "meta" ? "dns" : "meta" }) : null}
         {button(T.remove, "/api/claims/remove")}
       </div>
-      <PublishControls verified={c.status === "verified"} site={p.site} button={(label, path, primary) => button(label, path, { host: c.host }, primary)} />
+      <PublishControls verified={c.status === "verified"} site={c.site} button={(label, path, primary) => button(label, path, { host: c.host }, primary)} />
       <Message status={p.status} testId="claim-message" />
     </li>
   );

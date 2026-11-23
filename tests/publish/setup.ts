@@ -5,47 +5,15 @@ import { addAccountAnalyses } from "@/lib/analysis/account-list";
 import { accountListTtl, analysisKey, EXPIRED_GRACE_S, storeTtl, type Analysis } from "@/lib/analysis/record";
 import { scoreSnapshot } from "@/lib/score/score";
 import { sha256Hex } from "@/lib/security/tokens";
-import type { Snapshot } from "@/lib/snapshot/types";
-import { storeAnalysis, TEST_ACCOUNT, type TestDeps } from "../helpers/server-deps";
+import { agentSnapshot, type Snapshot } from "@/lib/snapshot/types";
+import { networkNameFor } from "@/lib/generate/network";
+import { BRIDGE_RUNTIME_FILES } from "@/lib/publish/assets";
+import { storeAnalysis, testDeps, TEST_ACCOUNT, type TestDeps } from "../helpers/server-deps";
+
+export { snapshotOf } from "../helpers/agent-snapshot";
 
 export const HOST = "shop.example.com";
 export const OWNER: string = TEST_ACCOUNT.userId;
-
-/** A small valid snapshot of `host`, read at `fetchedAt` (ISO 8601); `text` marks its one page. */
-export function snapshotOf(host: string, fetchedAt: string, text = "Open Monday to Friday."): Snapshot {
-  const probe = { url: `https://${host}/x`, status: 404, contentType: "text/plain", body: "", accessControlAllowOrigin: null };
-  return {
-    version: "snapshot/v1",
-    source: `https://${host}/`,
-    inputUrl: `https://${host}/`,
-    finalUrl: `https://${host}/`,
-    host,
-    fetchedAt,
-    pages: [
-      {
-        url: `https://${host}/`,
-        status: 200,
-        truncated: false,
-        title: "Shop",
-        description: null,
-        lang: "en",
-        text,
-        textTruncated: false,
-        noindex: false,
-        headers: {},
-        jsonLd: [],
-        jsonLdInvalid: 0,
-        forms: [],
-        links: [],
-        records: {},
-      },
-    ],
-    probes: { robots: probe, agentManifest: probe, llmsTxt: probe, sitemap: probe },
-    skipped: [],
-    records: {},
-    excludedNoindex: [],
-  };
-}
 
 /**
  * Stores a ready analysis of `snapshot` (or, without one, an analysis whose crawl never finished) attached to
@@ -93,15 +61,38 @@ export async function lapseNow(d: TestDeps, claim: Claim): Promise<void> {
   }
 }
 
-/** Writes a publication directly (the owner must hold a verified claim). */
+/** Writes a publication directly, in its stored form (the owner must hold a verified claim). */
 export async function publishDirect(d: TestDeps, snapshot: Snapshot, o: { accountId?: string; score?: number | null } = {}): Promise<void> {
   const report = { ...scoreSnapshot(snapshot), ...(o.score === undefined ? {} : { score: o.score }) };
   const r = await d.accounts.publishSite(o.accountId ?? OWNER, {
     host: snapshot.host,
-    snapshot: snapshot as unknown as Record<string, unknown>,
+    snapshot: agentSnapshot(snapshot),
     report: report as unknown as Record<string, unknown>,
     fetchedAt: snapshot.fetchedAt,
     now: new Date(d.clock()).toISOString(),
   });
   if (!("site" in r)) throw new Error(r.outcome);
 }
+
+/** New deps with `snapshot`'s host claimed, verified and published (with `score` in place of the snapshot's own, when given). */
+export async function published(snapshot: Snapshot, score?: number | null): Promise<{ d: TestDeps; claim: Claim }> {
+  const d = testDeps();
+  const claim = await verifiedClaim(d, undefined, snapshot.host);
+  await publishDirect(d, snapshot, { score });
+  return { d, claim };
+}
+
+const JSON_TYPE = "application/json";
+const JS_TYPE = "text/javascript; charset=utf-8";
+
+/** Every file of a published host, with its content type. */
+export const publishedFiles = (host: string): [file: string, type: string][] => [
+  ["agent-manifest.json", JSON_TYPE],
+  [`${networkNameFor(host)}.network.json`, JSON_TYPE],
+  ["site-content.json", JSON_TYPE],
+  ["links.json", JSON_TYPE],
+  ["bridge/agent-manifest.json", JSON_TYPE],
+  ["content-actions.js", JS_TYPE],
+  ["bridge/action-bridge.html", "text/html; charset=utf-8"],
+  ...BRIDGE_RUNTIME_FILES.map((f): [string, string] => [`runtime/${f}`, JS_TYPE]),
+];

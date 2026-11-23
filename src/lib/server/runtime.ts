@@ -110,9 +110,12 @@ export function getStore(config: Config = getConfig()): Store {
   return singletons.store;
 }
 
-/** The process-wide AccountData (dataAdapter). */
+/** The process-wide AccountData (dataAdapter). In fixtures mode browser tests can turn on an outage. */
 export function getAccountData(config: Config = getConfig()): AccountData {
-  singletons.accounts ??= dataAdapter(config, "account data", createSupabaseAccountData, createMemoryAccountData);
+  if (!singletons.accounts) {
+    const data = dataAdapter(config, "account data", createSupabaseAccountData, createMemoryAccountData);
+    singletons.accounts = config.fixturesEnabled ? fixtureOutage(data) : data;
+  }
   return singletons.accounts;
 }
 
@@ -167,8 +170,7 @@ export function getServerDeps(): ServerDeps {
       store: getStore(config),
       // Built on first use, so routes that never read account data do not create it.
       get accounts() {
-        // Browser tests can turn on an outage (fixtures mode only).
-        return config.fixturesEnabled ? fixtureOutage(getAccountData(config)) : getAccountData(config);
+        return getAccountData(config);
       },
       get auth() {
         return getAuthGateway(config);

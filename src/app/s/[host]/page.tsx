@@ -5,7 +5,7 @@ import { cache } from "react";
 import { ScoreReport, storedReportView } from "@/components/analysis/ScoreReport";
 import { PublishedAgent } from "@/components/publish/PublishedAgent";
 import { readPublishedPage } from "@/lib/publish/page";
-import { publishedUrl } from "@/lib/publish/view";
+import { publishedUrl } from "@/lib/publish/url";
 import { getServerDeps } from "@/lib/server/runtime";
 import { dateText } from "@/lib/site/account-texts";
 import { PUBLISHED_PAGE_TEXT as T } from "@/lib/site/publish-texts";

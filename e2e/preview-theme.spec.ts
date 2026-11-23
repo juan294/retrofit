@@ -4,11 +4,11 @@ import { PRICING_TEXT, UNSUBSCRIBE_TEXT } from "@/lib/site/pricing-texts";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT, SAVED_REPORT_TEXT } from "@/lib/site/account-texts";
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
 import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
-import { analyzeFixture, mockOtari } from "./support/agent";
-import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockCheckLimit } from "./support/claims";
+import { analyzeFixture, mockOtari, submitKey } from "./support/agent";
+import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockLimit } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
-import { connectOwnKey, mockPublishLimit, pageUrl, publishedOwner, publishStates, saveTestKey, setOutage, verifiedOwner } from "./support/publish";
+import { pageUrl, publishedOwner, publishStates, saveTestKey, setOutage, verifiedOwner } from "./support/publish";
 
 type Locator = import("@playwright/test").Locator;
 
@@ -211,7 +211,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       source: page.getByLabel(CLAIMS_TEXT.sourceLabel),
       claim: page.getByRole("button", { name: CLAIMS_TEXT.claimButton }),
     });
-    await mockCheckLimit(page);
+    await mockLimit(page, "/api/claims/check", CLAIMS_TEXT.limit);
     await fresh.getByRole("button", { name: CLAIMS_TEXT.checkAgain }).click();
     await readable({ limit: fresh.getByRole("alert") });
     await other.emulateMedia({ colorScheme });
@@ -249,7 +249,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       connect: visitor.getByRole("button", { name: "Connect", exact: true }),
       check: visitor.getByTestId("check-aw.manifest").locator("strong"),
     });
-    await connectOwnKey(visitor);
+    await submitKey(visitor);
     const mount = visitor.getByTestId("preview-mount");
     await readable({ title: mount.locator(".ns-title").first(), actions: mount.getByText(/website actions? connected/).first() });
     await pause();
@@ -267,7 +267,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     await verifiedOwner(page, FLAKY_HOST, `theme-offer-${colorScheme}`);
     const panel = claimPanel(page, FLAKY_HOST);
     await readable({ intro: panel.getByText(PUBLISH_TEXT.intro), publish: panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }) });
-    await mockPublishLimit(page);
+    await mockLimit(page, "/api/publish", PUBLISH_TEXT.limit);
     await panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }).click();
     await readable({ limit: panel.getByRole("alert") });
   });

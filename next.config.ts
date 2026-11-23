@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { peerRewrites } from "./src/lib/peer/rewrites";
+import { PUBLISHED_ASSETS } from "./src/lib/publish/assets";
 import { staticSecurityHeaders } from "./src/lib/security/headers";
 
 const nextConfig: NextConfig = {
@@ -12,7 +13,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/p/**": ["./public/preview-assets/**/*", "./public/runtime/**/*", "./tools/agentic-web/templates/assistant.css"],
     // A published site's agent files: content-actions.js, the bridge page and its runtime modules.
-    "/s/**": ["./public/preview-assets/**/*", "./public/runtime/*.js"],
+    "/s/**": [...PUBLISHED_ASSETS.values()].map((file) => `./public/${file}`),
     // The demo-harbor peer route reads its static site from disk.
     "/peer/[...path]": ["./peers/demo-harbor/public/**/*", "./peers/demo-harbor/public/.well-known/*"],
   },

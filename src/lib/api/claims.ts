@@ -5,12 +5,12 @@ import { hostOfSource, parseClaimSource } from "@/lib/claims/sources";
 import { runClaimCheck } from "@/lib/claims/verify";
 import { claimView } from "@/lib/claims/view";
 import type { Claim, ClaimMethod } from "@/lib/accounts/data";
-import { countClientWindow } from "@/lib/fetch/limits";
 import { newToken, sha256Hex } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { CLAIMS_TEXT as T } from "@/lib/site/claims-texts";
 import { accountPost, type Fields } from "./account-post";
-import { json, limitOr429 } from "./json";
+import { json } from "./json";
+import { countIn } from "./limits";
 
 /**
  * The claim API behind the account page's claim panels (phase-3.md). Every route is an accountPost, for
@@ -34,11 +34,6 @@ const view = (deps: Deps, claim: Claim) => claimView(claim, deps.config);
 async function ownClaim(deps: Deps, account: Account, fields: Fields): Promise<Claim | Response> {
   const claim = typeof fields.claimId === "string" ? await deps.accounts.getClaim(account.accountId, fields.claimId) : null;
   return claim ?? notFound();
-}
-
-/** Counts one call in an hourly window; a 429 response with `text` past `limit`. */
-async function countIn(deps: Deps, prefix: string, limit: number, key: string, text: (retryAt: Date) => string): Promise<Response | null> {
-  return limitOr429(await countClientWindow(deps.store, prefix, limit, key, deps.clock()), text);
 }
 
 /** 409 for a claim whose state refuses the action: verified (Start over) or superseded (terminal). */

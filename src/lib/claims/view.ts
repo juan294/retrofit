@@ -1,5 +1,6 @@
-import type { Claim, ClaimMethod, ClaimStatus } from "@/lib/accounts/data";
+import type { Claim, ClaimMethod, ClaimStatus, PublishedSite } from "@/lib/accounts/data";
 import type { Config } from "@/lib/config";
+import { publishedView, type PublishedView } from "@/lib/publish/view";
 import { CLAIMS_TEXT as T } from "@/lib/site/claims-texts";
 import { claimPageUrl, claimRecordName } from "./host";
 
@@ -62,4 +63,18 @@ export function claimView(claim: Claim, config: Pick<Config, "fixturesEnabled">)
     canCheck: claim.status !== "superseded",
     canStartOver: claim.status === "pending" || claim.status === "lapsed",
   };
+}
+
+/** A claim as the account page shows it: with its publication, or null when it has none. The claim API answers leave `site` out. */
+export interface AccountClaimView extends ClaimView {
+  readonly site: PublishedView | null;
+}
+
+/** The account's claims with their publications. */
+export function accountClaimViews(claims: readonly Claim[], sites: readonly PublishedSite[], config: Pick<Config, "fixturesEnabled" | "publicOrigin">): AccountClaimView[] {
+  const byClaim = new Map(sites.map((s) => [s.claimId, s]));
+  return claims.map((c) => {
+    const site = byClaim.get(c.id);
+    return { ...claimView(c, config), site: site ? publishedView(site, config) : null };
+  });
 }

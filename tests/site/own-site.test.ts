@@ -7,6 +7,7 @@ import sitemap from "@/app/sitemap";
 import { GET as llmsGet } from "@/app/llms.txt/route";
 import { getConfig } from "@/lib/config";
 import { getServerDeps } from "@/lib/server/runtime";
+import { storedSnapshotOf } from "../helpers/agent-snapshot";
 
 const ORIGIN = "https://retrofit.example";
 
@@ -124,7 +125,7 @@ describe("published pages and robots", () => {
     const c = await accounts.createClaim(account, { host: "shop.example.com", method: "dns", tokenHash: "a".repeat(64) });
     if (c.outcome !== "created") throw new Error(c.outcome);
     await accounts.verifyClaim(c.claim.id, { tokenHash: "a".repeat(64), checkedAt: at });
-    await accounts.publishSite(account, { host: "shop.example.com", snapshot: {}, report: { score: 1 }, fetchedAt: at, now: at });
+    await accounts.publishSite(account, { host: "shop.example.com", snapshot: storedSnapshotOf("shop.example.com", at), report: { score: 1 }, fetchedAt: at, now: at });
     const own = OWN_PAGES.map((p) => `${origin}${p.path}`);
     expect((await sitemap()).map((e) => e.url)).toEqual([...own, `${origin}/s/shop.example.com`]);
     await accounts.unpublishSite(account, "shop.example.com");

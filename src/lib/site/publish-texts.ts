@@ -6,14 +6,6 @@ import { PUBLISH_PER_HOUR, PUBLISH_TRIES_PER_HOUR } from "@/lib/accounts/limits"
 import { hhmmUtc } from "@/lib/analysis/texts";
 import { LEAD_EMAIL } from "./own-site";
 
-const noAnalysis = (host: string) => `Analyze ${host} first, while you are signed in. Then publish it here.`;
-const notNewer = (host: string) => `The published page already shows your newest analysis of ${host}. Analyze it again, then refresh.`;
-/** Inside the crawl cache window a new analysis would bring the same read. `from`: when a new read is possible. */
-const sameRead = (host: string, hours: number, from: Date) =>
-  `The published page already shows your newest analysis of ${host}. Retrofit reuses one read of a site for ${hours} ${hours === 1 ? "hour" : "hours"}, so a new analysis brings nothing newer before ${hhmmUtc(from)} UTC. Analyze it again after that, then refresh.`;
-const generationFailed = (host: string) => `Retrofit could not build a working agent from the newest analysis of ${host}, so nothing was published from it.`;
-const tooLargeSite = (host: string) => `The newest analysis of ${host} is too large to publish.`;
-
 export const PUBLISH_TEXT = {
   intro: "Publish this site's agent on Retrofit: a public page with its report and the agent, and a badge for your site. Visitors use their own AI key.",
   publish: "Publish",
@@ -31,13 +23,16 @@ export const PUBLISH_TEXT = {
   unpublished: "Unpublished. The public page and the badge are gone.",
   noClaim: (host: string) => `Claim and verify ${host} first. Only its verified owner can publish it.`,
   notVerified: (host: string) => `Your claim for ${host} is not verified right now. Choose Check again, then publish.`,
-  noAnalysis,
-  notNewer,
-  sameRead,
-  generationFailed,
-  tooLargeSite,
-  /** The stored code of the last failed refresh, as the account page shows it. */
-  refreshError: { no_analysis: noAnalysis, generation_failed: generationFailed, too_large: tooLargeSite } satisfies Record<RefreshError, (host: string) => string>,
+  /** A publish that failed, and the stored code of the last failed refresh, as the account page shows it. */
+  refreshError: {
+    no_analysis: (host: string) => `Analyze ${host} first, while you are signed in. Then publish it here.`,
+    generation_failed: (host: string) => `Retrofit could not build a working agent from the newest analysis of ${host}, so nothing was published from it.`,
+    too_large: (host: string) => `The newest analysis of ${host} is too large to publish.`,
+  } satisfies Record<RefreshError, (host: string) => string>,
+  notNewer: (host: string) => `The published page already shows your newest analysis of ${host}. Analyze it again, then refresh.`,
+  /** Inside the crawl cache window a new analysis would bring the same read. `from`: when a new read is possible. */
+  sameRead: (host: string, hours: number, from: Date) =>
+    `The published page already shows your newest analysis of ${host}. Retrofit reuses one read of a site for ${hours} ${hours === 1 ? "hour" : "hours"}, so a new analysis brings nothing newer before ${hhmmUtc(from)} UTC. Analyze it again after that, then refresh.`,
   notPublished: (host: string) => `${host} is not published.`,
   limit: (retryAt: Date) => `You can publish or refresh ${PUBLISH_PER_HOUR} times an hour. Try again at ${hhmmUtc(retryAt)} UTC.`,
   tries: (retryAt: Date) => `You tried to publish or refresh more than ${PUBLISH_TRIES_PER_HOUR} times this hour. Try again at ${hhmmUtc(retryAt)} UTC.`,

@@ -1,4 +1,5 @@
 import { sha256Hex, newToken, SHA256_HEX_PATTERN } from "@/lib/security/tokens";
+import type { AgentSnapshot } from "@/lib/snapshot/types";
 import { isNormalizedHost } from "@/lib/fetch/url";
 import { serviceCall, serviceClient, type ServiceClientSource } from "@/lib/supabase/client";
 import {
@@ -77,14 +78,13 @@ interface ClaimRow {
 
 interface PublicRow {
   host: string;
-  /** `report->score`. */
   score: unknown;
   fetched_at: string;
   published_at: string;
   refreshed_at: string;
   /** Only with public_site's part `report` or `snapshot`. */
   report?: Record<string, unknown>;
-  snapshot?: Record<string, unknown>;
+  snapshot?: AgentSnapshot;
 }
 
 interface PublishedRow extends PublicRow {
@@ -123,7 +123,7 @@ function claimOf(row: ClaimRow): Claim {
 }
 const SUMMARY = "id, host, fetched_at, created_at, score:report->score";
 
-const PUBLISHED_COLUMNS = "host, claim_id, fetched_at, published_at, refreshed_at, last_refresh_error, score:report->score";
+const PUBLISHED_COLUMNS = "host, claim_id, fetched_at, published_at, refreshed_at, last_refresh_error, score";
 
 function publicSite(row: PublicRow): PublicSite {
   return { host: row.host, score: scoreOf({ score: row.score }), fetchedAt: iso(row.fetched_at), publishedAt: iso(row.published_at), refreshedAt: iso(row.refreshed_at) };
@@ -334,16 +334,17 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
         client.rpc("publish_site", { p_account_id: accountId, p_host: input.host, p_snapshot: input.snapshot, p_report: input.report, p_fetched_at: fetchedAt, p_now: now }),
       );
       const outcome = answer?.outcome;
-      if (outcome === "no_claim" || outcome === "not_verified" || outcome === "not_newer") return { outcome };
-      if ((outcome !== "published" && outcome !== "refreshed") || !answer?.site) throw new AccountDataUnavailable("publishSite", "bad_outcome");
+      if (outcome === "no_claim" || outcome === "not_verified") return { outcome };
+      if ((outcome !== "published" && outcome !== "refreshed" && outcome !== "not_newer") || !answer?.site) throw new AccountDataUnavailable("publishSite", "bad_outcome");
       return { outcome, site: publishedSite(answer.site) };
     },
 
     async recordRefreshError(accountId, host, code) {
       requireRefreshError(code);
-      if (!isUuid(accountId)) return false;
-      const rows = await call<{ host: string }[]>("recordRefreshError", () => published().update({ last_refresh_error: code }).eq("account_id", accountId).eq("host", host).select("host"));
-      return (rows ?? []).length > 0;
+      if (!isUuid(accountId)) return null;
+      const rows = await call<PublishedRow[]>("recordRefreshError", () => published().update({ last_refresh_error: code }).eq("account_id", accountId).eq("host", host).select(PUBLISHED_COLUMNS));
+      const row = rows?.[0];
+      return row ? publishedSite(row) : null;
     },
 
     async unpublishSite(accountId, host) {

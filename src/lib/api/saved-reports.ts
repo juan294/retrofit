@@ -1,5 +1,5 @@
 import { findOwnedAnalysis, requesterOf } from "@/lib/analysis/owner";
-import { analysisHost, isAnalysisId, readAnalysisView, reportBody } from "@/lib/analysis/record";
+import { analysisHost, isAnalysisId, readAnalysisView, readyAnalysis, reportBody } from "@/lib/analysis/record";
 import { isSameOrigin } from "@/lib/analysis/run";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
@@ -32,9 +32,8 @@ export async function handleSaveReport(request: Request, deps: Pick<ServerDeps, 
     const { analysis, account } = await findOwnedAnalysis(id, requesterOf(request), deps);
     if (!account) return json(401, { error: "signed_out", message: SAVE_REPORT_TEXT.signedOut });
     if (!analysis) return json(404, { error: "not_found", message: SAVE_REPORT_TEXT.notFound });
-    const view = await readAnalysisView(deps, analysis);
-    const a = view.analysis;
-    if (view.status !== "ready" || a.score === undefined || a.readyAt === undefined) return json(409, { error: "not_ready", message: SAVE_REPORT_TEXT.notReady });
+    const a = readyAnalysis(await readAnalysisView(deps, analysis));
+    if (!a) return json(409, { error: "not_ready", message: SAVE_REPORT_TEXT.notReady });
     const report = reportBody(a.score, a.readyAt, deps.config);
     // The scored host: what the report itself names (score.host is the snapshot's host).
     const host = analysisHost(a);

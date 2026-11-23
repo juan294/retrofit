@@ -59,6 +59,12 @@ export async function findOwnedAnalysis(id: string, who: Requester, deps: Deps):
   return { analysis: analysis && ownedBy(analysis, who.visitorToken, account) ? analysis : null, account };
 }
 
+/** The analysis when it is attached to the account, else null (another account's, a visitor's, or unknown). */
+export async function accountAnalysis(store: Store, accountId: string, id: string): Promise<Analysis | null> {
+  const analysis = await getAnalysis(store, id);
+  return analysis && ownedBy(analysis, null, { accountId }) ? analysis : null;
+}
+
 /** Lists a new anonymous analysis under its visitor, for attaching at sign-in. Lives as long as the analysis record. */
 export async function indexVisitorAnalysis(deps: Deps & { readonly config: Pick<Config, "analysisTtlS"> }, ownerHash: string, id: string): Promise<void> {
   await updateIdList(deps.store, visitorAnalysesKey(ownerHash), appendBounded(id, MAX_INDEXED_ANALYSES), deps.config.analysisTtlS + EXPIRED_GRACE_S);

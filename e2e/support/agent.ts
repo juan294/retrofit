@@ -48,12 +48,17 @@ export async function openKeyForm(page: Page) {
   if (!(await disclosure.evaluate((d) => (d as HTMLDetailsElement).open))) await disclosure.locator(":scope > summary").click();
 }
 
-/** Connects the Otari test key through the key panel inside `scope`. */
-export async function connectKey(page: Page, key = OTARI.key) {
-  await openKeyForm(page);
+/** Connects the Otari test key through the open key form (on a published page it is open at once: there is no free AI to wait for). */
+export async function submitKey(page: Page, key = OTARI.key) {
   await page.getByLabel("Paste your key").fill(key);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByText(/Connected to Otari/)).toBeVisible();
+}
+
+/** Opens the key form once the free path settled, and connects the Otari test key. */
+export async function connectKey(page: Page, key = OTARI.key) {
+  await openKeyForm(page);
+  await submitKey(page, key);
 }
 
 export async function mockOtari(page: Page, script: Script = previewScript) {

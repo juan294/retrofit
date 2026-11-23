@@ -1,4 +1,5 @@
 import { isNormalizedHost } from "@/lib/fetch/url";
+import type { AgentSnapshot } from "@/lib/snapshot/types";
 import { SHA256_HEX_PATTERN } from "@/lib/security/tokens";
 import { ServiceUnavailable } from "@/lib/supabase/client";
 
@@ -178,8 +179,8 @@ export type RefreshError = (typeof REFRESH_ERRORS)[number];
 export interface PublishSiteInput {
   /** The claimed host, normalized (isNormalizedHost). */
   readonly host: string;
-  /** The analysis's snapshot, at most MAX_PUBLISHED_SNAPSHOT_BYTES as JSON. Untrusted site data. */
-  readonly snapshot: Record<string, unknown>;
+  /** The stored form (agentSnapshot), at most MAX_PUBLISHED_SNAPSHOT_BYTES as JSON. Untrusted site data. */
+  readonly snapshot: AgentSnapshot;
   /** The score/v1 report body, at most MAX_REPORT_BYTES as JSON. */
   readonly report: Record<string, unknown>;
   /** ISO 8601: when Retrofit read the site. A refresh must be newer. */
@@ -206,14 +207,14 @@ export interface PublishedSite {
 /** A published site as any visitor may see it (getPublicSite: without the report and the snapshot). */
 export type PublicSite = Omit<PublishedSite, "claimId" | "lastRefreshError">;
 export type PublicReport = PublicSite & { readonly report: Record<string, unknown> };
-export type PublicSnapshot = PublicSite & { readonly snapshot: Record<string, unknown> };
+export type PublicSnapshot = PublicSite & { readonly snapshot: AgentSnapshot };
 
 /**
  * `published`: the account's first publication of the host (or the first after a transfer). `refreshed`: a newer
  * analysis replaced its snapshot. `no_claim`, `not_verified`: the account holds no claim, or no verified one, for the
- * host. `not_newer`: the published snapshot is as new or newer; nothing changed.
+ * host. `not_newer`: the published snapshot is as new or newer; nothing changed (`site`: as it is).
  */
-export type PublishSiteResult = { readonly outcome: "published" | "refreshed"; readonly site: PublishedSite } | { readonly outcome: "no_claim" | "not_verified" | "not_newer" };
+export type PublishSiteResult = { readonly outcome: "published" | "refreshed" | "not_newer"; readonly site: PublishedSite } | { readonly outcome: "no_claim" | "not_verified" };
 
 export interface AccountData {
   /**
@@ -299,8 +300,8 @@ export interface AccountData {
    * for invalid or oversized input before any write.
    */
   publishSite(accountId: string, input: PublishSiteInput): Promise<PublishSiteResult>;
-  /** Records why a refresh failed on the account's own publication; the published snapshot stays. False when there is none. */
-  recordRefreshError(accountId: string, host: string, code: RefreshError): Promise<boolean>;
+  /** Records why a refresh failed on the account's own publication (returned as it is then); the published snapshot stays. Null when there is none. */
+  recordRefreshError(accountId: string, host: string, code: RefreshError): Promise<PublishedSite | null>;
   /** Removes the account's publication of the host. False when there is none. The claim stays. */
   unpublishSite(accountId: string, host: string): Promise<boolean>;
   /** The account's publications, also paused ones, by host. Empty for an id that is not a UUID. */
@@ -323,7 +324,7 @@ export interface AccountData {
 export { CLAIM_LAPSE_AFTER, CLAIM_RECHECK_AFTER_S, CLAIM_SLOW_AFTER_S, CLAIM_SLOW_RECHECK_AFTER_S, MAX_PENDING_CLAIMS, MAX_SAVED_REPORTS } from "./limits";
 /** A score/v1 report is a few kilobytes; this bound only refuses something that is not one. */
 export const MAX_REPORT_BYTES = 256 * 1024;
-/** A 12-page snapshot is usually a few hundred kilobytes; a larger one than this cannot be published. */
+/** The stored form of a 12-page snapshot is at most about 240 KB of text and its records; a larger one than this cannot be published. */
 export const MAX_PUBLISHED_SNAPSHOT_BYTES = 2 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 

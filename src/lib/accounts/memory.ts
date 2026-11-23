@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { systemClock, type Clock } from "@/lib/store/types";
+import type { AgentSnapshot } from "@/lib/snapshot/types";
 import { newToken, sha256Hex, SHA256_HEX_PATTERN } from "@/lib/security/tokens";
 import {
   CLAIM_LAPSE_AFTER,
@@ -62,7 +63,7 @@ interface PublishedRow {
   readonly host: string;
   readonly accountId: string;
   readonly claimId: string;
-  readonly snapshot: Record<string, unknown>;
+  readonly snapshot: AgentSnapshot;
   readonly report: Record<string, unknown>;
   readonly fetchedAt: string;
   readonly publishedAt: string;
@@ -381,7 +382,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
         if (!claim) return { outcome: "no_claim" };
         if (claim.status !== "verified") return { outcome: "not_verified" };
         const mine = ownSite(accountId, host);
-        if (mine && Date.parse(mine.fetchedAt) >= Date.parse(fetchedAt)) return { outcome: "not_newer" };
+        if (mine && Date.parse(mine.fetchedAt) >= Date.parse(fetchedAt)) return { outcome: "not_newer", site: ownedSite(mine) };
         const row: PublishedRow = {
           host,
           accountId,
@@ -402,9 +403,9 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       requireRefreshError(code);
       return op(() => {
         const row = ownSite(accountId, host);
-        if (!row) return false;
+        if (!row) return null;
         row.lastRefreshError = code;
-        return true;
+        return ownedSite(row);
       });
     },
 

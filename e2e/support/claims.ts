@@ -94,16 +94,24 @@ export async function lapseFlaky(request: APIRequestContext): Promise<void> {
   }
 }
 
-/** Answers Check again with the hourly limit (the 429 the route gives), for the layout and color checks. */
-export async function mockCheckLimit(page: Page): Promise<void> {
+/** Answers the POST to `path` with the hourly limit (the 429 the route gives, with its text), for the layout and color checks. */
+export async function mockLimit(page: Page, path: string, text: (retryAt: Date) => string): Promise<void> {
   const retryAt = new Date(Date.now() + 3600_000);
-  await page.route("**/api/claims/check", (route) => route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: "limit", message: CLAIMS_TEXT.limit(retryAt), retryAt: retryAt.toISOString() }) }));
+  await page.route(`**${path}`, (route) => route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: "limit", message: text(retryAt), retryAt: retryAt.toISOString() }) }));
 }
 
 /** Claims `host` by meta, registers the tag and checks it: verified. */
 export async function verifyByTag(page: Page, host: string): Promise<void> {
   const { panel, token } = await claimSite(page, host, "meta");
   await addClaimTag(page.request, host, token);
+  await checkAgain(panel);
+  await expect(panel.getByTestId("claim-status")).toHaveText(/^Verified on /);
+}
+
+/** Claims `host` by DNS, publishes the record and checks it: verified. Any fixture host. */
+export async function verifyByDns(page: Page, host: string): Promise<void> {
+  const { panel, token } = await claimSite(page, host, "dns");
+  await publishTxt(page.request, host, token);
   await checkAgain(panel);
   await expect(panel.getByTestId("claim-status")).toHaveText(/^Verified on /);
 }

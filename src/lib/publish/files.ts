@@ -1,10 +1,10 @@
 import path from "node:path";
-import { agentJsonFiles, bridgeManifestJson, linksJson } from "@/lib/bundle/files";
-import { GenerationFailed, generateNetwork, networkNameFor, type NetworkValidator } from "@/lib/generate/network";
-import { assetResponse, JSON_TYPE, PREVIEW_ASSETS, respond } from "@/lib/preview/artifacts";
+import { asJson, bridgeManifest, EMPTY_LINKS } from "@/lib/generate/agent-json";
+import { GenerationFailed, generateNetwork, networkNameFor, type GeneratedPreview, type NetworkValidator } from "@/lib/generate/network";
+import { assetResponse, JSON_TYPE, jsonResponse, respond } from "@/lib/preview/agent-response";
 import type { ServerDeps } from "@/lib/server/runtime";
-import type { Snapshot } from "@/lib/snapshot/types";
 import { PUBLISHED_PAGE_TEXT } from "@/lib/site/publish-texts";
+import { PUBLISHED_ASSETS } from "./assets";
 import { exactHost } from "./host";
 
 export type PublishedFileDeps = Pick<ServerDeps, "accounts"> & {
@@ -12,24 +12,45 @@ export type PublishedFileDeps = Pick<ServerDeps, "accounts"> & {
   readonly validate?: NetworkValidator;
 };
 
-/** The modules the bridge page loads from ../runtime/ (a test follows their imports). No other runtime file is served here. */
-export const BRIDGE_RUNTIME_FILES = ["action-bridge.js", "action-transport.js", "actions.js", "discovered-actions.js", "form-actions.js", "web-crypto.js"] as const;
+// The build does not follow this path (it would trace all of public/): next.config.ts traces PUBLISHED_ASSETS.
+const PUBLIC_DIR = path.join(/* turbopackIgnore: true */ process.cwd(), "public");
 
-const RUNTIME_DIR = path.join(process.cwd(), "public", "runtime");
+/** `asset`: a file of Retrofit's own code under public/. `fixed`: JSON that needs no site data. `generated`: JSON from the snapshot. */
+type PublishedFile =
+  | { readonly kind: "asset"; readonly file: string }
+  | { readonly kind: "fixed"; readonly body: unknown }
+  | { readonly kind: "generated"; readonly body: (g: GeneratedPreview) => unknown };
 
-/** Files of Retrofit's own code, the same for every host: the folder and the path inside it. */
-const ASSETS: ReadonlyMap<string, readonly [dir: string, relative: string]> = new Map([
-  ["content-actions.js", [PREVIEW_ASSETS, "content-actions.js"]],
-  ["bridge/action-bridge.html", [PREVIEW_ASSETS, "bridge/action-bridge.html"]],
-  ...BRIDGE_RUNTIME_FILES.map((f): [string, [string, string]] => [`runtime/${f}`, [RUNTIME_DIR, f]]),
-]);
+/** Maps the path segments to one published file of the host, or null. Exact names only. */
+function resolvePublished(host: string, segments: readonly string[]): PublishedFile | null {
+  // A segment with an encoded slash names no file: it would answer a file at another path than its own.
+  if (segments.some((s) => s.includes("/"))) return null;
+  const name = segments.join("/");
+  const networkName = networkNameFor(host);
+  switch (name) {
+    case "agent-manifest.json":
+      return { kind: "generated", body: (g) => g.manifest };
+    case `${networkName}.network.json`:
+      return { kind: "generated", body: (g) => g.network };
+    case "site-content.json":
+      return { kind: "generated", body: (g) => g.siteContent };
+    case "links.json":
+      return { kind: "fixed", body: EMPTY_LINKS };
+    case "bridge/agent-manifest.json":
+      return { kind: "fixed", body: bridgeManifest(networkName) };
+    default: {
+      const file = PUBLISHED_ASSETS.get(name);
+      return file === undefined ? null : { kind: "asset", file };
+    }
+  }
+}
 
-const errorResponse = (status: number, error: string, message: string) => respond(status, JSON.stringify({ error, message }), JSON_TYPE);
-const notFound = () => errorResponse(404, "not_found", PUBLISHED_PAGE_TEXT.filesNotFound);
+const error = (status: number, code: string, message: string) => jsonResponse(status, { error: code, message });
+const notFound = () => error(404, "not_found", PUBLISHED_PAGE_TEXT.filesNotFound);
 
-/** An agent JSON file: any site may read it, so other agent sites can call the published network. */
-function agentJson(body: string): Response {
-  const response = respond(200, body, JSON_TYPE);
+/** An agent JSON file, with the install bundle's bytes: any site may read it, so other agent sites can call the published network. */
+function agentJson(body: unknown): Response {
+  const response = respond(200, asJson(body), JSON_TYPE);
   response.headers.set("access-control-allow-origin", "*");
   return response;
 }
@@ -44,30 +65,22 @@ function agentJson(body: string): Response {
  */
 export async function handlePublishedFile(deps: PublishedFileDeps, rawHost: string, segments: readonly string[]): Promise<Response> {
   const host = exactHost(rawHost);
-  // A segment with an encoded slash names no file: it would answer a file at another path than its own.
-  if (host === null || segments.some((s) => s.includes("/"))) return notFound();
-  const name = segments.join("/");
-  const networkName = networkNameFor(host);
-  const asset = ASSETS.get(name);
-  const fixed = name === "links.json" ? linksJson : name === "bridge/agent-manifest.json" ? () => bridgeManifestJson(networkName) : null;
-  const generated = name === "agent-manifest.json" || name === "site-content.json" || name === `${networkName}.network.json`;
-  if (!asset && !fixed && !generated) return notFound();
+  const file = host === null ? null : resolvePublished(host, segments);
+  if (host === null || file === null) return notFound();
   try {
-    if (!generated) {
-      if (!(await deps.accounts.getPublicSite(host))) return notFound();
-      return fixed ? agentJson(fixed()) : ((await assetResponse(asset![0], asset![1])) ?? notFound());
+    if (file.kind === "generated") {
+      const site = await deps.accounts.getPublicSnapshot(host);
+      return site ? agentJson(file.body(generateNetwork({ snapshot: site.snapshot, target: "bundle" }, { validate: deps.validate }))) : notFound();
     }
-    const site = await deps.accounts.getPublicSnapshot(host);
-    if (!site) return notFound();
-    const files = agentJsonFiles(generateNetwork({ snapshot: site.snapshot as unknown as Snapshot, target: "bundle" }, { validate: deps.validate }));
-    const body = files[name];
-    return body === undefined ? notFound() : agentJson(body);
+    if (!(await deps.accounts.getPublicSite(host))) return notFound();
+    if (file.kind === "fixed") return agentJson(file.body);
+    return (await assetResponse(PUBLIC_DIR, file.file)) ?? notFound();
   } catch (e) {
     if (e instanceof GenerationFailed) {
       console.error("Published agent generation failed:", e.message);
       return notFound();
     }
     console.error("GET /s/[host] file failed:", e instanceof Error ? e.name : "unknown error");
-    return errorResponse(503, "unavailable", PUBLISHED_PAGE_TEXT.unavailable);
+    return error(503, "unavailable", PUBLISHED_PAGE_TEXT.unavailable);
   }
 }

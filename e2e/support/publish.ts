@@ -4,12 +4,12 @@ import { KEY_ITEM } from "@/lib/keys/storage";
 import { PUBLISH_TEXT } from "@/lib/site/publish-texts";
 import { newEmail, signIn } from "./account";
 import { OTARI } from "./agent";
-import { analyzeAny, checkAgain, claimHostOf, claimPanel, claimSite, FLAKY_HOST, publishTxt, verifyByTag, lapseFlaky, setClockOffset } from "./claims";
+import { analyzeAny, claimHostOf, claimPanel, FLAKY_HOST, lapseFlaky, setClockOffset, verifyByDns, verifyByTag } from "./claims";
+import { RETROFIT_ORIGIN } from "./extra-requests";
 
-export const ORIGIN = "http://127.0.0.1:3010";
 /** The public page of a fixture host. */
-export const pageUrl = (host: string) => `${ORIGIN}/s/${claimHostOf(host)}`;
-export const badgeUrl = (host: string) => `${ORIGIN}/badge/${claimHostOf(host)}.svg`;
+export const pageUrl = (host: string) => `${RETROFIT_ORIGIN}/s/${claimHostOf(host)}`;
+export const badgeUrl = (host: string) => `${RETROFIT_ORIGIN}/badge/${claimHostOf(host)}.svg`;
 
 /** Chooses Publish on the host's panel (open on /account) and waits for the answer. */
 export async function publishOn(page: Page, host: string): Promise<void> {
@@ -32,28 +32,12 @@ export async function publishedOwner(page: Page, host: string, label: string): P
   await publishOn(page, host);
 }
 
-/** Answers Publish with the hourly limit (the 429 the route gives), for the layout and color checks. */
-export async function mockPublishLimit(page: Page): Promise<void> {
-  const retryAt = new Date(Date.now() + 3600_000);
-  await page.route("**/api/publish", (route) => route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: "limit", message: PUBLISH_TEXT.limit(retryAt), retryAt: retryAt.toISOString() }) }));
-}
-
 /** As publishedOwner, with a DNS claim (any fixture host). */
 export async function publishedByDns(page: Page, host: string, label: string): Promise<void> {
   await signIn(page, newEmail(`publish-${label}`));
   await analyzeAny(page, host);
-  const { panel, token } = await claimSite(page, host, "dns");
-  await publishTxt(page.request, host, token);
-  await checkAgain(panel);
-  await expect(panel.getByTestId("claim-status")).toHaveText(/^Verified on /);
+  await verifyByDns(page, host);
   await publishOn(page, host);
-}
-
-/** Connects the Otari test key on a published page. Its key form is open at once: there is no free AI to wait for. */
-export async function connectOwnKey(page: Page): Promise<void> {
-  await page.getByLabel("Paste your key").fill(OTARI.key);
-  await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(page.getByText(/Connected to Otari/)).toBeVisible();
 }
 
 /** Refreshes after the analysis expired (7 days; the clock goes back afterwards), so the panel shows the failed refresh. */

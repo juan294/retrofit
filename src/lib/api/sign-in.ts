@@ -4,14 +4,15 @@ import { safeReturnTo } from "@/lib/accounts/return-to";
 import { isSameOrigin } from "@/lib/analysis/run";
 import { isSecureRequest } from "@/lib/analysis/visitor";
 import { AuthRateLimited, AuthUnavailable } from "@/lib/auth/gateway";
-import { clientIdFromRequest, countClientWindow } from "@/lib/fetch/limits";
+import { clientIdFromRequest } from "@/lib/fetch/limits";
 import { buildCookie } from "@/lib/security/cookies";
 import { newToken, sha256Hex, TOKEN_PATTERN } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
 import type { Store } from "@/lib/store/types";
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
 import { readSmallBody } from "./body";
-import { json, limitOr429 } from "./json";
+import { json } from "./json";
+import { countIn } from "./limits";
 
 /**
  * The browser that asked for a link. Confirm attaches the visitor's analyses and
@@ -87,7 +88,7 @@ export async function handleSignIn(request: Request, deps: Pick<ServerDeps, "con
       ["signin-client", deps.config.signInPerClientHour, clientIdFromRequest(request, deps.config, now)],
       ["signin-email", deps.config.signInPerEmailHour, key],
     ] as const) {
-      const limited = limitOr429(await countClientWindow(deps.store, prefix, limit, id, now), SIGN_IN_TEXT.limit);
+      const limited = await countIn(deps, prefix, limit, id, SIGN_IN_TEXT.limit);
       if (limited) return limited;
     }
 

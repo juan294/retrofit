@@ -5,6 +5,7 @@ import { KeyPanel } from "@/components/key-panel/KeyPanel";
 import { Preview } from "@/components/preview/Preview";
 import { useOwnKey } from "@/components/preview/useOwnKey";
 import { pageGuard } from "@/lib/preview/page-guard";
+import { publishedPath } from "@/lib/publish/url";
 import { PUBLISHED_PAGE_TEXT as T } from "@/lib/site/publish-texts";
 
 /**
@@ -13,7 +14,7 @@ import { PUBLISHED_PAGE_TEXT as T } from "@/lib/site/publish-texts";
  * saved elsewhere on Retrofit connects only after a click, on every page load: the page's owner is not the visitor.
  */
 export function PublishedAgent({ host }: { host: string }) {
-  const { ownKey, originUrl, onConnect, onForget } = useOwnKey(`/s/${host}`);
+  const { ownKey, originUrl, onConnect, onForget } = useOwnKey(publishedPath(host));
   // As in AgentPanel: the key form exists only after mount, so no key is typed before the page's scripts run.
   const guard = originUrl ? pageGuard() : null;
   const headingId = useId();

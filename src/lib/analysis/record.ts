@@ -177,10 +177,20 @@ function viewOfJob(job: CrawlJob, config: Config, now: number): Omit<AnalysisVie
   }
 }
 
-/**
- * The contract's ScoreReport body: `status` first, the stored score fields, and
- * `cachedUntil` = the ready job's updatedAt + CRAWL_CACHE_TTL_S.
- */
+/** A ready analysis: the copied snapshot and score, and when the read was ready. */
+export type ReadyAnalysis<R = unknown> = Analysis<R> & Required<Pick<Analysis<R>, "snapshot" | "score" | "readyAt">>;
+
+/** The analysis of a ready view, with its copied snapshot and score; null when it is not ready. */
+export function readyAnalysis<R>(view: AnalysisView<R>): ReadyAnalysis<R> | null {
+  const { snapshot, score, readyAt } = view.analysis;
+  if (view.status !== "ready" || snapshot === undefined || score === undefined || readyAt === undefined) return null;
+  return { ...view.analysis, snapshot, score, readyAt };
+}
+
+/** When a read that was ready at `readyAt` stops being reused (ms): a later analysis reads the site again. */
+export const cachedUntil = (readyAt: number, config: Pick<Config, "crawlCacheTtlS">): number => readyAt + config.crawlCacheTtlS * 1000;
+
+/** The contract's ScoreReport body: `status` first, the stored score fields, and `cachedUntil`. */
 export function reportBody(score: unknown, readyAt: number, config: Pick<Config, "crawlCacheTtlS">): Record<string, unknown> {
-  return { status: "ready", ...(score as Record<string, unknown>), cachedUntil: new Date(readyAt + config.crawlCacheTtlS * 1000).toISOString() };
+  return { status: "ready", ...(score as Record<string, unknown>), cachedUntil: new Date(cachedUntil(readyAt, config)).toISOString() };
 }

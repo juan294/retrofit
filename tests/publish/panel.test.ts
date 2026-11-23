@@ -7,9 +7,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { Claim, PublishedSite } from "@/lib/accounts/data";
-import { claimView } from "@/lib/claims/view";
+import { accountClaimViews } from "@/lib/claims/view";
 import { loadConfig } from "@/lib/config";
-import { publishedView } from "@/lib/publish/view";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISH_TEXT } from "@/lib/site/publish-texts";
 
@@ -37,7 +36,7 @@ const claim: Claim = {
 };
 const site: PublishedSite = { host: HOST, claimId: claim.id, score: 72, fetchedAt: "2026-11-20T08:00:00.000Z", publishedAt: "2026-11-20T10:10:00.000Z", refreshedAt: "2026-11-20T10:10:00.000Z", lastRefreshError: null };
 const render = (c: Partial<Claim>, s: Partial<PublishedSite> | null) =>
-  renderToStaticMarkup(createElement(ClaimsSection, { claims: [claimView({ ...claim, ...c }, config)], options: [], sites: s ? [publishedView({ ...site, ...s }, config)] : [] }));
+  renderToStaticMarkup(createElement(ClaimsSection, { claims: accountClaimViews([{ ...claim, ...c }], s ? [{ ...site, ...s }] : [], config), options: [] }));
 
 describe("publish controls", () => {
   // Fails if a control is not a POST form to its route, or can act before hydration.

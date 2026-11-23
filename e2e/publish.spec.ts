@@ -4,12 +4,12 @@ import { test, expect } from "./fixtures/csp";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
 import { networkNameFor } from "@/lib/generate/network";
-import { analyzeFixture, mockOtari, OTARI, traceEvents } from "./support/agent";
-import { addClaimTag, checkAgain, claimHostOf, claimPanel, CLAIM_HOST, FLAKY_HOST, lapseFlaky, setClockOffset } from "./support/claims";
+import { analyzeFixture, mockOtari, OTARI, submitKey, traceEvents } from "./support/agent";
+import { addClaimTag, checkAgain, claimHostOf, claimPanel, CLAIM_HOST, FLAKY_HOST, lapseFlaky, setClockOffset, shownToken } from "./support/claims";
 import { expectInert, hostileScript, IMG, injectHostileContent, JS_LINK, SCRIPT } from "./support/extra-hostile";
 import { recordRequests, RETROFIT_ORIGIN } from "./support/extra-requests";
 import { fixtureOrigin } from "./support/global-setup";
-import { badgeUrl, connectOwnKey, failRefresh, ORIGIN, pageUrl, publishedByDns, publishedOwner, saveTestKey, setOutage } from "./support/publish";
+import { badgeUrl, failRefresh, pageUrl, publishedByDns, publishedOwner, saveTestKey, setOutage } from "./support/publish";
 
 // Publishing and the badge (phase-4.md; parent success criteria 5 and 6).
 
@@ -51,7 +51,7 @@ test.describe("published sites", () => {
     expect(await context.cookies()).toEqual([]);
 
     const router = await mockOtari(visitor);
-    await connectOwnKey(visitor);
+    await submitKey(visitor);
     const mount = visitor.getByTestId("preview-mount");
     await expect(mount.locator('[data-ns-slot="chat"]')).toBeVisible();
     await mount.getByRole("textbox").last().fill("What are your opening hours?");
@@ -63,7 +63,7 @@ test.describe("published sites", () => {
 
     const requests = await log.all();
     expect(requests.filter((r) => r.url.includes("/api/inference")).map((r) => r.url)).toEqual([]);
-    const own = requests.filter((r) => r.origin === ORIGIN);
+    const own = requests.filter((r) => r.origin === RETROFIT_ORIGIN);
     expect(own.filter((r) => r.url.includes(OTARI.key) || r.body.includes(OTARI.key) || Object.values(r.headers).some((v) => v.includes(OTARI.key)))).toEqual([]);
     expect(own.filter((r) => r.method !== "GET").map((r) => `${r.method} ${r.url}`)).toEqual([]);
     await context.close();
@@ -134,8 +134,7 @@ test.describe("published sites", () => {
 
     // The tag comes back: any token of this host's earlier claims plus this one's. Start over shows a new token.
     await panel.getByRole("button", { name: CLAIMS_TEXT.startOver }).click();
-    const token = /[0-9a-f]{32}/.exec((await panel.getByTestId("claim-token").locator("code").textContent()) ?? "")?.[0] ?? "";
-    await addClaimTag(request, FLAKY_HOST, token);
+    await addClaimTag(request, FLAKY_HOST, await shownToken(panel));
     await checkAgain(panel);
     await expect(panel.getByTestId("claim-status")).toHaveText(/^Verified on /);
     await expect(panel.getByTestId("publish-link")).toBeVisible();
@@ -192,7 +191,7 @@ test.describe("published sites", () => {
     const router = await mockOtari(page, hostileScript(`Here is what the snapshot says. ${IMG} ${SCRIPT} ${JS_LINK} ![i](/api/auth/sign-out)`));
     const injected = await injectHostileContent(page, /\/s\/[^/]+\/site-content\.json$/);
     await page.goto(pageUrl("hostile.fixture.test"));
-    await connectOwnKey(page);
+    await submitKey(page);
     const mount = page.getByTestId("preview-mount");
     await expect(mount.locator('[data-ns-slot="chat"]')).toBeVisible();
     await expect.poll(() => injected.served).toBeGreaterThanOrEqual(1);
@@ -350,7 +349,7 @@ test.describe("published sites", () => {
     // The analysis expires after 7 days; the claim and the publication stay.
     await setClockOffset(page.request, 8 * 24 * 3600_000);
     await panel.getByRole("button", { name: PUBLISH_TEXT.refresh, exact: true }).click();
-    await expect(panel.getByTestId("claim-message")).toHaveText(PUBLISH_TEXT.noAnalysis(claimHostOf(CLAIM_HOST)));
+    await expect(panel.getByTestId("claim-message")).toHaveText(PUBLISH_TEXT.refreshError.no_analysis(claimHostOf(CLAIM_HOST)));
     await analyzeFixture(page, CLAIM_HOST);
     await page.goto("/account");
     await panel.getByRole("button", { name: PUBLISH_TEXT.tryAgain, exact: true }).click();

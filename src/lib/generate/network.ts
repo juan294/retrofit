@@ -9,7 +9,7 @@
 import { createHash } from "node:crypto";
 import { normalizeHost } from "@/lib/fetch/url";
 import { PROVIDERS } from "@/lib/keys/providers";
-import { toSiteContent, type RecordCollections, type SiteContent, type Snapshot } from "@/lib/snapshot/types";
+import { toSiteContent, type AgentSnapshot, type RecordCollections, type SiteContent } from "@/lib/snapshot/types";
 import { runtimeValidationErrors } from "@/lib/score/network";
 
 // The Otari row of the provider table: its default model and its router for direct BYOK.
@@ -150,7 +150,7 @@ function siteGuide(host: string, date: string, withRecords: boolean, installed: 
  * The network, manifest and site content for a ready analysis. Pure apart from hashing.
  * Throws GenerationFailed when the host is unusable or the vendored validator reports an error.
  */
-export function generateNetwork(input: { snapshot: Snapshot } & ({ target: "bundle" } | { target?: "preview"; publicOrigin: string }), options: { validate?: NetworkValidator } = {}): GeneratedPreview {
+export function generateNetwork(input: { snapshot: AgentSnapshot } & ({ target: "bundle" } | { target?: "preview"; publicOrigin: string }), options: { validate?: NetworkValidator } = {}): GeneratedPreview {
   const { snapshot } = input;
   const host = validatedHost(snapshot.host);
   const networkName = networkNameFor(host);

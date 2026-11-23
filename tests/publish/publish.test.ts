@@ -96,9 +96,9 @@ describe("the analysis that is published", () => {
   it("without a ready analysis of the exact host attached to the account it answers 409 and says to analyze it first", async () => {
     const { d, publish } = await setup();
     await verifiedClaim(d);
-    const none = { status: 409, body: { error: "no_analysis", message: PUBLISH_TEXT.noAnalysis(HOST) } };
+    const none = { status: 409, body: { error: "no_analysis", message: PUBLISH_TEXT.refreshError.no_analysis(HOST) } };
     expect(await publish()).toEqual(none);
-    expect(PUBLISH_TEXT.noAnalysis(HOST)).toMatch(/^Analyze shop\.example\.com first/);
+    expect(PUBLISH_TEXT.refreshError.no_analysis(HOST)).toMatch(/^Analyze shop\.example\.com first/);
     await listedAnalysis(d, { snapshot: snapshotOf("www.shop.example.com", T1) });
     // Typed as the claimed host, but the analysis scored another one.
     await listedAnalysis(d, { snapshot: snapshotOf("www.shop.example.com", T1), inputOrigin: `https://${HOST}`, listedHost: HOST });
@@ -150,7 +150,7 @@ describe("the analysis that is published", () => {
     const { d, publish } = await setup();
     await verifiedClaim(d);
     await listedAnalysis(d, { snapshot: snapshotOf(HOST, T1) });
-    expect(await publish({ deps: { ...d, validate: () => ["<b>validator text</b>"] } })).toEqual({ status: 422, body: { error: "generation_failed", message: PUBLISH_TEXT.generationFailed(HOST) } });
+    expect(await publish({ deps: { ...d, validate: () => ["<b>validator text</b>"] } })).toEqual({ status: 422, body: { error: "generation_failed", message: PUBLISH_TEXT.refreshError.generation_failed(HOST) } });
     expect(await d.accounts.listPublishedSites(OWNER)).toEqual([]);
   });
 
@@ -159,7 +159,7 @@ describe("the analysis that is published", () => {
     const { d, publish } = await setup();
     await verifiedClaim(d);
     await listedAnalysis(d, { snapshot: snapshotOf(HOST, T1, "x".repeat(MAX_PUBLISHED_SNAPSHOT_BYTES)) });
-    expect(await publish()).toEqual({ status: 422, body: { error: "too_large", message: PUBLISH_TEXT.tooLargeSite(HOST) } });
+    expect(await publish()).toEqual({ status: 422, body: { error: "too_large", message: PUBLISH_TEXT.refreshError.too_large(HOST) } });
     expect(await d.accounts.listPublishedSites(OWNER)).toEqual([]);
   });
 });
@@ -186,9 +186,9 @@ describe("refresh", () => {
 
   // Fails if a failed refresh changes the public snapshot, stores anything but a code, or does not tell the owner why.
   it.each([
-    ["no_analysis", 409, PUBLISH_TEXT.noAnalysis(HOST), async (_d: TestDeps) => {}, {}],
-    ["generation_failed", 422, PUBLISH_TEXT.generationFailed(HOST), async (d: TestDeps) => void (await listedAnalysis(d, { snapshot: snapshotOf(HOST, T2, "bad") })), { validate: () => ["page text <script>"] }],
-    ["too_large", 422, PUBLISH_TEXT.tooLargeSite(HOST), async (d: TestDeps) => void (await listedAnalysis(d, { snapshot: snapshotOf(HOST, T2, "y".repeat(MAX_PUBLISHED_SNAPSHOT_BYTES)) })), {}],
+    ["no_analysis", 409, PUBLISH_TEXT.refreshError.no_analysis(HOST), async (_d: TestDeps) => {}, {}],
+    ["generation_failed", 422, PUBLISH_TEXT.refreshError.generation_failed(HOST), async (d: TestDeps) => void (await listedAnalysis(d, { snapshot: snapshotOf(HOST, T2, "bad") })), { validate: () => ["page text <script>"] }],
+    ["too_large", 422, PUBLISH_TEXT.refreshError.too_large(HOST), async (d: TestDeps) => void (await listedAnalysis(d, { snapshot: snapshotOf(HOST, T2, "y".repeat(MAX_PUBLISHED_SNAPSHOT_BYTES)) })), {}],
   ] satisfies RefreshCase[])("a refresh that fails with %s keeps the published snapshot and stores the code", async (code, status, message, arrange, over) => {
     const { d, publish, marker, error } = await published();
     await arrange(d);

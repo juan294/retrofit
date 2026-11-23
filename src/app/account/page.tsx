@@ -7,8 +7,7 @@ import { SitePage } from "@/components/SitePage";
 import type { SavedReportSummary } from "@/lib/accounts/data";
 import { listAccountAnalyses } from "@/lib/analysis/account-list";
 import { CLAIM_RECENT_ANALYSES, claimOptions, type ClaimOption } from "@/lib/claims/sources";
-import { claimView, type ClaimView } from "@/lib/claims/view";
-import { publishedView, type PublishedView } from "@/lib/publish/view";
+import { accountClaimViews, type AccountClaimView } from "@/lib/claims/view";
 import { signInHref } from "@/lib/accounts/return-to";
 import { ACCOUNT_COOKIE, readAccountByToken, type Account } from "@/lib/accounts/session";
 import { getServerDeps } from "@/lib/server/runtime";
@@ -27,8 +26,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   const deps = getServerDeps();
   let account: Account | null = null;
   let reports: SavedReportSummary[] | null = null;
-  let claims: ClaimView[] = [];
-  let sites: PublishedView[] = [];
+  let claims: AccountClaimView[] = [];
   let options: ClaimOption[] = [];
   try {
     account = await readAccountByToken((await cookies()).get(ACCOUNT_COOKIE)?.value, deps);
@@ -40,8 +38,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         listAccountAnalyses(deps, account.accountId, CLAIM_RECENT_ANALYSES),
       ]);
       reports = saved;
-      claims = held.map((c) => claimView(c, deps.config));
-      sites = published.map((p) => publishedView(p, deps.config));
+      claims = accountClaimViews(held, published, deps.config);
       options = claimOptions(analyses, saved, held);
     }
   } catch (e) {
@@ -92,7 +89,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         </ul>
       )}
 
-      <ClaimsSection claims={claims} options={options} sites={sites} />
+      <ClaimsSection claims={claims} options={options} />
 
       <h2 className="mt-10 text-xl font-semibold">{T.deleteHeading}</h2>
       <p className="mt-2">{T.deleteIntro}</p>

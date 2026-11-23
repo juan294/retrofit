@@ -6,11 +6,10 @@ import { promisify } from "node:util";
 import { beforeAll, expect, it } from "vitest";
 import { bundleFiles } from "@/lib/bundle/files";
 import type { PreviewManifest } from "@/lib/generate/network";
-import { BRIDGE_RUNTIME_FILES, handlePublishedFile } from "@/lib/publish/files";
+import { handlePublishedFile } from "@/lib/publish/files";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { crawlFixtureSnapshots, SITES, type SiteName } from "../helpers/fixture-snapshots";
-import { testDeps } from "../helpers/server-deps";
-import { publishDirect, verifiedClaim } from "../publish/setup";
+import { published, publishedFiles } from "../publish/setup";
 
 const exec = promisify(execFile);
 const builder = path.resolve("tools/agentic-web/scripts/build_network.mjs");
@@ -61,9 +60,7 @@ it.each(Object.keys(SITES) as SiteName[])("matches the organizer's published byt
 
 // Phase 4. The files as /s/<host>/ serves them (src/lib/publish/files.ts), through the same build.
 async function comparePublishedWithOrganizer(snapshot: Snapshot, tamper = false) {
-  const d = testDeps();
-  await verifiedClaim(d, undefined, snapshot.host);
-  await publishDirect(d, snapshot);
+  const { d } = await published(snapshot);
   const get = async (file: string) => {
     const res = await handlePublishedFile(d, snapshot.host, file.split("/"));
     expect(res.status, file).toBe(200);
@@ -85,7 +82,7 @@ async function comparePublishedWithOrganizer(snapshot: Snapshot, tamper = false)
     for (const file of ["bridge/action-bridge.html", "bridge/agent-manifest.json"]) expect(await same(file), file).toBe(true);
     // The build reads the served manifest as it is and does not rewrite it.
     expect((await readFile(path.join(dir, "agent-manifest.json"))).equals(manifestBytes)).toBe(true);
-    for (const file of ["agent-manifest.json", networkFile, "site-content.json", "links.json", "bridge/agent-manifest.json", "bridge/action-bridge.html", "content-actions.js", ...BRIDGE_RUNTIME_FILES.map((f) => `runtime/${f}`)]) {
+    for (const [file] of publishedFiles(snapshot.host)) {
       expect((await get(file)).includes("/api/inference"), file).toBe(false);
     }
   } finally {

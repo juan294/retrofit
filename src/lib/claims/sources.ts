@@ -1,8 +1,8 @@
 import type { Claim, SavedReportSummary } from "@/lib/accounts/data";
 import { isUuid } from "@/lib/accounts/data";
 import type { AccountAnalysis } from "@/lib/analysis/account-list";
-import { ownedBy } from "@/lib/analysis/owner";
-import { analysisHost, getAnalysis, isAnalysisId } from "@/lib/analysis/record";
+import { accountAnalysis } from "@/lib/analysis/owner";
+import { analysisHost, isAnalysisId } from "@/lib/analysis/record";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { claimHost } from "./host";
@@ -33,9 +33,8 @@ export async function hostOfSource(deps: Pick<ServerDeps, "store" | "accounts">,
     const host = await deps.accounts.getSavedReportHost(accountId, source.id);
     return host === null ? null : claimHost(host);
   }
-  const analysis = await getAnalysis(deps.store, source.id);
-  if (!analysis || !ownedBy(analysis, null, { accountId })) return null;
-  return claimHost(analysisHost(analysis));
+  const analysis = await accountAnalysis(deps.store, accountId, source.id);
+  return analysis && claimHost(analysisHost(analysis));
 }
 
 export interface ClaimOption {

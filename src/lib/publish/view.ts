@@ -3,6 +3,7 @@ import { badgeSnippet } from "@/lib/badge/snippet";
 import type { Config } from "@/lib/config";
 import { dateText } from "@/lib/site/account-texts";
 import { PUBLISH_TEXT } from "@/lib/site/publish-texts";
+import { publishedUrl } from "./url";
 
 /** A published site as its owner's account page and the publish API show it. */
 export interface PublishedView {
@@ -16,9 +17,6 @@ export interface PublishedView {
   /** The badge's embed HTML. */
   readonly snippet: string;
 }
-
-/** The public page of a host (normalized). */
-export const publishedUrl = (origin: string, host: string) => `${origin}/s/${host}`;
 
 export function publishedView(site: PublishedSite, config: Pick<Config, "publicOrigin">): PublishedView {
   return {

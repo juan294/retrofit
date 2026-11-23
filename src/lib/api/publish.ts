@@ -1,11 +1,11 @@
 import { PUBLISH_PER_HOUR, PUBLISH_TRIES_PER_HOUR } from "@/lib/accounts/limits";
-import { countClientWindow } from "@/lib/fetch/limits";
 import { exactHost } from "@/lib/publish/host";
-import { publishHost, type PublishHostDeps, type PublishHostResult } from "@/lib/publish/publish";
+import { isPublished, newReadFrom, publishHost, publishSource, type PublishHostDeps, type PublishSource } from "@/lib/publish/publish";
 import { publishedView } from "@/lib/publish/view";
 import { PUBLISH_TEXT as T } from "@/lib/site/publish-texts";
 import { accountPost, type Fields } from "./account-post";
-import { json, limitOr429 } from "./json";
+import { json } from "./json";
+import { countIn } from "./limits";
 
 /**
  * The publish API behind the account page's claim panels (phase-4.md). Every route is an accountPost
@@ -42,41 +42,45 @@ export function handlePublish(request: Request, deps: PublishDeps): Promise<Resp
     const claim = (await deps.accounts.listClaims(accountId)).find((c) => c.host === host);
     if (!claim) return noClaim(host);
     if (claim.status !== "verified") return notVerified(host);
-    const count = (window: string, limit: number) => countClientWindow(deps.store, window, limit, accountId, deps.clock());
-    const tooMany = limitOr429(await count(TRY_WINDOW, PUBLISH_TRIES_PER_HOUR), T.tries);
+    // Counted before the account's analyses are read.
+    const tooMany = await countIn(deps, TRY_WINDOW, PUBLISH_TRIES_PER_HOUR, accountId, T.tries);
     if (tooMany) return tooMany;
-    return answer(await publishHost(deps, accountId, host, () => count(PUBLISH_WINDOW, PUBLISH_PER_HOUR)), host, deps);
+    const source = await publishSource(deps, accountId, host);
+    if (isPublished(source)) return notNewer(source, host, deps);
+    const limited = await countIn(deps, PUBLISH_WINDOW, PUBLISH_PER_HOUR, accountId, T.limit);
+    if (limited) return limited;
+
+    const result = await publishHost(deps, accountId, host, source.analysis);
+    switch (result.outcome) {
+      case "published":
+      case "refreshed":
+        return json(200, { site: publishedView(result.site, deps.config), message: T[result.outcome] });
+      // The claim or the publication changed after the checks above: the write checks them again.
+      case "no_claim":
+        return noClaim(host);
+      case "not_verified":
+        return notVerified(host);
+      case "not_newer":
+        return notNewer({ ...source, current: result.site }, host, deps);
+      default:
+        return json(FAILED_STATUS[result.outcome], {
+          error: result.outcome,
+          message: T.refreshError[result.outcome](host),
+          ...(result.site ? { site: publishedView(result.site, deps.config) } : {}),
+        });
+    }
   });
 }
 
-function answer(result: PublishHostResult, host: string, deps: PublishDeps): Response {
-  switch (result.outcome) {
-    case "published":
-    case "refreshed":
-      return json(200, { site: publishedView(result.site, deps.config), message: T[result.outcome] });
-    // The claim changed after the first check: the write checks it again.
-    case "no_claim":
-      return noClaim(host);
-    case "not_verified":
-      return notVerified(host);
-    case "limited":
-      return limitOr429({ ok: false, retryAt: result.retryAt }, T.limit)!;
-    case "not_newer": {
-      const from = result.newReadAt === null ? null : new Date(result.newReadAt);
-      return json(409, {
-        error: "not_newer",
-        message: from ? T.sameRead(host, Math.round(deps.config.crawlCacheTtlS / 360) / 10, from) : T.notNewer(host),
-        ...(from ? { retryAt: from.toISOString() } : {}),
-        site: result.site && publishedView(result.site, deps.config),
-      });
-    }
-    default:
-      return json(FAILED_STATUS[result.outcome], {
-        error: result.outcome,
-        message: T.refreshError[result.outcome](host),
-        ...(result.site ? { site: publishedView(result.site, deps.config) } : {}),
-      });
-  }
+/** 409 not_newer. `retryAt`: until then Retrofit reuses the analysis's read, so a new analysis brings nothing newer. */
+function notNewer({ analysis, current }: PublishSource, host: string, deps: PublishDeps): Response {
+  const from = analysis && newReadFrom(analysis, deps);
+  return json(409, {
+    error: "not_newer",
+    message: from ? T.sameRead(host, Math.round(deps.config.crawlCacheTtlS / 360) / 10, from) : T.notNewer(host),
+    ...(from ? { retryAt: from.toISOString() } : {}),
+    site: current && publishedView(current, deps.config),
+  });
 }
 
 /** POST /api/publish/remove `{host}` -> 200 `{site: null, message}`: unpublishes the account's own site, also a paused one. 404 not_found when the account publishes no such host. */

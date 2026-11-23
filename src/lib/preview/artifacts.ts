@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isAnalysisId, readAnalysisView } from "@/lib/analysis/record";
 import { bundleFiles } from "@/lib/bundle/files";
@@ -6,7 +5,9 @@ import { writeZip } from "@/lib/bundle/zip";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { findOwnedAnalysis, requesterOf } from "@/lib/analysis/owner";
 import type { JobDeps } from "@/lib/crawl/jobs";
+import { EMPTY_LINKS } from "@/lib/generate/agent-json";
 import { GenerationFailed, generateNetwork, type GeneratedPreview, type NetworkValidator } from "@/lib/generate/network";
+import { assetResponse, jsonResponse, respond } from "./agent-response";
 
 export interface PreviewDeps extends JobDeps {
   /** Replaces the vendored validator (tests force a failure through it). */
@@ -15,29 +16,9 @@ export interface PreviewDeps extends JobDeps {
   readonly assetsDir?: string;
 }
 
-/** Folder holding content-actions.js and bridge/, for the private preview and the published page. */
-export const PREVIEW_ASSETS = path.join(process.cwd(), "public", "preview-assets");
-export const JSON_TYPE = "application/json";
-const TYPES: Record<string, string> = { ".js": "text/javascript; charset=utf-8", ".html": "text/html; charset=utf-8", ".json": JSON_TYPE };
+const DEFAULT_ASSETS = path.join(process.cwd(), "public", "preview-assets");
 // One plain file name inside bridge/: no dot files, no separators, no traversal.
 const BRIDGE_FILE = /^[a-z0-9][a-z0-9-]*\.(?:html|js|json)$/;
-/** What the runtime's links loader reads: `doc.networks[<name>]`, here nothing (runtime/engine.js `_loadPublishedLinks`). */
-const EMPTY_LINKS = { version: 1, networks: {} } as const;
-
-/** An agent file: never cached, sniffed or indexed. */
-export function respond(status: number, body: BodyInit, contentType: string): Response {
-  return new Response(body, {
-    status,
-    headers: {
-      "content-type": contentType,
-      "cache-control": "private, no-store",
-      "x-robots-tag": "noindex",
-      "x-content-type-options": "nosniff",
-    },
-  });
-}
-
-const jsonResponse = (status: number, body: unknown) => respond(status, JSON.stringify(body), JSON_TYPE);
 const notFound = () => jsonResponse(404, { error: "not_found" });
 const otherBrowser = () => jsonResponse(404, { error: "not_found", message: visitorTexts.otherBrowser });
 
@@ -65,21 +46,6 @@ function resolveArtifact(g: GeneratedPreview, segments: readonly string[]): Arti
     return { kind: "asset", relative: `bridge/${segments[1]}` };
   }
   return null;
-}
-
-/** A file under `dir` with its type, or null (outside it, of another type, or missing). The caller admits only known names. */
-export async function assetResponse(dir: string, relative: string): Promise<Response | null> {
-  const root = path.resolve(dir);
-  const file = path.resolve(root, relative);
-  // Defense in depth: the allowlist already admits no separator or dot segment.
-  if (!file.startsWith(root + path.sep)) return null;
-  const type = TYPES[path.extname(file)];
-  if (!type) return null;
-  try {
-    return respond(200, await readFile(file, "utf8"), type);
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -122,5 +88,5 @@ export async function handlePreviewFile(request: Request, deps: PreviewDeps, id:
   const artifact = resolveArtifact(generated, segments);
   if (!artifact) return notFound();
   if (artifact.kind === "json") return jsonResponse(200, artifact.body);
-  return (await assetResponse(deps.assetsDir ?? PREVIEW_ASSETS, artifact.relative)) ?? notFound();
+  return (await assetResponse(deps.assetsDir ?? DEFAULT_ASSETS, artifact.relative)) ?? notFound();
 }

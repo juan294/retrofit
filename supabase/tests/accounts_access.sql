@@ -476,7 +476,8 @@ begin
 
   -- A refresh must be newer; it keeps the first publication time and clears the error.
   update public.published_sites set last_refresh_error = 'too_large' where host = 'p.example';
-  if public.publish_site(a, 'p.example', '{"n": 2}', '{"score": 8}', '2026-11-20T08:00:00Z', '2026-11-21T10:00:00Z') ->> 'outcome' <> 'not_newer'
+  v := public.publish_site(a, 'p.example', '{"n": 2}', '{"score": 8}', '2026-11-20T08:00:00Z', '2026-11-21T10:00:00Z');
+  if v ->> 'outcome' <> 'not_newer' or (v -> 'site' ->> 'score')::int <> 7 or v -> 'site' ->> 'last_refresh_error' <> 'too_large'
      or (public.public_site('p.example', 'snapshot') -> 'snapshot' ->> 'n')::int <> 1 then
     raise exception 'accounts_access: a refresh that is not newer changed the snapshot';
   end if;
@@ -538,14 +539,28 @@ begin
   perform pg_temp.expect_error('service_role', $q$update public.published_sites set last_refresh_error = '<b>page text</b>' where host = 'r.example'$q$, '23514');
   perform pg_temp.expect_error('service_role', $q$update public.published_sites set last_refresh_error = 'not_newer' where host = 'r.example'$q$, '23514');
   perform pg_temp.expect_error('service_role', $q$update public.published_sites set host = 'R.example' where host = 'r.example'$q$, '23514');
-  perform pg_temp.expect_error('service_role', $q$update public.published_sites set report = pg_catalog.jsonb_build_object('pad', repeat('x', 600000)) where host = 'r.example'$q$, '23514');
-  perform pg_temp.expect_error('service_role', $q$update public.published_sites set snapshot = pg_catalog.jsonb_build_object('pad', repeat('x', 4200000)) where host = 'r.example'$q$, '23514');
+  -- publish_site refuses an oversized snapshot or report before any write.
+  perform pg_temp.expect_error('service_role', $q$select public.publish_site('00000000-0000-4000-8000-0000000000d5', 'q.example', '{}', pg_catalog.jsonb_build_object('pad', repeat('x', 600000)), now(), now())$q$, '54000');
+  perform pg_temp.expect_error('service_role', $q$select public.publish_site('00000000-0000-4000-8000-0000000000d5', 'q.example', pg_catalog.jsonb_build_object('pad', repeat('x', 4200000)), '{}', now(), now())$q$, '54000');
+  perform pg_temp.expect_allowed('service_role', $q$select public.publish_site('00000000-0000-4000-8000-0000000000d5', 'q.example', pg_catalog.jsonb_build_object('pad', repeat('x', 4100000)), pg_catalog.jsonb_build_object('pad', repeat('x', 500000)), now(), now())$q$);
+  -- The score column follows the report and cannot be written; a report without a number has no score.
+  perform pg_temp.expect_error('service_role', $q$update public.published_sites set score = 100 where host = 'r.example'$q$, '428C9');
+  perform pg_temp.expect_allowed('service_role', $q$update public.published_sites set report = '{"score": "100"}' where host = 'r.example'$q$);
+  if (select score from public.published_sites where host = 'r.example') is not null then
+    raise exception 'accounts_access: a score that is not a number became a score';
+  end if;
+  perform pg_temp.expect_allowed('service_role', $q$update public.published_sites set report = '{"score": 41}' where host = 'r.example'$q$);
+  if (select score from public.published_sites where host = 'r.example') is distinct from 41 then
+    raise exception 'accounts_access: the score column does not follow the report';
+  end if;
+  perform pg_temp.expect_denied('anon', $q$select public.published_site_json('p.example')$q$);
+  perform pg_temp.expect_denied('authenticated', $q$select public.published_site_json('p.example')$q$);
   perform pg_temp.expect_error('service_role', $q$select public.publish_site(null, 'p.example', '{}', '{}', now(), now())$q$, '22004');
 
   select pg_catalog.string_agg(p.proname, ', ') into v_bad
   from pg_catalog.pg_proc p
   where p.pronamespace = 'public'::regnamespace
-    and p.proname in ('site_is_public', 'public_site', 'public_hosts', 'publish_site', 'verify_claim')
+    and p.proname in ('site_is_public', 'public_site', 'public_hosts', 'published_site_json', 'publish_site', 'verify_claim')
     and (p.prosecdef
       or not ('search_path=""' = any (coalesce(p.proconfig, '{}')))
       or pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
@@ -553,7 +568,7 @@ begin
       or exists (select 1 from pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) x where x.grantee = 0)
       or not pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE'));
   if v_bad is not null or (select count(*) from pg_catalog.pg_proc where pronamespace = 'public'::regnamespace
-      and proname in ('site_is_public', 'public_site', 'public_hosts', 'publish_site', 'verify_claim')) <> 5 then
+      and proname in ('site_is_public', 'public_site', 'public_hosts', 'published_site_json', 'publish_site', 'verify_claim')) <> 6 then
     raise exception 'accounts_access: publishing functions missing, security definer, without search_path = '''', or with wrong EXECUTE: %', coalesce(v_bad, 'missing');
   end if;
 end;

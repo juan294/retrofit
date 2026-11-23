@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Connection } from "@/lib/keys/connect";
-import { providerForRouter } from "@/lib/keys/providers";
-import { loadKey } from "@/lib/keys/storage";
+import { loadUsableKey } from "@/lib/keys/storage";
 import type { Inference } from "./Preview";
 
 export interface OwnKey {
@@ -25,9 +24,8 @@ export function useOwnKey(basePath: string): OwnKey {
   // A remembered key restores itself in the key panel; the free path must not start (and count a session) first.
   const [hasStoredKey, setHasStoredKey] = useState(false);
   useEffect(() => {
-    // Same rule as the key panel's restore: only a saved key whose router maps to a known provider counts.
-    const saved = loadKey();
-    setHasStoredKey(saved !== null && providerForRouter(saved.router) !== null);
+    // Same rule as the key panel's restore.
+    setHasStoredKey(loadUsableKey() !== null);
     setOriginUrl(`${window.location.origin}${basePath}`);
   }, [basePath]);
 

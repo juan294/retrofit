@@ -9421,6 +9421,90 @@
       "suite": "playwright",
       "file": "preview-theme.spec.ts",
       "title": "the saved key offer and the outage page of a published site are readable in dark mode"
+    },
+    {
+      "rule": "key panel",
+      "suite": "unit",
+      "file": "tests/keys/storage.test.ts",
+      "title": "loadUsableKey answers the saved key with its provider, and null for an unknown router or no key"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot bakery: holds exactly the fields the published files need"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot spaOnly: holds exactly the fields the published files need"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot agentified: holds exactly the fields the published files need"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot hostile: holds exactly the fields the published files need"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot noindexPage: holds exactly the fields the published files need"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot leaves out pages marked noindex, with their text"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot bakery: the manifest, the network and the site content are byte-identical to the full snapshot's"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot spaOnly: the manifest, the network and the site content are byte-identical to the full snapshot's"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot agentified: the manifest, the network and the site content are byte-identical to the full snapshot's"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot hostile: the manifest, the network and the site content are byte-identical to the full snapshot's"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot noindexPage: the manifest, the network and the site content are byte-identical to the full snapshot's"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/publish/stored.test.ts",
+      "title": "the stored snapshot the size limit counts the stored form"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "publishing in the privacy notice and the terms says what is kept of a published site, and what is not"
     }
   ],
   "repairs": {

@@ -8,7 +8,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { Claim } from "@/lib/accounts/data";
-import { claimView } from "@/lib/claims/view";
+import { accountClaimViews } from "@/lib/claims/view";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { loadConfig } from "@/lib/config";
 
@@ -34,7 +34,7 @@ const base: Claim = {
   lastDetail: null,
 };
 const render = (claims: Claim[], options = [{ value: `analysis:${"b".repeat(32)}`, label: "shop.example.com (recent analysis)" }]) =>
-  renderToStaticMarkup(createElement(ClaimsSection, { claims: claims.map((c) => claimView(c, config)), options }));
+  renderToStaticMarkup(createElement(ClaimsSection, { claims: accountClaimViews(claims, [], config), options }));
 
 describe("claim panels before hydration", () => {
   // Fails if a button can act before hydration, or a form is not a POST to its API route.

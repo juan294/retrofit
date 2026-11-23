@@ -1,5 +1,5 @@
 import type { ServerDeps } from "@/lib/server/runtime";
-import { publishedUrl } from "./view";
+import { publishedUrl } from "./url";
 
 /** Most published pages sitemap.xml lists (the most recently refreshed). */
 export const SITEMAP_PUBLISHED_MAX = 1000;

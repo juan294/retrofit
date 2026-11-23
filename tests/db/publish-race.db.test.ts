@@ -13,6 +13,8 @@ import type { AccountData, Claim } from "@/lib/accounts/data";
 import { createSupabaseAccountData } from "@/lib/accounts/supabase";
 import { sha256Hex } from "@/lib/security/tokens";
 import { createServiceClient } from "@/lib/supabase/client";
+import { storedSnapshotOf } from "../helpers/agent-snapshot";
+import { newAccount } from "./new-account";
 
 const url = process.env.SUPABASE_GATE_URL;
 const serviceRoleKey = process.env.SUPABASE_GATE_SERVICE_ROLE_KEY;
@@ -24,12 +26,6 @@ const data = (): AccountData => createSupabaseAccountData({ url, serviceRoleKey 
 const run = promisify(execFile);
 const query = async (sql: string) => (await run("psql", [dbUrl, "-X", "-At", "-c", sql], { timeout: 10_000 })).stdout.trim();
 
-async function newAccount(): Promise<string> {
-  const { data: created, error } = await admin.auth.admin.createUser({ email: `race-${crypto.randomUUID()}@example.test`, email_confirm: true });
-  if (error || !created.user) throw new Error(`createUser failed: ${error?.code ?? "no user"}`);
-  return created.user.id;
-}
-
 async function claimOf(d: AccountData, accountId: string, host: string): Promise<Claim> {
   const r = await d.createClaim(accountId, { host, method: "dns", tokenHash: sha256Hex(`${accountId}-${host}`) });
   if (r.outcome !== "created") throw new Error(r.outcome);
@@ -37,7 +33,7 @@ async function claimOf(d: AccountData, accountId: string, host: string): Promise
 }
 const verify = (d: AccountData, c: Claim) => d.verifyClaim(c.id, { tokenHash: c.tokenHash, checkedAt: "2026-11-23T09:00:00.000Z" });
 const publish = (d: AccountData, accountId: string, host: string, day: number) =>
-  d.publishSite(accountId, { host, snapshot: { day }, report: { score: 1 }, fetchedAt: `2026-11-${day}T08:00:00.000Z`, now: `2026-11-${day}T09:00:00.000Z` });
+  d.publishSite(accountId, { host, snapshot: storedSnapshotOf(host, `2026-11-${day}T08:00:00.000Z`), report: { score: 1 }, fetchedAt: `2026-11-${day}T08:00:00.000Z`, now: `2026-11-${day}T09:00:00.000Z` });
 
 /** Holds the row lock of `host`'s publication until `release` is called; `pid` is the holding session. */
 async function holdPublication(host: string): Promise<{ pid: string; release: () => Promise<void> }> {
@@ -76,7 +72,7 @@ async function waiterOf(pid: string): Promise<string> {
 /** An account with two published hosts, the first one's publication stored first. */
 async function twoPublished() {
   const a = data();
-  const owner = await newAccount();
+  const owner = await newAccount(admin);
   const tag = crypto.randomUUID().slice(0, 8);
   const hosts = [`race-a-${tag}.example.test`, `race-b-${tag}.example.test`] as const;
   for (const host of hosts) {
@@ -103,7 +99,7 @@ it("account deletion and a publish of the same account never deadlock; the delet
 // Fails (40P01, AccountDataUnavailable) if account deletion locks published_sites before site_claims.
 it("account deletion and another account's verification of its host never deadlock", async () => {
   const { a, b, owner, hosts } = await twoPublished();
-  const other = await newAccount();
+  const other = await newAccount(admin);
   const claim = await claimOf(b, other, hosts[0]);
   const held = await holdPublication(hosts[1]);
   const deletion = a.deleteAccountData(owner).then(() => "deleted", (e: Error) => e.message);

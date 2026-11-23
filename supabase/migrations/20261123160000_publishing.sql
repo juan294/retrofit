@@ -21,12 +21,13 @@
 alter table public.published_sites
   -- When Retrofit read the site: a refresh must be newer. publish_site always sets it; a column, so no read opens the snapshot for it.
   add column fetched_at timestamptz not null default now(),
+  -- The report's score, so the light read (the badge) opens neither the report nor the snapshot. Null when it is not a number.
+  add column score numeric generated always as (
+    case when pg_catalog.jsonb_typeof(report -> 'score') = 'number' then (report ->> 'score')::numeric end
+  ) stored,
   -- The code of the last failed refresh, never page text.
   add constraint published_sites_refresh_error check (last_refresh_error in ('no_analysis', 'generation_failed', 'too_large')),
-  add constraint published_sites_host check (host = lower(host) and length(host) between 1 and 253),
-  -- Twice the application's limits (MAX_PUBLISHED_SNAPSHOT_BYTES, MAX_REPORT_BYTES): jsonb text has extra spaces.
-  add constraint published_sites_snapshot_size check (octet_length(snapshot::text) <= 4194304),
-  add constraint published_sites_report_size check (octet_length(report::text) <= 524288);
+  add constraint published_sites_host check (host = lower(host) and length(host) between 1 and 253);
 
 -- The one public rule. Scalars, not the row: a whole row would load its snapshot.
 create function public.site_is_public(p_claim_id uuid, p_account_id uuid, p_host text)
@@ -52,7 +53,7 @@ security invoker
 set search_path = ''
 as $$
   select pg_catalog.jsonb_build_object(
-      'host', s.host, 'fetched_at', s.fetched_at, 'published_at', s.published_at, 'refreshed_at', s.refreshed_at, 'score', s.report -> 'score')
+      'host', s.host, 'fetched_at', s.fetched_at, 'published_at', s.published_at, 'refreshed_at', s.refreshed_at, 'score', s.score)
     || case p_part
          when 'report' then pg_catalog.jsonb_build_object('report', s.report)
          when 'snapshot' then pg_catalog.jsonb_build_object('snapshot', s.snapshot)
@@ -80,6 +81,21 @@ as $$
   ) h;
 $$;
 
+-- The publication as its owner's account page reads it, without the report and the snapshot.
+create function public.published_site_json(p_host text)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select pg_catalog.jsonb_build_object(
+    'host', s.host, 'claim_id', s.claim_id, 'fetched_at', s.fetched_at, 'published_at', s.published_at, 'refreshed_at', s.refreshed_at,
+    'last_refresh_error', s.last_refresh_error, 'score', s.score)
+  from public.published_sites s
+  where s.host = p_host;
+$$;
+
 create function public.publish_site(p_account_id uuid, p_host text, p_snapshot jsonb, p_report jsonb, p_fetched_at timestamptz, p_now timestamptz)
 returns jsonb
 language plpgsql
@@ -91,10 +107,13 @@ declare
   v_status text;
   v_fetched_at timestamptz;
   v_mine boolean;
-  v_site jsonb;
 begin
   if p_account_id is null or p_host is null or p_snapshot is null or p_report is null or p_fetched_at is null or p_now is null then
     raise exception 'publish_site: every argument is required' using errcode = '22004';
+  end if;
+  -- Twice the application's limits (MAX_PUBLISHED_SNAPSHOT_BYTES, MAX_REPORT_BYTES): jsonb text has extra spaces.
+  if octet_length(p_snapshot::text) > 4194304 or octet_length(p_report::text) > 524288 then
+    raise exception 'publish_site: the snapshot or the report is too large' using errcode = '54000';
   end if;
   -- The host's verifications and publishes run one at a time; then the claim is read under its row lock.
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('site_claims_host:' || p_host, 0));
@@ -115,7 +134,7 @@ begin
   for update;
   v_mine := found;
   if v_mine and v_fetched_at >= p_fetched_at then
-    return pg_catalog.jsonb_build_object('outcome', 'not_newer');
+    return pg_catalog.jsonb_build_object('outcome', 'not_newer', 'site', public.published_site_json(p_host));
   end if;
 
   -- A publication of another account for the host is replaced whole.
@@ -124,12 +143,8 @@ begin
   on conflict (host) do update
   set account_id = excluded.account_id, claim_id = excluded.claim_id, snapshot = excluded.snapshot, report = excluded.report,
       fetched_at = excluded.fetched_at, published_at = case when v_mine then s.published_at else excluded.published_at end,
-      refreshed_at = excluded.refreshed_at, last_refresh_error = null
-  returning pg_catalog.jsonb_build_object(
-    'host', s.host, 'claim_id', s.claim_id, 'fetched_at', s.fetched_at, 'published_at', s.published_at, 'refreshed_at', s.refreshed_at,
-    'last_refresh_error', s.last_refresh_error, 'score', s.report -> 'score')
-  into v_site;
-  return pg_catalog.jsonb_build_object('outcome', case when v_mine then 'refreshed' else 'published' end, 'site', v_site);
+      refreshed_at = excluded.refreshed_at, last_refresh_error = null;
+  return pg_catalog.jsonb_build_object('outcome', case when v_mine then 'refreshed' else 'published' end, 'site', public.published_site_json(p_host));
 end;
 $$;
 
@@ -208,6 +223,7 @@ $$;
 revoke all on function public.site_is_public(uuid, uuid, text) from public, anon, authenticated;
 revoke all on function public.public_site(text, text) from public, anon, authenticated;
 revoke all on function public.public_hosts(integer) from public, anon, authenticated;
+revoke all on function public.published_site_json(text) from public, anon, authenticated;
 revoke all on function public.publish_site(uuid, text, jsonb, jsonb, timestamptz, timestamptz) from public, anon, authenticated;
 revoke all on function public.verify_claim(uuid, text, timestamptz) from public, anon, authenticated;
 revoke all on function public.delete_account_data(uuid) from public, anon, authenticated;
@@ -215,5 +231,6 @@ grant execute on function public.delete_account_data(uuid) to service_role;
 grant execute on function public.site_is_public(uuid, uuid, text) to service_role;
 grant execute on function public.public_site(text, text) to service_role;
 grant execute on function public.public_hosts(integer) to service_role;
+grant execute on function public.published_site_json(text) to service_role;
 grant execute on function public.publish_site(uuid, text, jsonb, jsonb, timestamptz, timestamptz) to service_role;
 grant execute on function public.verify_claim(uuid, text, timestamptz) to service_role;

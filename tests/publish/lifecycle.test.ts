@@ -11,16 +11,15 @@ import { handleRemoveClaim } from "@/lib/api/claims";
 import { handleUnpublish } from "@/lib/api/publish";
 import { handleBadge } from "@/lib/badge/handler";
 import { recheckDueClaims } from "@/lib/claims/recheck";
-import { networkNameFor } from "@/lib/generate/network";
-import { BRIDGE_RUNTIME_FILES, handlePublishedFile } from "@/lib/publish/files";
+import { handlePublishedFile } from "@/lib/publish/files";
 import { readPublishedPage } from "@/lib/publish/page";
 import { publishedSitemap, SITEMAP_PUBLISHED_MAX } from "@/lib/publish/sitemap";
 import { sha256Hex } from "@/lib/security/tokens";
 import { accountCookie, fakeClock, OTHER_ACCOUNT, postRequest, PUBLIC_ORIGIN, testDeps, TEST_ACCOUNT, type TestDeps } from "../helpers/server-deps";
-import { HOST, lapseNow, OWNER, publishDirect, snapshotOf, verifiedClaim, verifyNow } from "./setup";
+import { HOST, lapseNow, OWNER, publishDirect, publishedFiles, snapshotOf, verifiedClaim, verifyNow } from "./setup";
 
 const DAY = 25 * 3600_000;
-const FILES = ["agent-manifest.json", `${networkNameFor(HOST)}.network.json`, "site-content.json", "links.json", "bridge/agent-manifest.json", "bridge/action-bridge.html", "content-actions.js", ...BRIDGE_RUNTIME_FILES.map((f) => `runtime/${f}`)];
+const FILES = publishedFiles(HOST).map(([file]) => file);
 
 beforeEach(() => void vi.spyOn(console, "error").mockImplementation(() => {}));
 afterEach(() => vi.restoreAllMocks());

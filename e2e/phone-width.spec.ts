@@ -1,11 +1,11 @@
 import { test, expect } from "./fixtures/csp";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
-import { analyzeFixture, mockOtari } from "./support/agent";
-import { CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockCheckLimit } from "./support/claims";
+import { analyzeFixture, mockOtari, submitKey } from "./support/agent";
+import { CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockLimit } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
-import { connectOwnKey, mockPublishLimit, publishedOwner, publishStates, saveTestKey, setOutage, verifiedOwner, pageUrl } from "./support/publish";
+import { publishedOwner, publishStates, saveTestKey, setOutage, verifiedOwner, pageUrl } from "./support/publish";
 
 test.use({ viewport: { width: 320, height: 640 } });
 
@@ -77,7 +77,7 @@ test("the claim panels fit a 320 px phone screen", async ({ page, browser }) => 
   await expect(page.getByTestId("claim-token")).toBeVisible();
   await expect(claimPanel(page, MISSING_HOST).getByTestId("claim-reason")).toBeVisible();
   await fits(page);
-  await mockCheckLimit(page);
+  await mockLimit(page, "/api/claims/check", CLAIMS_TEXT.limit);
   await claimPanel(page, FRESH_HOST).getByRole("button", { name: CLAIMS_TEXT.checkAgain }).click();
   await expect(claimPanel(page, FRESH_HOST).getByRole("alert")).toBeVisible();
   await fits(page);
@@ -99,7 +99,7 @@ test("the publish controls and the published page fit a 320 px phone screen", as
   await mockOtari(visitor);
   await expect(visitor.getByLabel("Paste your key")).toBeVisible();
   await fits(visitor);
-  await connectOwnKey(visitor);
+  await submitKey(visitor);
   await expect(visitor.getByTestId("preview-mount").locator(".ns-title").first()).toBeVisible();
   await fits(visitor);
   await pause();
@@ -120,7 +120,7 @@ test("the Publish offer and a limit answer fit a 320 px phone screen", async ({ 
   const panel = claimPanel(page, FLAKY_HOST);
   await expect(panel.getByText(PUBLISH_TEXT.intro)).toBeVisible();
   await fits(page);
-  await mockPublishLimit(page);
+  await mockLimit(page, "/api/publish", PUBLISH_TEXT.limit);
   await panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }).click();
   await expect(panel.getByRole("alert")).toBeVisible();
   await fits(page);

@@ -5,11 +5,11 @@
 // never sent to Retrofit's origin, never put in a URL and never rendered back after submit: the
 // field is uncontrolled and cleared on every submit, and React state never holds the key.
 
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { connectKey, priceText, type Connection, type KeyGuard } from "@/lib/keys/connect";
 import { detectProvider } from "@/lib/keys/detect";
 import { BUTTON_PROVIDERS, providerForRouter, type Provider } from "@/lib/keys/providers";
-import { forgetAll, loadKey, saveKey } from "@/lib/keys/storage";
+import { forgetAll, loadUsableKey, saveKey } from "@/lib/keys/storage";
 
 export type KeyPanelProps = {
   guard: KeyGuard;
@@ -53,29 +53,32 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, f
 
   // Restore a key saved earlier in this tab (or remembered on this device) once on mount, or only offer it.
   const restored = useRef(false);
+  const connectSaved = useCallback(
+    ({ saved, provider }: NonNullable<ReturnType<typeof loadUsableKey>>) => {
+      setConnected({ provider: provider.name, price: priceText(undefined), note: null });
+      onConnect({ provider: provider.name, router: provider.router, model: saved.model, key: saved.key });
+    },
+    [onConnect],
+  );
   useEffect(() => {
     if (restored.current) return;
     restored.current = true;
-    const saved = loadKey();
-    const provider = saved ? providerForRouter(saved.router) : null;
-    if (!saved || !provider) return;
-    setRemember(saved.remembered);
-    if (askForSavedKey) return setOffered(provider.name);
-    setConnected({ provider: provider.name, price: priceText(undefined), note: null });
-    onConnect({ provider: provider.name, router: provider.router, model: saved.model, key: saved.key });
-  }, [onConnect, askForSavedKey]);
+    const usable = loadUsableKey();
+    if (!usable) return;
+    setRemember(usable.saved.remembered);
+    if (askForSavedKey) setOffered(usable.provider.name);
+    else connectSaved(usable);
+  }, [connectSaved, askForSavedKey]);
 
   /** The visitor chose the saved key: read it from storage now and connect. */
   function takeSavedKey() {
-    const saved = loadKey();
-    const provider = saved ? providerForRouter(saved.router) : null;
     setOffered(null);
-    if (!saved || !provider) return;
+    const usable = loadUsableKey();
+    if (!usable) return;
     attempt.current += 1;
     setBusy(false);
     setError(null);
-    setConnected({ provider: provider.name, price: priceText(undefined), note: null });
-    onConnect({ provider: provider.name, router: provider.router, model: saved.model, key: saved.key });
+    connectSaved(usable);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {

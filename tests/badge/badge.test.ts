@@ -11,8 +11,8 @@ import { badgeSvg } from "@/lib/badge/svg";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { INJECTION } from "../fixtures/sites";
 import { crawlFixtureSnapshots, type SiteName } from "../helpers/fixture-snapshots";
-import { testDeps, type TestDeps } from "../helpers/server-deps";
-import { HOST, lapseNow, publishDirect, snapshotOf, verifiedClaim } from "../publish/setup";
+import type { TestDeps } from "../helpers/server-deps";
+import { HOST, lapseNow, published, snapshotOf, verifiedClaim } from "../publish/setup";
 
 let snapshots: Map<SiteName, Snapshot>;
 beforeAll(async () => {
@@ -20,12 +20,6 @@ beforeAll(async () => {
 }, 60_000);
 
 const T1 = "2026-11-20T08:00:00.000Z";
-async function published(snapshot: Snapshot, score?: number | null) {
-  const d = testDeps();
-  const claim = await verifiedClaim(d, undefined, snapshot.host);
-  await publishDirect(d, snapshot, { score });
-  return { d, claim };
-}
 const visibleText = (svg: string) => svg.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 
 describe("badge SVG", () => {

@@ -3,6 +3,7 @@
 // blocked site data make Web Storage and document.cookie throw.
 
 import type { Connection } from "./connect";
+import { providerForRouter, type Provider } from "./providers";
 
 export const KEY_ITEM = "retrofit-key-v1";
 const RUNTIME_PREFIX = "nsweb-byok-";
@@ -62,6 +63,13 @@ export function loadKey(env: KeyStorageEnv = browserEnv()): LoadedKey | null {
   if (session) return { ...session, remembered: false };
   const local = parse(attempt(() => env.local?.getItem(KEY_ITEM) ?? null, null));
   return local ? { ...local, remembered: true } : null;
+}
+
+/** The saved key (loadKey) when its router is a known provider's, with that provider; else null. */
+export function loadUsableKey(env?: KeyStorageEnv): { readonly saved: LoadedKey; readonly provider: Provider } | null {
+  const saved = loadKey(env);
+  const provider = saved ? providerForRouter(saved.router) : null;
+  return saved && provider ? { saved, provider } : null;
 }
 
 function clearPrefixed(storage: Storage | null | undefined): void {

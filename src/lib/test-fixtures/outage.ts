@@ -1,7 +1,7 @@
 import { AccountDataUnavailable, type AccountData } from "@/lib/accounts/data";
 
 // Fixtures mode only: an account data outage that browser tests turn on and off (POST /test-fixtures/outage).
-// Production never wraps its account data (getServerDeps uses the adapter itself off fixtures mode).
+// Production never wraps its account data (getAccountData uses the adapter itself off fixtures mode).
 let on = false;
 
 export function setFixtureOutage(value: boolean): void {

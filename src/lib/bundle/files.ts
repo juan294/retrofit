@@ -1,4 +1,5 @@
-import { generateNetwork, validatedHost, type GeneratedPreview, type NetworkValidator } from "@/lib/generate/network";
+import { agentJsonFiles, asJson } from "@/lib/generate/agent-json";
+import { generateNetwork, validatedHost, type NetworkValidator } from "@/lib/generate/network";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { bundleAssets } from "./assets";
 import { assistantHtml, assistantScript } from "./assistant";
@@ -11,27 +12,8 @@ interface BundleEntry {
   prepared?: PreparedZipData;
 }
 
-const asJson = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
-
 function textEntries(files: Record<string, string>): BundleEntry[] {
   return Object.entries(files).map(([path, text]) => ({ path, bytes: Buffer.from(text) }));
-}
-
-/** No published links: what the runtime's links loader reads (runtime/engine.js `_loadPublishedLinks`). */
-export const linksJson = () => asJson({ version: 1, networks: {} });
-
-/** The bridge's own manifest: the network's name and no action, module, page or catalog, so the bridge shares nothing. */
-export const bridgeManifestJson = (networkName: string) => asJson({ networks: [{ name: networkName }], actions: { version: 1 } });
-
-/** The agent's JSON files by path, byte for byte as the organizers' build writes them. Shared by the install bundle and the published page. */
-export function agentJsonFiles({ network, manifest, networkName, siteContent }: GeneratedPreview): Record<string, string> {
-  return {
-    "agent-manifest.json": asJson(manifest),
-    [networkName + ".network.json"]: asJson(network),
-    "site-content.json": asJson(siteContent),
-    "links.json": linksJson(),
-    "bridge/agent-manifest.json": bridgeManifestJson(networkName),
-  };
 }
 
 /** Files for an owner's static installation. Only site-content.json carries fetched page data. */
