@@ -1,6 +1,5 @@
-import { readAccount } from "@/lib/accounts/session";
-import { ownsAnalysis, requesterOf } from "@/lib/analysis/owner";
-import { getAnalysis, isAnalysisId, readAnalysisView, reportBody } from "@/lib/analysis/record";
+import { findOwnedAnalysis, requesterOf } from "@/lib/analysis/owner";
+import { isAnalysisId, readAnalysisView, reportBody } from "@/lib/analysis/record";
 import { isSameOrigin } from "@/lib/analysis/run";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
@@ -29,11 +28,10 @@ export async function handleSaveReport(request: Request, deps: Pick<ServerDeps, 
   if (!isSameOrigin(request, deps.config)) return json(403, { error: "cross_origin", message: SAVE_REPORT_TEXT.crossOrigin });
   try {
     const text = await readSmallBody(request);
-    const account = await readAccount(request, deps);
+    const id = (text === "too large" ? null : analysisIdFrom(text)) ?? "";
+    const { analysis, account } = await findOwnedAnalysis(id, requesterOf(request), deps);
     if (!account) return json(401, { error: "signed_out", message: SAVE_REPORT_TEXT.signedOut });
-    const id = text === "too large" ? null : analysisIdFrom(text);
-    const analysis = id ? await getAnalysis(deps.store, id) : null;
-    if (!analysis || !(await ownsAnalysis(analysis, requesterOf(request), deps))) return json(404, { error: "not_found", message: SAVE_REPORT_TEXT.notFound });
+    if (!analysis) return json(404, { error: "not_found", message: SAVE_REPORT_TEXT.notFound });
     const view = await readAnalysisView(deps, analysis);
     const a = view.analysis;
     if (view.status !== "ready" || a.score === undefined || a.readyAt === undefined) return json(409, { error: "not_ready", message: SAVE_REPORT_TEXT.notReady });

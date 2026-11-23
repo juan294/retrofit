@@ -131,6 +131,9 @@ beforeEach(() => {
       "shadow_port = 54720",
       "[db.pooler]",
       "port = 54729",
+      "[local_smtp]",
+      "enabled = true",
+      "port = 54724",
       "",
     ].join("\n"),
   );
@@ -341,8 +344,6 @@ describe("gate-db run", () => {
   // Fails if the auth db test cannot find the mail catcher or the anon key, if the mail catcher port escapes the gate
   // range, or if the anon key reaches the log.
   it("gate-db: passes the gate mail catcher URL and the anon key to the db tests, and keeps the key out of the log", () => {
-    const config = path.join(root, "supabase", "config.toml");
-    fs.appendFileSync(config, "[local_smtp]\nenabled = true\nport = 54724\n");
     expect(gate().status).toBe(0);
     const toml = fs.readFileSync(path.join(gateWorkdir(), "supabase", "config.toml"), "utf8");
     expect(toml).toMatch(/\[local_smtp\]\nenabled = true\nport = 54734/);
@@ -352,6 +353,16 @@ describe("gate-db run", () => {
     const log = fs.readFileSync(logPath(), "utf8");
     expect(log).toContain("mail catcher http://127.0.0.1:54734");
     expect(log).not.toContain("fake-anon");
+  });
+
+  // Fails if the db tests run without the mail catcher or the anon key (the sign-in test would fail later, less clearly).
+  it("gate-db: refuses a status without the mail catcher and runs no tests", () => {
+    const config = path.join(root, "supabase", "config.toml");
+    fs.writeFileSync(config, fs.readFileSync(config, "utf8").replace(/\[local_smtp\][^[]*/, ""));
+    const result = gate();
+    expect(result.status).toBe(4);
+    expect(result.stderr).toContain("supabase status did not report API_URL, SERVICE_ROLE_KEY, DB_URL, ANON_KEY and MAILPIT_URL");
+    expect(calls().some((c) => c.tool === "pnpm")).toBe(false);
   });
 
   // Fails if a mail catcher outside 54730-54739 (another stack's) is handed to the tests.

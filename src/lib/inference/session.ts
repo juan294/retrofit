@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { isSameOrigin } from "@/lib/analysis/run";
 import { isSecureRequest, sameHash } from "@/lib/analysis/visitor";
+import { buildCookie, cookieValue } from "@/lib/security/cookies";
 import { sha256Hex } from "@/lib/security/tokens";
 import { json } from "@/lib/api/json";
 import { clientIdFromRequest, clientWindow, nextUtcMidnight, ttlUntil, utcDay } from "@/lib/fetch/limits";
@@ -46,20 +47,10 @@ const judgeAttemptsKey = (client: string, bucket: number) => `inference:judge-at
 export const JUDGE_ATTEMPTS_PER_CLIENT_HOUR = 10;
 
 export function sessionSetCookie(token: string, secure: boolean): string {
-  const attrs = [`${SESSION_COOKIE}=${token}`, "HttpOnly", "SameSite=Strict", `Path=${SESSION_COOKIE_PATH}`, `Max-Age=${SESSION_TTL_S}`];
-  if (secure) attrs.push("Secure");
-  return attrs.join("; ");
+  return buildCookie(SESSION_COOKIE, token, { path: SESSION_COOKIE_PATH, maxAge: SESSION_TTL_S, secure, sameSite: "Strict" });
 }
 
-function readSessionToken(request: Request): string | null {
-  const header = request.headers.get("cookie");
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq !== -1 && part.slice(0, eq).trim() === SESSION_COOKIE) return part.slice(eq + 1).trim();
-  }
-  return null;
-}
+const readSessionToken = (request: Request) => cookieValue(request.headers.get("cookie"), SESSION_COOKIE);
 
 /**
  * The request's session: a valid, unexpired cookie whose Store record still

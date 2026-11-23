@@ -66,13 +66,13 @@ export async function startAnalysis(
   // anonymous analysis is listed under its visitor so that sign-in can attach it; a failure there
   // costs only that attachment, so it is logged and the analysis goes on.
   const analysis = await createAnalysis(deps, { ownerHash: o.ownerHash, jobId: crawl.jobId, inputOrigin: url.origin, accountId: o.accountId });
-  if (!o.accountId) {
-    await indexVisitorAnalysis(deps, o.ownerHash, analysis.id).catch((e: unknown) => {
-      console.error("Visitor analysis list failed:", e instanceof Error ? e.name : "unknown error");
-    });
-  }
+  const listed = o.accountId
+    ? null
+    : indexVisitorAnalysis(deps, o.ownerHash, analysis.id).catch((e: unknown) => {
+        console.error("Visitor analysis list failed:", e instanceof Error ? e.name : "unknown error");
+      });
 
-  // 5. Start queued work (this job, when a slot is free) through waitUntil.
-  await dispatchQueued(deps, invocation);
+  // 5. Start queued work (this job, when a slot is free) through waitUntil, beside the list write.
+  await Promise.all([listed, dispatchQueued(deps, invocation)]);
   return { ok: true, id: analysis.id };
 }

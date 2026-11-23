@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { getAnalysis, isAnalysisId, readAnalysisView } from "@/lib/analysis/record";
+import { isAnalysisId, readAnalysisView } from "@/lib/analysis/record";
 import { bundleFiles } from "@/lib/bundle/files";
 import { writeZip } from "@/lib/bundle/zip";
 import { visitorTexts } from "@/lib/analysis/texts";
-import { ownsAnalysis, requesterOf } from "@/lib/analysis/owner";
+import { findOwnedAnalysis, requesterOf } from "@/lib/analysis/owner";
 import type { JobDeps } from "@/lib/crawl/jobs";
 import { GenerationFailed, generateNetwork, type GeneratedPreview, type NetworkValidator } from "@/lib/generate/network";
 
@@ -93,8 +93,8 @@ export async function handlePreviewFile(request: Request, deps: PreviewDeps, id:
   if ((!who.visitorToken && !who.accountToken) || !isAnalysisId(id)) return otherBrowser();
   let generated: GeneratedPreview;
   try {
-    const analysis = await getAnalysis(deps.store, id);
-    if (!analysis || !(await ownsAnalysis(analysis, who, deps))) return otherBrowser();
+    const { analysis } = await findOwnedAnalysis(id, who, deps);
+    if (!analysis) return otherBrowser();
     const view = await readAnalysisView(deps, analysis);
     if (view.status === "expired") return jsonResponse(410, { error: "expired", message: view.failure?.message ?? visitorTexts.expired(new Date(analysis.expiresAt)) });
     const snapshot = view.analysis.snapshot;

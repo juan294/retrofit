@@ -1,4 +1,5 @@
 import { createClient, isAuthApiError, isAuthError, type SupabaseClient } from "@supabase/supabase-js";
+import { isUuid } from "@/lib/accounts/data";
 import { AuthRateLimited, AuthUnavailable, type AuthGateway, type VerifiedAccount } from "./gateway";
 
 /**
@@ -50,7 +51,6 @@ function rateLimited(message: string): AuthRateLimited {
   return seconds === undefined ? new AuthRateLimited("project") : new AuthRateLimited("address", Number(seconds));
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function createSupabaseAuthGateway(options: SupabaseAuthOptions): AuthGateway {
   const base = options.fetch ?? fetch;
@@ -93,7 +93,8 @@ export function createSupabaseAuthGateway(options: SupabaseAuthOptions): AuthGat
     },
 
     async getUser(userId): Promise<VerifiedAccount | null> {
-      if (!UUID.test(userId)) return null;
+      // Supabase Auth user ids are lower-case UUIDs (isUuid); anything else names no user.
+      if (!isUuid(userId)) return null;
       let result: Awaited<ReturnType<SupabaseClient["auth"]["admin"]["getUserById"]>>;
       try {
         result = await options.admin.auth.admin.getUserById(userId);
@@ -107,7 +108,7 @@ export function createSupabaseAuthGateway(options: SupabaseAuthOptions): AuthGat
     },
 
     async deleteUser(userId) {
-      if (!UUID.test(userId)) throw new RangeError("userId must be a UUID");
+      if (!isUuid(userId)) throw new RangeError("userId must be a lower-case UUID");
       let error: unknown;
       try {
         ({ error } = await options.admin.auth.admin.deleteUser(userId));

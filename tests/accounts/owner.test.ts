@@ -1,17 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ACCOUNT_COOKIE, createAccountSession } from "@/lib/accounts/session";
-import { attachVisitorAnalyses, ownsAnalysis, resultsPageAccess } from "@/lib/analysis/owner";
-import { getAnalysis, readAnalysisView } from "@/lib/analysis/record";
+import { createAccountSession } from "@/lib/accounts/session";
+import { attachVisitorAnalyses, findOwnedAnalysis } from "@/lib/analysis/owner";
+import { analysisKey, getAnalysis, readAnalysisView, type Analysis } from "@/lib/analysis/record";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { handleAnalysisStatus } from "@/lib/api/status";
 import { handlePreviewFile } from "@/lib/preview/artifacts";
 import { sha256Hex } from "@/lib/security/tokens";
 import { previewRequest, readyBakeryPreview, type ReadyPreview } from "../generate/preview-setup";
-import { analyzeRequest, holdAllSlots, statusRequest, storeDump, testDeps } from "../helpers/server-deps";
-
-const OWNER = { userId: "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "owner@example.test" };
-const OTHER = { userId: "5f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "other@example.test" };
+import { accountCookie, analyzeRequest, holdAllSlots, OTHER_ACCOUNT as OTHER, statusRequest, storeDump, TEST_ACCOUNT as OWNER, testDeps } from "../helpers/server-deps";
 const notFound = { error: "not_found", message: visitorTexts.otherBrowser };
 
 let preview: ReadyPreview | undefined;
@@ -27,8 +24,8 @@ async function attachedPreview() {
   await readAnalysisView(d, (await getAnalysis(d.store, preview.id))!);
   const visitorToken = preview.cookie.split("=")[1]!;
   expect(await attachVisitorAnalyses(d, sha256Hex(visitorToken), OWNER.userId)).toBe(1);
-  const owner = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OWNER)).token}`;
-  const other = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OTHER)).token}`;
+  const owner = await accountCookie(d, OWNER);
+  const other = await accountCookie(d, OTHER);
   return { ...preview, owner, other };
 }
 
@@ -54,17 +51,21 @@ describe("owner checks accept the visitor or the attached account", () => {
     expect(await refused.json()).toEqual(notFound);
   });
 
-  // Fails if the results page check (ownsAnalysis) disagrees with the routes.
-  it("ownsAnalysis: visitor cookie or attached account yes; another visitor or account no", async () => {
+  // Fails if the shared owner lookup (results page, routes, saved reports) accepts another visitor or account.
+  it("findOwnedAnalysis: visitor cookie or attached account yes; another visitor or account no", async () => {
     const d = testDeps();
-    const a = { ownerHash: sha256Hex("a".repeat(32)), accountId: OWNER.userId };
+    const id = "e".repeat(32);
+    const stored: Analysis = { version: 1, id, ownerHash: sha256Hex("a".repeat(32)), accountId: OWNER.userId, jobId: "j", inputOrigin: "https://x.example", createdAt: 0, expiresAt: Date.now() + 3_600_000 };
+    await d.store.set(analysisKey(id), stored, 3600);
     const owner = (await createAccountSession(d, OWNER)).token;
     const other = (await createAccountSession(d, OTHER)).token;
-    expect(await ownsAnalysis(a, { visitorToken: "a".repeat(32), accountToken: null }, d)).toBe(true);
-    expect(await ownsAnalysis(a, { visitorToken: "b".repeat(32), accountToken: owner }, d)).toBe(true);
-    expect(await ownsAnalysis(a, { visitorToken: "b".repeat(32), accountToken: other }, d)).toBe(false);
-    expect(await ownsAnalysis({ ownerHash: a.ownerHash }, { visitorToken: null, accountToken: owner }, d)).toBe(false);
-    expect(await ownsAnalysis(a, { visitorToken: null, accountToken: null }, d)).toBe(false);
+    const found = (visitorToken: string | null, accountToken: string | null) => findOwnedAnalysis(id, { visitorToken, accountToken }, d);
+    expect((await found("a".repeat(32), null)).analysis?.id).toBe(id);
+    expect((await found("b".repeat(32), owner)).analysis?.id).toBe(id);
+    expect((await found("b".repeat(32), other)).analysis).toBeNull();
+    expect((await found(null, null)).analysis).toBeNull();
+    await d.store.set(analysisKey(id), { ...stored, accountId: undefined }, 3600);
+    expect((await found(null, owner)).analysis).toBeNull();
   });
 
   // Fails if an analysis attached to one account moves to another at a later sign-in on the same browser.
@@ -80,8 +81,7 @@ describe("analyses started while signed in", () => {
   it("are attached at creation and not listed under the visitor", async () => {
     const d = testDeps();
     await holdAllSlots(d);
-    const session = (await createAccountSession(d, OWNER)).token;
-    const res = await handleAnalyze(analyzeRequest({ url: "https://bakery.example.com" }, { cookie: `retrofit_visitor=${"c".repeat(32)}; ${ACCOUNT_COOKIE}=${session}` }), d);
+    const res = await handleAnalyze(analyzeRequest({ url: "https://bakery.example.com" }, { cookie: `retrofit_visitor=${"c".repeat(32)}; ${await accountCookie(d, OWNER)}` }), d);
     const { id } = (await res.json()) as { id: string };
     expect((await getAnalysis(d.store, id))?.accountId).toBe(OWNER.userId);
     expect(storeDump(d.backing)).not.toContain(`visitor-analyses:${sha256Hex("c".repeat(32))}`);
@@ -98,28 +98,34 @@ describe("analyses started while signed in", () => {
   });
 });
 
-describe("results page access (P2-R10)", () => {
-  // Fails if the results page reads the account session more than once, or decides ownership or "signed in" wrongly.
-  it("reads the session once and answers the analysis with whether the visitor is signed in", async () => {
+describe("one owner lookup (P2-R10)", () => {
+  // Fails if a page or route reads the account session more than once, decides ownership wrongly, or reads anything without cookies.
+  it("findOwnedAnalysis reads the session at most once and answers the analysis with the signed-in account", async () => {
     let sessionReads = 0;
-    const d = testDeps({ instrument: (op, key) => void (op === "get" && key.startsWith("account-session:") && sessionReads++) });
+    let reads = 0;
+    const d = testDeps({ instrument: (op, key) => void (op === "get" && (reads++, key.startsWith("account-session:") && sessionReads++)) });
     await holdAllSlots(d);
     const visitor = "c".repeat(32);
     const token = (await createAccountSession(d, OWNER)).token;
-    const { id } = (await (await handleAnalyze(analyzeRequest({ url: "https://bakery.example.com" }, { cookie: `retrofit_visitor=${visitor}; ${ACCOUNT_COOKIE}=${token}` }), d)).json()) as { id: string };
+    const { id } = (await (await handleAnalyze(analyzeRequest({ url: "https://bakery.example.com" }, { cookie: `retrofit_visitor=${visitor}; retrofit_account=${token}` }), d)).json()) as { id: string };
     const other = (await createAccountSession(d, OTHER)).token;
     sessionReads = 0;
 
-    const byAccount = await resultsPageAccess(id, { visitorToken: null, accountToken: token }, d);
-    expect(byAccount?.analysis.id).toBe(id);
-    expect(byAccount?.signedIn).toBe(true);
+    const byAccount = await findOwnedAnalysis(id, { visitorToken: null, accountToken: token }, d);
+    expect(byAccount.analysis?.id).toBe(id);
+    expect(byAccount.account?.accountId).toBe(OWNER.userId);
     expect(sessionReads).toBe(1);
 
     sessionReads = 0;
-    expect((await resultsPageAccess(id, { visitorToken: visitor, accountToken: other }, d))?.signedIn).toBe(true);
+    expect((await findOwnedAnalysis(id, { visitorToken: visitor, accountToken: other }, d)).account?.accountId).toBe(OTHER.userId);
     expect(sessionReads).toBe(1);
-    expect(await resultsPageAccess(id, { visitorToken: "d".repeat(32), accountToken: other }, d)).toBeNull();
-    expect((await resultsPageAccess(id, { visitorToken: visitor, accountToken: null }, d))?.signedIn).toBe(false);
-    expect(await resultsPageAccess("not-an-id", { visitorToken: visitor, accountToken: null }, d)).toBeNull();
+    expect((await findOwnedAnalysis(id, { visitorToken: "d".repeat(32), accountToken: other }, d)).analysis).toBeNull();
+    sessionReads = 0;
+    expect(await findOwnedAnalysis(id, { visitorToken: visitor, accountToken: null }, d)).toMatchObject({ analysis: { id }, account: null });
+    expect(sessionReads).toBe(0);
+    reads = 0;
+    expect(await findOwnedAnalysis("not-an-id", { visitorToken: visitor, accountToken: null }, d)).toEqual({ analysis: null, account: null });
+    expect(await findOwnedAnalysis(id, { visitorToken: null, accountToken: null }, d)).toEqual({ analysis: null, account: null });
+    expect(reads).toBe(0);
   });
 });

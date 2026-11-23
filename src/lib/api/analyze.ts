@@ -2,7 +2,7 @@ import { dispatchQueued } from "@/lib/analysis/capacity";
 import { isSameOrigin, startAnalysis } from "@/lib/analysis/run";
 import { visitorTexts } from "@/lib/analysis/texts";
 import { resolveVisitor } from "@/lib/analysis/visitor";
-import { readAccount, readAccountToken } from "@/lib/accounts/session";
+import { readAccount } from "@/lib/accounts/session";
 import { clientIdFromRequest } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { readLimitedBody } from "./body";
@@ -40,8 +40,8 @@ export async function handleAnalyze(request: Request, deps: ServerDeps): Promise
     const rawUrl = urlFrom(text);
     if (rawUrl === null) return json(400, { error: "not_public", message: visitorTexts.notPublic }, visitor.setCookie);
     const clientId = clientIdFromRequest(request, deps.config, deps.clock());
-    // Only a request with an account cookie reads a session; the anonymous path is unchanged.
-    const account = readAccountToken(request) ? await readAccount(request, deps) : null;
+    // readAccount reads nothing without an account cookie, so the anonymous path is unchanged.
+    const account = await readAccount(request, deps);
     const outcome = await startAnalysis(deps, { rawUrl, ownerHash: visitor.hash, clientId, invocation, accountId: account?.accountId });
     if (outcome.ok) return json(200, { id: outcome.id }, visitor.setCookie);
     if (outcome.code === "counting") {

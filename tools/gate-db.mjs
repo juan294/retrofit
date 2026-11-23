@@ -411,24 +411,17 @@ function gateEnvFromStatus(stdout) {
   const url = json.API_URL;
   const key = json.SERVICE_ROLE_KEY ?? json.SECRET_KEY;
   const dbUrl = json.DB_URL;
-  if (!url || !key || !dbUrl) throw new Error("supabase status did not report API_URL, SERVICE_ROLE_KEY and DB_URL");
-  // Auth sign-in tests (tests/db/auth.db.test.ts) also need the anon key and the mail catcher.
+  // The sign-in tests (tests/db/auth.db.test.ts) need the anon key and the mail catcher too.
   const anonKey = json.ANON_KEY ?? json.PUBLISHABLE_KEY;
   const mailUrl = json.MAILPIT_URL ?? json.INBUCKET_URL;
-  const urls = [["API_URL", url], ["DB_URL", dbUrl], ...(mailUrl ? [["MAILPIT_URL", mailUrl]] : [])];
-  for (const [name, value] of urls) {
+  if (!url || !key || !dbUrl || !anonKey || !mailUrl) throw new Error("supabase status did not report API_URL, SERVICE_ROLE_KEY, DB_URL, ANON_KEY and MAILPIT_URL");
+  for (const [name, value] of [["API_URL", url], ["DB_URL", dbUrl], ["MAILPIT_URL", mailUrl]]) {
     const port = Number(new URL(value).port);
     if (port < PORTS.first || port > PORTS.last) throw new Error(`supabase status ${name} uses port ${port}, not a gate port`);
   }
   secrets.add(key);
-  if (anonKey) secrets.add(anonKey);
-  return {
-    SUPABASE_GATE_URL: url,
-    SUPABASE_GATE_SERVICE_ROLE_KEY: key,
-    SUPABASE_GATE_DB_URL: dbUrl,
-    ...(anonKey ? { SUPABASE_GATE_ANON_KEY: anonKey } : {}),
-    ...(mailUrl ? { SUPABASE_GATE_MAIL_URL: mailUrl } : {}),
-  };
+  secrets.add(anonKey);
+  return { SUPABASE_GATE_URL: url, SUPABASE_GATE_SERVICE_ROLE_KEY: key, SUPABASE_GATE_DB_URL: dbUrl, SUPABASE_GATE_ANON_KEY: anonKey, SUPABASE_GATE_MAIL_URL: mailUrl };
 }
 
 // The analyzer reads named db tests from the JSON reporter output (testResults[].assertionResults).
@@ -600,8 +593,7 @@ async function runGateDb({ root, coordDir }) {
       else {
         try {
           gateEnv = gateEnvFromStatus(status.stdout);
-          const mail = gateEnv.SUPABASE_GATE_MAIL_URL ? `, mail catcher ${gateEnv.SUPABASE_GATE_MAIL_URL}` : "";
-          log.step(`gate endpoints: API ${gateEnv.SUPABASE_GATE_URL}, database port ${new URL(gateEnv.SUPABASE_GATE_DB_URL).port}${mail}`);
+          log.step(`gate endpoints: API ${gateEnv.SUPABASE_GATE_URL}, database port ${new URL(gateEnv.SUPABASE_GATE_DB_URL).port}, mail catcher ${gateEnv.SUPABASE_GATE_MAIL_URL}`);
         } catch (error) {
           fail(error.message);
         }

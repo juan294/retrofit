@@ -45,17 +45,17 @@ export interface Config {
   readonly free: FreeConfig;
   /** Phase 7: the Supabase store. Required on Vercel; null off Vercel without it (memory store). */
   readonly supabase: SupabaseConfig | null;
-  /**
-   * SUPABASE_ANON_KEY: the anon key that sign-in uses for Supabase Auth (server side only; it never
-   * reaches a browser). Required on Vercel; null off Vercel without it (sign-in then answers 503).
-   */
-  readonly supabaseAnonKey: string | null;
 }
 
 export interface SupabaseConfig {
   readonly url: string;
   /** Server only. Never sent to a browser, logged or written to evidence. */
   readonly serviceRoleKey: string;
+  /**
+   * SUPABASE_ANON_KEY: the anon key that sign-in uses for Supabase Auth (server side only; it never
+   * reaches a browser). Required on Vercel; absent off Vercel without it (sign-in then answers 503).
+   */
+  readonly anonKey?: string;
 }
 
 export interface FreeConfig {
@@ -188,27 +188,30 @@ export function loadConfig(env: Env): Config {
   if (free.upstreamTimeoutMs > 50_000) throw new ConfigError("FREE_UPSTREAM_TIMEOUT_MS", "must be at most 50000 (maxDuration 60 s)");
 
   const supabase = loadSupabaseConfig(env, onVercel);
-  const supabaseAnonKey = env.SUPABASE_ANON_KEY?.trim() || null;
-  if (onVercel && !supabaseAnonKey) throw new ConfigError("SUPABASE_ANON_KEY", "is required on Vercel");
-  if (supabaseAnonKey && !supabase) throw new ConfigError("SUPABASE_URL", "is required when SUPABASE_ANON_KEY is set");
 
   const billingStart = parseInstant(env, "BILLING_START", "2027-01-19T00:00:00Z");
 
-  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, free, supabase, supabaseAnonKey });
+  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, free, supabase });
 }
 
-/** SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY: required on Vercel (https); off Vercel both or neither. */
+/**
+ * SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY: required on Vercel (https); off Vercel both or neither.
+ * SUPABASE_ANON_KEY: required on Vercel; off Vercel optional, and only with SUPABASE_URL.
+ */
 function loadSupabaseConfig(env: Env, onVercel: boolean): SupabaseConfig | null {
   const rawUrl = env.SUPABASE_URL?.trim() || null;
   const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim() || null;
+  const anonKey = env.SUPABASE_ANON_KEY?.trim() || null;
   if (onVercel && !rawUrl) throw new ConfigError("SUPABASE_URL", "is required on Vercel");
   if (onVercel && !key) throw new ConfigError("SUPABASE_SERVICE_ROLE_KEY", "is required on Vercel");
   if (rawUrl && !key) throw new ConfigError("SUPABASE_SERVICE_ROLE_KEY", "is required when SUPABASE_URL is set");
   if (key && !rawUrl) throw new ConfigError("SUPABASE_URL", "is required when SUPABASE_SERVICE_ROLE_KEY is set");
+  if (onVercel && !anonKey) throw new ConfigError("SUPABASE_ANON_KEY", "is required on Vercel");
+  if (anonKey && !rawUrl) throw new ConfigError("SUPABASE_URL", "is required when SUPABASE_ANON_KEY is set");
   if (!rawUrl || !key) return null;
   const url = parseOrigin("SUPABASE_URL", rawUrl);
   if (onVercel && !url.startsWith("https:")) throw new ConfigError("SUPABASE_URL", "must use https on Vercel");
-  return Object.freeze({ url, serviceRoleKey: key });
+  return Object.freeze({ url, serviceRoleKey: key, ...(anonKey ? { anonKey } : {}) });
 }
 
 /** An ISO 8601 date and time in ms since the epoch; `fallback` when unset. */

@@ -112,7 +112,7 @@ describe("loadConfig", () => {
 
   it("reads the Supabase variables on Vercel", () => {
     const c = loadConfig(VERCEL_ENV);
-    expect(c.supabase).toEqual({ url: "https://store.supabase.test", serviceRoleKey: "service-role-key-test" });
+    expect(c.supabase).toEqual({ url: "https://store.supabase.test", serviceRoleKey: "service-role-key-test", anonKey: "anon-key-test" });
   });
 
   // Fails if local development needs Supabase, or a half configuration silently uses memory.
@@ -169,14 +169,14 @@ describe("accounts sign-in configuration", () => {
   it("refuses a missing SUPABASE_ANON_KEY on Vercel and reads it when set", () => {
     const { SUPABASE_ANON_KEY: _omit, ...withoutAnon } = VERCEL_ENV;
     expect(() => loadConfig(withoutAnon)).toThrow(/SUPABASE_ANON_KEY/);
-    expect(loadConfig(VERCEL_ENV).supabaseAnonKey).toBe(VERCEL_ENV.SUPABASE_ANON_KEY);
+    expect(loadConfig(VERCEL_ENV).supabase?.anonKey).toBe(VERCEL_ENV.SUPABASE_ANON_KEY);
   });
 
   // Fails if local development without the anon key stops working, or an anon key without a Supabase URL is accepted.
   it("leaves SUPABASE_ANON_KEY optional off Vercel and refuses it without SUPABASE_URL", () => {
-    expect(loadConfig({ SESSION_SECRET: secret }).supabaseAnonKey).toBeNull();
-    expect(loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721", SUPABASE_SERVICE_ROLE_KEY: "k" }).supabaseAnonKey).toBeNull();
-    expect(loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721", SUPABASE_SERVICE_ROLE_KEY: "k", SUPABASE_ANON_KEY: " a " }).supabaseAnonKey).toBe("a");
+    expect(loadConfig({ SESSION_SECRET: secret }).supabase).toBeNull();
+    expect(loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721", SUPABASE_SERVICE_ROLE_KEY: "k" }).supabase?.anonKey).toBeUndefined();
+    expect(loadConfig({ SESSION_SECRET: secret, SUPABASE_URL: "http://127.0.0.1:54721", SUPABASE_SERVICE_ROLE_KEY: "k", SUPABASE_ANON_KEY: " a " }).supabase?.anonKey).toBe("a");
     expect(() => loadConfig({ SESSION_SECRET: secret, SUPABASE_ANON_KEY: "a" })).toThrow(/SUPABASE_URL/);
   });
 });

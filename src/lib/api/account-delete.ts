@@ -1,12 +1,12 @@
 import { deleteAccount } from "@/lib/accounts/delete";
+import { signInHref } from "@/lib/accounts/return-to";
 import { accountClearCookie, readAccount } from "@/lib/accounts/session";
 import { isSameOrigin } from "@/lib/analysis/run";
 import { isSecureRequest } from "@/lib/analysis/visitor";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { ACCOUNT_TEXT } from "@/lib/site/account-texts";
 import { readSmallBody } from "./body";
-import { json } from "./json";
-import { seeOther } from "./sign-out";
+import { json, seeOther } from "./json";
 
 /**
  * POST /api/account/delete (the account page's form, urlencoded `confirm=yes`) -> 303.
@@ -23,7 +23,7 @@ export async function handleAccountDelete(request: Request, deps: Pick<ServerDep
     console.error("POST /api/account/delete failed:", e instanceof Error ? e.name : "unknown error");
     return seeOther(deps, "/account?delete=failed");
   }
-  if (!account) return seeOther(deps, `/sign-in?returnTo=${encodeURIComponent("/account")}`);
+  if (!account) return seeOther(deps, signInHref("/account"));
   const text = await readSmallBody(request);
   const confirmed = text !== "too large" && new URLSearchParams(text).get("confirm") === "yes";
   if (!confirmed) return seeOther(deps, "/account?delete=confirm");

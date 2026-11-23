@@ -21,7 +21,7 @@ export const MAX_INDEXED_ANALYSES = 50;
 const visitorAnalysesKey = (ownerHash: string) => `visitor-analyses:${ownerHash}`;
 const ATTACH_ATTEMPTS = 3;
 
-type Deps = { readonly store: Store; readonly clock: Clock };
+type Deps = { readonly store: Store; readonly clock: Clock; readonly waitUntil?: (task: Promise<unknown>) => void };
 
 /** The visitor and account cookies of a request (or of a page's cookie store). */
 export interface Requester {
@@ -35,28 +35,25 @@ export function requesterOf(request: Request): Requester {
 
 type Owned = Pick<Analysis, "ownerHash" | "accountId">;
 
-const ownedByVisitor = (analysis: Owned, visitorToken: string | null) => visitorToken !== null && sameHash(analysis.ownerHash, sha256Hex(visitorToken));
-const ownedByAccount = (analysis: Owned, account: Pick<Account, "accountId"> | null) => !!analysis.accountId && account !== null && sameHash(account.accountId, analysis.accountId);
-
-/** True when the requester owns the analysis: the visitor cookie, or the attached account's session (read only when needed). */
-export async function ownsAnalysis(analysis: Owned, who: Requester, deps: Deps): Promise<boolean> {
-  if (ownedByVisitor(analysis, who.visitorToken)) return true;
-  if (!analysis.accountId || !who.accountToken) return false;
-  return ownedByAccount(analysis, await readAccountByToken(who.accountToken, deps));
+/** True when the visitor cookie created the analysis, or the signed-in account is the one it is attached to. */
+export function ownedBy(analysis: Owned, visitorToken: string | null, account: Pick<Account, "accountId"> | null): boolean {
+  if (visitorToken !== null && sameHash(analysis.ownerHash, sha256Hex(visitorToken))) return true;
+  return !!analysis.accountId && account !== null && sameHash(account.accountId, analysis.accountId);
 }
 
 /**
- * The results page's check (/r/<id>): the analysis when the requester owns it, and whether the
- * visitor is signed in (for "Save this report"). The account session is read once, or not at all
- * without an account cookie. Null for another visitor's or account's analysis and an unknown id.
+ * The one owner lookup for the results page, the status and preview routes and saved reports:
+ * the analysis when the requester owns it (else null: another visitor's or account's, unknown or a
+ * malformed id), and the signed-in account. The analysis and the session are read in parallel,
+ * each at most once; without cookies or with a malformed id nothing is read, and without an
+ * account cookie the session is not read (so the anonymous path reads only the analysis).
  */
-export async function resultsPageAccess(id: string, who: Requester, deps: Deps): Promise<{ analysis: Analysis; signedIn: boolean } | null> {
-  if ((!who.visitorToken && !who.accountToken) || !isAnalysisId(id)) return null;
-  const analysis = await getAnalysis(deps.store, id);
-  if (!analysis) return null;
-  const account = who.accountToken ? await readAccountByToken(who.accountToken, deps) : null;
-  if (!ownedByVisitor(analysis, who.visitorToken) && !ownedByAccount(analysis, account)) return null;
-  return { analysis, signedIn: account !== null };
+export async function findOwnedAnalysis(id: string, who: Requester, deps: Deps): Promise<{ analysis: Analysis | null; account: Account | null }> {
+  const [analysis, account] = await Promise.all([
+    (who.visitorToken || who.accountToken) && isAnalysisId(id) ? getAnalysis(deps.store, id) : null,
+    readAccountByToken(who.accountToken, deps),
+  ]);
+  return { analysis: analysis && ownedBy(analysis, who.visitorToken, account) ? analysis : null, account };
 }
 
 /** Lists a new anonymous analysis under its visitor, for attaching at sign-in. Lives as long as the analysis record. */
@@ -70,17 +67,15 @@ export async function indexVisitorAnalysis(deps: Deps & { readonly config: Pick<
  * to an account keeps it. Returns how many were attached.
  */
 export async function attachVisitorAnalyses(deps: Deps, ownerHash: string, accountId: string): Promise<number> {
-  let attached = 0;
-  for (const id of await readIdList(deps.store, visitorAnalysesKey(ownerHash))) {
+  async function attach(id: string): Promise<boolean> {
     for (let attempt = 0; attempt < ATTACH_ATTEMPTS; attempt++) {
       const analysis = await getAnalysis(deps.store, id);
-      if (!analysis || analysis.accountId || !sameHash(analysis.ownerHash, ownerHash)) break;
+      if (!analysis || analysis.accountId || !sameHash(analysis.ownerHash, ownerHash)) return false;
       const next: Analysis = { ...analysis, version: analysis.version + 1, accountId };
-      if (await deps.store.compareAndSet(analysisKey(id), analysis, next, storeTtl(analysis, deps.clock()))) {
-        attached++;
-        break;
-      }
+      if (await deps.store.compareAndSet(analysisKey(id), analysis, next, storeTtl(analysis, deps.clock()))) return true;
     }
+    return false;
   }
-  return attached;
+  const results = await Promise.all((await readIdList(deps.store, visitorAnalysesKey(ownerHash))).map(attach));
+  return results.filter(Boolean).length;
 }

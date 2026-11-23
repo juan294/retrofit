@@ -3,7 +3,7 @@ import { sha256Hex, TOKEN_PATTERN } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { REQUEST_TEXT, UNSUBSCRIBE_TEXT } from "@/lib/site/pricing-texts";
 import { readSmallBody } from "./body";
-import { json } from "./json";
+import { json, seeOther } from "./json";
 
 const OUTCOMES = ["done", "invalid", "unavailable"] as const;
 
@@ -77,7 +77,7 @@ export async function handleUnsubscribePost(request: Request, deps: Pick<ServerD
   const formToken = field?.("t") ?? null;
   if (formToken !== null) {
     const outcome = await unsubscribeByToken(formToken, deps.accounts);
-    return new Response(null, { status: 303, headers: { location: `${deps.config.publicOrigin}/unsubscribe?result=${outcome}`, "cache-control": "no-store" } });
+    return seeOther(deps, `/unsubscribe?result=${outcome}`);
   }
   if (field?.("List-Unsubscribe") === "One-Click") {
     const outcome = await unsubscribeByToken(new URL(request.url).searchParams.get("t"), deps.accounts);

@@ -22,7 +22,7 @@ export default async function ConfirmPage({ searchParams }: { searchParams: Prom
       {state.kind === "confirm" ? (
         <>
           <p className="mt-4">{T.confirmIntro}</p>
-          <ConfirmSignInForm tokenHash={state.tokenHash} type={state.type} otherBrowser={state.otherBrowser} />
+          <ConfirmSignInForm tokenHash={state.tokenHash} otherBrowser={state.otherBrowser} />
         </>
       ) : (
         <>

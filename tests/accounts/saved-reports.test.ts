@@ -1,14 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ACCOUNT_COOKIE, createAccountSession } from "@/lib/accounts/session";
 import { getAnalysis, readAnalysisView, reportBody } from "@/lib/analysis/record";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { handleSaveReport } from "@/lib/api/saved-reports";
 import { MAX_SAVED_REPORTS } from "@/lib/accounts/data";
 import { SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { readyBakeryPreview, type ReadyPreview } from "../generate/preview-setup";
-import { analyzeRequest, holdAllSlots, postRequest, testDeps } from "../helpers/server-deps";
-
-const OWNER = { userId: "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "owner@example.test" };
+import { accountCookie, analyzeRequest, holdAllSlots, postRequest, TEST_ACCOUNT as OWNER, testDeps } from "../helpers/server-deps";
 
 let preview: ReadyPreview | undefined;
 afterEach(async () => {
@@ -24,7 +21,7 @@ describe("POST /api/account/reports (Save this report)", () => {
   it("saves the ready report of the visitor's analysis to the signed-in account", async () => {
     preview = await readyBakeryPreview();
     const { d, id, cookie } = preview;
-    const session = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OWNER)).token}`;
+    const session = await accountCookie(d);
     const res = await handleSaveReport(save(id, `${cookie}; ${session}`), d);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { id: string; message: string; href: string };
@@ -44,7 +41,7 @@ describe("POST /api/account/reports (Save this report)", () => {
   it("refuses a signed-out visitor, another visitor's analysis, an unready analysis and a cross-site post", async () => {
     preview = await readyBakeryPreview();
     const { d, id, cookie } = preview;
-    const session = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OWNER)).token}`;
+    const session = await accountCookie(d);
 
     const signedOut = await handleSaveReport(save(id, cookie), d);
     expect(signedOut.status).toBe(401);
@@ -65,7 +62,7 @@ describe("POST /api/account/reports (Save this report)", () => {
     await holdAllSlots(d);
     const visitor = `retrofit_visitor=${"c".repeat(32)}`;
     const { id } = (await (await handleAnalyze(analyzeRequest({ url: "https://bakery.example.com" }, { cookie: visitor }), d)).json()) as { id: string };
-    const session = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OWNER)).token}`;
+    const session = await accountCookie(d);
     const res = await handleSaveReport(save(id, `${visitor}; ${session}`), d);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "not_ready", message: SAVE_REPORT_TEXT.notReady });
@@ -77,7 +74,7 @@ describe("saving twice and the saved report limit (P2-R5)", () => {
   it("a second save of the same report answers 200 with the first id and the already-saved text", async () => {
     preview = await readyBakeryPreview();
     const { d, id, cookie } = preview;
-    const session = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OWNER)).token}`;
+    const session = await accountCookie(d);
     const first = (await (await handleSaveReport(save(id, `${cookie}; ${session}`), d)).json()) as { id: string };
     const second = await handleSaveReport(save(id, `${cookie}; ${session}`), d);
     expect(second.status).toBe(200);
@@ -92,7 +89,7 @@ describe("saving twice and the saved report limit (P2-R5)", () => {
     for (let n = 0; n < MAX_SAVED_REPORTS; n++) {
       await d.accounts.saveReport(OWNER.userId, { host: "other.example", report: { score: n }, fetchedAt: new Date(Date.UTC(2026, 0, 1) + n * 1000).toISOString() });
     }
-    const session = `${ACCOUNT_COOKIE}=${(await createAccountSession(d, OWNER)).token}`;
+    const session = await accountCookie(d);
     const res = await handleSaveReport(save(id, `${cookie}; ${session}`), d);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "full", message: SAVE_REPORT_TEXT.full });

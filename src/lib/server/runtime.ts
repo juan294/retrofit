@@ -13,7 +13,7 @@ import type { Snapshot } from "@/lib/snapshot/types";
 import { createMemoryStore } from "@/lib/store/memory";
 import { createSupabaseStore } from "@/lib/store/supabase";
 import { createServiceClient, type ServiceClient } from "@/lib/supabase/client";
-import { processFixtureAuth } from "@/lib/test-fixtures/auth";
+import { createFixtureAuth, type FixtureAuth } from "@/lib/test-fixtures/auth";
 import { fixtureClock } from "@/lib/test-fixtures/clock";
 import { systemClock, type Clock, type Store } from "@/lib/store/types";
 
@@ -69,6 +69,7 @@ interface Singletons {
   store?: Store;
   accounts?: AccountData;
   auth?: AuthGateway;
+  fixtureAuth?: FixtureAuth;
   fetch?: FetchContext;
   deps?: ServerDeps;
 }
@@ -118,12 +119,20 @@ export function getAccountData(config: Config = getConfig()): AccountData {
  */
 export function getAuthGateway(config: Config = getConfig()): AuthGateway {
   if (!singletons.auth) {
-    if (config.fixturesEnabled) singletons.auth = processFixtureAuth({ clock: fixtureClock, origin: config.publicOrigin });
-    else if (config.supabase && config.supabaseAnonKey) {
-      singletons.auth = createSupabaseAuthGateway({ url: config.supabase.url, anonKey: config.supabaseAnonKey, admin: sharedServiceClient(config.supabase) });
+    const fixture = getFixtureAuth(config);
+    if (fixture) singletons.auth = fixture;
+    else if (config.supabase?.anonKey) {
+      singletons.auth = createSupabaseAuthGateway({ url: config.supabase.url, anonKey: config.supabase.anonKey, admin: sharedServiceClient(config.supabase) });
     } else singletons.auth = unavailableAuthGateway();
   }
   return singletons.auth;
+}
+
+/** Fixtures mode only: the process-wide fixture provider (its mailbox serves /test-fixtures/mailbox). Null otherwise. */
+export function getFixtureAuth(config: Config = getConfig()): FixtureAuth | null {
+  if (!config.fixturesEnabled) return null;
+  singletons.fixtureAuth ??= createFixtureAuth({ clock: fixtureClock, origin: config.publicOrigin });
+  return singletons.fixtureAuth;
 }
 
 /** The server clock. Fixtures mode only: e2e tests may offset it (src/lib/test-fixtures/clock.ts). */

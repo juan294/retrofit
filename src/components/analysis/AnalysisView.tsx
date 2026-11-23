@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { COUNTING_RETRY_S, visitorTexts } from "@/lib/analysis/texts";
 import { AgentPanel } from "@/components/preview/AgentPanel";
 import { InstallPanel } from "./InstallPanel";
+import { signInHref } from "@/lib/accounts/return-to";
 import { SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { SaveReportButton } from "./SaveReportButton";
 import { ScoreReport, type ReportView } from "./ScoreReport";
@@ -138,7 +139,7 @@ export function AnalysisView({ id, inputOrigin, canSave = false }: { id: string;
         <SaveReportButton analysisId={id} />
       ) : (
         <p className="mt-8">
-          <a href={`/sign-in?returnTo=${encodeURIComponent(`/r/${id}`)}`} className="underline">
+          <a href={signInHref(`/r/${id}`)} className="underline">
             {SAVE_REPORT_TEXT.signIn}
           </a>
         </p>

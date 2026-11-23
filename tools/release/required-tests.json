@@ -6984,7 +6984,7 @@
       "rule": "accounts owner checks",
       "suite": "unit",
       "file": "tests/accounts/owner.test.ts",
-      "title": "owner checks accept the visitor or the attached account ownsAnalysis: visitor cookie or attached account yes; another visitor or account no"
+      "title": "owner checks accept the visitor or the attached account findOwnedAnalysis: visitor cookie or attached account yes; another visitor or account no"
     },
     {
       "rule": "accounts owner checks",
@@ -7008,7 +7008,7 @@
       "rule": "accounts owner checks",
       "suite": "unit",
       "file": "tests/accounts/owner.test.ts",
-      "title": "results page access (P2-R10) reads the session once and answers the analysis with whether the visitor is signed in"
+      "title": "one owner lookup (P2-R10) findOwnedAnalysis reads the session at most once and answers the analysis with the signed-in account"
     },
     {
       "rule": "accounts sign-in",
@@ -7299,6 +7299,12 @@
       "title": "Supabase AccountData on a closed port deleteAccountData throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
     },
     {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/security/csp.test.ts",
+      "title": "static headers sends no Referer from the /auth pages"
+    },
+    {
       "rule": "privacy and terms drafts",
       "suite": "unit",
       "file": "tests/site/legal-texts.test.ts",
@@ -7323,16 +7329,16 @@
       "title": "account pages and robots robots disallows /account, /auth/ and /sign-in, and no account page is listed as public"
     },
     {
-      "rule": "accounts sign-in",
+      "rule": "gate database",
       "suite": "unit",
-      "file": "tests/security/csp.test.ts",
-      "title": "static headers sends no Referer from the /auth pages"
+      "file": "tests/tools/gate-db.test.ts",
+      "title": "gate-db run gate-db: passes the gate mail catcher URL and the anon key to the db tests, and keeps the key out of the log"
     },
     {
       "rule": "gate database",
       "suite": "unit",
       "file": "tests/tools/gate-db.test.ts",
-      "title": "gate-db run gate-db: passes the gate mail catcher URL and the anon key to the db tests, and keeps the key out of the log"
+      "title": "gate-db run gate-db: refuses a status without the mail catcher and runs no tests"
     },
     {
       "rule": "gate database",

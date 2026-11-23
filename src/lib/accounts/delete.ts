@@ -1,5 +1,5 @@
 import type { ServerDeps } from "@/lib/server/runtime";
-import { endAccountSessions, type Account } from "./session";
+import { endAccountSessions, endLastAccountSession, type Account } from "./session";
 
 /**
  * `deleted`: everything is gone. `nothing_deleted`: a step before the data deletion failed, so no
@@ -37,6 +37,6 @@ export async function deleteAccount(deps: Pick<ServerDeps, "store" | "accounts" 
     fail("of the auth user", e);
     return "partial";
   }
-  await endAccountSessions(deps.store, account.accountId).catch((e: unknown) => fail("of this session", e));
+  await endLastAccountSession(deps.store, account).catch((e: unknown) => fail("of this session", e));
   return "deleted";
 }

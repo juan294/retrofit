@@ -163,8 +163,8 @@ describe("sign-in confirm page review repairs", () => {
   // P2-R1. Fails if the page that the emailed link opens would verify the link itself (mail scanners would use it up).
   it("the confirm page state needs no provider and offers the button only for a well-formed link", () => {
     const hash = "0123456789abcdef0123456789abcdef";
-    expect(confirmPageState({ token_hash: hash, type: "email" }, true)).toEqual({ kind: "confirm", tokenHash: hash, type: "email", otherBrowser: false });
-    expect(confirmPageState({ token_hash: hash, type: "email" }, false)).toEqual({ kind: "confirm", tokenHash: hash, type: "email", otherBrowser: true });
+    expect(confirmPageState({ token_hash: hash, type: "email" }, true)).toEqual({ kind: "confirm", tokenHash: hash, otherBrowser: false });
+    expect(confirmPageState({ token_hash: hash, type: "email" }, false)).toEqual({ kind: "confirm", tokenHash: hash, otherBrowser: true });
     for (const bad of [{ type: "email" }, { token_hash: hash, type: "magiclink" }, { token_hash: "<script>", type: "email" }, { token_hash: [hash, hash], type: "email" }]) {
       expect(confirmPageState(bad, true)).toEqual({ kind: "invalid" });
     }
@@ -172,7 +172,7 @@ describe("sign-in confirm page review repairs", () => {
 
   // P2-R1. Fails if the form can submit as GET before hydration, loses the token, or hides the other-browser warning.
   it("the confirm form posts the token to /auth/verify with its button disabled until hydration, and warns for another browser", () => {
-    const render = (otherBrowser: boolean) => renderToStaticMarkup(createElement(ConfirmSignInForm, { tokenHash: "abc0123456789abcdef", type: "email", otherBrowser }));
+    const render = (otherBrowser: boolean) => renderToStaticMarkup(createElement(ConfirmSignInForm, { tokenHash: "abc0123456789abcdef", otherBrowser }));
     const html = render(true);
     const form = /<form[^>]*>/.exec(html)?.[0] ?? "";
     expect(form).toMatch(/method="post"/);

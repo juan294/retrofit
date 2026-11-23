@@ -1,17 +1,12 @@
 "use client";
 
-import { useState, useSyncExternalStore, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { NOTIFY_FORM_TEXT as T, REQUEST_TEXT } from "@/lib/site/pricing-texts";
 import { localizeRetry } from "./analysis/retry-time";
+import { useHydrated } from "./useHydrated";
 
 type Status = { readonly ok: boolean; readonly text: string } | null;
 
-const noSubscription = () => () => {};
-
-/** False in the server HTML and until hydration, true after it. */
-function useHydrated(): boolean {
-  return useSyncExternalStore(noSubscription, () => true, () => false);
-}
 
 /**
  * "Notify me": an email field, an unticked product-news box and the privacy link.

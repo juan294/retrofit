@@ -1,3 +1,8 @@
+/** The sign-in page that returns to `path` (a same-origin path) after the link is confirmed. */
+export function signInHref(path: string): string {
+  return `/sign-in?returnTo=${encodeURIComponent(path)}`;
+}
+
 /** Where sign-in returns when the page it started from is unknown or not allowed. */
 export const DEFAULT_RETURN = "/account";
 

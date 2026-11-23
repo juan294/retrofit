@@ -1,7 +1,8 @@
 import { vi } from "vitest";
 import type { AccountData } from "@/lib/accounts/data";
 import { createAccountMemoryBacking, createMemoryAccountData, type AccountMemoryBacking } from "@/lib/accounts/memory";
-import type { AuthGateway } from "@/lib/auth/gateway";
+import { ACCOUNT_COOKIE, createAccountSession } from "@/lib/accounts/session";
+import type { AuthGateway, VerifiedAccount } from "@/lib/auth/gateway";
 import { createFixtureAuth, type FixtureAuth } from "@/lib/test-fixtures/auth";
 import { loadConfig, type Env } from "@/lib/config";
 import { slotKey } from "@/lib/analysis/capacity";
@@ -15,6 +16,11 @@ import { startFixtureServer, type FixtureHandler, type FixtureRoutes, type Fixtu
 import { materialize, type FixtureSite } from "../fixtures/sites";
 
 export const PUBLIC_ORIGIN = "https://retrofit.test";
+
+/** A verified account for session tests (the fixture provider gives each address its own id). */
+export const TEST_ACCOUNT = { userId: "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "owner@example.test" } as const;
+/** A second account, for "another account is refused" cases. */
+export const OTHER_ACCOUNT = { userId: "5f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "other@example.test" } as const;
 
 /**
  * Pacing start tolerance for test contexts with a 1 ms interval, so a real-time crawl is not slowed by
@@ -238,6 +244,11 @@ export function scoreRequest(query: string, o: { method?: string; ip?: string; c
   const headers = new Headers({ "x-forwarded-for": o.ip ?? "198.51.100.9" });
   if (o.cookie) headers.set("cookie", o.cookie);
   return new Request(`${PUBLIC_ORIGIN}/api/score${query}`, { method: o.method ?? "GET", headers });
+}
+
+/** A new session for `account` as a Cookie header value (`retrofit_account=<id>`). */
+export async function accountCookie(d: Pick<ServerDeps, "store" | "clock">, account: VerifiedAccount = TEST_ACCOUNT): Promise<string> {
+  return `${ACCOUNT_COOKIE}=${(await createAccountSession(d, account)).token}`;
 }
 
 /** `name=value` from a Set-Cookie header, for the next request's Cookie header. */

@@ -9,10 +9,10 @@ import {
 } from "@/lib/accounts/session";
 import { handleSignOut } from "@/lib/api/sign-out";
 import { sha256Hex } from "@/lib/security/tokens";
-import { fakeClock, PUBLIC_ORIGIN, postRequest, storeDump, testDeps } from "../helpers/server-deps";
+import { fakeClock, PUBLIC_ORIGIN, postRequest, storeDump, TEST_ACCOUNT, testDeps } from "../helpers/server-deps";
 
 const DAY = 86_400_000;
-const ACCOUNT = { userId: "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "person@example.test" };
+const ACCOUNT = TEST_ACCOUNT;
 const withCookie = (token: string) => new Request(`${PUBLIC_ORIGIN}/account`, { headers: { cookie: `retrofit_visitor=${"a".repeat(32)}; ${ACCOUNT_COOKIE}=${token}` } });
 
 afterEach(() => vi.restoreAllMocks());

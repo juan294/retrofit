@@ -1,18 +1,18 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { SAVE_REPORT_TEXT as T } from "@/lib/site/account-texts";
+import { useHydrated } from "../useHydrated";
 
 type Status = { readonly ok: boolean; readonly text: string } | null;
 
-const noSubscription = () => () => {};
 
 /** "Save this report" for a signed-in visitor: copies the ready report to the account (POST /api/account/reports). */
 export function SaveReportButton({ analysisId }: { analysisId: string }) {
   const [status, setStatus] = useState<Status>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const hydrated = useSyncExternalStore(noSubscription, () => true, () => false);
+  const hydrated = useHydrated();
 
   async function save() {
     setBusy(true);

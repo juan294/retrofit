@@ -4,6 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SitePage } from "@/components/SitePage";
 import type { SavedReportSummary } from "@/lib/accounts/data";
+import { signInHref } from "@/lib/accounts/return-to";
 import { ACCOUNT_COOKIE, readAccountByToken, type Account } from "@/lib/accounts/session";
 import { getServerDeps } from "@/lib/server/runtime";
 import { ACCOUNT_TEXT as T, dateText } from "@/lib/site/account-texts";
@@ -34,7 +35,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
       </SitePage>
     );
   }
-  if (!account || !reports) redirect(`/sign-in?returnTo=${encodeURIComponent("/account")}`);
+  if (!account || !reports) redirect(signInHref("/account"));
   const notice = typeof deleteState === "string" && Object.hasOwn(DELETE_NOTICES, deleteState) ? DELETE_NOTICES[deleteState as keyof typeof DELETE_NOTICES] : null;
 
   return (

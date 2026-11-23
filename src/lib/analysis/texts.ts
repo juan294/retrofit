@@ -16,6 +16,11 @@ export function hhmmUtc(at: Date): string {
 
 const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
+/** "23 November 2026" (UTC): the date style of every Retrofit page. */
+export function formatDate(at: Date | number): string {
+  return DATE.format(at);
+}
+
 /**
  * Seconds until a caller retries an undecided count (`counting`): the server's
  * retryAfterSeconds and the page's own retry wait. The texts below say "a few
@@ -33,7 +38,7 @@ export const visitorTexts = {
   queueExpired: "Retrofit is too busy right now. Try again in a few minutes.",
   notPublic: "This address is not a public website.",
   crawlError: "Retrofit could not read this site.",
-  expired: (expiresAt: Date) => `This preview expired on ${DATE.format(expiresAt)}. Analyze the site again.`,
+  expired: (expiresAt: Date) => `This preview expired on ${formatDate(expiresAt)}. Analyze the site again.`,
   otherBrowser: "This preview belongs to another browser. Analyze the site again to get your own.",
   generationFailed: "Retrofit could not build a working agent for this site.",
   unavailable: "Retrofit is having trouble. Try again in a few minutes.",

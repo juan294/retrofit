@@ -2,6 +2,7 @@
 // UI pass can restyle these pages without touching their logic.
 
 import { MAX_SAVED_REPORTS } from "@/lib/accounts/limits";
+import { formatDate } from "@/lib/analysis/texts";
 import { LEAD_EMAIL } from "./own-site";
 
 export const ACCOUNT_TEXT = {
@@ -46,10 +47,8 @@ export const SAVE_REPORT_TEXT = {
   crossOrigin: "Open Retrofit at its own address to save this report.",
 } as const;
 
-const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
-
-/** "23 November 2026" (UTC), the date style of Retrofit's other pages. */
+/** An ISO time as "23 November 2026" (UTC, formatDate); the input itself when it is not a time. */
 export function dateText(iso: string): string {
   const ms = Date.parse(iso);
-  return Number.isFinite(ms) ? DATE.format(ms) : iso;
+  return Number.isFinite(ms) ? formatDate(ms) : iso;
 }

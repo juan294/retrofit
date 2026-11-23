@@ -1,17 +1,12 @@
 "use client";
 
-import { useState, useSyncExternalStore, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { SIGN_IN_TEXT as T } from "@/lib/site/sign-in-texts";
 import { localizeRetry } from "./analysis/retry-time";
+import { useHydrated } from "./useHydrated";
 
 type Status = { readonly ok: boolean; readonly text: string } | null;
 
-const noSubscription = () => () => {};
-
-/** False in the server HTML and until hydration, true after it. */
-function useHydrated(): boolean {
-  return useSyncExternalStore(noSubscription, () => true, () => false);
-}
 
 /**
  * The sign-in form: one email field. It posts JSON to /api/auth/sign-in and then offers

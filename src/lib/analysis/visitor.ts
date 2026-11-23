@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { Config } from "@/lib/config";
+import { buildCookie, cookieValue } from "@/lib/security/cookies";
 import { newToken, sha256Hex, TOKEN_PATTERN } from "@/lib/security/tokens";
 
 /**
@@ -23,15 +24,8 @@ export function hasBearer(request: Request, secret: string | null): boolean {
 
 /** The visitor token from the Cookie header, or null when absent or malformed. */
 export function readVisitorToken(request: Request): string | null {
-  const header = request.headers.get("cookie");
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1 || part.slice(0, eq).trim() !== VISITOR_COOKIE) continue;
-    const value = part.slice(eq + 1).trim();
-    return TOKEN_PATTERN.test(value) ? value : null;
-  }
-  return null;
+  const value = cookieValue(request.headers.get("cookie"), VISITOR_COOKIE);
+  return value !== null && TOKEN_PATTERN.test(value) ? value : null;
 }
 
 /** True when the request reached Retrofit over HTTPS (the request URL or the public origin). */
@@ -40,9 +34,7 @@ export function isSecureRequest(request: Request, config: Pick<Config, "publicOr
 }
 
 export function visitorSetCookie(token: string, secure: boolean): string {
-  const attrs = [`${VISITOR_COOKIE}=${token}`, "HttpOnly", "SameSite=Lax", "Path=/", `Max-Age=${VISITOR_MAX_AGE_S}`];
-  if (secure) attrs.push("Secure");
-  return attrs.join("; ");
+  return buildCookie(VISITOR_COOKIE, token, { path: "/", maxAge: VISITOR_MAX_AGE_S, secure });
 }
 
 export interface Visitor {

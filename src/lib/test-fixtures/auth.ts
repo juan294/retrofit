@@ -109,12 +109,3 @@ export function createFixtureAuth(options: { clock: Clock; origin: string }): Fi
   };
 }
 
-// One fixture provider per process (shared by the routes and /test-fixtures/mailbox), kept on
-// globalThis so development reloads share it.
-const g = globalThis as typeof globalThis & { __retrofitFixtureAuth?: FixtureAuth };
-
-/** The process-wide fixture provider. Callers check fixtures mode first (runtime.ts, the mailbox route). */
-export function processFixtureAuth(options: { clock: Clock; origin: string }): FixtureAuth {
-  g.__retrofitFixtureAuth ??= createFixtureAuth(options);
-  return g.__retrofitFixtureAuth;
-}

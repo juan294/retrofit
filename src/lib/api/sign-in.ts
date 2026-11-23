@@ -5,6 +5,7 @@ import { isSameOrigin } from "@/lib/analysis/run";
 import { isSecureRequest } from "@/lib/analysis/visitor";
 import { AuthRateLimited, AuthUnavailable } from "@/lib/auth/gateway";
 import { clientIdFromRequest, countClientWindow } from "@/lib/fetch/limits";
+import { buildCookie } from "@/lib/security/cookies";
 import { newToken, sha256Hex, TOKEN_PATTERN } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
 import type { Store } from "@/lib/store/types";
@@ -38,11 +39,7 @@ export function emailKey(email: string, secret: string): string {
   return createHmac("sha256", secret).update(`retrofit-signin-email-v1\n${email}`).digest("hex");
 }
 
-function intentCookie(token: string, secure: boolean, maxAge = SIGN_IN_TTL_S): string {
-  const attrs = [`${SIGN_IN_COOKIE}=${token}`, "HttpOnly", "SameSite=Lax", "Path=/auth", `Max-Age=${maxAge}`];
-  if (secure) attrs.push("Secure");
-  return attrs.join("; ");
-}
+const intentCookie = (token: string, secure: boolean, maxAge = SIGN_IN_TTL_S) => buildCookie(SIGN_IN_COOKIE, token, { path: "/auth", maxAge, secure });
 
 /** Clears the sign-in cookie (confirm does this on every answer). */
 export const clearIntentCookie = (secure: boolean) => intentCookie("", secure, 0);
