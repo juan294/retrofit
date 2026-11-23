@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures/csp";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
-import { newEmail, signIn } from "./support/account";
+import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture } from "./support/agent";
 
 test.use({ viewport: { width: 320, height: 640 } });
@@ -36,5 +36,31 @@ test("the account page, a saved report and the save button fit a 320 px phone sc
   await fits(page);
   await page.getByTestId("saved-reports").getByRole("link").first().click();
   await expect(page.getByTestId("score-total")).toBeVisible();
+  await fits(page);
+});
+
+for (const state of ["sent", "limit", "error"] as const) {
+  test(`the sign-in form's ${state} state fits a 320 px phone screen`, async ({ page }) => {
+    await signInFormState(page, state);
+    await fits(page);
+  });
+}
+
+for (const asker of [false, true]) {
+  test(`the sign-in confirm page ${asker ? "without" : "with"} the other-browser warning fits a 320 px phone screen`, async ({ page }) => {
+    if (asker) await markAsAsker(page);
+    await page.goto(CONFIRM_PATH);
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+    await expect(page.getByTestId("other-browser")).toHaveCount(asker ? 0 : 1);
+    await fits(page);
+  });
+}
+
+test("the save button's error fits a 320 px phone screen", async ({ page }) => {
+  const id = await analyzeFixture(page, "bakery.fixture.test");
+  await signIn(page, newEmail("phone-error"), `/r/${id}`);
+  await page.route("**/api/account/reports", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable", message: SAVE_REPORT_TEXT.unavailable }) }));
+  await page.getByRole("button", { name: SAVE_REPORT_TEXT.button }).click();
+  await expect(page.getByTestId("save-report").getByRole("alert")).toHaveText(SAVE_REPORT_TEXT.unavailable);
   await fits(page);
 });

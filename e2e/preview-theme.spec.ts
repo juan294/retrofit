@@ -3,7 +3,7 @@ import { PRIVACY, TERMS } from "@/lib/site/legal-texts";
 import { PRICING_TEXT, UNSUBSCRIBE_TEXT } from "@/lib/site/pricing-texts";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT, SAVED_REPORT_TEXT } from "@/lib/site/account-texts";
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
-import { newEmail, signIn } from "./support/account";
+import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture, mockOtari } from "./support/agent";
 
 type Locator = import("@playwright/test").Locator;
@@ -146,5 +146,42 @@ for (const colorScheme of ["light", "dark"] as const) {
     });
     await page.getByTestId("saved-reports").getByRole("link").first().click();
     await check({ heading: page.getByRole("heading", { level: 1 }), back: page.getByRole("link", { name: SAVED_REPORT_TEXT.back }), score: page.getByTestId("score-total") });
+  });
+}
+
+// The sign-in form's answers, the confirm page (with and without the other-browser warning) and the save error.
+for (const colorScheme of ["light", "dark"] as const) {
+  const readable = async (targets: Record<string, Locator>) => {
+    for (const [name, el] of Object.entries(targets)) {
+      await expect(el, name).toBeVisible();
+      const { ratio, color, background } = await contrastOf(el);
+      expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
+    }
+  };
+
+  for (const state of ["sent", "limit", "error"] as const) {
+    test(`the sign-in form's ${state} state is readable in ${colorScheme} mode`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme });
+      await readable({ message: await signInFormState(page, state) });
+    });
+  }
+
+  test(`the sign-in confirm page is readable in ${colorScheme} mode, with and without the warning`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    await page.goto(CONFIRM_PATH);
+    await readable({ heading: page.getByRole("heading", { level: 1 }), intro: page.getByText(SIGN_IN_TEXT.confirmIntro), warning: page.getByTestId("other-browser"), button: page.getByRole("button", { name: SIGN_IN_TEXT.confirmButton }) });
+    await markAsAsker(page);
+    await page.goto(CONFIRM_PATH);
+    await expect(page.getByTestId("other-browser")).toHaveCount(0);
+    await readable({ button: page.getByRole("button", { name: SIGN_IN_TEXT.confirmButton }) });
+  });
+
+  test(`the save button's error is readable in ${colorScheme} mode`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    const id = await analyzeFixture(page, "bakery.fixture.test");
+    await signIn(page, newEmail(`theme-error-${colorScheme}`), `/r/${id}`);
+    await page.route("**/api/account/reports", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable", message: SAVE_REPORT_TEXT.unavailable }) }));
+    await page.getByRole("button", { name: SAVE_REPORT_TEXT.button }).click();
+    await readable({ alert: page.getByTestId("save-report").getByRole("alert") });
   });
 }

@@ -6444,7 +6444,7 @@
       "rule": "privacy and terms drafts",
       "suite": "unit",
       "file": "tests/site/legal-texts.test.ts",
-      "title": "privacy notice accuracy says Amazon SES will send email, starting with sign-in links, and that none is sent yet"
+      "title": "privacy notice accuracy says sign-in email goes through Supabase Auth and Amazon SES, which receive the address, and no other email is sent yet"
     },
     {
       "rule": "privacy and terms drafts",
@@ -6744,6 +6744,12 @@
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp tells the per-address resend wait from the project-wide email limit"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
       "title": "Supabase auth gateway verifyOtp answers only the user id and the lower-case email, and drops the session tokens"
     },
     {
@@ -6774,67 +6780,91 @@
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "GET /auth/confirm sets retrofit_account, returns to the page sign-in started from and attaches the visitor's analyses"
+      "title": "POST /auth/verify (the confirm page's Sign in button) sets retrofit_account, returns to the page sign-in started from and attaches the visitor's analyses"
     },
     {
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "GET /auth/confirm attaches nothing and returns to /account when the browser that opens the link did not ask for it"
+      "title": "POST /auth/verify (the confirm page's Sign in button) attaches nothing and returns to /account when the browser that opens the link did not ask for it"
     },
     {
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "GET /auth/confirm attaches nothing when the browser asked for a link to a different address"
+      "title": "POST /auth/verify (the confirm page's Sign in button) attaches nothing when the browser asked for a link to a different address"
     },
     {
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "GET /auth/confirm sends an expired link to the expired page without signing in"
+      "title": "POST /auth/verify (the confirm page's Sign in button) sends an expired link to the expired page without signing in"
     },
     {
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "GET /auth/confirm sends a reused link to the expired page and keeps the first session"
+      "title": "POST /auth/verify (the confirm page's Sign in button) sends a reused link to the expired page and keeps the first session"
     },
     {
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "GET /auth/confirm sends the malformed query \"?type=email\" to the expired page without asking the provider"
+      "title": "POST /auth/verify (the confirm page's Sign in button) sends the malformed query \"?type=email\" to the expired page without asking the provider"
     },
     {
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "GET /auth/confirm sends the malformed query \"?token_hash=abc&type=magiclink\" to the expired page without asking the provider"
+      "title": "POST /auth/verify (the confirm page's Sign in button) sends the malformed query \"?token_hash=abc&type=magiclink\" to the expired page without asking the provider"
     },
     {
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "GET /auth/confirm sends the malformed query \"?token_hash=%3Cscript%3E&type=email\" to the expired page without asking the provider"
+      "title": "POST /auth/verify (the confirm page's Sign in button) sends the malformed query \"?token_hash=%3Cscript%3E&type=email\" to the expired page without asking the provider"
     },
     {
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "GET /auth/confirm sends the malformed query \"\" to the expired page without asking the provider"
+      "title": "POST /auth/verify (the confirm page's Sign in button) sends the malformed query \"\" to the expired page without asking the provider"
     },
     {
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "GET /auth/confirm sends a provider outage to the unavailable page without signing in"
+      "title": "POST /auth/verify (the confirm page's Sign in button) sends a provider outage to the unavailable page without signing in"
     },
     {
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "GET /auth/confirm answers no-store with no referrer"
+      "title": "POST /auth/verify (the confirm page's Sign in button) answers no-store with no referrer"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "sign-in confirm page review repairs refuses a cross-origin post before asking the provider"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "sign-in confirm page review repairs the confirm page state needs no provider and offers the button only for a well-formed link"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "sign-in confirm page review repairs the confirm form posts the token to /auth/verify with its button disabled until hydration, and warns for another browser"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "sign-in confirm page review repairs ends the browser's current session before issuing the new one"
     },
     {
       "rule": "accounts data",
@@ -6859,6 +6889,18 @@
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
       "title": "AccountData contract: memory (two clients, one backing) saved reports getSavedReport returns the whole report to its account only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) saved reports saving the same host and fetch time again answers existing with the first id, also when two saves race"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) saved reports keeps at most 100 reports per account and answers full past that"
     },
     {
       "rule": "accounts data",
@@ -6921,6 +6963,12 @@
       "title": "POST /api/account/delete redirects a failure to the account page with its notice and keeps the cookie"
     },
     {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "deletion failure text says the data was not deleted and that other devices may be signed out"
+    },
+    {
       "rule": "accounts owner checks",
       "suite": "unit",
       "file": "tests/accounts/owner.test.ts",
@@ -6957,6 +7005,12 @@
       "title": "analyses started while signed in anonymous analyses are listed under the visitor and have no account"
     },
     {
+      "rule": "accounts owner checks",
+      "suite": "unit",
+      "file": "tests/accounts/owner.test.ts",
+      "title": "results page access (P2-R10) reads the session once and answers the analysis with whether the visitor is signed in"
+    },
+    {
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/pages.test.ts",
@@ -6991,6 +7045,18 @@
       "suite": "unit",
       "file": "tests/accounts/saved-reports.test.ts",
       "title": "POST /api/account/reports (Save this report) answers 409 not_ready for an analysis that has no report yet"
+    },
+    {
+      "rule": "saved reports",
+      "suite": "unit",
+      "file": "tests/accounts/saved-reports.test.ts",
+      "title": "saving twice and the saved report limit (P2-R5) a second save of the same report answers 200 with the first id and the already-saved text"
+    },
+    {
+      "rule": "saved reports",
+      "suite": "unit",
+      "file": "tests/accounts/saved-reports.test.ts",
+      "title": "saving twice and the saved report limit (P2-R5) answers 409 full with the limit text when the account already keeps the most reports"
     },
     {
       "rule": "accounts sessions",
@@ -7081,6 +7147,12 @@
       "suite": "unit",
       "file": "tests/accounts/sign-in.test.ts",
       "title": "POST /api/auth/sign-in answers 429 with a one-minute wait when the provider refuses to send again so soon"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in answers the project-wide email limit with try-again-later text and the lead address, without a retry time"
     },
     {
       "rule": "accounts sign-in",
@@ -7227,10 +7299,34 @@
       "title": "Supabase AccountData on a closed port deleteAccountData throws AccountDataUnavailable and logs [TABLE_FALLBACK] without personal data"
     },
     {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "privacy notice for accounts states the keyed hash of the address kept about an hour for sign-in limits"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "privacy notice for accounts says who can open an analysis and when analyses attach to an account"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "privacy notice for accounts describes accounts as available and deletion without claiming the sign-in provider keeps nothing"
+    },
+    {
       "rule": "own pages",
       "suite": "unit",
       "file": "tests/site/own-site.test.ts",
       "title": "account pages and robots robots disallows /account, /auth/ and /sign-in, and no account page is listed as public"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/security/csp.test.ts",
+      "title": "static headers sends no Referer from the /auth pages"
     },
     {
       "rule": "gate database",
@@ -7267,6 +7363,18 @@
       "suite": "db",
       "file": "tests/db/accounts.db.test.ts",
       "title": "AccountData contract: supabase (two clients) saved reports getSavedReport returns the whole report to its account only"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) saved reports saving the same host and fetch time again answers existing with the first id, also when two saves race"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) saved reports keeps at most 100 reports per account and answers full past that"
     },
     {
       "rule": "accounts data",
@@ -7317,6 +7425,12 @@
       "title": "accounts the results page offers saving only when signed in"
     },
     {
+      "rule": "accounts sign-in",
+      "suite": "playwright",
+      "file": "account.spec.ts",
+      "title": "accounts a link opened in another browser warns before signing in and returns to the account page"
+    },
+    {
       "rule": "phone layout",
       "suite": "playwright",
       "file": "phone-width.spec.ts",
@@ -7345,6 +7459,42 @@
       "suite": "playwright",
       "file": "phone-width.spec.ts",
       "title": "the account page, a saved report and the save button fit a 320 px phone screen"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the sign-in form's sent state fits a 320 px phone screen"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the sign-in form's limit state fits a 320 px phone screen"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the sign-in form's error state fits a 320 px phone screen"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the sign-in confirm page with the other-browser warning fits a 320 px phone screen"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the sign-in confirm page without the other-browser warning fits a 320 px phone screen"
+    },
+    {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "the save button's error fits a 320 px phone screen"
     },
     {
       "rule": "preview readable in both color schemes",
@@ -7405,6 +7555,66 @@
       "suite": "playwright",
       "file": "preview-theme.spec.ts",
       "title": "the account pages are readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the sign-in form's sent state is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the sign-in form's limit state is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the sign-in form's error state is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the sign-in confirm page is readable in light mode, with and without the warning"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the save button's error is readable in light mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the sign-in form's sent state is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the sign-in form's limit state is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the sign-in form's error state is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the sign-in confirm page is readable in dark mode, with and without the warning"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the save button's error is readable in dark mode"
     }
   ],
   "repairs": {
