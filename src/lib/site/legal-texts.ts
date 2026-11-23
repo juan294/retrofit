@@ -9,8 +9,10 @@
 // retention from the configuration defaults. tests/site/legal-texts.test.ts
 // fails when one of them drifts from the text.
 
+import { ACCOUNT_COOKIE, ACCOUNT_SESSION_TTL_S } from "@/lib/accounts/session";
 import { EXPIRED_GRACE_S } from "@/lib/analysis/record";
 import { VISITOR_COOKIE, VISITOR_MAX_AGE_S } from "@/lib/analysis/visitor";
+import { SIGN_IN_COOKIE, SIGN_IN_TTL_S } from "@/lib/api/sign-in";
 import { SESSION_COOKIE, SESSION_TTL_S } from "@/lib/inference/session";
 import { LEAD_EMAIL, SOURCE_URL } from "./own-site";
 
@@ -40,7 +42,8 @@ export const PRIVACY: LegalDocument = {
       body: [
         `${VISITOR_COOKIE}: a random identifier for your browser, kept for ${days(VISITOR_MAX_AGE_S)} days. It shows that the analyses you started are yours. Retrofit stores only a hash of it.`,
         `${SESSION_COOKIE}: set only when you use Retrofit's free AI, kept for ${hours(SESSION_TTL_S)} hours and sent only to Retrofit's AI routes.`,
-        "retrofit_account: set when you sign in, once accounts are available. It keeps you signed in on this browser.",
+        `${ACCOUNT_COOKIE}: set when you sign in. It keeps you signed in on this browser until you sign out, or until ${days(ACCOUNT_SESSION_TTL_S)} days pass without a visit. Retrofit stores only a hash of it, with your account id and email address.`,
+        `${SIGN_IN_COOKIE}: set for ${hours(SIGN_IN_TTL_S)} hour when you ask for a sign-in link, so the link returns you to the page you were on. Retrofit stores only a hash of it.`,
         "Retrofit sets no advertising or analytics cookies.",
       ],
     },
@@ -70,7 +73,8 @@ export const PRIVACY: LegalDocument = {
     {
       heading: "Accounts, claims, publishing and billing (when available)",
       body: [
-        "An account is your email address, kept by Supabase Auth. Retrofit stores no password.",
+        "An account is your email address, kept by Supabase Auth. Retrofit stores no password. When you sign in, the analyses this browser started are added to your account.",
+        "A report you save is kept until you delete your account.",
         "If you claim a site, Retrofit stores the host, the method (a meta tag or a DNS record), a hash of the verification token and the results of its checks.",
         "If you publish a site's agent on Retrofit, the copy of its public pages and its score are kept until you unpublish it, and they are public.",
         "Payments go through Stripe. Retrofit stores your Stripe customer id, your plan and its renewal date. Card details go only to Stripe.",
@@ -80,7 +84,7 @@ export const PRIVACY: LegalDocument = {
     {
       heading: "Services that receive data",
       body: [
-        "Vercel hosts Retrofit. Supabase stores its data. Otari runs Retrofit's free AI. Retrofit sends no email yet; Amazon SES will send Retrofit's email, starting with sign-in links. Stripe takes payments when paid plans start.",
+        "Vercel hosts Retrofit. Supabase stores its data and sends sign-in links through Amazon SES. Retrofit sends no other email yet. Otari runs Retrofit's free AI. Stripe takes payments when paid plans start.",
         `Retrofit's source code is public: ${SOURCE_URL}.`,
       ],
     },

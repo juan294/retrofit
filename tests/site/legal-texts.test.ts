@@ -3,6 +3,8 @@ import { VISITOR_COOKIE, VISITOR_MAX_AGE_S } from "@/lib/analysis/visitor";
 import { EXPIRED_GRACE_S } from "@/lib/analysis/record";
 import { loadConfig } from "@/lib/config";
 import { SESSION_COOKIE, SESSION_TTL_S } from "@/lib/inference/session";
+import { ACCOUNT_COOKIE, ACCOUNT_SESSION_TTL_S } from "@/lib/accounts/session";
+import { SIGN_IN_COOKIE, SIGN_IN_TTL_S } from "@/lib/api/sign-in";
 import { PRIVACY, TERMS, type LegalDocument } from "@/lib/site/legal-texts";
 import { LEAD_EMAIL } from "@/lib/site/own-site";
 
@@ -19,6 +21,9 @@ describe("privacy notice draft", () => {
     expect(privacy).toContain(`${SESSION_COOKIE}`);
     expect(privacy).toContain(`${SESSION_TTL_S / 3600} hours`);
     expect(privacy).toContain("retrofit_account");
+    expect(privacy).toContain(`${ACCOUNT_COOKIE}: set when you sign in`);
+    expect(privacy).toContain(`${ACCOUNT_SESSION_TTL_S / 86400} days pass without a visit`);
+    expect(privacy).toContain(`${SIGN_IN_COOKIE}: set for ${SIGN_IN_TTL_S / 3600} hour`);
   });
 
   // Fails if a retention period in the notice differs from the defaults the code applies.
@@ -46,11 +51,11 @@ describe("privacy notice accuracy", () => {
     expect(privacy).toContain("never stores the conversation");
   });
 
-  // Fails if the notice says email is sent today (Phase 1 sends none) or drops the sign-in email it will send.
-  it("says Amazon SES will send email, starting with sign-in links, and that none is sent yet", () => {
-    expect(privacy).not.toContain("Amazon SES sends its email");
-    expect(privacy).toContain("Retrofit sends no email yet");
-    expect(privacy).toMatch(/Amazon SES will send Retrofit's email, starting with sign-in links/);
+  // Fails if the notice hides the sign-in email (Phase 2 sends it through Supabase and Amazon SES) or claims any other email is sent.
+  it("says sign-in links go through Amazon SES and that no other email is sent yet", () => {
+    expect(privacy).toContain("sends sign-in links through Amazon SES");
+    expect(privacy).toContain("Retrofit sends no other email yet");
+    expect(privacy).not.toContain("Retrofit sends no email yet");
   });
 });
 

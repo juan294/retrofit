@@ -2,20 +2,25 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { AnalysisView } from "@/components/analysis/AnalysisView";
+import { ACCOUNT_COOKIE, readAccountByToken } from "@/lib/accounts/session";
+import { ownsAnalysis } from "@/lib/analysis/owner";
 import { getAnalysis, isAnalysisId } from "@/lib/analysis/record";
-import { VISITOR_COOKIE, sameHash } from "@/lib/analysis/visitor";
-import { sha256Hex } from "@/lib/security/tokens";
+import { VISITOR_COOKIE } from "@/lib/analysis/visitor";
 import { getServerDeps } from "@/lib/server/runtime";
 
 export const metadata: Metadata = { title: "Your analysis · Retrofit", robots: { index: false, follow: false } };
 
 export default async function AnalysisPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const token = (await cookies()).get(VISITOR_COOKIE)?.value;
-  if (!token || !isAnalysisId(id)) notFound();
-  const analysis = await getAnalysis(getServerDeps().store, id);
-  // Same page for another visitor's analysis and for an id that does not exist.
-  if (!analysis || !sameHash(analysis.ownerHash, sha256Hex(token))) notFound();
+  const jar = await cookies();
+  const who = { visitorToken: jar.get(VISITOR_COOKIE)?.value ?? null, accountToken: jar.get(ACCOUNT_COOKIE)?.value ?? null };
+  if ((!who.visitorToken && !who.accountToken) || !isAnalysisId(id)) notFound();
+  const deps = getServerDeps();
+  const analysis = await getAnalysis(deps.store, id);
+  // Same page for another visitor's or account's analysis and for an id that does not exist.
+  if (!analysis || !(await ownsAnalysis(analysis, who, deps))) notFound();
+  // A signed-in visitor can save the report to the account.
+  const signedIn = who.accountToken ? (await readAccountByToken(who.accountToken, deps)) !== null : false;
   return (
     <main className="mx-auto max-w-3xl px-4 py-12">
       <p>
@@ -27,7 +32,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
       <p className="mt-2" style={{ color: "var(--color-muted)" }}>
         {analysis.inputOrigin}
       </p>
-      <AnalysisView id={id} inputOrigin={analysis.inputOrigin} />
+      <AnalysisView id={id} inputOrigin={analysis.inputOrigin} canSave={signedIn} />
     </main>
   );
 }

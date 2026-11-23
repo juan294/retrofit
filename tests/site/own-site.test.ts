@@ -37,7 +37,7 @@ describe("Retrofit's own site, scored by Retrofit", () => {
     const r = robots();
     const origin = getConfig().publicOrigin;
     // Private pages (results, previews, the judge page, unsubscribe links) are visitor-owned; crawlers have no reason to request them.
-    expect(r.rules).toEqual([{ userAgent: "*", allow: "/", disallow: ["/r/", "/p/", "/judges", "/unsubscribe"] }]);
+    expect(r.rules).toEqual([{ userAgent: "*", allow: "/", disallow: ["/r/", "/p/", "/judges", "/unsubscribe", "/account", "/auth/", "/sign-in"] }]);
     expect(r.sitemap).toBe(`${origin}/sitemap.xml`);
   });
 
@@ -103,5 +103,16 @@ describe("pricing, privacy and terms pages", () => {
     const blocked = rules.flatMap((r) => (Array.isArray(r.disallow) ? r.disallow : r.disallow ? [r.disallow] : []));
     for (const path of NEW_PAGES) expect(blocked.some((d) => path.startsWith(d))).toBe(false);
     expect(blocked).toContain("/unsubscribe");
+  });
+});
+
+describe("account pages and robots", () => {
+  // Fails if a crawler is invited to the sign-in, confirm or account pages (they are private and the confirm link carries a token).
+  it("robots disallows /account, /auth/ and /sign-in, and no account page is listed as public", () => {
+    const rules = robots().rules;
+    const blocked = (Array.isArray(rules) ? rules : [rules]).flatMap((r) => (Array.isArray(r.disallow) ? r.disallow : r.disallow ? [r.disallow] : []));
+    for (const path of ["/account", "/auth/", "/sign-in"]) expect(blocked).toContain(path);
+    for (const path of ["/account", "/account/reports/x", "/auth/confirm", "/sign-in"]) expect(blocked.some((d) => path.startsWith(d))).toBe(true);
+    expect(OWN_PAGES.map((p) => p.path).filter((p) => /account|auth|sign-in/.test(p))).toEqual([]);
   });
 });
