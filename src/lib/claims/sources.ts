@@ -1,8 +1,8 @@
 import type { Claim, SavedReportSummary } from "@/lib/accounts/data";
 import { isUuid } from "@/lib/accounts/data";
-import { listAccountAnalyses } from "@/lib/analysis/owner";
-import { getAnalysis, isAnalysisId, type Analysis } from "@/lib/analysis/record";
-import { sameHash } from "@/lib/analysis/visitor";
+import type { AccountAnalysis } from "@/lib/analysis/account-list";
+import { ownedBy } from "@/lib/analysis/owner";
+import { analysisHost, getAnalysis, isAnalysisId } from "@/lib/analysis/record";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { claimHost } from "./host";
@@ -17,20 +17,6 @@ export type ClaimSource = { readonly kind: "report" | "analysis"; readonly id: s
 /** Recent analyses the account page offers. */
 export const CLAIM_RECENT_ANALYSES = 10;
 
-/**
- * The host an analysis scored (its snapshot's host, after redirects: what its report and a saved
- * report name), or before the score exists the host of the typed origin.
- */
-function scoredHost(analysis: Pick<Analysis, "inputOrigin" | "snapshot">): string | null {
-  const snapshotHost = (analysis.snapshot as { host?: unknown } | undefined)?.host;
-  if (typeof snapshotHost === "string") return claimHost(snapshotHost);
-  try {
-    return claimHost(new URL(analysis.inputOrigin).host);
-  } catch {
-    return null;
-  }
-}
-
 export function parseClaimSource(raw: unknown): ClaimSource | null {
   if (typeof raw !== "string") return null;
   const colon = raw.indexOf(":");
@@ -44,12 +30,12 @@ export function parseClaimSource(raw: unknown): ClaimSource | null {
 /** The claim host of a source the account owns, or null (another account's, unknown, or not a host). */
 export async function hostOfSource(deps: Pick<ServerDeps, "store" | "accounts">, accountId: string, source: ClaimSource): Promise<string | null> {
   if (source.kind === "report") {
-    const report = await deps.accounts.getSavedReport(accountId, source.id);
-    return report ? claimHost(report.host) : null;
+    const host = await deps.accounts.getSavedReportHost(accountId, source.id);
+    return host === null ? null : claimHost(host);
   }
   const analysis = await getAnalysis(deps.store, source.id);
-  if (!analysis?.accountId || !sameHash(analysis.accountId, accountId)) return null;
-  return scoredHost(analysis);
+  if (!analysis || !ownedBy(analysis, null, { accountId })) return null;
+  return claimHost(analysisHost(analysis));
 }
 
 export interface ClaimOption {
@@ -59,10 +45,10 @@ export interface ClaimOption {
 }
 
 /**
- * The account page's "Claim a site" choices: hosts of recent attached analyses (newest first), then
- * of saved reports, once each, without the hosts the account already claims.
+ * The account page's "Claim a site" choices: hosts of the recent attached analyses (listAccountAnalyses,
+ * newest first), then of saved reports, once each, without the hosts the account already claims.
  */
-export async function claimOptions(deps: Pick<ServerDeps, "store" | "clock">, accountId: string, reports: readonly SavedReportSummary[], claims: readonly Claim[]): Promise<ClaimOption[]> {
+export function claimOptions(analyses: readonly AccountAnalysis[], reports: readonly SavedReportSummary[], claims: readonly Claim[]): ClaimOption[] {
   const taken = new Set(claims.map((c) => c.host));
   const options: ClaimOption[] = [];
   const add = (host: string | null, value: string, label: (h: string) => string) => {
@@ -70,7 +56,7 @@ export async function claimOptions(deps: Pick<ServerDeps, "store" | "clock">, ac
     taken.add(host);
     options.push({ value, label: label(host) });
   };
-  for (const a of await listAccountAnalyses(deps, accountId, CLAIM_RECENT_ANALYSES)) add(scoredHost(a), `analysis:${a.id}`, CLAIMS_TEXT.sourceFromAnalysis);
+  for (const a of analyses) add(claimHost(a.host), `analysis:${a.id}`, CLAIMS_TEXT.sourceFromAnalysis);
   for (const r of reports) add(claimHost(r.host), `report:${r.id}`, CLAIMS_TEXT.sourceFromReport);
   return options;
 }

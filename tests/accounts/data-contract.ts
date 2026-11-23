@@ -214,6 +214,16 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         expect(await a.listSavedReports(id)).toHaveLength(MAX_SAVED_REPORTS);
       }, 60_000);
 
+      // Fails if the host-only read (claim sources) answers another account's report, or differs from the report's host.
+      it("getSavedReportHost answers the report's host to its account only", async () => {
+        const owner = await newAccount();
+        const kept = await saved(a, owner, { host: "host-only.example", report: report(3, "host-only.example"), fetchedAt: "2026-11-22T08:00:00.000Z" });
+        expect(await b.getSavedReportHost(owner, kept.id)).toBe("host-only.example");
+        expect(await b.getSavedReportHost(await newAccount(), kept.id)).toBeNull();
+        expect(await b.getSavedReportHost(owner, "00000000-0000-4000-8000-000000000000")).toBeNull();
+        expect(await b.getSavedReportHost(owner, "../etc")).toBeNull();
+      });
+
       // Fails if a malformed or unknown report id throws or reveals anything.
       it("getSavedReport answers null for an unknown or malformed id", async () => {
         const id = await newAccount();

@@ -11,7 +11,7 @@ import type { ServerDeps } from "@/lib/server/runtime";
 import type { Store } from "@/lib/store/types";
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
 import { readSmallBody } from "./body";
-import { json } from "./json";
+import { json, limitOr429 } from "./json";
 
 /**
  * The browser that asked for a link. Confirm attaches the visitor's analyses and
@@ -87,11 +87,8 @@ export async function handleSignIn(request: Request, deps: Pick<ServerDeps, "con
       ["signin-client", deps.config.signInPerClientHour, clientIdFromRequest(request, deps.config, now)],
       ["signin-email", deps.config.signInPerEmailHour, key],
     ] as const) {
-      const counted = await countClientWindow(deps.store, prefix, limit, id, now);
-      if (!counted.ok) {
-        const retryAt = new Date(counted.retryAt);
-        return json(429, { error: "limit", message: SIGN_IN_TEXT.limit(retryAt), retryAt: retryAt.toISOString() });
-      }
+      const limited = limitOr429(await countClientWindow(deps.store, prefix, limit, id, now), SIGN_IN_TEXT.limit);
+      if (limited) return limited;
     }
 
     try {

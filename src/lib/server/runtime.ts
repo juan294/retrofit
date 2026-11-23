@@ -5,7 +5,7 @@ import { createMemoryAccountData } from "@/lib/accounts/memory";
 import { createSupabaseAccountData } from "@/lib/accounts/supabase";
 import { unavailableAuthGateway, type AuthGateway } from "@/lib/auth/gateway";
 import { createSupabaseAuthGateway } from "@/lib/auth/supabase";
-import { fixtureTxtResolver, systemTxtResolver, type TxtResolver } from "@/lib/claims/txt";
+import { systemTxtResolver, type TxtResolver } from "@/lib/claims/txt";
 import { getConfig, type Config, type SupabaseConfig } from "@/lib/config";
 import { createFetchContext } from "@/lib/fetch/context";
 import type { FetchContext } from "@/lib/fetch/http";
@@ -16,6 +16,7 @@ import { createSupabaseStore } from "@/lib/store/supabase";
 import { createServiceClient, type ServiceClient } from "@/lib/supabase/client";
 import { createFixtureAuth, type FixtureAuth } from "@/lib/test-fixtures/auth";
 import { fixtureClock } from "@/lib/test-fixtures/clock";
+import { fixtureTxtResolver } from "@/lib/test-fixtures/txt";
 import { systemClock, type Clock, type Store } from "@/lib/store/types";
 
 /**

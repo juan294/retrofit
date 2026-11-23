@@ -200,7 +200,7 @@ describe("GET /api/cron/claims", () => {
   // Fails if the recheck runs without the exact Bearer CRON_SECRET, or without any secret configured.
   it("refuses without the Bearer secret, with a wrong one, and when CRON_SECRET is unset", async () => {
     const { d } = setup();
-    const withSecret = { ...d, config: { ...d.config, free: { ...d.config.free, cronSecret: "c".repeat(32) } } };
+    const withSecret = { ...d, config: { ...d.config, cronSecret: "c".repeat(32) } };
     let listed = 0;
     const counting = { ...withSecret, accounts: { ...d.accounts, listClaimsDueForRecheck: async (...args: Parameters<AccountData["listClaimsDueForRecheck"]>) => (listed++, d.accounts.listClaimsDueForRecheck(...args)) } };
     for (const auth of [undefined, "", `Bearer ${"d".repeat(32)}`, `bearer ${"c".repeat(32)}`, "c".repeat(32)]) {
@@ -218,7 +218,7 @@ describe("GET /api/cron/claims", () => {
   // Fails if an account data outage answers 200 (Vercel would see a healthy run) or logs more than the error name.
   it("answers 503 when the account data is unavailable", async () => {
     const { d } = setup();
-    const broken = { ...d, config: { ...d.config, free: { ...d.config.free, cronSecret: "c".repeat(32) } }, accounts: { ...d.accounts, listClaimsDueForRecheck: () => Promise.reject(new Error("down")) } };
+    const broken = { ...d, config: { ...d.config, cronSecret: "c".repeat(32) }, accounts: { ...d.accounts, listClaimsDueForRecheck: () => Promise.reject(new Error("down")) } };
     expect((await handleClaimsRecheck(cron(`Bearer ${"c".repeat(32)}`), broken)).status).toBe(503);
   });
 });

@@ -9,7 +9,7 @@ import { json } from "./json";
  * answers the counts. 503 when the due claims cannot be listed.
  */
 export async function handleClaimsRecheck(request: Request, deps: Pick<ServerDeps, "config" | "accounts" | "clock" | "fetch" | "txt">): Promise<Response> {
-  if (!hasBearer(request, deps.config.free.cronSecret)) return json(401, { error: "unauthorized" });
+  if (!hasBearer(request, deps.config.cronSecret)) return json(401, { error: "unauthorized" });
   try {
     return json(200, await recheckDueClaims(deps));
   } catch (e) {

@@ -50,13 +50,14 @@ export async function recheckDueClaims(deps: Deps): Promise<RecheckSummary> {
       return;
     }
     try {
-      const { claim: after, checked } = await runClaimCheck(deps, claim, { deadline });
+      const { claim: after, checked } = await runClaimCheck(deps, claim, deadline);
       if (!checked) {
         tally.skipped++;
         return;
       }
       tally.checked++;
-      if (after.status === "verified" && after.lastResult === "verified") tally.verified++;
+      // A recorded check that left the claim verified passed (a failure never keeps lastResult "verified").
+      if (after.lastResult === "verified") tally.verified++;
       else tally.failed++;
       if (after.status === "lapsed" && claim.status !== "lapsed") tally.lapsed++;
     } catch (e) {

@@ -1,4 +1,4 @@
-import { forgetAccountAnalyses } from "@/lib/analysis/owner";
+import { forgetAccountAnalyses } from "@/lib/analysis/account-list";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { endAccountSessions, endLastAccountSession, type Account } from "./session";
 

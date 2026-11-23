@@ -105,7 +105,7 @@ export async function handleCreditCheck(
   deps: ServerDeps,
   viewFor: (deps: ServerDeps) => Promise<LedgerView> = ledgerViewFor,
 ): Promise<Response> {
-  if (request.method !== "GET" || !hasBearer(request, deps.config.free.cronSecret)) return json(401, { error: "unauthorized" });
+  if (request.method !== "GET" || !hasBearer(request, deps.config.cronSecret)) return json(401, { error: "unauthorized" });
 
   let view: LedgerView;
   try {

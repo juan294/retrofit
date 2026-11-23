@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures/csp";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture } from "./support/agent";
-import { claimPanel, claimStates, FRESH_HOST, MISSING_HOST } from "./support/claims";
+import { claimPanel, claimStates, FRESH_HOST, MISSING_HOST, mockCheckLimit } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 
 test.use({ viewport: { width: 320, height: 640 } });
@@ -75,7 +75,7 @@ test("the claim panels fit a 320 px phone screen", async ({ page, browser }) => 
   await expect(page.getByTestId("claim-token")).toBeVisible();
   await expect(claimPanel(page, MISSING_HOST).getByTestId("claim-reason")).toBeVisible();
   await fits(page);
-  await page.route("**/api/claims/check", (route) => route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: "limit", message: CLAIMS_TEXT.limit(new Date(Date.now() + 3600_000)), retryAt: new Date(Date.now() + 3600_000).toISOString() }) }));
+  await mockCheckLimit(page);
   await claimPanel(page, FRESH_HOST).getByRole("button", { name: CLAIMS_TEXT.checkAgain }).click();
   await expect(claimPanel(page, FRESH_HOST).getByRole("alert")).toBeVisible();
   await fits(page);

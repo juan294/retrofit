@@ -1,6 +1,4 @@
 import { Resolver } from "node:dns/promises";
-import { FIXTURE_CLAIM_TOKEN } from "./host";
-import { CLAIM_TXT_LABEL, CLAIM_TXT_PREFIX } from "./names";
 
 /**
  * Reads the TXT records of a DNS name: one array of strings per record (a long record arrives as
@@ -26,15 +24,3 @@ export function isNoRecord(e: unknown): boolean {
   const code = (e as { code?: unknown } | null)?.code;
   return code === "ENOTFOUND" || code === "ENODATA";
 }
-
-/**
- * Fixtures mode only: the TXT records the e2e DNS claims find (split in two strings, beside an
- * unrelated record). Every other name answers ENOTFOUND, so fixtures mode never uses real DNS.
- */
-export const FIXTURE_TXT_HOSTS = ["blocked.fixture.test"] as const;
-
-export const fixtureTxtResolver: TxtResolver = async (name) => {
-  const host = FIXTURE_TXT_HOSTS.find((h) => name === `${CLAIM_TXT_LABEL}.${h}`);
-  if (!host) throw Object.assign(new Error(`queryTxt ENOTFOUND ${name}`), { code: "ENOTFOUND" });
-  return [["v=spf1 -all"], [CLAIM_TXT_PREFIX, FIXTURE_CLAIM_TOKEN]];
-};

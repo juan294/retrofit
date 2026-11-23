@@ -1,11 +1,12 @@
 import type { APIRequestContext, Browser, Locator, Page } from "@playwright/test";
 import { expect } from "../fixtures/csp";
+import { CLAIM_TXT_LABEL, CLAIM_TXT_PREFIX } from "@/lib/claims/names";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { newEmail, signIn } from "./account";
 import { analyzeFixture } from "./agent";
-import { CLAIM_TAG_SWITCH, fixtureOrigin } from "./global-setup";
+import { CLAIM_TAG_URL, fixtureOrigin } from "./global-setup";
 
-/** Fixture hosts for claims (global-setup.ts): the tag always there, the tag switchable, robots-blocked (DNS record in fixtures mode). */
+/** Fixture hosts for claims (global-setup.ts): two that serve registered tags, robots-blocked, no tag, and a plain copy. */
 export const CLAIM_HOST = "claim.fixture.test";
 export const FLAKY_HOST = "flaky.fixture.test";
 export const BLOCKED_HOST = "blocked.fixture.test";
@@ -23,21 +24,20 @@ export const claimHostOf = (host: string) => new URL(fixtureOrigin(host)).host;
 /** The panel of the claim for `host` on /account. */
 export const claimPanel = (page: Page, host: string): Locator => page.locator(`[data-testid="claim"][data-host="${claimHostOf(host)}"]`);
 
-/** Starts an analysis of a fixture site and waits for its results page to settle (a score, or a failure text). */
-export async function analyzeAny(page: Page, host: string): Promise<void> {
-  if (host !== BLOCKED_HOST) {
-    await analyzeFixture(page, host);
-    return;
-  }
-  await page.goto("/");
-  await page.getByLabel("Your website address").fill(fixtureOrigin(host));
-  await page.getByRole("button", { name: "Score my site" }).click();
-  await expect(page).toHaveURL(/\/r\/[0-9a-f]{32}$/);
-  await expect(page.getByText("This site asks automated tools not to read it.", { exact: false })).toBeVisible({ timeout: 30_000 });
+/** Analyzes a fixture site; the robots-blocked one settles on its failure text instead of a score. */
+export const analyzeAny = (page: Page, host: string) =>
+  analyzeFixture(page, host, host === BLOCKED_HOST ? (p) => p.getByText("This site asks automated tools not to read it.", { exact: false }) : undefined);
+
+/** The token a panel shows right after a claim or Start over (from the tag or the TXT value). */
+export async function shownToken(panel: Locator): Promise<string> {
+  const text = (await panel.getByTestId("claim-token").locator("code").textContent()) ?? "";
+  const token = /[0-9a-f]{32}/.exec(text)?.[0];
+  expect(token, "the panel shows a token").toBeDefined();
+  return token as string;
 }
 
-/** On /account, claims the recent analysis of `host` by `method`; returns its panel, which shows the token. */
-export async function claimSite(page: Page, host: string, method: "meta" | "dns"): Promise<Locator> {
+/** On /account, claims the recent analysis of `host` by `method`; returns its panel and the token it shows. */
+export async function claimSite(page: Page, host: string, method: "meta" | "dns"): Promise<{ panel: Locator; token: string }> {
   await page.goto("/account");
   await page.getByLabel(CLAIMS_TEXT.sourceLabel).selectOption({ label: CLAIMS_TEXT.sourceFromAnalysis(claimHostOf(host)) });
   await page.getByLabel(method === "meta" ? CLAIMS_TEXT.methodMeta : CLAIMS_TEXT.methodDns).check();
@@ -45,7 +45,7 @@ export async function claimSite(page: Page, host: string, method: "meta" | "dns"
   const panel = claimPanel(page, host);
   await expect(panel.getByTestId("claim-token")).toBeVisible();
   await expect(panel.getByTestId("claim-message")).toHaveText(CLAIMS_TEXT.created);
-  return panel;
+  return { panel, token: await shownToken(panel) };
 }
 
 /** Chooses Check again on a panel and waits for the answer. */
@@ -54,9 +54,20 @@ export async function checkAgain(panel: Locator): Promise<void> {
   await expect(panel.getByTestId("claim-message")).toBeVisible();
 }
 
-/** Turns the flaky fixture site's tag on or off. */
-export async function setFlakyTag(request: APIRequestContext, on: boolean): Promise<void> {
-  expect((await request.get(CLAIM_TAG_SWITCH(on))).status()).toBe(200);
+/** Puts the tag for `token` on a tagged fixture host's home page (global-setup.ts). */
+export async function addClaimTag(request: APIRequestContext, host: string, token: string): Promise<void> {
+  expect((await request.get(CLAIM_TAG_URL("add", host, token))).status()).toBe(200);
+}
+
+/** Removes every tag from a tagged fixture host's home page. */
+export async function clearClaimTags(request: APIRequestContext, host: string): Promise<void> {
+  expect((await request.get(CLAIM_TAG_URL("clear", host))).status()).toBe(200);
+}
+
+/** Publishes the DNS record for `token` on `host` through the fixtures TXT store (split in two strings, beside an unrelated record). */
+export async function publishTxt(request: APIRequestContext, host: string, token: string): Promise<void> {
+  const res = await request.post("/test-fixtures/txt", { data: { name: `${CLAIM_TXT_LABEL}.${host}`, records: [["v=spf1 -all"], [CLAIM_TXT_PREFIX, token]] } });
+  expect(res.status()).toBe(200);
 }
 
 /** Moves the server clock by `offsetMs` (fixtures mode). */
@@ -72,23 +83,37 @@ export async function runRecheck(request: APIRequestContext): Promise<{ checked:
 }
 
 /**
- * Lapses the verified flaky claim: the tag goes away and three daily rechecks fail (the server clock
+ * Lapses the verified flaky claim: its tags go away and three daily rechecks fail (the server clock
  * moves a day and a bit before each). The clock offset stays at the last day; the caller resets it.
  */
 export async function lapseFlaky(request: APIRequestContext): Promise<void> {
-  await setFlakyTag(request, false);
+  await clearClaimTags(request, FLAKY_HOST);
   for (let day = 1; day <= 3; day++) {
     await setClockOffset(request, day * (DAY_MS + 3600_000));
     await runRecheck(request);
   }
 }
 
+/** Answers Check again with the hourly limit (the 429 the route gives), for the layout and color checks. */
+export async function mockCheckLimit(page: Page): Promise<void> {
+  const retryAt = new Date(Date.now() + 3600_000);
+  await page.route("**/api/claims/check", (route) => route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: "limit", message: CLAIMS_TEXT.limit(retryAt), retryAt: retryAt.toISOString() }) }));
+}
+
+/** Claims `host` by meta, registers the tag and checks it: verified. */
+async function verifyByTag(page: Page, host: string): Promise<void> {
+  const { panel, token } = await claimSite(page, host, "meta");
+  await addClaimTag(page.request, host, token);
+  await checkAgain(panel);
+  await expect(panel.getByTestId("claim-status")).toHaveText(/^Verified on /);
+}
+
 /**
  * An account with a claim in each state, for the layout and color checks: the flaky site lapsed, the
- * robots-blocked site pending with the DNS hint, the bakery copy superseded by a second account, the
+ * robots-blocked site pending with the DNS hint, the claim site superseded by a second account, the
  * agentified site pending with "no tag found", and the plain bakery copy just claimed by DNS with its
- * token shown. Returns the second account's page,
- * where the bakery copy is verified. Leaves the server clock at zero and the flaky tag on.
+ * token shown. Returns the second account's page, where the claim site is verified. Leaves the server
+ * clock at zero.
  */
 export async function claimStates(page: Page, browser: Browser, label: string): Promise<{ other: Page; close: () => Promise<void> }> {
   const request = page.request;
@@ -97,32 +122,27 @@ export async function claimStates(page: Page, browser: Browser, label: string): 
     // bakery stays unclaimed, so the claim form stays on the page.
     for (const host of [FLAKY_HOST, BLOCKED_HOST, CLAIM_HOST, MISSING_HOST, FRESH_HOST, "bakery.fixture.test"]) await analyzeAny(page, host);
 
-    await setFlakyTag(request, true);
-    await checkAgain(await claimSite(page, FLAKY_HOST, "meta"));
-    await expect(claimPanel(page, FLAKY_HOST).getByTestId("claim-status")).toHaveText(/^Verified on /);
+    await verifyByTag(page, FLAKY_HOST);
     await lapseFlaky(request);
     await setClockOffset(request, 0);
 
-    await checkAgain(await claimSite(page, BLOCKED_HOST, "meta"));
+    await checkAgain((await claimSite(page, BLOCKED_HOST, "meta")).panel);
     await expect(claimPanel(page, BLOCKED_HOST).getByTestId("claim-reason")).toHaveText(CLAIMS_TEXT.reason("robots_blocked", "meta", { host: "", url: "", recordName: "" }, null));
-    await checkAgain(await claimSite(page, CLAIM_HOST, "meta"));
-    await expect(claimPanel(page, CLAIM_HOST).getByTestId("claim-status")).toHaveText(/^Verified on /);
+    await verifyByTag(page, CLAIM_HOST);
   } finally {
     await setClockOffset(request, 0);
-    await setFlakyTag(request, true);
   }
 
   const context = await browser.newContext();
   const other = await context.newPage();
   await signIn(other, newEmail(`claims-${label}-other`));
   await analyzeAny(other, CLAIM_HOST);
-  await checkAgain(await claimSite(other, CLAIM_HOST, "meta"));
-  await expect(claimPanel(other, CLAIM_HOST).getByTestId("claim-status")).toHaveText(/^Verified on /);
+  await verifyByTag(other, CLAIM_HOST);
 
   await page.goto("/account");
   await expect(claimPanel(page, CLAIM_HOST).getByTestId("claim-status")).toHaveText(/^Ownership moved to another account on /);
   await expect(claimPanel(page, FLAKY_HOST).getByTestId("claim-status")).toHaveText(/^Verification failed on .*Your published page and badge are paused\.$/);
-  await checkAgain(await claimSite(page, MISSING_HOST, "meta"));
+  await checkAgain((await claimSite(page, MISSING_HOST, "meta")).panel);
   await expect(claimPanel(page, MISSING_HOST).getByTestId("claim-reason")).toContainText("found no retrofit-site-verification tag");
   // A reload drops the token, so the panel shows the plain pending state.
   await page.goto("/account");

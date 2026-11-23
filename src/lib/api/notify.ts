@@ -5,7 +5,7 @@ import { clientIdFromRequest, countClientWindow } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { REQUEST_TEXT } from "@/lib/site/pricing-texts";
 import { readSmallBody } from "./body";
-import { json } from "./json";
+import { json, limitOr429 } from "./json";
 
 export const notifyTexts = {
   onTheList: "You're on the list. We will email you when paid plans start.",
@@ -50,10 +50,8 @@ export async function handleNotify(request: Request, deps: Pick<ServerDeps, "con
 
     const now = deps.clock();
     const limit = await countClientWindow(deps.store, "notify-window", deps.config.notifyPerClientHour, clientIdFromRequest(request, deps.config, now), now);
-    if (!limit.ok) {
-      const retryAt = new Date(limit.retryAt);
-      return json(429, { error: "limit", message: notifyTexts.limit(deps.config.notifyPerClientHour, retryAt), retryAt: retryAt.toISOString() });
-    }
+    const limited = limitOr429(limit, (retryAt) => notifyTexts.limit(deps.config.notifyPerClientHour, retryAt));
+    if (limited) return limited;
 
     await deps.accounts.addNotifySignup(body.email, body.consent);
     return json(200, { ok: true, message: notifyTexts.onTheList });

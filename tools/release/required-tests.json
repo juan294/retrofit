@@ -7932,12 +7932,6 @@
       "rule": "ownership claims",
       "suite": "unit",
       "file": "tests/claims/sources.test.ts",
-      "title": "claimHost uses the fixture token only for fixture hosts in fixtures mode"
-    },
-    {
-      "rule": "ownership claims",
-      "suite": "unit",
-      "file": "tests/claims/sources.test.ts",
       "title": "parseClaimSource accepts only report:<uuid> and analysis:<32 hex>"
     },
     {
@@ -7981,18 +7975,6 @@
       "suite": "unit",
       "file": "tests/claims/transfer.test.ts",
       "title": "a host moves to the account that verifies it later deleting the new holder's account keeps the earlier claim superseded"
-    },
-    {
-      "rule": "ownership claims",
-      "suite": "unit",
-      "file": "tests/claims/txt.test.ts",
-      "title": "fixtureTxtResolver answers the blocked fixture's record in two strings and ENOTFOUND for every other name"
-    },
-    {
-      "rule": "ownership claims",
-      "suite": "unit",
-      "file": "tests/claims/txt.test.ts",
-      "title": "fixtureTxtResolver isNoRecord is true only for ENOTFOUND and ENODATA"
     },
     {
       "rule": "ownership claims",
@@ -8275,6 +8257,54 @@
       "suite": "db",
       "file": "tests/db/accounts.db.test.ts",
       "title": "AccountData contract: supabase (two clients) ownership claims a claim lapsed over 30 days ago is due only when its last check is over 7 days old"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) saved reports getSavedReportHost answers the report's host to its account only"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "POST /api/claims (create) every claim gets a new random token, fixture hosts in fixtures mode included"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "the account's analyses reads one list and no analysis record, and drops analyses past their stored life"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/sources.test.ts",
+      "title": "the account's analyses the listed host becomes the scored host when the ready report is first read, in the same place"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/txt.test.ts",
+      "title": "fixtures TXT records answers the records set for a name and ENOTFOUND for every other name"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/txt.test.ts",
+      "title": "fixtures TXT records the route answers 404 outside fixtures mode"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/txt.test.ts",
+      "title": "fixtures TXT records isNoRecord is true only for ENOTFOUND and ENODATA"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) saved reports getSavedReportHost answers the report's host to its account only"
     }
   ],
   "repairs": {

@@ -3,7 +3,8 @@ import type { Config } from "@/lib/config";
 import { sha256Hex } from "@/lib/security/tokens";
 import { appendBounded, readIdList, updateIdList } from "@/lib/store/id-list";
 import type { Clock, Store } from "@/lib/store/types";
-import { analysisKey, EXPIRED_GRACE_S, getAnalysis, isAnalysisId, storeTtl, type Analysis } from "./record";
+import { addAccountAnalyses } from "./account-list";
+import { accountListTtl, analysisHost, analysisKey, EXPIRED_GRACE_S, getAnalysis, isAnalysisId, storeTtl, type Analysis } from "./record";
 import { readVisitorToken, sameHash } from "./visitor";
 
 /**
@@ -21,7 +22,6 @@ import { readVisitorToken, sameHash } from "./visitor";
 
 export const MAX_INDEXED_ANALYSES = 50;
 const visitorAnalysesKey = (ownerHash: string) => `visitor-analyses:${ownerHash}`;
-const accountAnalysesKey = (accountId: string) => `account-analyses:${accountId}`;
 const ATTACH_ATTEMPTS = 3;
 
 type Deps = { readonly store: Store; readonly clock: Clock; readonly waitUntil?: (task: Promise<unknown>) => void };
@@ -64,22 +64,10 @@ export async function indexVisitorAnalysis(deps: Deps & { readonly config: Pick<
   await updateIdList(deps.store, visitorAnalysesKey(ownerHash), appendBounded(id, MAX_INDEXED_ANALYSES), deps.config.analysisTtlS + EXPIRED_GRACE_S);
 }
 
-/** Lists analyses under their account (newest last), for the account page. Lives as long as an analysis record. */
-export async function indexAccountAnalyses(deps: Deps & { readonly config: Pick<Config, "analysisTtlS"> }, accountId: string, ids: readonly string[]): Promise<void> {
-  if (ids.length === 0) return;
-  await updateIdList(deps.store, accountAnalysesKey(accountId), (list) => ids.reduce((acc, id) => appendBounded(id, MAX_INDEXED_ANALYSES)(acc), list), deps.config.analysisTtlS + EXPIRED_GRACE_S);
-}
-
-/** Drops the account's list of analyses (account deletion). The analyses themselves expire on their own. */
-export async function forgetAccountAnalyses(store: Store, accountId: string): Promise<void> {
-  await store.delete(accountAnalysesKey(accountId));
-}
-
-/** The account's most recent listed analyses that are still stored and attached to it, newest first, at most `max`. */
-export async function listAccountAnalyses(deps: Deps, accountId: string, max: number): Promise<Analysis[]> {
-  const ids = (await readIdList(deps.store, accountAnalysesKey(accountId))).slice(-max).reverse();
-  const found = await Promise.all(ids.map((id) => getAnalysis(deps.store, id)));
-  return found.filter((a): a is Analysis => a !== null && !!a.accountId && sameHash(a.accountId, accountId));
+/** Lists analyses under their account (account-list.ts), for the account page. The list outlives every analysis it holds. */
+export async function indexAccountAnalyses(deps: Deps & { readonly config: Pick<Config, "analysisTtlS"> }, accountId: string, analyses: readonly Analysis[]): Promise<void> {
+  const entries = analyses.map((a) => ({ id: a.id, host: analysisHost(a), keptUntil: a.expiresAt + EXPIRED_GRACE_S * 1000 }));
+  await addAccountAnalyses(deps.store, accountId, entries, accountListTtl(deps.config));
 }
 
 /**
@@ -88,20 +76,20 @@ export async function listAccountAnalyses(deps: Deps, accountId: string, max: nu
  * to an account keeps it. Returns how many were attached.
  */
 export async function attachVisitorAnalyses(deps: Deps & { readonly config: Pick<Config, "analysisTtlS"> }, ownerHash: string, accountId: string): Promise<number> {
-  async function attach(id: string): Promise<boolean> {
+  async function attach(id: string): Promise<Analysis | null> {
     for (let attempt = 0; attempt < ATTACH_ATTEMPTS; attempt++) {
       const analysis = await getAnalysis(deps.store, id);
-      if (!analysis || analysis.accountId || !sameHash(analysis.ownerHash, ownerHash)) return false;
+      if (!analysis || analysis.accountId || !sameHash(analysis.ownerHash, ownerHash)) return null;
       const next: Analysis = { ...analysis, version: analysis.version + 1, accountId };
-      if (await deps.store.compareAndSet(analysisKey(id), analysis, next, storeTtl(analysis, deps.clock()))) return true;
+      if (await deps.store.compareAndSet(analysisKey(id), analysis, next, storeTtl(analysis, deps.clock()))) return next;
     }
-    return false;
+    return null;
   }
-  const ids = await readIdList(deps.store, visitorAnalysesKey(ownerHash));
-  const results = await Promise.all(ids.map(attach));
+  const results = await Promise.all((await readIdList(deps.store, visitorAnalysesKey(ownerHash))).map(attach));
+  const attached = results.filter((a): a is Analysis => a !== null);
   // The account page lists them; a failure costs only that list, so it is logged.
-  await indexAccountAnalyses(deps, accountId, ids.filter((_, n) => results[n])).catch((e: unknown) => {
+  await indexAccountAnalyses(deps, accountId, attached).catch((e: unknown) => {
     console.error("Account analysis list failed:", e instanceof Error ? e.name : "unknown error");
   });
-  return results.filter(Boolean).length;
+  return attached.length;
 }

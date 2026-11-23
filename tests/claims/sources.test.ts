@@ -4,15 +4,17 @@
  * the account's list of analyses that the account page offers.
  */
 import { describe, expect, it } from "vitest";
-import { attachVisitorAnalyses, listAccountAnalyses } from "@/lib/analysis/owner";
-import { analysisKey, getAnalysis, type Analysis } from "@/lib/analysis/record";
+import { listAccountAnalyses } from "@/lib/analysis/account-list";
+import { attachVisitorAnalyses, indexAccountAnalyses } from "@/lib/analysis/owner";
+import { getAnalysis, readAnalysisView } from "@/lib/analysis/record";
+import { jobKey } from "@/lib/crawl/jobs";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { handleAnalyze } from "@/lib/api/analyze";
-import { claimHost, claimPageUrl, newClaimToken, FIXTURE_CLAIM_TOKEN } from "@/lib/claims/host";
-import { claimOptions, hostOfSource, parseClaimSource } from "@/lib/claims/sources";
+import { claimHost, claimPageUrl } from "@/lib/claims/host";
+import { CLAIM_RECENT_ANALYSES, claimOptions, hostOfSource, parseClaimSource } from "@/lib/claims/sources";
 import { loadConfig } from "@/lib/config";
 import { sha256Hex } from "@/lib/security/tokens";
-import { accountCookie, analyzeRequest, holdAllSlots, OTHER_ACCOUNT, testDeps, TEST_ACCOUNT } from "../helpers/server-deps";
+import { accountCookie, analyzeRequest, fakeClock, holdAllSlots, OTHER_ACCOUNT, storeAnalysis, testDeps, TEST_ACCOUNT } from "../helpers/server-deps";
 
 describe("claimHost", () => {
   // Fails if a host is not normalized like URL.host (case, IDN, default port), or a value that is not a bare host passes.
@@ -39,17 +41,6 @@ describe("claimHost", () => {
     expect(() => claimPageUrl("10.0.0.1", prod)).toThrow();
     expect(() => claimPageUrl("localhost", prod)).toThrow();
   });
-
-  // Fails if the fixed e2e token is ever used outside fixtures mode or for a real host, or the random token repeats.
-  it("uses the fixture token only for fixture hosts in fixtures mode", () => {
-    const prod = loadConfig({ SESSION_SECRET: "s".repeat(32) });
-    const fixtures = loadConfig({ SESSION_SECRET: "s".repeat(32), RETROFIT_TEST_FIXTURES: "1" });
-    expect(newClaimToken("bakery.fixture.test:3011", fixtures)).toBe(FIXTURE_CLAIM_TOKEN);
-    expect(newClaimToken("bakery.fixture.test:3011", prod)).not.toBe(FIXTURE_CLAIM_TOKEN);
-    expect(newClaimToken("shop.example.com", fixtures)).not.toBe(FIXTURE_CLAIM_TOKEN);
-    expect(newClaimToken("shop.example.com", prod)).toMatch(/^[0-9a-f]{32}$/);
-    expect(newClaimToken("shop.example.com", prod)).not.toBe(newClaimToken("shop.example.com", prod));
-  });
 });
 
 describe("parseClaimSource", () => {
@@ -66,15 +57,14 @@ describe("the scored host", () => {
   // (a saved report of the same analysis would name the www. host).
   it("an analysis source gives the host the analysis scored, like its saved report", async () => {
     const d = testDeps();
-    const id = "e".repeat(32);
-    const a: Analysis = { version: 2, id, ownerHash: sha256Hex("v"), accountId: TEST_ACCOUNT.userId, jobId: "j", inputOrigin: "https://shop.example.com", createdAt: Date.now(), expiresAt: Date.now() + 3_600_000, snapshot: { host: "www.shop.example.com" } as Snapshot };
-    await d.store.set(analysisKey(id), a, 7200);
-    await d.store.set("account-analyses:" + TEST_ACCOUNT.userId, { version: 1, ids: [id] }, 7200);
+    const a = await storeAnalysis(d, { inputOrigin: "https://shop.example.com", accountId: TEST_ACCOUNT.userId, snapshot: { host: "www.shop.example.com" } as Snapshot });
+    const { id } = a;
+    await indexAccountAnalyses(d, TEST_ACCOUNT.userId, [a]);
     expect(await hostOfSource(d, TEST_ACCOUNT.userId, { kind: "analysis", id })).toBe("www.shop.example.com");
-    const options = await claimOptions(d, TEST_ACCOUNT.userId, [], []);
+    const options = claimOptions(await listAccountAnalyses(d, TEST_ACCOUNT.userId, CLAIM_RECENT_ANALYSES), [], []);
     expect(options.map((o) => o.label)).toEqual(["www.shop.example.com (recent analysis)"]);
     // Before the score exists, the typed origin's host is all there is.
-    await d.store.set(analysisKey(id), { ...a, snapshot: undefined }, 7200);
+    await storeAnalysis(d, { ...a, snapshot: undefined });
     expect(await hostOfSource(d, TEST_ACCOUNT.userId, { kind: "analysis", id })).toBe("shop.example.com");
   });
 });
@@ -108,6 +98,33 @@ describe("the account's analyses", () => {
     expect((await getAnalysis(d.store, id))?.accountId).toBe(TEST_ACCOUNT.userId);
   });
 
+  // Fails if the account page reads whole analyses (each holds a snapshot) to offer their hosts, or offers one that is gone.
+  it("reads one list and no analysis record, and drops analyses past their stored life", async () => {
+    const reads: string[] = [];
+    const clock = fakeClock();
+    const d = testDeps({ clock: clock.clock, instrument: (op, key) => void (op === "get" && reads.push(key.split(":")[0]!)) });
+    const short = await storeAnalysis(d, { inputOrigin: "https://short.example.com", accountId: TEST_ACCOUNT.userId });
+    const long = await storeAnalysis(d, { inputOrigin: "https://long.example.com", accountId: TEST_ACCOUNT.userId, expiresAt: clock.now() + 5 * 24 * 3600_000 });
+    await indexAccountAnalyses(d, TEST_ACCOUNT.userId, [short, long]);
+    reads.length = 0;
+    expect((await listAccountAnalyses(d, TEST_ACCOUNT.userId, 10)).map((a) => a.host)).toEqual(["long.example.com", "short.example.com"]);
+    expect(reads).toEqual(["account-analyses"]);
+    clock.advance(8 * 24 * 3600_000);
+    expect((await listAccountAnalyses(d, TEST_ACCOUNT.userId, 10)).map((a) => a.host)).toEqual(["long.example.com"]);
+  });
+
+  // P3-R1. Fails if the list keeps the typed host after the report is ready under the host the site redirected to.
+  it("the listed host becomes the scored host when the ready report is first read, in the same place", async () => {
+    const d = testDeps();
+    const a = await storeAnalysis(d, { inputOrigin: "https://shop.example.com", accountId: TEST_ACCOUNT.userId, jobId: "job-ready" });
+    const b = await storeAnalysis(d, { inputOrigin: "https://later.example.com", accountId: TEST_ACCOUNT.userId });
+    await indexAccountAnalyses(d, TEST_ACCOUNT.userId, [a, b]);
+    const now = d.clock();
+    await d.store.set(jobKey("job-ready"), { version: 1, id: "job-ready", status: "ready", step: "ready", updatedAt: now, snapshot: { host: "www.shop.example.com" }, score: { score: 1 } }, 7200);
+    expect((await readAnalysisView(d, a)).status).toBe("ready");
+    expect((await listAccountAnalyses(d, TEST_ACCOUNT.userId, 10)).map((x) => x.host)).toEqual(["later.example.com", "www.shop.example.com"]);
+  });
+
   // Fails if the claim choices repeat a host, offer a host the account already claims, or miss saved reports.
   it("claimOptions offers each host once, recent analyses first, without the hosts already claimed", async () => {
     const d = testDeps();
@@ -117,7 +134,7 @@ describe("the account's analyses", () => {
     const report = (host: string) => ({ host, report: { status: "ready", host }, fetchedAt: "2026-11-23T10:00:00.000Z" });
     for (const host of ["b.example.com", "c.example.com"]) await d.accounts.saveReport(TEST_ACCOUNT.userId, report(host));
     await d.accounts.createClaim(TEST_ACCOUNT.userId, { host: "b.example.com", method: "dns", tokenHash: sha256Hex("t") });
-    const options = await claimOptions(d, TEST_ACCOUNT.userId, await d.accounts.listSavedReports(TEST_ACCOUNT.userId), await d.accounts.listClaims(TEST_ACCOUNT.userId));
+    const options = claimOptions(await listAccountAnalyses(d, TEST_ACCOUNT.userId, CLAIM_RECENT_ANALYSES), await d.accounts.listSavedReports(TEST_ACCOUNT.userId), await d.accounts.listClaims(TEST_ACCOUNT.userId));
     expect(options.map((o) => o.label)).toEqual(["a.example.com (recent analysis)", "c.example.com (saved report)"]);
     expect(options[0]?.value).toMatch(/^analysis:[0-9a-f]{32}$/);
     expect(options[1]?.value).toMatch(/^report:[0-9a-f-]{36}$/);

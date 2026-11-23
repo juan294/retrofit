@@ -5,24 +5,17 @@
  */
 import { describe, expect, it } from "vitest";
 import { CLAIM_CHANGES_PER_HOUR, CLAIM_CHECKS_PER_HOUR, MAX_PENDING_CLAIMS } from "@/lib/accounts/limits";
-import { analysisKey, type Analysis } from "@/lib/analysis/record";
 import { handleCheckClaim, handleCreateClaim, handleRemoveClaim, handleStartOverClaim } from "@/lib/api/claims";
 import type { ClaimView } from "@/lib/claims/view";
 import { sha256Hex } from "@/lib/security/tokens";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
-import { accountCookie, fakeClock, OTHER_ACCOUNT, postRequest, testDeps, TEST_ACCOUNT, type TestDeps } from "../helpers/server-deps";
+import { accountCookie, fakeClock, OTHER_ACCOUNT, postRequest, storeAnalysis, testDeps, TEST_ACCOUNT, type TestDeps } from "../helpers/server-deps";
 
 type Answer = { error?: string; message?: string; claim?: ClaimView; token?: string; retryAt?: string };
 const read = async (res: Response) => (await res.json()) as Answer;
 
-/** An analysis of `origin` attached to `accountId` (or to nobody), stored as startAnalysis would. */
-async function analysisOf(d: TestDeps, origin: string, accountId?: string): Promise<string> {
-  const id = sha256Hex(`${origin}-${accountId}`).slice(0, 32);
-  const now = d.clock();
-  const a: Analysis = { version: 1, id, ownerHash: sha256Hex("visitor"), ...(accountId ? { accountId } : {}), jobId: "j", inputOrigin: origin, createdAt: now, expiresAt: now + 3_600_000 };
-  await d.store.set(analysisKey(id), a, 7200);
-  return id;
-}
+/** The id of an analysis of `origin` attached to `accountId` (or to nobody). */
+const analysisOf = async (d: TestDeps, origin: string, accountId?: string) => (await storeAnalysis(d, { inputOrigin: origin, ...(accountId ? { accountId } : {}) })).id;
 
 async function setup(o: { clock?: ReturnType<typeof fakeClock>; records?: string[][] } = {}) {
   const records = { current: o.records ?? [] };
@@ -86,6 +79,19 @@ describe("POST /api/claims (create)", () => {
     const again = await create({ source: `analysis:${id}`, method: "dns" });
     expect(again.status).toBe(409);
     expect(await read(again)).toMatchObject({ error: "exists", message: CLAIMS_TEXT.exists });
+  });
+
+  // Fails if a claim token is ever fixed or repeated, also for a fixture host in fixtures mode (browser tests read it from the page).
+  it("every claim gets a new random token, fixture hosts in fixtures mode included", async () => {
+    const { d, create, other } = await setup();
+    const tokens: string[] = [];
+    for (const [cookie, accountId] of [[undefined, TEST_ACCOUNT.userId], [other, OTHER_ACCOUNT.userId]] as const) {
+      const body = await read(await create({ source: `analysis:${await analysisOf(d, "http://bakery.fixture.test:3011", accountId)}`, method: "meta" }, cookie));
+      expect(body.claim?.host).toBe("bakery.fixture.test:3011");
+      tokens.push(body.token as string);
+    }
+    for (const t of tokens) expect(t).toMatch(/^[0-9a-f]{32}$/);
+    expect(tokens[0]).not.toBe(tokens[1]);
   });
 
   // Fails if a saved report cannot be the source, or a host that is not a public website is accepted.

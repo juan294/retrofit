@@ -1,6 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { FIXTURE_CLAIM_TOKEN } from "@/lib/claims/host";
-import { bakery, blocked, hostile, agentified, materialize, withClaimTag } from "../../tests/fixtures/sites";
+import { bakery, blocked, hostile, agentified, materialize, withClaimTags } from "../../tests/fixtures/sites";
 import { serveSites } from "../../tests/helpers/sites";
 import { peerSites, thirdSites } from "../../tests/peer-fixture";
 import { OTARI_ROUTER_ORIGIN } from "./router-origin";
@@ -12,25 +11,38 @@ const FIXTURE_PORT = 3011;
 const THIRD_PORT = 3013;
 export const fixtureOrigin = (host: string) => `http://${host}:${FIXTURE_PORT}`;
 
+/** Bakery copies whose home page carries the claim tags that specs register (e2e/claims.spec.ts). */
+const TAGGED_HOSTS = ["claim.fixture.test", "flaky.fixture.test"] as const;
+
 /**
- * Claims (e2e/claims.spec.ts): claim.fixture.test always carries the fixtures-mode claim tag;
- * flaky.fixture.test carries it while the tag is on. GET http://127.0.0.1:3011/claim-tag/off (or /on)
- * removes or restores it, so a spec can fail three daily rechecks and then pass one.
+ * Claims: a spec reads a claim's token from the account page and registers it with
+ * GET http://127.0.0.1:3011/claim-tag?host=<host>&token=<token>; the host's home page then carries
+ * a tag for every registered token. /claim-tag/clear?host=<host> removes them, so a spec can fail
+ * three daily rechecks and then register the token again to pass one.
  */
-export const CLAIM_TAG_SWITCH = (on: boolean) => `http://127.0.0.1:${FIXTURE_PORT}/claim-tag/${on ? "on" : "off"}`;
+export const CLAIM_TAG_URL = (action: "add" | "clear", host: string, token = "") =>
+  `http://127.0.0.1:${FIXTURE_PORT}/claim-tag${action === "clear" ? "/clear" : ""}?${new URLSearchParams({ host, ...(token ? { token } : {}) })}`;
 
 function claimTagRoutes() {
-  let on = true;
-  const tagged = withClaimTag(bakery, FIXTURE_CLAIM_TOKEN);
+  const tokens = new Map<string, Set<string>>(TAGGED_HOSTS.map((h) => [h, new Set<string>()]));
   const home = (req: IncomingMessage, res: ServerResponse) => {
-    const page = materialize(on ? tagged : bakery, `http://${req.headers.host}`)["/"];
+    const host = (req.headers.host ?? "").split(":")[0] ?? "";
+    const page = materialize(withClaimTags(bakery, [...(tokens.get(host) ?? [])]), `http://${req.headers.host}`)["/"];
     res.writeHead(200, page?.headers ?? {}).end(page?.body ?? "");
   };
-  const set = (value: boolean) => (_req: IncomingMessage, res: ServerResponse) => {
-    on = value;
-    res.writeHead(200, { "content-type": "text/plain" }).end(value ? "on" : "off");
+  const change = (clear: boolean) => (req: IncomingMessage, res: ServerResponse) => {
+    const q = new URL(req.url ?? "/", "http://127.0.0.1").searchParams;
+    const set = tokens.get(q.get("host") ?? "");
+    const token = q.get("token") ?? "";
+    if (!set || (!clear && !/^[0-9a-f]{32}$/.test(token))) {
+      res.writeHead(400, { "content-type": "text/plain" }).end("host or token");
+      return;
+    }
+    if (clear) set.clear();
+    else set.add(token);
+    res.writeHead(200, { "content-type": "text/plain" }).end(String(set.size));
   };
-  return { "flaky.fixture.test": { "/": home }, "127.0.0.1": { "/claim-tag/on": set(true), "/claim-tag/off": set(false) } };
+  return { ...Object.fromEntries(TAGGED_HOSTS.map((h) => [h, { "/": home }])), "127.0.0.1": { "/claim-tag": change(false), "/claim-tag/clear": change(true) } };
 }
 
 /**
@@ -45,7 +57,7 @@ export default async function globalSetup() {
       "blocked.fixture.test": blocked,
       "hostile.fixture.test": hostile,
       "agentified.fixture.test": agentified,
-      "claim.fixture.test": withClaimTag(bakery, FIXTURE_CLAIM_TOKEN),
+      "claim.fixture.test": bakery,
       "flaky.fixture.test": bakery,
       "plain.fixture.test": bakery,
       ...peerSites({ routerOrigin: OTARI_ROUTER_ORIGIN }),

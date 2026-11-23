@@ -1,3 +1,5 @@
+import type { LimitResult } from "@/lib/fetch/limits";
+
 /** A JSON response that is never cached, optionally setting the visitor cookie. */
 export function json(status: number, body: unknown, setCookie: string | null = null): Response {
   const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
@@ -10,4 +12,11 @@ export function seeOther(deps: { readonly config: { readonly publicOrigin: strin
   const headers = new Headers({ location: `${deps.config.publicOrigin}${path}`, "cache-control": "no-store", ...extraHeaders });
   for (const c of setCookies) headers.append("set-cookie", c);
   return new Response(null, { status: 303, headers });
+}
+
+/** Null when the window admitted the call; otherwise 429 `{error: "limit", message, retryAt}` with the text for the window's end. */
+export function limitOr429(counted: LimitResult, text: (retryAt: Date) => string): Response | null {
+  if (counted.ok) return null;
+  const retryAt = new Date(counted.retryAt);
+  return json(429, { error: "limit", message: text(retryAt), retryAt: retryAt.toISOString() });
 }

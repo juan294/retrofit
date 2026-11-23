@@ -6,6 +6,8 @@ import type { AuthGateway, VerifiedAccount } from "@/lib/auth/gateway";
 import { createFixtureAuth, type FixtureAuth } from "@/lib/test-fixtures/auth";
 import { loadConfig, type Env } from "@/lib/config";
 import { slotKey } from "@/lib/analysis/capacity";
+import { analysisKey, type Analysis } from "@/lib/analysis/record";
+import { sha256Hex } from "@/lib/security/tokens";
 import { createFetchContext } from "@/lib/fetch/context";
 import type { Resolver } from "@/lib/fetch/guard";
 import type { TxtResolver } from "@/lib/claims/txt";
@@ -130,6 +132,25 @@ export function testDeps(o: TestDepsOptions = {}): TestDeps {
       while (pending.length > 0) await Promise.all(pending.splice(0));
     },
   };
+}
+
+/**
+ * Stores an analysis of `inputOrigin` (attached to `accountId` when given), as startAnalysis would, and
+ * returns it. The id defaults to a hash of the origin and account, so a test can call it again.
+ */
+export async function storeAnalysis(d: Pick<ServerDeps, "store" | "clock">, o: Partial<Analysis> & { readonly inputOrigin: string }): Promise<Analysis> {
+  const now = d.clock();
+  const analysis: Analysis = {
+    version: 1,
+    id: sha256Hex(`${o.inputOrigin}-${o.accountId}`).slice(0, 32),
+    ownerHash: sha256Hex("visitor"),
+    jobId: "j",
+    createdAt: now,
+    expiresAt: now + 3_600_000,
+    ...o,
+  };
+  await d.store.set(analysisKey(analysis.id), analysis, 7200);
+  return analysis;
 }
 
 /** Holds every crawl slot, so nothing is dispatched. */

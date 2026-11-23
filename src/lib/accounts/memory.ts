@@ -11,7 +11,8 @@ import {
   MAX_SAVED_REPORTS,
   normalizeEmail,
   requireAccountId,
-  requireClaimInput,
+  requireClaimToken,
+  requireNewClaim,
   requireEmail,
   requireSaveInput,
   scoreOf,
@@ -78,7 +79,8 @@ export interface MemoryAccountDataOptions {
   backing?: AccountMemoryBacking;
 }
 
-const iso = (ms: number) => new Date(ms).toISOString();
+/** ISO 8601 of a time in ms or of a date string. */
+const iso = (t: number | string) => new Date(t).toISOString();
 
 /**
  * In-memory AccountData. Like the memory Store, each operation yields once and
@@ -95,6 +97,11 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
     row.claim = { ...row.claim, ...change };
     return copy(row.claim);
   };
+  /** The account's claim `claimId`, or undefined (another account's, unknown or malformed). */
+  const ownRow = (accountId: string, claimId: string): ClaimRow | undefined => {
+    const row = isUuid(claimId) ? claims.get(claimId) : undefined;
+    return row?.claim.accountId === accountId ? row : undefined;
+  };
   /** The checks of verifyClaim and recordClaimFailure: missing, terminal or a replaced token. */
   const checkable = (claimId: string, tokenHash: string): { row: ClaimRow } | { done: { outcome: "missing" } | { outcome: "stale" | "superseded"; claim: Claim } } => {
     const row = isUuid(claimId) ? claims.get(claimId) : undefined;
@@ -103,7 +110,6 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
     if (row.claim.tokenHash !== tokenHash) return { done: { outcome: "stale", claim: copy(row.claim) } };
     return { row };
   };
-  const iso8601 = (at: string) => new Date(at).toISOString();
 
   async function op<R>(body: (now: number) => R): Promise<R> {
     await Promise.resolve();
@@ -189,6 +195,13 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       });
     },
 
+    async getSavedReportHost(accountId, reportId) {
+      return op(() => {
+        const row = isUuid(reportId) ? savedReports.get(reportId) : undefined;
+        return row && row.accountId === accountId ? row.host : null;
+      });
+    },
+
     async deleteAccountData(rawId) {
       const accountId = requireAccountId(rawId);
       // One synchronous step after the yield, so it is atomic like the database function.
@@ -203,7 +216,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
 
     async createClaim(rawId, input) {
       const accountId = requireAccountId(rawId);
-      requireClaimInput(input);
+      requireNewClaim(input);
       return op((now) => {
         const same = accountClaims(accountId).find((r) => r.claim.host === input.host);
         if (same) return { outcome: "exists", claim: copy(same.claim) };
@@ -235,17 +248,17 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
 
     async getClaim(accountId, claimId) {
       return op(() => {
-        const row = isUuid(claimId) ? claims.get(claimId) : undefined;
-        return row && row.claim.accountId === accountId ? copy(row.claim) : null;
+        const row = ownRow(accountId, claimId);
+        return row ? copy(row.claim) : null;
       });
     },
 
     async restartClaim(rawId, claimId, input) {
       const accountId = requireAccountId(rawId);
-      requireClaimInput(input, false);
+      requireClaimToken(input);
       return op(() => {
-        const row = isUuid(claimId) ? claims.get(claimId) : undefined;
-        if (!row || row.claim.accountId !== accountId) return { outcome: "missing" };
+        const row = ownRow(accountId, claimId);
+        if (!row) return { outcome: "missing" };
         const { status } = row.claim;
         if (status === "verified" || status === "superseded") return { outcome: status, claim: copy(row.claim) };
         if (status !== "pending" && pendingCount(accountId) >= MAX_PENDING_CLAIMS) return { outcome: "full" };
@@ -255,7 +268,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
     },
 
     async recordClaimFailure(claimId, input) {
-      const checkedAt = iso8601(input.checkedAt);
+      const checkedAt = iso(input.checkedAt);
       return op(() => {
         const found = checkable(claimId, input.tokenHash);
         if ("done" in found) return found.done;
@@ -270,7 +283,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
     },
 
     async verifyClaim(claimId, input) {
-      const checkedAt = iso8601(input.checkedAt);
+      const checkedAt = iso(input.checkedAt);
       return op(() => {
         const found = checkable(claimId, input.tokenHash);
         if ("done" in found) return found.done;
@@ -312,8 +325,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
 
     async deleteClaim(accountId, claimId) {
       return op(() => {
-        const row = isUuid(claimId) ? claims.get(claimId) : undefined;
-        if (!row || row.claim.accountId !== accountId) return false;
+        if (!ownRow(accountId, claimId)) return false;
         claims.delete(claimId);
         return true;
       });

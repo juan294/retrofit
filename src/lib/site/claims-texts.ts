@@ -6,6 +6,7 @@ import { CLAIM_CHANGES_PER_HOUR, CLAIM_CHECKS_PER_HOUR, MAX_PENDING_CLAIMS } fro
 import type { ClaimMethod, ClaimResult, ClaimStatus } from "@/lib/accounts/data";
 import { formatDate, hhmmUtc } from "@/lib/analysis/texts";
 import { CLAIM_META_NAME, CLAIM_TXT_PREFIX } from "@/lib/claims/names";
+import { dateText as date } from "./account-texts";
 import { LEAD_EMAIL } from "./own-site";
 
 /** What a check reads: the home page URL (meta) or the record name (DNS), and the claimed host. */
@@ -15,7 +16,6 @@ export interface CheckTarget {
   readonly recordName: string;
 }
 
-const date = (iso: string) => formatDate(Date.parse(iso));
 const at = (iso: string) => `${formatDate(Date.parse(iso))} at ${hhmmUtc(new Date(iso))} UTC`;
 
 export const CLAIMS_TEXT = {

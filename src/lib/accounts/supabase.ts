@@ -11,7 +11,8 @@ import {
   MAX_SAVED_REPORTS,
   normalizeEmail,
   requireAccountId,
-  requireClaimInput,
+  requireClaimToken,
+  requireNewClaim,
   requireEmail,
   requireSaveInput,
   scoreOf,
@@ -111,17 +112,23 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
   const claims = () => client.from("site_claims");
   const call = <T>(operation: string, request: () => PromiseLike<{ data: T | null; error: { code?: string } | null }>) =>
     serviceCall<T>({ service: "accounts", operation }, request, (code) => new AccountDataUnavailable(operation, code));
-  /** One claim function call; the claim it answers with, when the outcome carries one. */
-  async function claimRpc(operation: string, fn: string, args: Record<string, unknown>): Promise<{ outcome: string; claim: Claim | null; movedFrom: string[] }> {
+  /**
+   * One claim function call. `carry`: the outcomes that answer with the claim; `bare`: those that do not.
+   * Any other outcome, or a carrying outcome without its claim, is AccountDataUnavailable.
+   */
+  async function claimRpc<C extends string, B extends string = never>(
+    operation: string,
+    fn: string,
+    args: Record<string, unknown>,
+    carry: readonly C[],
+    bare: readonly B[] = [],
+  ): Promise<{ readonly outcome: C; readonly claim: Claim; readonly movedFrom: string[] } | { readonly outcome: B }> {
     const answer = await call<ClaimAnswer>(operation, () => client.rpc(fn, args));
-    if (!answer || typeof answer.outcome !== "string") throw new AccountDataUnavailable(operation, "no_answer");
-    return { outcome: answer.outcome, claim: answer.claim ? claimOf(answer.claim) : null, movedFrom: answer.moved_from ?? [] };
+    const outcome = answer?.outcome;
+    if ((bare as readonly string[]).includes(outcome as string)) return { outcome: outcome as B };
+    if (!(carry as readonly string[]).includes(outcome as string) || !answer?.claim) throw new AccountDataUnavailable(operation, "bad_outcome");
+    return { outcome: outcome as C, claim: claimOf(answer.claim), movedFrom: answer.moved_from ?? [] };
   }
-  /** The claim of an outcome that must carry one. */
-  const withClaim = (operation: string, claim: Claim | null): Claim => {
-    if (!claim) throw new AccountDataUnavailable(operation, "no_claim");
-    return claim;
-  };
 
   return {
     async addNotifySignup(rawEmail, consent = false) {
@@ -199,6 +206,12 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
       return { ...summary(row, row.report.score), report: row.report };
     },
 
+    async getSavedReportHost(accountId, reportId) {
+      if (!isUuid(accountId) || !isUuid(reportId)) return null;
+      const row = await call<{ host: string }>("getSavedReportHost", () => reports().select("host").eq("account_id", accountId).eq("id", reportId).maybeSingle());
+      return row?.host ?? null;
+    },
+
     async deleteAccountData(rawId) {
       const accountId = requireAccountId(rawId);
       // One database function, one transaction (supabase/migrations/*_delete_account_data.sql).
@@ -207,11 +220,10 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
 
     async createClaim(rawId, input) {
       const accountId = requireAccountId(rawId);
-      requireClaimInput(input);
-      const r = await claimRpc("createClaim", "create_claim", { p_account_id: accountId, p_host: input.host, p_method: input.method, p_token_hash: input.tokenHash, p_max_pending: MAX_PENDING_CLAIMS });
-      if (r.outcome === "full") return { outcome: "full" };
-      if (r.outcome === "created" || r.outcome === "exists") return { outcome: r.outcome, claim: withClaim("createClaim", r.claim) };
-      throw new AccountDataUnavailable("createClaim", "bad_outcome");
+      requireNewClaim(input);
+      const args = { p_account_id: accountId, p_host: input.host, p_method: input.method, p_token_hash: input.tokenHash, p_max_pending: MAX_PENDING_CLAIMS };
+      const r = await claimRpc("createClaim", "create_claim", args, ["created", "exists"], ["full"]);
+      return "claim" in r ? { outcome: r.outcome, claim: r.claim } : r;
     },
 
     async listClaims(accountId) {
@@ -228,12 +240,12 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
 
     async restartClaim(rawId, claimId, input) {
       const accountId = requireAccountId(rawId);
-      requireClaimInput(input, false);
+      requireClaimToken(input);
       if (!isUuid(claimId)) return { outcome: "missing" };
-      const r = await claimRpc("restartClaim", "restart_claim", { p_claim_id: claimId, p_account_id: accountId, p_method: input.method, p_token_hash: input.tokenHash, p_max_pending: MAX_PENDING_CLAIMS });
-      if (r.outcome === "full" || r.outcome === "missing") return { outcome: r.outcome };
-      if (r.outcome === "restarted" || r.outcome === "verified" || r.outcome === "superseded") return { outcome: r.outcome, claim: withClaim("restartClaim", r.claim) };
-      throw new AccountDataUnavailable("restartClaim", "bad_outcome");
+      const args = { p_claim_id: claimId, p_account_id: accountId, p_method: input.method, p_token_hash: input.tokenHash, p_max_pending: MAX_PENDING_CLAIMS };
+      const r = await claimRpc("restartClaim", "restart_claim", args, ["restarted", "verified", "superseded"], ["full", "missing"]);
+      if (!("claim" in r)) return r;
+      return r.outcome === "restarted" ? { outcome: "restarted", claim: r.claim } : { outcome: r.outcome, claim: r.claim };
     },
 
     async recordClaimFailure(claimId, input) {
@@ -245,20 +257,16 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
         p_detail: input.detail,
         p_now: iso(input.checkedAt),
         p_lapse_after: CLAIM_LAPSE_AFTER,
-      });
-      if (r.outcome === "missing") return { outcome: "missing" };
-      if (r.outcome === "updated" || r.outcome === "stale" || r.outcome === "superseded") return { outcome: r.outcome, claim: withClaim("recordClaimFailure", r.claim) };
-      throw new AccountDataUnavailable("recordClaimFailure", "bad_outcome");
+      }, ["updated", "stale", "superseded"], ["missing"]);
+      return "claim" in r ? { outcome: r.outcome, claim: r.claim } : r;
     },
 
     async verifyClaim(claimId, input) {
       if (!isUuid(claimId)) return { outcome: "missing" };
       // One database function, one transaction: the host moves with the verification (supabase/migrations/*_claims.sql).
-      const r = await claimRpc("verifyClaim", "verify_claim", { p_claim_id: claimId, p_token_hash: input.tokenHash, p_now: iso(input.checkedAt) });
-      if (r.outcome === "missing") return { outcome: "missing" };
-      if (r.outcome === "verified") return { outcome: "verified", claim: withClaim("verifyClaim", r.claim), movedFrom: r.movedFrom };
-      if (r.outcome === "stale" || r.outcome === "superseded") return { outcome: r.outcome, claim: withClaim("verifyClaim", r.claim) };
-      throw new AccountDataUnavailable("verifyClaim", "bad_outcome");
+      const r = await claimRpc("verifyClaim", "verify_claim", { p_claim_id: claimId, p_token_hash: input.tokenHash, p_now: iso(input.checkedAt) }, ["verified", "stale", "superseded"], ["missing"]);
+      if (!("claim" in r)) return r;
+      return r.outcome === "verified" ? { outcome: "verified", claim: r.claim, movedFrom: r.movedFrom } : { outcome: r.outcome, claim: r.claim };
     },
 
     async listClaimsDueForRecheck(rawNow, limit) {

@@ -8,7 +8,7 @@ import type { AuthGateway } from "@/lib/auth/gateway";
 import { createFixtureAuth } from "@/lib/test-fixtures/auth";
 import { createAccountMemoryBacking, createMemoryAccountData } from "@/lib/accounts/memory";
 import { ACCOUNT_TEXT } from "@/lib/site/account-texts";
-import { fakeClock, PUBLIC_ORIGIN, testDeps } from "../helpers/server-deps";
+import { fakeClock, PUBLIC_ORIGIN, storeAnalysis, testDeps } from "../helpers/server-deps";
 
 const REPORT = { host: "d.example", report: { score: 12, host: "d.example" }, fetchedAt: "2026-11-22T08:00:00.000Z" };
 
@@ -67,7 +67,7 @@ describe("account deletion", () => {
   // P3-R7. Fails if the account's list of analyses (the claim choices) outlives the account.
   it("deletes the account's list of analyses", async () => {
     const s = await signedIn();
-    await indexAccountAnalyses(s.d, s.userId, ["a".repeat(32)]);
+    await indexAccountAnalyses(s.d, s.userId, [await storeAnalysis(s.d, { inputOrigin: "https://gone.example.com", accountId: s.userId })]);
     expect([...s.d.backing.values.keys()]).toContain(`account-analyses:${s.userId}`);
     expect(await deleteAccount(s.d, s.account)).toBe("deleted");
     expect([...s.d.backing.values.keys()].filter((k) => k.startsWith("account-analyses:"))).toEqual([]);

@@ -5,7 +5,7 @@ import { ACCOUNT_TEXT, SAVE_REPORT_TEXT, SAVED_REPORT_TEXT } from "@/lib/site/ac
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
 import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture, mockOtari } from "./support/agent";
-import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST } from "./support/claims";
+import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockCheckLimit } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 
 type Locator = import("@playwright/test").Locator;
@@ -73,6 +73,15 @@ for (const colorScheme of ["light", "dark"] as const) {
 
 type Page = import("@playwright/test").Page;
 
+/** Every target is visible with a WCAG contrast of at least 4.5 against its background. */
+async function readable(targets: Record<string, Locator>): Promise<void> {
+  for (const [name, el] of Object.entries(targets)) {
+    await expect(el, name).toBeVisible();
+    const { ratio, color, background } = await contrastOf(el);
+    expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
+  }
+}
+
 // The pricing, privacy, terms and unsubscribe pages (confirm and invalid-link states) use the page tokens only;
 // every text kind on them must stay readable in both schemes. Each page adds its own targets to the shared ones.
 const TEXT_PAGES: Record<string, (page: Page) => Record<string, Locator>> = {
@@ -128,16 +137,9 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.getByRole("button", { name: SAVE_REPORT_TEXT.button }).click();
     const saved = page.getByTestId("save-report").getByRole("status");
     await expect(saved).toBeVisible();
-    const check = async (targets: Record<string, Locator>) => {
-      for (const [name, el] of Object.entries(targets)) {
-        await expect(el, name).toBeVisible();
-        const { ratio, color, background } = await contrastOf(el);
-        expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
-      }
-    };
-    await check({ saved, openAccount: page.getByRole("link", { name: SAVE_REPORT_TEXT.openAccount }) });
+    await readable({ saved, openAccount: page.getByRole("link", { name: SAVE_REPORT_TEXT.openAccount }) });
     await page.goto("/account?delete=failed");
-    await check({
+    await readable({
       heading: page.getByRole("heading", { level: 1 }),
       notice: page.getByText(ACCOUNT_TEXT.deleteFailed),
       email: page.getByTestId("account-email"),
@@ -147,20 +149,12 @@ for (const colorScheme of ["light", "dark"] as const) {
       confirm: page.getByText(ACCOUNT_TEXT.deleteConfirm),
     });
     await page.getByTestId("saved-reports").getByRole("link").first().click();
-    await check({ heading: page.getByRole("heading", { level: 1 }), back: page.getByRole("link", { name: SAVED_REPORT_TEXT.back }), score: page.getByTestId("score-total") });
+    await readable({ heading: page.getByRole("heading", { level: 1 }), back: page.getByRole("link", { name: SAVED_REPORT_TEXT.back }), score: page.getByTestId("score-total") });
   });
 }
 
 // The sign-in form's answers, the confirm page (with and without the other-browser warning) and the save error.
 for (const colorScheme of ["light", "dark"] as const) {
-  const readable = async (targets: Record<string, Locator>) => {
-    for (const [name, el] of Object.entries(targets)) {
-      await expect(el, name).toBeVisible();
-      const { ratio, color, background } = await contrastOf(el);
-      expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
-    }
-  };
-
   for (const state of ["sent", "limit", "error"] as const) {
     test(`the sign-in form's ${state} state is readable in ${colorScheme} mode`, async ({ page }) => {
       await page.emulateMedia({ colorScheme });
@@ -194,13 +188,6 @@ for (const colorScheme of ["light", "dark"] as const) {
     test.setTimeout(180_000);
     await page.emulateMedia({ colorScheme });
     const { other, close } = await claimStates(page, browser, `theme-${colorScheme}`);
-    const readable = async (targets: Record<string, Locator>) => {
-      for (const [name, el] of Object.entries(targets)) {
-        await expect(el, name).toBeVisible();
-        const { ratio, color, background } = await contrastOf(el);
-        expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
-      }
-    };
     const fresh = claimPanel(page, FRESH_HOST);
     const missing = claimPanel(page, MISSING_HOST);
     await readable({
@@ -222,7 +209,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       source: page.getByLabel(CLAIMS_TEXT.sourceLabel),
       claim: page.getByRole("button", { name: CLAIMS_TEXT.claimButton }),
     });
-    await page.route("**/api/claims/check", (route) => route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: "limit", message: CLAIMS_TEXT.limit(new Date(Date.now() + 3600_000)), retryAt: new Date(Date.now() + 3600_000).toISOString() }) }));
+    await mockCheckLimit(page);
     await fresh.getByRole("button", { name: CLAIMS_TEXT.checkAgain }).click();
     await readable({ limit: fresh.getByRole("alert") });
     await other.emulateMedia({ colorScheme });

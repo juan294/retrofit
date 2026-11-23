@@ -1,17 +1,17 @@
 import { CLAIM_CHANGES_PER_HOUR, CLAIM_CHECKS_PER_HOUR } from "@/lib/accounts/limits";
 import { readAccount, type Account } from "@/lib/accounts/session";
 import { isSameOrigin } from "@/lib/analysis/run";
-import { claimPageUrl, newClaimToken } from "@/lib/claims/host";
+import { claimPageUrl } from "@/lib/claims/host";
 import { hostOfSource, parseClaimSource } from "@/lib/claims/sources";
 import { runClaimCheck } from "@/lib/claims/verify";
 import { claimView } from "@/lib/claims/view";
 import type { Claim, ClaimMethod } from "@/lib/accounts/data";
 import { countClientWindow } from "@/lib/fetch/limits";
-import { sha256Hex } from "@/lib/security/tokens";
+import { newToken, sha256Hex } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { CLAIMS_TEXT as T } from "@/lib/site/claims-texts";
 import { readSmallBody } from "./body";
-import { json } from "./json";
+import { json, limitOr429 } from "./json";
 
 /**
  * The claim API behind the account page's claim panels (phase-3.md). Every route: POST, same-origin
@@ -60,11 +60,12 @@ async function ownClaim(deps: Deps, account: Account, fields: Fields): Promise<C
 
 /** Counts one call in an hourly window; a 429 response with `text` past `limit`. */
 async function countIn(deps: Deps, prefix: string, limit: number, key: string, text: (retryAt: Date) => string): Promise<Response | null> {
-  const counted = await countClientWindow(deps.store, prefix, limit, key, deps.clock());
-  if (counted.ok) return null;
-  const retryAt = new Date(counted.retryAt);
-  return json(429, { error: "limit", message: text(retryAt), retryAt: retryAt.toISOString() });
+  return limitOr429(await countClientWindow(deps.store, prefix, limit, key, deps.clock()), text);
 }
+
+/** 409 for a claim whose state refuses the action: verified (Start over) or superseded (terminal). */
+const refused = (deps: Deps, claim: Claim) =>
+  json(409, { error: claim.status, message: claim.status === "verified" ? T.verifiedNoRestart : T.supersededFinal, claim: view(deps, claim) });
 
 /**
  * Counts one check of the account's claim for `host` (CLAIM_CHECKS_PER_HOUR per account and host, so
@@ -106,7 +107,7 @@ export function handleCreateClaim(request: Request, deps: Deps): Promise<Respons
     }
     const limited = await countChange(deps, account);
     if (limited) return limited;
-    const token = newClaimToken(host, deps.config);
+    const token = newToken();
     const created = await deps.accounts.createClaim(account.accountId, { host, method, tokenHash: sha256Hex(token) });
     if (created.outcome === "full") return json(409, { error: "full", message: T.full });
     if (created.outcome === "exists") return json(409, { error: "exists", message: T.exists, claim: view(deps, created.claim) });
@@ -123,10 +124,10 @@ export function handleCheckClaim(request: Request, deps: Deps): Promise<Response
   return guarded("/api/claims/check", request, deps, async (account, fields) => {
     const claim = await ownClaim(deps, account, fields);
     if (claim instanceof Response) return claim;
-    if (claim.status === "superseded") return json(409, { error: "superseded", message: T.supersededFinal, claim: view(deps, claim) });
+    if (claim.status === "superseded") return refused(deps, claim);
     const limited = await countCheck(deps, account, claim.host);
     if (limited) return limited;
-    const { claim: after, checked } = await runClaimCheck(deps, claim, { deadline: { notAfter: deps.clock() + CHECK_DEADLINE_MS, maxWaitMs: CHECK_DEADLINE_MS, onTimeout: "record" } });
+    const { claim: after, checked } = await runClaimCheck(deps, claim, { notAfter: deps.clock() + CHECK_DEADLINE_MS, maxWaitMs: CHECK_DEADLINE_MS, onTimeout: "record" });
     const shown = view(deps, after);
     return json(200, { claim: shown, message: checked ? (shown.reason ?? shown.statusText) : T.notChecked });
   });
@@ -143,15 +144,14 @@ export function handleStartOverClaim(request: Request, deps: Deps): Promise<Resp
     if (claim instanceof Response) return claim;
     const method = fields.method === undefined ? claim.method : methodOf(fields.method);
     if (!method) return json(400, { error: "invalid", message: T.invalid });
-    if (claim.status === "verified") return json(409, { error: "verified", message: T.verifiedNoRestart, claim: view(deps, claim) });
-    if (claim.status === "superseded") return json(409, { error: "superseded", message: T.supersededFinal, claim: view(deps, claim) });
+    if (claim.status === "verified" || claim.status === "superseded") return refused(deps, claim);
     const limited = (await countChange(deps, account)) ?? (await countCheck(deps, account, claim.host));
     if (limited) return limited;
-    const token = newClaimToken(claim.host, deps.config);
+    const token = newToken();
     const r = await deps.accounts.restartClaim(account.accountId, claim.id, { method, tokenHash: sha256Hex(token) });
     if (r.outcome === "restarted") return json(200, { claim: view(deps, r.claim), token, message: T.restarted });
     // A check or another tab changed the claim after it was read.
-    if ("claim" in r) return json(409, { error: r.outcome, message: r.outcome === "verified" ? T.verifiedNoRestart : T.supersededFinal, claim: view(deps, r.claim) });
+    if ("claim" in r) return refused(deps, r.claim);
     return r.outcome === "missing" ? notFound() : json(409, { error: "full", message: T.full });
   });
 }

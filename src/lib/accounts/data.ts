@@ -1,3 +1,5 @@
+import { isNormalizedHost } from "@/lib/fetch/url";
+import { SHA256_HEX_PATTERN } from "@/lib/security/tokens";
 import { ServiceUnavailable } from "@/lib/supabase/client";
 
 /**
@@ -195,6 +197,8 @@ export interface AccountData {
   listSavedReports(accountId: string): Promise<SavedReportSummary[]>;
   /** One saved report of the account, or null for another account's, an unknown or a malformed id. */
   getSavedReport(accountId: string, reportId: string): Promise<SavedReport | null>;
+  /** The host of one saved report of the account (without reading the report), or null as getSavedReport. */
+  getSavedReportHost(accountId: string, reportId: string): Promise<string | null>;
 
   /**
    * Deletes every row the account owns (claims, published sites, saved reports, API keys, billing
@@ -255,13 +259,16 @@ export function requireAccountId(accountId: string): string {
   return accountId;
 }
 
-const CLAIM_HOST = /^[a-z0-9.-]{1,253}(:[0-9]{1,5})?$/;
-
-/** The claim rule of the contract above: a lower-case host (with an optional port), a known method and a SHA-256 hex hash. */
-export function requireClaimInput(input: Partial<NewClaimInput>, needHost = true): void {
-  if (needHost && (typeof input.host !== "string" || !CLAIM_HOST.test(input.host))) throw new RangeError("host must be a lower-case host name");
+/** The token rule of the contract above (create and Start over): a known method and a SHA-256 hex hash. */
+export function requireClaimToken(input: Omit<NewClaimInput, "host">): void {
   if (input.method !== "meta" && input.method !== "dns") throw new RangeError("method must be meta or dns");
-  if (typeof input.tokenHash !== "string" || !/^[0-9a-f]{64}$/.test(input.tokenHash)) throw new RangeError("tokenHash must be SHA-256 hex");
+  if (typeof input.tokenHash !== "string" || !SHA256_HEX_PATTERN.test(input.tokenHash)) throw new RangeError("tokenHash must be SHA-256 hex");
+}
+
+/** The create rule of the contract above: a normalized host (isNormalizedHost) and requireClaimToken. */
+export function requireNewClaim(input: NewClaimInput): void {
+  if (typeof input.host !== "string" || !isNormalizedHost(input.host)) throw new RangeError("host must be a lower-case host name");
+  requireClaimToken(input);
 }
 
 /** The save rule of the contract above. Returns the normalized fetch time (ISO 8601). */

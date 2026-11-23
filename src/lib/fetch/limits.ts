@@ -1,6 +1,7 @@
 import { createHash, createHmac } from "node:crypto";
 import type { Config } from "@/lib/config";
 import type { Store } from "@/lib/store/types";
+import { realSleep } from "./timers";
 
 /**
  * Per-client limits. A client is identified by SHA-256 of its IP address and a
@@ -85,7 +86,6 @@ const DECISION_WAIT_MS = 50;
 /** Longest real time a duplicate waits for another caller's decision, store round trips included. */
 export const DECISION_WAIT_LIMIT_MS = 1000;
 
-const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** `undecided`: another caller for the same marker had not decided within DECISION_WAIT_LIMIT_MS. */
 export type CountDecision = "admitted" | "refused" | "undecided";

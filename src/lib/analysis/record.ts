@@ -3,6 +3,7 @@ import type { Config } from "@/lib/config";
 import { isQueueExpired, readJobMarkingStale, type CrawlFailure, type CrawlJob, type JobDeps } from "@/lib/crawl/jobs";
 import type { Snapshot } from "@/lib/snapshot/types";
 import type { Store } from "@/lib/store/types";
+import { setAccountAnalysisHost } from "./account-list";
 import { visitorFailure, visitorTexts } from "./texts";
 
 /**
@@ -87,6 +88,15 @@ export async function getAnalysis<R = unknown>(store: Store, id: string): Promis
   return store.get<Analysis<R>>(analysisKey(id));
 }
 
+/** The life of an account's analysis list (account-list.ts): every analysis it lists has left the Store by then. */
+export const accountListTtl = (config: Pick<Config, "analysisTtlS">): number => config.analysisTtlS + EXPIRED_GRACE_S;
+
+/** The host an analysis scored (its snapshot's host, after redirects), or before the score exists the typed origin's host. */
+export function analysisHost(analysis: Pick<Analysis, "inputOrigin" | "snapshot">): string {
+  const scored = (analysis.snapshot as { host?: unknown } | undefined)?.host;
+  return typeof scored === "string" ? scored : new URL(analysis.inputOrigin).host;
+}
+
 export function isExpired(a: Pick<Analysis, "expiresAt">, now: number): boolean {
   return now >= a.expiresAt;
 }
@@ -136,6 +146,13 @@ export async function readAnalysisView<R>(deps: JobDeps, analysis: Analysis<R>):
     // next read copies again onto the attached record.
     await deps.store.compareAndSet(analysisKey(analysis.id), analysis, next, storeTtl(next, now));
     current = next;
+    // The scored host is known now. It can differ from the typed one (a redirect), so the account's
+    // list entry follows it; a failure costs only that entry's host, so it is logged.
+    if (job.status === "ready" && next.accountId) {
+      await setAccountAnalysisHost(deps.store, next.accountId, next.id, analysisHost(next), accountListTtl(deps.config)).catch((e: unknown) => {
+        console.error("Account analysis host failed:", e instanceof Error ? e.name : "unknown error");
+      });
+    }
   }
   if (joinedTo) return { status: "crawling", step: "joined", analysis: current };
   return { ...viewOfJob(job, deps.config, now), analysis: current };

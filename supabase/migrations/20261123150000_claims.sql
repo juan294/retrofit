@@ -114,6 +114,7 @@ set search_path = ''
 as $$
 declare
   v_claim public.site_claims;
+  v_lapses boolean;
 begin
   if p_claim_id is null or p_token_hash is null or p_result is null or p_now is null or p_lapse_after is null then
     raise exception 'record_claim_failure: every argument except p_detail is required' using errcode = '22004';
@@ -132,10 +133,11 @@ begin
   if v_claim.token_hash <> p_token_hash then
     return pg_catalog.jsonb_build_object('outcome', 'stale', 'claim', public.claim_json(v_claim));
   end if;
+  v_lapses := v_claim.status in ('verified', 'lapsed') and v_claim.failures + 1 >= p_lapse_after;
   update public.site_claims c
   set failures = c.failures + 1, last_checked_at = p_now, last_result = p_result, last_detail = p_detail,
-      status = case when c.status in ('verified', 'lapsed') and c.failures + 1 >= p_lapse_after then 'lapsed' else c.status end,
-      lapsed_at = case when c.status in ('verified', 'lapsed') and c.failures + 1 >= p_lapse_after then coalesce(c.lapsed_at, p_now) else null end
+      status = case when v_lapses then 'lapsed' else c.status end,
+      lapsed_at = case when v_lapses then coalesce(c.lapsed_at, p_now) else null end
   where c.id = p_claim_id
   returning * into v_claim;
   return pg_catalog.jsonb_build_object('outcome', 'updated', 'claim', public.claim_json(v_claim));
@@ -201,13 +203,21 @@ stable
 security invoker
 set search_path = ''
 as $$
+  -- Each branch is ordered and limited on its own, so the (status, last_checked_at) index serves it.
   select coalesce(pg_catalog.jsonb_agg(public.claim_json(d.claim) order by d.rank, d.checked nulls first, d.id), '[]'::jsonb)
   from (
-    select c as claim, case when c.status = 'verified' then 0 else 1 end as rank, c.last_checked_at as checked, c.id
-    from public.site_claims c
-    where (c.status = 'verified' and (c.last_checked_at is null or c.last_checked_at < p_checked_before))
-       or (c.status = 'lapsed' and (c.last_checked_at is null or c.last_checked_at <
-             case when c.lapsed_at < p_slow_lapsed_before then least(p_checked_before, p_slow_checked_before) else p_checked_before end))
+    (select c as claim, 0 as rank, c.last_checked_at as checked, c.id
+     from public.site_claims c
+     where c.status = 'verified' and (c.last_checked_at is null or c.last_checked_at < p_checked_before)
+     order by c.last_checked_at nulls first, c.id
+     limit greatest(p_limit, 0))
+    union all
+    (select c, 1, c.last_checked_at, c.id
+     from public.site_claims c
+     where c.status = 'lapsed' and (c.last_checked_at is null or c.last_checked_at <
+       case when c.lapsed_at < p_slow_lapsed_before then least(p_checked_before, p_slow_checked_before) else p_checked_before end)
+     order by c.last_checked_at nulls first, c.id
+     limit greatest(p_limit, 0))
     order by 2, 3 nulls first, 4
     limit greatest(p_limit, 0)
   ) d;

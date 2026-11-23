@@ -67,7 +67,7 @@ export async function startAnalysis(
   // one under its account (the account page offers it for a claim); a failure there costs only
   // that list, so it is logged and the analysis goes on.
   const analysis = await createAnalysis(deps, { ownerHash: o.ownerHash, jobId: crawl.jobId, inputOrigin: url.origin, accountId: o.accountId });
-  const listed = (o.accountId ? indexAccountAnalyses(deps, o.accountId, [analysis.id]) : indexVisitorAnalysis(deps, o.ownerHash, analysis.id)).catch((e: unknown) => {
+  const listed = (o.accountId ? indexAccountAnalyses(deps, o.accountId, [analysis]) : indexVisitorAnalysis(deps, o.ownerHash, analysis.id)).catch((e: unknown) => {
     console.error(`${o.accountId ? "Account" : "Visitor"} analysis list failed:`, e instanceof Error ? e.name : "unknown error");
   });
 

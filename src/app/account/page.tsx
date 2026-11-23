@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { ClaimsSection } from "@/components/claims/ClaimsSection";
 import { SitePage } from "@/components/SitePage";
 import type { SavedReportSummary } from "@/lib/accounts/data";
-import { claimOptions, type ClaimOption } from "@/lib/claims/sources";
+import { listAccountAnalyses } from "@/lib/analysis/account-list";
+import { CLAIM_RECENT_ANALYSES, claimOptions, type ClaimOption } from "@/lib/claims/sources";
 import { claimView, type ClaimView } from "@/lib/claims/view";
 import { signInHref } from "@/lib/accounts/return-to";
 import { ACCOUNT_COOKIE, readAccountByToken, type Account } from "@/lib/accounts/session";
@@ -30,10 +31,14 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   try {
     account = await readAccountByToken((await cookies()).get(ACCOUNT_COOKIE)?.value, deps);
     if (account) {
-      const [saved, held] = await Promise.all([deps.accounts.listSavedReports(account.accountId), deps.accounts.listClaims(account.accountId)]);
+      const [saved, held, analyses] = await Promise.all([
+        deps.accounts.listSavedReports(account.accountId),
+        deps.accounts.listClaims(account.accountId),
+        listAccountAnalyses(deps, account.accountId, CLAIM_RECENT_ANALYSES),
+      ]);
       reports = saved;
       claims = held.map((c) => claimView(c, deps.config));
-      options = await claimOptions(deps, account.accountId, saved, held);
+      options = claimOptions(analyses, saved, held);
     }
   } catch (e) {
     console.error("GET /account failed:", e instanceof Error ? e.name : "unknown error");

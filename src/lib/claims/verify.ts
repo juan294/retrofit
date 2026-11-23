@@ -5,7 +5,9 @@ import { CrawlDelayTooLong, FetchTimeoutError, NotPublicError, RobotsBlocked, Ro
 import { guardedFetch } from "@/lib/fetch/http";
 import { sha256Hex } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
-import { CLAIM_META_NAME, CLAIM_TXT_PREFIX, claimHostname, claimPageUrl, claimRecordName } from "./host";
+import { beforeDeadline, TIMED_OUT } from "@/lib/fetch/timers";
+import { claimHostname, claimPageUrl, claimRecordName } from "./host";
+import { CLAIM_META_NAME, CLAIM_TXT_PREFIX } from "./names";
 import { isNoRecord } from "./txt";
 
 /**
@@ -41,14 +43,8 @@ export interface CheckDeadline {
   readonly onTimeout: "record" | "defer";
 }
 
-export interface CheckOptions {
-  readonly deadline?: CheckDeadline;
-}
-
 export type ClaimCheckDeps = Pick<ServerDeps, "config" | "fetch" | "txt" | "clock" | "sleep">;
 
-/** A timer that never keeps the process alive (a lookup that answered leaves it running). */
-const realSleep = (ms: number) => new Promise<void>((resolve) => void setTimeout(resolve, ms).unref?.());
 /** HTML's ASCII whitespace (the spec's "strip leading and trailing ASCII whitespace"). */
 const ASCII_SPACE = /^[\t\n\f\r ]+|[\t\n\f\r ]+$/g;
 
@@ -61,7 +57,7 @@ function anyMatches(values: readonly string[], tokenHash: string): boolean {
   return found;
 }
 
-async function checkMeta(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "tokenHash">, opts: CheckOptions): Promise<CheckOutcome> {
+async function checkMeta(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "tokenHash">, deadline: CheckDeadline | undefined): Promise<CheckOutcome> {
   let url: URL;
   try {
     url = claimPageUrl(claim.host, deps.config);
@@ -70,13 +66,9 @@ async function checkMeta(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "toke
   }
   let res;
   try {
-    res = await guardedFetch(url, deps.fetch, { notAfter: opts.deadline?.notAfter });
+    res = await guardedFetch(url, deps.fetch, { notAfter: deadline?.notAfter });
   } catch (e) {
-    if (e instanceof CrawlDelayTooLong) {
-      const delay = await deps.fetch.robots.crawlDelay(url.origin).catch(() => undefined);
-      if (delay !== undefined && opts.deadline && delay * 1000 > opts.deadline.maxWaitMs) return fail("crawl_delay", Math.round(delay));
-      return { passed: null, deferred: true };
-    }
+    if (e instanceof CrawlDelayTooLong) return deadline && e.intervalMs > deadline.maxWaitMs ? fail("crawl_delay", Math.round(e.intervalMs / 1000)) : { passed: null, deferred: true };
     if (e instanceof RobotsBlocked) return fail("robots_blocked");
     if (e instanceof RobotsUnavailable) return fail("robots_unavailable");
     if (e instanceof FetchTimeoutError) return fail("timeout");
@@ -97,21 +89,13 @@ async function checkMeta(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "toke
   return anyMatches(values, claim.tokenHash) ? { passed: true } : fail("tag_mismatch", values.length);
 }
 
-const GAVE_UP: unique symbol = Symbol("gave up");
-
-async function checkDns(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "tokenHash">, opts: CheckOptions): Promise<CheckOutcome> {
+async function checkDns(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "tokenHash">, deadline: CheckDeadline | undefined): Promise<CheckOutcome> {
   let records: string[][];
   try {
     const lookup = deps.txt(claimRecordName(claim.host));
-    const { deadline } = opts;
-    if (deadline) {
-      lookup.catch(() => {});
-      const answer = await Promise.race([lookup, (deps.sleep ?? realSleep)(Math.max(0, deadline.notAfter - deps.clock())).then((): typeof GAVE_UP => GAVE_UP)]);
-      if (answer === GAVE_UP) return deadline.onTimeout === "record" ? fail("dns_timeout") : { passed: null, deferred: true };
-      records = answer;
-    } else {
-      records = await lookup;
-    }
+    const answer = deadline ? await beforeDeadline(lookup, Math.max(0, deadline.notAfter - deps.clock()), deps.sleep) : await lookup;
+    if (answer === TIMED_OUT) return deadline?.onTimeout === "record" ? fail("dns_timeout") : { passed: null, deferred: true };
+    records = answer;
   } catch (e) {
     return fail(isNoRecord(e) ? "record_missing" : "dns_failed");
   }
@@ -122,13 +106,13 @@ async function checkDns(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "token
 }
 
 /** One check of the claim's current token by its method. Never throws for a site or DNS failure. */
-export async function checkClaim(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "method" | "tokenHash">, opts: CheckOptions = {}): Promise<CheckOutcome> {
+export async function checkClaim(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "method" | "tokenHash">, deadline?: CheckDeadline): Promise<CheckOutcome> {
   try {
     claimHostname(claim.host);
   } catch {
     return fail("not_public");
   }
-  return claim.method === "meta" ? checkMeta(deps, claim, opts) : checkDns(deps, claim, opts);
+  return claim.method === "meta" ? checkMeta(deps, claim, deadline) : checkDns(deps, claim, deadline);
 }
 
 /**
@@ -138,9 +122,9 @@ export async function checkClaim(deps: ClaimCheckDeps, claim: Pick<Claim, "host"
  * or the check was deferred. A verification by another account moves the host (verifyClaim).
  * Throws when the account data is unavailable.
  */
-export async function runClaimCheck(deps: ClaimCheckDeps & Pick<ServerDeps, "accounts" | "clock">, claim: Claim, opts: CheckOptions = {}): Promise<{ claim: Claim; checked: boolean }> {
+export async function runClaimCheck(deps: ClaimCheckDeps & Pick<ServerDeps, "accounts">, claim: Claim, deadline?: CheckDeadline): Promise<{ claim: Claim; checked: boolean }> {
   if (claim.status === "superseded") return { claim, checked: false };
-  const outcome = await checkClaim(deps, claim, opts);
+  const outcome = await checkClaim(deps, claim, deadline);
   if (outcome.passed === null) return { claim, checked: false };
   const checkedAt = new Date(deps.clock()).toISOString();
   const recorded = outcome.passed

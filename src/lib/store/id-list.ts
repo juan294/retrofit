@@ -1,13 +1,14 @@
 import type { Store } from "./types";
 
 /**
- * A small versioned list of ids in one Store value (the visitor's analyses, an
- * account's sessions). The Store has no secondary index, so these lists are
- * how Retrofit finds the records that belong to one visitor or one account.
+ * A small versioned list in one Store value: ids (the visitor's analyses, an
+ * account's sessions) or small entries (an account's analyses). The Store has
+ * no secondary index, so these lists are how Retrofit finds the records that
+ * belong to one visitor or one account.
  */
-export interface IdList {
+export interface IdList<T = string> {
   readonly version: number;
-  readonly ids: readonly string[];
+  readonly ids: readonly T[];
 }
 
 const ATTEMPTS = 5;
@@ -17,29 +18,29 @@ const ATTEMPTS = 5;
  * so two writers never lose each other's ids. Every call also renews the
  * list's TTL to `ttlSeconds`. Returns the ids before and after the change.
  */
-export async function updateIdList(
+export async function updateIdList<T = string>(
   store: Store,
   key: string,
-  change: (ids: readonly string[]) => readonly string[],
+  change: (ids: readonly T[]) => readonly T[],
   ttlSeconds: number,
-): Promise<{ before: readonly string[]; after: readonly string[] }> {
+): Promise<{ before: readonly T[]; after: readonly T[] }> {
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
-    let current = await store.get<IdList>(key);
+    let current = await store.get<IdList<T>>(key);
     if (!current) {
-      const first: IdList = { version: 1, ids: change([]) };
-      const put = await store.putIfAbsent<IdList>(key, first, ttlSeconds);
+      const first: IdList<T> = { version: 1, ids: change([]) };
+      const put = await store.putIfAbsent<IdList<T>>(key, first, ttlSeconds);
       if (put.created) return { before: [], after: first.ids };
       current = put.value;
     }
-    const next: IdList = { version: current.version + 1, ids: change(current.ids) };
+    const next: IdList<T> = { version: current.version + 1, ids: change(current.ids) };
     if (await store.compareAndSet(key, current, next, ttlSeconds)) return { before: current.ids, after: next.ids };
   }
   throw new Error(`id list ${key.split(":")[0]} kept changing`);
 }
 
 /** The list's ids, or none. */
-export async function readIdList(store: Store, key: string): Promise<readonly string[]> {
-  return (await store.get<IdList>(key))?.ids ?? [];
+export async function readIdList<T = string>(store: Store, key: string): Promise<readonly T[]> {
+  return (await store.get<IdList<T>>(key))?.ids ?? [];
 }
 
 /** Adds `id` at the end (moving it there when present) and keeps the newest `max` ids. */

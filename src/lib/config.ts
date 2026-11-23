@@ -41,6 +41,8 @@ export interface Config {
    * 2027-01-19T00:00:00Z, the day after judging ends). Before it every visitor keeps open access.
    */
   readonly billingStart: number;
+  /** Bearer secret of every Vercel Cron route (CRON_SECRET). Required on Vercel; null off Vercel without it (the crons refuse). */
+  readonly cronSecret: string | null;
   /** Phase 6: Retrofit's free inference path. */
   readonly free: FreeConfig;
   /** Phase 7: the Supabase store. Required on Vercel; null off Vercel without it (memory store). */
@@ -91,7 +93,6 @@ export interface FreeConfig {
   readonly keyPublic: string | null;
   readonly keyJudge: string | null;
   readonly judgeCode: string | null;
-  readonly cronSecret: string | null;
   readonly alertGithubToken: string | null;
   readonly alertRepo: string;
 }
@@ -184,6 +185,9 @@ export function loadConfig(env: Env): Config {
 
   const publicOrigin = parseOrigin("PUBLIC_ORIGIN", env.PUBLIC_ORIGIN ?? "http://127.0.0.1:3010");
 
+  const cronSecret = env.CRON_SECRET?.trim() || null;
+  if (onVercel && !cronSecret) throw new ConfigError("CRON_SECRET", "is required on Vercel");
+
   const free = loadFreeConfig(env, onVercel);
   if (free.upstreamTimeoutMs > 50_000) throw new ConfigError("FREE_UPSTREAM_TIMEOUT_MS", "must be at most 50000 (maxDuration 60 s)");
 
@@ -191,7 +195,7 @@ export function loadConfig(env: Env): Config {
 
   const billingStart = parseInstant(env, "BILLING_START", "2027-01-19T00:00:00Z");
 
-  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, free, supabase });
+  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, cronSecret, free, supabase });
 }
 
 /**
@@ -307,7 +311,6 @@ export function loadFreeConfig(env: Env, onVercel: boolean): FreeConfig {
     keyPublic,
     keyJudge,
     judgeCode,
-    cronSecret: secret("CRON_SECRET"),
     alertGithubToken: secret("ALERT_GITHUB_TOKEN"),
     alertRepo: "juan294/retrofit",
   });

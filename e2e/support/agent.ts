@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect } from "../fixtures/csp";
 import { fixtureOrigin } from "./global-setup";
 import { installMockRouter, lastToolResult, systemText, toolNames, type Script } from "./mock-router";
@@ -28,13 +28,13 @@ export const previewScript: Script = (body) => {
   return { text: "No tools." };
 };
 
-/** Analyzes a fixture site through the landing form and waits for the score. */
-export async function analyzeFixture(page: Page, host: string): Promise<string> {
+/** Analyzes a fixture site through the landing form and waits for the score (or for `settled`, such as a failure text). */
+export async function analyzeFixture(page: Page, host: string, settled: (page: Page) => Locator = (p) => p.getByTestId("score-total")): Promise<string> {
   await page.goto("/");
   await page.getByLabel("Your website address").fill(fixtureOrigin(host));
   await page.getByRole("button", { name: "Score my site" }).click();
   await expect(page).toHaveURL(/\/r\/[0-9a-f]{32}$/);
-  await expect(page.getByTestId("score-total")).toBeVisible({ timeout: 30_000 });
+  await expect(settled(page)).toBeVisible({ timeout: 30_000 });
   return new URL(page.url()).pathname.split("/").pop()!;
 }
 

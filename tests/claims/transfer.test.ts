@@ -5,13 +5,12 @@
  * never comes back. DNS checks use a fake TXT resolver.
  */
 import { describe, expect, it } from "vitest";
-import { analysisKey, type Analysis } from "@/lib/analysis/record";
 import { handleCheckClaim, handleCreateClaim } from "@/lib/api/claims";
 import { recheckDueClaims } from "@/lib/claims/recheck";
 import { claimView, type ClaimView } from "@/lib/claims/view";
 import { sha256Hex } from "@/lib/security/tokens";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
-import { accountCookie, fakeClock, OTHER_ACCOUNT, postRequest, testDeps, TEST_ACCOUNT } from "../helpers/server-deps";
+import { accountCookie, fakeClock, OTHER_ACCOUNT, postRequest, storeAnalysis, testDeps, TEST_ACCOUNT } from "../helpers/server-deps";
 
 const HOST = "shop.example.com";
 
@@ -22,9 +21,7 @@ async function twoAccounts() {
   const accounts = { first: { ...TEST_ACCOUNT, cookie: await accountCookie(d, TEST_ACCOUNT) }, second: { ...OTHER_ACCOUNT, cookie: await accountCookie(d, OTHER_ACCOUNT) } };
   /** Each account analyzed the host, then claims it by DNS; returns the claim id and token. */
   const claim = async (who: keyof typeof accounts) => {
-    const id = sha256Hex(who).slice(0, 32);
-    const a: Analysis = { version: 1, id, ownerHash: sha256Hex(who), accountId: accounts[who].userId, jobId: "j", inputOrigin: `https://${HOST}`, createdAt: clock.now(), expiresAt: clock.now() + 3_600_000 };
-    await d.store.set(analysisKey(id), a, 7200);
+    const { id } = await storeAnalysis(d, { inputOrigin: `https://${HOST}`, accountId: accounts[who].userId, ownerHash: sha256Hex(who) });
     const body = (await (await handleCreateClaim(postRequest("/api/claims", { source: `analysis:${id}`, method: "dns" }, { cookie: accounts[who].cookie }), d)).json()) as { claim: ClaimView; token: string };
     return { id: body.claim.id, token: body.token };
   };
