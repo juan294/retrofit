@@ -90,7 +90,9 @@ export type AgentErrorCode =
   | "client_limit"
   | "daily_limit"
   | "unavailable"
-  | "method_not_allowed";
+  | "method_not_allowed"
+  | "invalid_key"
+  | "plan_required";
 
 /** `{retryTime}` and `{retryMinutes}` as the contract defines them. */
 function retryParts(retryAfterSeconds: number, retryAt: Date) {
@@ -125,4 +127,7 @@ export const agentTexts = {
   // Not in the contract table: a 503 `unavailable` while the site's daily count is undecided.
   countingSite: "Retrofit is still starting another score of this site. Call again in 2 seconds with the same URL.",
   method_not_allowed: "Use GET /api/score with the website address in the url query parameter.",
+  // Not in the contract's first table: a call with an API key (Authorization: Bearer).
+  invalid_key: "This API key is not valid, or it was revoked. Ask the user for a key from their Retrofit account page, or call again without the Authorization header to use the anonymous limit.",
+  plan_required: "The plan of this API key's account has ended. The user can renew it on Retrofit's pricing page. Until then, call again without the Authorization header to use the anonymous limit.",
 } as const;

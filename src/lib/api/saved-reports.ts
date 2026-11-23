@@ -4,6 +4,7 @@ import { isSameOrigin } from "@/lib/analysis/run";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { readSmallBody } from "./body";
+import { refuseFeature } from "./entitled";
 import { json } from "./json";
 
 function analysisIdFrom(text: string): string | null {
@@ -21,7 +22,7 @@ function analysisIdFrom(text: string): string | null {
  * analysis (its visitor cookie or attached account; else 404 not_found). The ready report (the
  * contract's ScoreReport, as `?include=result` returns it) is copied to the account's saved
  * reports, so it outlives the analysis; saving it again answers the first copy with the
- * already-saved text. 409 not_ready before the score exists, 409 full past MAX_SAVED_REPORTS;
+ * already-saved text. 403 plan_required or 503 billing_unavailable (entitled.ts), 409 not_ready before the score exists, 409 full past MAX_SAVED_REPORTS;
  * 503 unavailable.
  */
 export async function handleSaveReport(request: Request, deps: Pick<ServerDeps, "config" | "store" | "accounts" | "clock">): Promise<Response> {
@@ -32,6 +33,8 @@ export async function handleSaveReport(request: Request, deps: Pick<ServerDeps, 
     const { analysis, account } = await findOwnedAnalysis(id, requesterOf(request), deps);
     if (!account) return json(401, { error: "signed_out", message: SAVE_REPORT_TEXT.signedOut });
     if (!analysis) return json(404, { error: "not_found", message: SAVE_REPORT_TEXT.notFound });
+    const refused = await refuseFeature(deps, account.accountId, "saved_reports");
+    if (refused) return refused;
     const a = readyAnalysis(await readAnalysisView(deps, analysis));
     if (!a) return json(409, { error: "not_ready", message: SAVE_REPORT_TEXT.notReady });
     const report = reportBody(a.score, a.readyAt, deps.config);

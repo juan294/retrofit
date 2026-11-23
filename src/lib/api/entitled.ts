@@ -1,0 +1,16 @@
+import { entitlement } from "@/lib/billing/entitlements";
+import type { ServerDeps } from "@/lib/server/runtime";
+import { PLAN_TEXT, type GatedFeature } from "@/lib/site/billing-texts";
+import { json } from "./json";
+
+/**
+ * Null when the account may use the feature (always before BILLING_START, with no read). Otherwise 403
+ * plan_required with the way to the plans, or 503 billing_unavailable when the plan cannot be read: a
+ * paid write then waits, and nothing is changed.
+ */
+export async function refuseFeature(deps: Pick<ServerDeps, "config" | "clock" | "accounts">, accountId: string, feature: GatedFeature): Promise<Response | null> {
+  const e = await entitlement(deps, accountId, feature);
+  if (e.allowed) return null;
+  if (e.reason === "unavailable") return json(503, { error: "billing_unavailable", message: PLAN_TEXT.unavailable });
+  return json(403, { error: "plan_required", message: PLAN_TEXT.required[feature], href: "/pricing" });
+}

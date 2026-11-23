@@ -4,6 +4,9 @@ import { withDefaultScheme } from "@/lib/analysis/run";
 import { agentTexts, COUNTING_RETRY_S, type AgentErrorCode } from "@/lib/analysis/texts";
 import { VISITOR_COOKIE } from "@/lib/analysis/visitor";
 import { isQueueExpired, readJobMarkingStale, type CrawlJob } from "@/lib/crawl/jobs";
+import { readApiKey } from "@/lib/billing/api-keys";
+import { accountPlan, billingStarted } from "@/lib/billing/entitlements";
+import { planOf } from "@/lib/billing/plans";
 import { NotPublicError } from "@/lib/fetch/errors";
 import { clientIdFromRequest, countClientOrigin, nextUtcMidnight } from "@/lib/fetch/limits";
 import { validateUrl } from "@/lib/fetch/url";
@@ -12,7 +15,9 @@ import type { ServerDeps } from "@/lib/server/runtime";
 /**
  * GET /api/score?url= (docs/research/score-tool-contract.md, Surface 1). Open to
  * agents: CORS `*`, no cookie is read or set, no analysis id or preview path is
- * ever returned. Validation rules 1 to 10 of the contract run in order.
+ * ever returned. Validation rules 1 to 10 of the contract run in order. With an API key
+ * (`Authorization: Bearer rk_retrofit_...`, for servers: the preflight does not allow the header) rule 6
+ * counts per account with the plan's limit.
  */
 
 export const MAX_REPORT_BYTES = 16 * 1024;
@@ -33,6 +38,8 @@ const HTTP: Record<AgentErrorCode, number> = {
   daily_limit: 429,
   unavailable: 503,
   method_not_allowed: 405,
+  invalid_key: 401,
+  plan_required: 403,
 };
 
 function headers(retryAfterSeconds?: number): Headers {
@@ -56,7 +63,7 @@ function error(code: AgentErrorCode, message: string, o: { retryAfterSeconds?: n
   });
 }
 
-const fixed = (code: "missing_url" | "invalid_url" | "not_public" | "robots_blocked" | "crawl_error" | "method_not_allowed") => error(code, agentTexts[code]);
+const fixed = (code: "missing_url" | "invalid_url" | "not_public" | "robots_blocked" | "crawl_error" | "method_not_allowed" | "invalid_key" | "plan_required") => error(code, agentTexts[code]);
 const unavailable = () => error("unavailable", agentTexts.unavailable, { retryAfterSeconds: BUSY_RETRY_S });
 /** A job held back because the site's daily count was undecided (agentTexts.countingSite says 2 seconds). */
 const countingSite = () => error("unavailable", agentTexts.countingSite, { retryAfterSeconds: COUNTING_RETRY_S });
@@ -90,6 +97,36 @@ export function handleScoreMethodNotAllowed(): Response {
   return fixed("method_not_allowed");
 }
 
+/** Whom rule 6 counts, and its hourly limit. */
+interface ScoreClient {
+  readonly id: string;
+  readonly limit: number;
+}
+
+/**
+ * The caller of rule 6. Without a key: the network, with the anonymous limit, and no read. With a key of
+ * an account: the account (all its keys together) with its plan's limit. A key that is malformed, unknown
+ * or revoked is refused (401), and so is one whose account's plan has no API keys any more (403): a key
+ * never becomes an anonymous call. Before BILLING_START, and when the plan cannot be read, a key counts
+ * with the anonymous limit. Throws when the key cannot be looked up.
+ */
+async function scoreClient(request: Request, deps: ServerDeps, now: number): Promise<ScoreClient | Response> {
+  const anonymous = deps.config.analysesPerClientHour;
+  const key = readApiKey(request);
+  if (key.kind === "none") return { id: clientIdFromRequest(request, deps.config, now), limit: anonymous };
+  const accountId = key.kind === "key" ? await deps.accounts.findApiKeyAccount(key.hash) : null;
+  if (accountId === null) {
+    const refused = fixed("invalid_key");
+    refused.headers.set("www-authenticate", "Bearer");
+    return refused;
+  }
+  const id = `account-${accountId}`;
+  const plan = billingStarted(deps) ? await accountPlan(deps, accountId) : null;
+  if (plan === null) return { id, limit: anonymous };
+  const limit = planOf(plan).scoresPerHour;
+  return limit === null ? fixed("plan_required") : { id, limit };
+}
+
 export async function handleScore(request: Request, deps: ServerDeps): Promise<Response> {
   const invocation = { startedAt: deps.clock() };
   // Every request dispatches queued work, including the early returns below.
@@ -117,13 +154,15 @@ export async function handleScore(request: Request, deps: ServerDeps): Promise<R
   try {
     // Rule 6: client limit, each origin counted once per client per window.
     const now = deps.clock();
-    const limit = await countClientOrigin(deps.store, deps.config, clientIdFromRequest(request, deps.config, now), origin, now);
+    const client = await scoreClient(request, deps, now);
+    if (client instanceof Response) return client;
+    const limit = await countClientOrigin(deps.store, { analysesPerClientHour: client.limit }, client.id, origin, now);
     // Another call for this origin by this client is still being counted: retry in a moment.
     if (!limit.ok && "undecided" in limit) return error("unavailable", agentTexts.counting, { retryAfterSeconds: COUNTING_RETRY_S });
     if (!limit.ok) {
       const retryAfterSeconds = secondsUntil(limit.retryAt, now);
       const retryAt = new Date(limit.retryAt);
-      return error("client_limit", agentTexts.client_limit(deps.config.analysesPerClientHour, retryAfterSeconds, retryAt), { retryAfterSeconds, retryAt });
+      return error("client_limit", agentTexts.client_limit(client.limit, retryAfterSeconds, retryAt), { retryAfterSeconds, retryAt });
     }
 
     // Rule 7: start or join, capacity and daily cap, then dispatch.

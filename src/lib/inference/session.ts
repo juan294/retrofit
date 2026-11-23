@@ -1,12 +1,15 @@
 import { randomBytes } from "node:crypto";
+import { readAccount } from "@/lib/accounts/session";
 import { isSameOrigin } from "@/lib/analysis/run";
 import { isSecureRequest, sameHash } from "@/lib/analysis/visitor";
 import { buildCookie, cookieValue } from "@/lib/security/cookies";
 import { sha256Hex } from "@/lib/security/tokens";
+import { billingStarted, entitlement } from "@/lib/billing/entitlements";
 import { json } from "@/lib/api/json";
 import { clientIdFromRequest, clientWindow, nextUtcMidnight, ttlUntil, utcDay } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
 import type { Store } from "@/lib/store/types";
+import { PLAN_TEXT } from "@/lib/site/billing-texts";
 import { SESSION_TTL_MS, signSession, verifySession, type SessionClaims, type SessionPool } from "./token";
 
 /**
@@ -93,12 +96,21 @@ const logFailure = (route: string, e: unknown) => console.error(`POST ${route} f
  * POST /api/inference/session -> 200 `{pool, expiresAt}` with the session cookie.
  * Same-origin only (403). A valid cookie is renewed with the same sid, pool and
  * client; otherwise a new public session is created under the per-client hourly
- * cap (429 session_limit). 503 when the Store is unavailable.
+ * cap (429 session_limit). From BILLING_START a signed-in account whose plan lacks the free AI gets 403
+ * plan_required (also at renewal); a judge session and a visitor without an account are as before, and
+ * before that instant nothing is read for it. 503 when the Store, or the account's plan, cannot be read.
  */
 export async function handleSession(request: Request, deps: ServerDeps): Promise<Response> {
   if (!isSameOrigin(request, deps.config)) return crossOrigin();
   try {
     const existing = await readSession(request, deps);
+    if (billingStarted(deps) && existing?.claims.pool !== "judge") {
+      const account = await readAccount(request, deps);
+      const allowed = account ? await entitlement(deps, account.accountId, "free_ai_preview") : null;
+      if (allowed && !allowed.allowed) {
+        return allowed.reason === "unavailable" ? unavailable() : json(403, { error: "plan_required", message: PLAN_TEXT.required.free_ai_preview, href: "/pricing" });
+      }
+    }
     if (existing) {
       const renewed = await updateState(deps.store, existing.claims.sid, (s) => ({ pool: s.pool, createdAt: s.createdAt }));
       if (renewed) return issue(request, deps, { sid: existing.claims.sid, client: existing.claims.client, pool: renewed.pool });

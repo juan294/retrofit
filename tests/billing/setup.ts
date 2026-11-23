@@ -9,10 +9,10 @@ export const SECRET_KEY = "sk_test_unit_Kk77";
 export const BILLING_ENV = { STRIPE_SECRET_KEY: SECRET_KEY, STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET, STRIPE_PRICE_PRO: PRICES.pro, STRIPE_PRICE_AGENCY: PRICES.agency, BILLING_START: "2027-01-19T00:00:00Z" };
 export const OWNER = TEST_ACCOUNT.userId;
 
-/** Deps with Stripe configured on a fake clock `offsetMs` after BILLING_START. */
+/** Deps with Stripe configured on a fake clock `offsetMs` after BILLING_START. A wait of the score route (SCORE_WAIT_MS) moves the clock. */
 export function billingDeps(offsetMs: number, o: TestDepsOptions = {}) {
   const clock = fakeClock(START + offsetMs);
-  return { clock, d: testDeps({ clock: clock.clock, ...o, env: { ...BILLING_ENV, ...o.env } }) };
+  return { clock, d: testDeps({ clock: clock.clock, sleep: async (ms) => clock.advance(ms), ...o, env: { ...BILLING_ENV, ...o.env } }) };
 }
 
 export const ACTIVE: BillingState = { plan: "pro", status: "active", currentPeriodEnd: "2027-03-01T00:00:00.000Z", cancelAtPeriodEnd: false, subscriptionId: "sub_unit" };

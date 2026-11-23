@@ -4,6 +4,7 @@ import { isPublished, newReadFrom, publishHost, publishSource, type PublishHostD
 import { publishedView } from "@/lib/publish/view";
 import { PUBLISH_TEXT as T } from "@/lib/site/publish-texts";
 import { accountPost, type Fields } from "./account-post";
+import { refuseFeature } from "./entitled";
 import { json } from "./json";
 import { countIn } from "./limits";
 
@@ -30,7 +31,8 @@ const FAILED_STATUS = { no_analysis: 409, generation_failed: 422, too_large: 422
 /**
  * POST /api/publish `{host}` -> 200 `{site, message}`: publishes the account's newest ready analysis of
  * the host, or refreshes the published copy. 403 not_yours without a claim by the account, 409
- * not_verified, 409 no_analysis, 422 generation_failed or too_large (a published copy stays as it was),
+ * not_verified, 403 plan_required or 503 billing_unavailable (entitled.ts; from BILLING_START a page
+ * already published stays public without a plan, and Unpublish needs none), 409 no_analysis, 422 generation_failed or too_large (a published copy stays as it was),
  * 409 not_newer (no newer read than the published one: not counted and not a failed refresh; `retryAt` is when
  * a new read of the site is possible, when that is still to come), 429 limit `{retryAt}` past PUBLISH_PER_HOUR
  * publishes and refreshes, or PUBLISH_TRIES_PER_HOUR tries, of the account in the hour.
@@ -42,6 +44,8 @@ export function handlePublish(request: Request, deps: PublishDeps): Promise<Resp
     const claim = (await deps.accounts.listClaims(accountId)).find((c) => c.host === host);
     if (!claim) return noClaim(host);
     if (claim.status !== "verified") return notVerified(host);
+    const refused = await refuseFeature(deps, accountId, "publish");
+    if (refused) return refused;
     // Counted before the account's analyses are read.
     const tooMany = await countIn(deps, TRY_WINDOW, PUBLISH_TRIES_PER_HOUR, accountId, T.tries);
     if (tooMany) return tooMany;
