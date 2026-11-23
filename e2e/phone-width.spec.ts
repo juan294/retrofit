@@ -2,9 +2,10 @@ import { test, expect } from "./fixtures/csp";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture, mockOtari, submitKey } from "./support/agent";
-import { CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockLimit } from "./support/claims";
+import { CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockLimit, setClockOffset } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
+import { billingStates, startBilling } from "./support/billing";
 import { publishedOwner, publishStates, saveTestKey, setOutage, verifiedOwner, pageUrl } from "./support/publish";
 
 test.use({ viewport: { width: 320, height: 640 } });
@@ -141,5 +142,20 @@ test("the saved key offer and the outage page of a published site fit a 320 px p
     await fits(page);
   } finally {
     await setOutage(page, false);
+  }
+});
+
+// Phase 5. Fails if a billing state (the free limit's sign-in form, the plans with prices and answers, the plan and API key sections,
+// a refused publish or save, the cancelled and activating texts, the kept subscription) scrolls sideways at 320 px.
+test("the billing states fit a 320 px phone screen", async ({ page }) => {
+  test.setTimeout(120_000);
+  try {
+    await startBilling(page.request);
+    await billingStates(page, "phone", async (texts) => {
+      for (const [name, el] of Object.entries(texts)) await expect(el, name).toBeVisible();
+      await fits(page);
+    });
+  } finally {
+    await setClockOffset(page.request, 0);
   }
 });

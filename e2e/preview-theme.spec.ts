@@ -5,9 +5,10 @@ import { ACCOUNT_TEXT, SAVE_REPORT_TEXT, SAVED_REPORT_TEXT } from "@/lib/site/ac
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
 import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture, mockOtari, submitKey } from "./support/agent";
-import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockLimit } from "./support/claims";
+import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockLimit, setClockOffset } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
+import { billingStates, startBilling } from "./support/billing";
 import { pageUrl, publishedOwner, publishStates, saveTestKey, setOutage, verifiedOwner } from "./support/publish";
 
 type Locator = import("@playwright/test").Locator;
@@ -292,6 +293,20 @@ for (const colorScheme of ["light", "dark"] as const) {
       });
     } finally {
       await setOutage(page, false);
+    }
+  });
+}
+
+// Phase 5. Fails if a billing state's text (the list is billingStates') is unreadable in either scheme.
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`the billing states are readable in ${colorScheme} mode`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.emulateMedia({ colorScheme });
+    try {
+      await startBilling(page.request);
+      await billingStates(page, `theme-${colorScheme}`, readable);
+    } finally {
+      await setClockOffset(page.request, 0);
     }
   });
 }

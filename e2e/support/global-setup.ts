@@ -60,6 +60,8 @@ export default async function globalSetup() {
       "claim.fixture.test": bakery,
       "flaky.fixture.test": bakery,
       "plain.fixture.test": bakery,
+      // Analyzed only after BILLING_START (billing.spec.ts and its layout checks move the server clock there).
+      "billing.fixture.test": bakery,
       ...peerSites({ routerOrigin: OTARI_ROUTER_ORIGIN }),
     }),
     { port: FIXTURE_PORT, extraRoutes: claimTagRoutes() },

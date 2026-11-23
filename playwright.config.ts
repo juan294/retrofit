@@ -50,6 +50,11 @@ export default defineConfig({
       JUDGE_CODE: "judge-code-e2e",
       FREE_CALLS_PER_SESSION: "12",
       FREE_SESSIONS_PER_CLIENT_HOUR: "1000",
+      // Fixtures mode uses the fixtures gateway and never contacts Stripe; these are placeholders in the required form.
+      STRIPE_SECRET_KEY: "sk_test_e2e_only",
+      STRIPE_WEBHOOK_SECRET: "whsec_e2e_only",
+      STRIPE_PRICE_PRO: "price_e2e_pro",
+      STRIPE_PRICE_AGENCY: "price_e2e_agency",
       // The claims spec calls the daily recheck (GET /api/cron/claims) with this test-only secret.
       CRON_SECRET: "cron-secret-e2e-only-0123456789",
     },
