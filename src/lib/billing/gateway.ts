@@ -11,7 +11,8 @@ export interface BillingGateway {
   /**
    * The URL of the customer's one open subscription checkout for the price: an open one for the same
    * price is reused, one for another price is closed first. After creating one it looks again, so that also
-   * callers that race leave one payable checkout.
+   * callers that race leave one payable checkout. Throws BillingUnavailable `paid` when one of them was
+   * paid meanwhile (none is left open), and `superseded` when another caller's price won.
    */
   createCheckout(input: CheckoutInput): Promise<string>;
   /** The URL of a customer portal session (change the card, switch the plan, cancel). */
@@ -32,8 +33,6 @@ export interface CheckoutInput {
   readonly accountId: string;
   readonly customerId: string;
   readonly priceId: string;
-  /** Part of the idempotency key: equal for a double click, different once the subscription changed. */
-  readonly attempt: string;
   readonly successUrl: string;
   readonly cancelUrl: string;
 }

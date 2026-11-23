@@ -169,6 +169,13 @@ describe("payments, the free limit and API keys in the privacy notice and the te
     expect(terms).toContain(`${FREE_ANALYSES} free analyses in ${FREE_WINDOW_S / 86400} days`);
   });
 
+  // P5-RR5. Fails if the notice is wrong about whom a call with a key counts before paid plans start, or hides the stored unpaid date.
+  it("is true about the counting of calls with a key on both sides of the start, and names the unpaid date", () => {
+    expect(privacy).toContain("Until paid plans start, calls with a key are counted per network and per account; after that, per account.");
+    expect(privacy).not.toContain("are counted per account, not per network");
+    expect(privacy).toContain("and, while a payment is missing, the day Retrofit first saw that");
+  });
+
   // Fails if the notice hides what is kept of an API key.
   it("says what is kept of an API key", () => {
     expect(privacy).toContain("Retrofit shows an API key once and stores a hash of it, its last four characters and its dates.");

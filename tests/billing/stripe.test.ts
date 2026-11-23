@@ -3,7 +3,7 @@ import Stripe from "stripe";
 import { BillingUnavailable } from "@/lib/billing/gateway";
 import { createStripeGateway, STRIPE_API_VERSION } from "@/lib/billing/stripe";
 import { captureConsole } from "../helpers/server-deps";
-import { createFakeStripe, PERIOD_END_S, PERIOD_START_S } from "./fake-stripe";
+import { createFakeStripe, PERIOD_END_S } from "./fake-stripe";
 import { NOW, runGatewayContract } from "./gateway-contract";
 
 const ORIGIN = "https://retrofit.test";
@@ -49,7 +49,7 @@ describe("Stripe adapter", () => {
   it("creates a subscription checkout for the price, the customer and the account", async () => {
     const { stripe, gateway } = harness();
     const customerId = await gateway.createCustomer({ accountId: ACCOUNT, email: "a@example.test" });
-    await gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId: "price_pro", attempt: "x", successUrl: `${ORIGIN}/account?checkout=success`, cancelUrl: `${ORIGIN}/pricing?checkout=cancelled` });
+    await gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId: "price_pro", successUrl: `${ORIGIN}/account?checkout=success`, cancelUrl: `${ORIGIN}/pricing?checkout=cancelled` });
     const call = stripe.calls.find((c) => c.method === "POST" && c.path === "/v1/checkout/sessions");
     expect(Object.fromEntries(call!.params)).toEqual({
       mode: "subscription",
@@ -61,7 +61,8 @@ describe("Stripe adapter", () => {
       cancel_url: `${ORIGIN}/pricing?checkout=cancelled`,
       "metadata[retrofit_price]": "price_pro",
     });
-    expect(call!.headers.get("idempotency-key")).toContain(ACCOUNT);
+    // The SDK's own key for its retries; no key of ours, which would replay a closed checkout.
+    expect(call!.headers.get("idempotency-key")).not.toContain(ACCOUNT);
   });
 
   // Fails if a URL that is not Stripe's reaches the browser.
@@ -77,7 +78,7 @@ describe("Stripe adapter", () => {
       return c.method === "POST" || c.path.startsWith("/v1/checkout/sessions/") ? reply(evil) : null;
     });
     await expect(gateway.createPortal({ customerId, returnUrl: ORIGIN })).rejects.toMatchObject({ code: "bad_url" });
-    await expect(gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId: "price_pro", attempt: "x", successUrl: ORIGIN, cancelUrl: ORIGIN })).rejects.toMatchObject({ code: "bad_url" });
+    await expect(gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId: "price_pro", successUrl: ORIGIN, cancelUrl: ORIGIN })).rejects.toMatchObject({ code: "bad_url" });
   });
 
   // Fails if cancelling prorates or invoices (a surprise charge), or a customer deleted in Stripe blocks account deletion,
@@ -107,7 +108,7 @@ describe("Stripe adapter", () => {
   it("a checkout paid while it was being closed is cancelled too", async () => {
     const { stripe, gateway } = harness();
     const customerId = await gateway.createCustomer({ accountId: ACCOUNT, email: "a@example.test" });
-    const url = await gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId: "price_pro", attempt: "x", successUrl: ORIGIN, cancelUrl: ORIGIN });
+    const url = await gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId: "price_pro", successUrl: ORIGIN, cancelUrl: ORIGIN });
     let paid = false;
     stripe.fail((c) => {
       if (!paid && c.path.endsWith("/expire")) {
@@ -124,8 +125,8 @@ describe("Stripe adapter", () => {
   it.each([["price_pro", "price_pro"], ["price_pro", "price_agency"]])("two racing checkouts (%s and %s) leave one payable", async (first, second) => {
     const { stripe, gateway } = harness();
     const customerId = await gateway.createCustomer({ accountId: ACCOUNT, email: "a@example.test" });
-    const open = (priceId: string, attempt: string) => gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId, attempt, successUrl: ORIGIN, cancelUrl: ORIGIN });
-    const results = await Promise.allSettled([open(first, "a"), open(second, "b")]);
+    const open = (priceId: string) => gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId, successUrl: ORIGIN, cancelUrl: ORIGIN });
+    const results = await Promise.allSettled([open(first), open(second)]);
     const payable = [...stripe.sessions.values()].filter((s) => s.status === "open");
     expect(payable).toHaveLength(1);
     expect(results.some((r) => r.status === "fulfilled" && r.value === payable[0]?.url)).toBe(true);
@@ -138,14 +139,51 @@ describe("Stripe adapter", () => {
     if (first === second) expect(results.map((r) => r.status === "fulfilled" && r.value)).toEqual([payable[0]?.url, payable[0]?.url]);
   });
 
-  // P5-R2, P5-R7. Fails if the period's start or end is lost, or a cancellation set for another time is taken for the period's end.
+  // P5-RR2. Fails if a checkout that was paid while it was being replaced is ignored: the customer would pay a second plan.
+  it.each([["before the new one exists", false], ["after the new one was created", true]])("a checkout paid %s stops the new checkout and leaves none payable", async (_when, late) => {
+    const { stripe, gateway } = harness();
+    const customerId = await gateway.createCustomer({ accountId: ACCOUNT, email: "a@example.test" });
+    const open = (priceId: string) => gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId, successUrl: ORIGIN, cancelUrl: ORIGIN });
+    const first = late ? null : await open("price_pro");
+    let lists = 0;
+    let paid = false;
+    stripe.fail((c) => {
+      // Another request's checkout appears between the create and the second list.
+      if (late && c.method === "GET" && c.path === "/v1/checkout/sessions" && ++lists === 2) {
+        const id = "cs_test_other";
+        stripe.sessions.set(id, { id, customer: customerId, status: "open", url: "https://checkout.stripe.com/c/pay/other", created: 0, params: new URLSearchParams({ "metadata[retrofit_price]": "price_pro", "line_items[0][price]": "price_pro" }) });
+      }
+      if (!paid && c.path.endsWith("/expire")) {
+        paid = true;
+        stripe.pay(first ?? "https://checkout.stripe.com/c/pay/other");
+      }
+      return null;
+    });
+    await expect(open("price_agency")).rejects.toMatchObject({ code: "paid" });
+    expect([...stripe.sessions.values()].filter((x) => x.status === "open")).toEqual([]);
+    expect((await gateway.getSubscriptions(customerId)).map((x) => x.status)).toEqual(["active"]);
+  });
+
+  // P5-RR6. Fails if a checkout of an earlier click comes back closed, or for another plan, when plans alternate.
+  it("alternating plans many times always gives an open checkout of the chosen plan, and one at a time", async () => {
+    const { stripe, gateway } = harness();
+    const customerId = await gateway.createCustomer({ accountId: ACCOUNT, email: "a@example.test" });
+    for (let i = 0; i < 40; i++) {
+      const priceId = i % 2 ? "price_agency" : "price_pro";
+      const url = await gateway.createCheckout({ accountId: ACCOUNT, customerId, priceId, successUrl: ORIGIN, cancelUrl: ORIGIN });
+      const open = [...stripe.sessions.values()].filter((x) => x.status === "open");
+      expect(open.map((x) => [x.url, x.params.get("line_items[0][price]")])).toEqual([[url, priceId]]);
+    }
+  });
+
+  // P5-R2. Fails if the period's end is lost, or a cancellation set for another time is taken for the period's end.
   it("reads the period, and a cancellation only when it ends this period", async () => {
     const { stripe, gateway } = harness();
     const customerId = await gateway.createCustomer({ accountId: ACCOUNT, email: "a@example.test" });
     const id = stripe.subscribe(customerId, "price_pro");
     const iso = (s: number) => new Date(s * 1000).toISOString();
     const read = async () => (await gateway.getSubscriptions(customerId))[0];
-    expect(await read()).toMatchObject({ currentPeriodStart: iso(PERIOD_START_S), currentPeriodEnd: iso(PERIOD_END_S), cancelAtPeriodEnd: false });
+    expect(await read()).toMatchObject({ currentPeriodEnd: iso(PERIOD_END_S), cancelAtPeriodEnd: false });
     stripe.setSubscription(id, { cancelAt: PERIOD_END_S + 86_400 });
     expect(await read()).toMatchObject({ currentPeriodEnd: iso(PERIOD_END_S), cancelAtPeriodEnd: false });
     stripe.setSubscription(id, { cancelAt: PERIOD_END_S - 86_400 });

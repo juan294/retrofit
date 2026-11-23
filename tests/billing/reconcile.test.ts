@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { accountBilling, RECONCILE_AFTER_MS } from "@/lib/billing/reconcile";
+import { billingView } from "@/lib/billing/view";
+import { dateText } from "@/lib/site/account-texts";
+import { BILLING_TEXT } from "@/lib/site/billing-texts";
 import { TEST_ACCOUNT, captureConsole, type TestDeps } from "../helpers/server-deps";
 import { billingDeps, OWNER, PRICES, SECRET_KEY } from "./setup";
 
@@ -80,14 +83,36 @@ describe("the account page's billing", () => {
   });
 
   // P5-R12. Fails if a customer whose plan ended, or whose payment failed, is told that a plan is on its way.
-  it.each(["canceled", "unpaid", "past_due", "paused", "incomplete_expired"])("a %s plan is never activating, also after a checkout and when Stripe is unreachable", async (status) => {
+  it.each(["canceled", "unpaid", "paused", "incomplete_expired"])("a %s plan is never activating, also after a checkout and when Stripe is unreachable", async (status) => {
     const { d, clock } = billingDeps(0);
     const cus = await customer(d);
-    d.fixtureBilling.subscribe(cus, { priceIds: [PRICES.pro], status, currentPeriodStart: new Date(clock.now() - 8 * 24 * 3600_000).toISOString() });
+    d.fixtureBilling.subscribe(cus, { priceIds: [PRICES.pro], status });
     expect(await load(d, { checkout: true })).toMatchObject({ plan: "free", activating: false });
     clock.advance(11 * MIN);
     d.fixtureBilling.fail(true);
     expect(await load(d, { checkout: true })).toMatchObject({ plan: "free", activating: false });
+  });
+
+  // P5-RR8. Fails if the 7 days start again with each read of the same unpaid subscription, or the day on the page differs from the end.
+  it("a past due plan ends 7 days after it was first seen, also when a later read shows a new unpaid period; a payment restores it", async () => {
+    const { d, clock } = billingDeps(0);
+    const cus = await customer(d);
+    const sub = d.fixtureBilling.subscribe(cus, { priceIds: [PRICES.pro] });
+    await load(d);
+    clock.advance(20 * 24 * 60 * MIN);
+    // A switch in the middle of the period whose payment failed.
+    d.fixtureBilling.update(sub.id, { status: "past_due", priceIds: [PRICES.agency] });
+    const seen = clock.now();
+    const first = await load(d);
+    expect(first).toMatchObject({ plan: "agency" });
+    expect(billingView(first, clock.now()).detail).toBe(BILLING_TEXT.pastDue(dateText(new Date(seen + 7 * 24 * 60 * MIN).toISOString())));
+    clock.set(seen + 7 * 24 * 60 * MIN - 1);
+    expect((await load(d)).plan).toBe("agency");
+    clock.set(seen + 7 * 24 * 60 * MIN);
+    d.fixtureBilling.update(sub.id, { currentPeriodEnd: new Date(clock.now() + 30 * 24 * 60 * MIN).toISOString() });
+    expect((await load(d, { checkout: true })).plan).toBe("free");
+    d.fixtureBilling.update(sub.id, { status: "active" });
+    expect((await load(d, { checkout: true })).plan).toBe("agency");
   });
 
   // Review nit. Fails if a state stored by an instance whose clock is far ahead is never read again.

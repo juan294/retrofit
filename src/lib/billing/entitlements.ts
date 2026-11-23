@@ -25,8 +25,8 @@ export function billingStarted(deps: ClockDeps): boolean {
 /**
  * The plan the account has now (one read), or null when it cannot be read. Only meaningful from
  * BILLING_START on. A plan that only ran out of time in the stored state is read again from Stripe first
- * (bounded and leased, refreshBilling), so a missed renewal webhook does not end it; when Stripe cannot be
- * asked, it has ended.
+ * (bounded and leased, refreshBilling), so a missed renewal webhook does not end it. Until Stripe answers,
+ * the plan cannot be read: nobody is told that a plan is missing while that is not known.
  */
 export async function accountPlan(deps: Deps, accountId: string): Promise<PlanId | null> {
   try {
@@ -34,7 +34,7 @@ export async function accountPlan(deps: Deps, accountId: string): Promise<PlanId
     const now = deps.clock();
     if (!record || !timeBoundPassed(record, now) || !isOld(record, now)) return entitledPlan(record, now);
     const fresh = await refreshBilling(deps, record);
-    return entitledPlan(fresh === "busy" ? record : fresh, now);
+    return fresh === "busy" || fresh === null ? null : entitledPlan(fresh, now);
   } catch (e) {
     console.error("Reading the billing plan failed:", e instanceof Error ? e.name : "unknown error");
     return null;

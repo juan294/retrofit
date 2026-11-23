@@ -28,7 +28,7 @@ describe("fixtures gateway", () => {
   it("checks out on its own fixture page, once", async () => {
     const g = make();
     const customerId = await g.createCustomer({ accountId: "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "a@example.test" });
-    const url = await g.createCheckout({ accountId: "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", customerId, priceId: PRICES.pro, attempt: "1", successUrl: `${ORIGIN}/account?checkout=success`, cancelUrl: `${ORIGIN}/pricing?checkout=cancelled` });
+    const url = await g.createCheckout({ accountId: "4f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", customerId, priceId: PRICES.pro, successUrl: `${ORIGIN}/account?checkout=success`, cancelUrl: `${ORIGIN}/pricing?checkout=cancelled` });
     expect(url.startsWith(`${ORIGIN}/test-fixtures/billing/checkout?session=cs_`)).toBe(true);
     expect(g.complete(sessionOf(url))).toBe(`${ORIGIN}/account?checkout=success`);
     expect(g.complete(sessionOf(url))).toBeNull();

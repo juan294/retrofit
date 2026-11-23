@@ -13,8 +13,6 @@ export interface StripeSubscription {
   readonly status: string;
   /** The price ids of its items. */
   readonly priceIds: readonly string[];
-  /** ISO 8601: the start of the current period (of the unpaid one while past due), or null. */
-  readonly currentPeriodStart: string | null;
   /** ISO 8601: the end of the current period, or null. */
   readonly currentPeriodEnd: string | null;
   readonly cancelAtPeriodEnd: boolean;
@@ -31,7 +29,7 @@ export interface BillingState {
   readonly currentPeriodEnd: string | null;
   readonly cancelAtPeriodEnd: boolean;
   readonly subscriptionId: string | null;
-  /** ISO 8601: while past due, the start of the first unpaid period (the end of the last paid one); else null. Stored once per unpaid time (AccountData). */
+  /** ISO 8601: while past due, when Retrofit first saw that; else null. Stored once per unpaid time (AccountData keeps the first). */
   readonly unpaidSince: string | null;
 }
 
@@ -39,13 +37,18 @@ export type StatusRule = "period_end_plus_grace" | "unpaid_plus_grace" | "none";
 
 /** After the paid period an active plan waits this long for its renewal to be read (a late webhook). Not when it was cancelled. */
 export const RENEWAL_GRACE_MS = 3 * 24 * 3600_000;
-/** A plan whose renewal payment failed keeps its access this long after the end of the last paid period, while Stripe retries. */
+/**
+ * A plan whose payment failed keeps its access this long, while Stripe retries, from the first time
+ * Retrofit saw it past due. Not from the period's start: a switch whose payment fails in the middle of a
+ * paid period would end at once. That first time is never before the unpaid period's start, so it is also
+ * the later of the two.
+ */
 export const UNPAID_GRACE_MS = 7 * 24 * 3600_000;
 
 /**
  * Access by status, always up to an instant, so a lost webhook can never leave a plan open for ever.
  * `active`, `trialing`: until the period ends, and RENEWAL_GRACE_MS more unless it was cancelled.
- * `past_due`: Stripe is retrying the payment; UNPAID_GRACE_MS from the start of the first unpaid period.
+ * `past_due`: Stripe is retrying the payment; UNPAID_GRACE_MS from when Retrofit first saw it.
  * `unpaid`: the retries failed. `incomplete`, `incomplete_expired`: the first payment never succeeded.
  * `paused`: a trial ended without a payment method. `canceled`: ended now (a cancellation at the period
  * end keeps the status `active` until then). Any other status: none.
@@ -103,7 +106,7 @@ const NONE: BillingState = { plan: "free", status: "none", currentPeriodEnd: nul
 /** The state to store for a customer: the subscription that gives the highest plan now, else the newest one, else none. */
 export function billingState(subscriptions: readonly StripeSubscription[], prices: PlanPrices, now: number): BillingState {
   const best = subscriptions
-    .map((s) => ({ ...s, unpaidSince: s.status === "past_due" ? s.currentPeriodStart : null }))
+    .map((s) => ({ ...s, unpaidSince: s.status === "past_due" ? new Date(now).toISOString() : null }))
     .map((s) => ({ s, plan: planOfPrices(s.priceIds, prices), access: givesAccess(s, now) }))
     .sort((x, y) => (y.access ? RANK[y.plan] : 0) - (x.access ? RANK[x.plan] : 0) || Number(y.access) - Number(x.access) || y.s.created - x.s.created)[0];
   if (!best) return NONE;

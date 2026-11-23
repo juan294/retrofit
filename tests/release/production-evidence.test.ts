@@ -406,11 +406,28 @@ describe("production-evidence.mjs after BILLING_START", () => {
     expect((await runAt(AFTER, 4, o)).report.status).toBe("failed");
   });
 
-  // Fails if the concurrent analyses use up the network's places before the browser's own analysis (analyze-own-site).
+  // Fails if the concurrent analyses use up the network's places before the browser's own analysis (analyze-own-site) after the start.
   it("the browser suite runs before the concurrent analyses", async () => {
     const { order } = await runAt(AFTER, 4);
     expect(order.indexOf("playwright")).toBeGreaterThanOrEqual(0);
     expect(order.indexOf("playwright")).toBeLessThan(order.indexOf("analyze"));
+  });
+
+  // P5-RR1. Fails if, before the start, the browser's analysis warms the site's cache, so the five analyses no longer create and join
+  // one cold crawl together.
+  it("before the start the concurrent analyses run first, on a cold site", async () => {
+    const { order } = await runAt(BEFORE, 5);
+    expect(order.lastIndexOf("analyze")).toBeGreaterThanOrEqual(0);
+    expect(order.lastIndexOf("analyze")).toBeLessThan(order.indexOf("playwright"));
+    const steps = async (now: number) => {
+      vi.setSystemTime(now);
+      const { lines, io } = capture();
+      await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--dry-run", "--evidence-dir", tmp], io);
+      const names = [...lines.join("\n").matchAll(/^step \d+ ([a-z-]+) ->/gm)].map((m) => m[1]);
+      return names.indexOf("playwright") - names.indexOf("concurrent-analyses");
+    };
+    expect(await steps(BEFORE)).toBeGreaterThan(0);
+    expect(await steps(AFTER)).toBeLessThan(0);
   });
 
   // Fails if the tooling's text or instant drifts from the product's.

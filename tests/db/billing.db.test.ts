@@ -44,10 +44,17 @@ it("twelve concurrent events of one customer, delivered twice each, leave the ne
   const deliver = (n: number, c: number) =>
     clients[c]!.applyBillingEvent({ id: `evt_${id}_${n}`, type: "customer.subscription.updated" }, customer, { plan: n % 2 ? "pro" : "agency", status: "active", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: `sub_${n}`, unpaidSince: null, observedAt: at(n) });
   const order = [7, 0, 11, 3, 9, 1, 5, 10, 2, 8, 4, 6];
-  const outcomes = (await Promise.all(order.flatMap((n) => [deliver(n, n % 3), deliver(n, (n + 1) % 3)]))).map((r) => r.outcome);
+  const results = await Promise.all(order.flatMap((n) => [deliver(n, n % 3), deliver(n, (n + 1) % 3)].map(async (r) => ({ n, outcome: (await r).outcome }))));
+  const outcomes = results.map((r) => r.outcome);
   // A stale one is not recorded, so its second delivery is stale too; every applied one is applied once.
   expect(outcomes.every((o) => o === "applied" || o === "duplicate" || o === "stale")).toBe(true);
-  expect(outcomes.filter((o) => o === "duplicate").length).toBeLessThanOrEqual(12);
+  // P5-RR4: no event is applied twice, and exactly the applied ones are recorded.
+  const applied = results.filter((r) => r.outcome === "applied").map((r) => r.n);
+  expect(new Set(applied).size).toBe(applied.length);
+  expect(applied).toContain(11);
+  expect(results.filter((r) => r.outcome === "duplicate").every((r) => applied.includes(r.n))).toBe(true);
+  const recorded = (await query(`select event_id from public.stripe_events where event_id like 'evt\\_${id}\\_%'`)).split("\n").map((e) => Number(e.split("_").at(-1)));
+  expect(recorded.sort((x, y) => x - y)).toEqual([...applied].sort((x, y) => x - y));
   expect(await clients[1]!.getBilling(owner)).toMatchObject({ subscriptionId: "sub_11", plan: "pro", stateAt: at(11) });
 }, 30_000);
 

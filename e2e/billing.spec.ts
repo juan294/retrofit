@@ -132,6 +132,20 @@ test.describe("plans after BILLING_START", () => {
     expect(((await refused.json()) as { error: string }).error).toBe("invalid_key");
   });
 
+  // Second review. Fails if a judge who is signed in to a Free account cannot turn on judge access after the start.
+  test("a judge signed in to a Free account turns on judge access with the code", async ({ page }) => {
+    await signIn(page, newEmail("judge"));
+    await page.goto("/judges");
+    await page.getByLabel("Judge code").fill("wrong-code-e2e");
+    await page.getByRole("button", { name: "Turn on judge access" }).click();
+    await expect(page.locator("#judge-code-status")).toHaveText("That judge code is not valid.");
+    await page.getByLabel("Judge code").fill("judge-code-e2e");
+    await page.getByRole("button", { name: "Turn on judge access" }).click();
+    await expect(page.locator("#judge-code-status")).toHaveText("Judge access is on for this browser.");
+    const status = await page.evaluate(async () => (await fetch("/api/inference/status", { credentials: "same-origin" })).json());
+    expect((status as { pool?: unknown }).pool).toBe("judge");
+  });
+
   // Fails if the upgrade buttons are missing after the start, or the plans still say every feature is free.
   test("the pricing page offers the upgrades and no longer the free notice", async ({ page }) => {
     await page.goto("/pricing");

@@ -1,3 +1,4 @@
+import type { BillingRecord } from "@/lib/accounts/data";
 import type { Account } from "@/lib/accounts/session";
 import { realSleep } from "@/lib/fetch/timers";
 import type { ServerDeps } from "@/lib/server/runtime";
@@ -13,8 +14,6 @@ type Deps = Pick<ServerDeps, "config" | "clock" | "store" | "accounts" | "billin
 /** `not_started`: before BILLING_START. `no_price`: the plan has no price yet. `subscribed`: a subscription is open (the portal changes it). `no_account`: the account was deleted meanwhile. `busy`: another checkout of the account is being opened. */
 export type CheckoutResult = { readonly ok: true; readonly url: string } | { readonly ok: false; readonly code: "not_started" | "no_price" | "subscribed" | "no_account" | "busy" };
 
-/** Double clicks within this time carry one idempotency key. */
-const ATTEMPT_MS = 10 * 60_000;
 /** One checkout of an account is opened at a time; a second request waits this long for the first. */
 const LEASE_S = 60;
 const LEASE_WAITS = 50;
@@ -73,19 +72,30 @@ async function openCheckout(deps: Deps, account: Pick<Account, "accountId" | "em
     else if (linked.outcome === "no_account") return { ok: false, code: "no_account" };
     else throw new BillingUnavailable("createCheckout", "customer_taken");
   }
-  const { customerId } = record;
-  const { observed, subscriptions } = await readStripe(deps, record);
-  await deps.accounts.applyBillingState(customerId, observed);
-  if (needsPortal(subscriptions)) return { ok: false, code: "subscribed" };
+  if (await subscribed(deps, record)) return { ok: false, code: "subscribed" };
 
   const { publicOrigin } = deps.config;
-  const url = await deps.billing.createCheckout({
-    accountId: account.accountId,
-    customerId,
-    priceId,
-    attempt: `${observed.subscriptionId ?? "first"}-${Math.floor(deps.clock() / ATTEMPT_MS)}`,
-    successUrl: `${publicOrigin}/account?checkout=success`,
-    cancelUrl: `${publicOrigin}/pricing?checkout=cancelled`,
-  });
-  return { ok: true, url: requireBillingUrl(deps, "createCheckout", url) };
+  try {
+    const url = await deps.billing.createCheckout({
+      accountId: account.accountId,
+      customerId: record.customerId,
+      priceId,
+      successUrl: `${publicOrigin}/account?checkout=success`,
+      cancelUrl: `${publicOrigin}/pricing?checkout=cancelled`,
+    });
+    return { ok: true, url: requireBillingUrl(deps, "createCheckout", url) };
+  } catch (e) {
+    // An earlier checkout was paid while this one was being opened: the plan is bought. Until Stripe shows it, try again.
+    if (!(e instanceof BillingUnavailable) || e.code !== "paid") throw e;
+    const now = (await deps.accounts.getBilling(account.accountId)) ?? record;
+    if (await subscribed(deps, now)) return { ok: false, code: "subscribed" };
+    throw e;
+  }
+}
+
+/** True when Stripe shows a subscription that is still open. What it says is stored. */
+async function subscribed(deps: Deps, record: BillingRecord): Promise<boolean> {
+  const { observed, subscriptions } = await readStripe(deps, record);
+  await deps.accounts.applyBillingState(record.customerId, observed);
+  return needsPortal(subscriptions);
 }

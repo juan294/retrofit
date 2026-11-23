@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { billingState, entitledPlan, needsPortal, STATUS_RULES, timeBoundPassed, type StripeSubscription } from "@/lib/billing/state";
+import { accessUntil, billingState, entitledPlan, needsPortal, STATUS_RULES, timeBoundPassed, type StripeSubscription } from "@/lib/billing/state";
 
 const NOW = Date.parse("2027-02-10T12:00:00.000Z");
 const DAY = 24 * 3600_000;
 const at = (ms: number) => new Date(NOW + ms).toISOString();
 const PRICES = { pro: ["price_pro", "price_pro_old"], agency: ["price_agency"] } as const;
-const sub = (o: Partial<StripeSubscription> = {}): StripeSubscription => ({ id: "sub_1", status: "active", priceIds: ["price_pro"], currentPeriodStart: at(-10 * DAY), currentPeriodEnd: at(18 * DAY), cancelAtPeriodEnd: false, created: 100, ...o });
+const sub = (o: Partial<StripeSubscription> = {}): StripeSubscription => ({ id: "sub_1", status: "active", priceIds: ["price_pro"], currentPeriodEnd: at(18 * DAY), cancelAtPeriodEnd: false, created: 100, ...o });
 const planNow = (o: Partial<StripeSubscription>, now = NOW) => entitledPlan(billingState([sub(o)], PRICES, now), now);
 
 describe("subscription status rules", () => {
@@ -35,10 +35,9 @@ describe("subscription status rules", () => {
     ["trialing, 3 days past its end", { status: "trialing", currentPeriodEnd: at(-3 * DAY) }, "free"],
     ["cancelled at the period end, before it", { cancelAtPeriodEnd: true, currentPeriodEnd: at(1) }, "pro"],
     ["cancelled at the period end, at it", { cancelAtPeriodEnd: true, currentPeriodEnd: at(0) }, "free"],
-    ["past due on the day", { status: "past_due", currentPeriodStart: at(0) }, "pro"],
-    ["past due, 7 days less 1 ms", { status: "past_due", currentPeriodStart: at(-7 * DAY + 1) }, "pro"],
-    ["past due, 7 days", { status: "past_due", currentPeriodStart: at(-7 * DAY), currentPeriodEnd: at(21 * DAY) }, "free"],
-    ["past due without a period start", { status: "past_due", currentPeriodStart: null }, "free"],
+    ["past due, seen for the first time", { status: "past_due" }, "pro"],
+    ["past due in the middle of a paid period (a switch whose payment failed)", { status: "past_due", currentPeriodEnd: at(3 * DAY) }, "pro"],
+    ["past due, first seen after the period ended", { status: "past_due", currentPeriodEnd: at(-5 * DAY) }, "pro"],
     ["unpaid", { status: "unpaid" }, "free"],
     ["incomplete", { status: "incomplete" }, "free"],
     ["incomplete_expired", { status: "incomplete_expired" }, "free"],
@@ -50,12 +49,15 @@ describe("subscription status rules", () => {
     expect(planNow(o)).toBe(expected);
   });
 
-  // P5-R7. Fails if the stored start of the unpaid time is ignored for the newer period's start.
-  it("past due counts from the stored start of the unpaid time", () => {
-    const state = billingState([sub({ status: "past_due", currentPeriodStart: at(-DAY) })], PRICES, NOW);
-    expect(state.unpaidSince).toBe(at(-DAY));
-    expect(entitledPlan(state, NOW)).toBe("pro");
-    expect(entitledPlan({ ...state, unpaidSince: at(-8 * DAY) }, NOW)).toBe("free");
+  // P5-RR8. Fails if past due access does not end 7 days after Retrofit first saw it, whatever the period says: earlier for a switch in
+  // the middle of a period, or a month later with each unpaid period.
+  it("past due keeps access for 7 days from the first time Retrofit saw it", () => {
+    const seen = billingState([sub({ status: "past_due", currentPeriodEnd: at(18 * DAY) })], PRICES, NOW);
+    expect(seen.unpaidSince).toBe(at(0));
+    expect(accessUntil(seen)).toBe(NOW + 7 * DAY);
+    expect(entitledPlan(seen, NOW + 7 * DAY - 1)).toBe("pro");
+    expect(entitledPlan(seen, NOW + 7 * DAY)).toBe("free");
+    expect(entitledPlan({ ...seen, unpaidSince: null }, NOW)).toBe("free");
     expect(billingState([sub()], PRICES, NOW).unpaidSince).toBeNull();
   });
 
@@ -63,7 +65,7 @@ describe("subscription status rules", () => {
   it("says when a stored plan ran out of time (so it is worth reading again)", () => {
     const passed = (o: Partial<StripeSubscription>) => timeBoundPassed(billingState([sub(o)], PRICES, NOW), NOW);
     expect(passed({ currentPeriodEnd: at(-3 * DAY) })).toBe(true);
-    expect(passed({ status: "past_due", currentPeriodStart: at(-7 * DAY) })).toBe(true);
+    expect(timeBoundPassed(billingState([sub({ status: "past_due" })], PRICES, NOW), NOW + 7 * DAY)).toBe(true);
     expect(passed({ currentPeriodEnd: at(1) })).toBe(false);
     for (const status of ["canceled", "unpaid", "incomplete", "paused"]) expect(passed({ status, currentPeriodEnd: at(-9 * DAY) }), status).toBe(false);
   });

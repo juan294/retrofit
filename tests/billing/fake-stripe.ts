@@ -31,7 +31,6 @@ interface Sub {
   cancelAt?: number;
 }
 
-export const PERIOD_START_S = Date.UTC(2027, 1, 1) / 1000;
 export const PERIOD_END_S = Date.UTC(2027, 2, 1) / 1000;
 
 export function createFakeStripe() {
@@ -56,7 +55,7 @@ export function createFakeStripe() {
     cancel_at_period_end: s.cancelAtPeriodEnd,
     cancel_at: s.cancelAt ?? null,
     livemode: false,
-    items: { object: "list", data: [{ id: `si_${s.id}`, object: "subscription_item", current_period_start: PERIOD_START_S, current_period_end: PERIOD_END_S, price: { id: s.price, object: "price" } }], has_more: false, url: "" },
+    items: { object: "list", data: [{ id: `si_${s.id}`, object: "subscription_item", current_period_end: PERIOD_END_S, price: { id: s.price, object: "price" } }], has_more: false, url: "" },
   });
   const sessionBody = (s: Session) => ({ id: s.id, object: "checkout.session", created: s.created, customer: s.customer, status: s.status, url: s.status === "open" ? s.url : null, mode: s.params.get("mode"), metadata: Object.fromEntries([...s.params].filter(([k]) => k.startsWith("metadata[")).map(([k, v]) => [k.slice(9, -1), v])), client_reference_id: s.params.get("client_reference_id") });
 

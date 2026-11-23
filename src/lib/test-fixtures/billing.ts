@@ -121,7 +121,6 @@ export function createFixtureBilling(options: { clock: Clock; origin: string; we
         id: `sub_fixture${++n}`,
         status: "active",
         priceIds: [],
-        currentPeriodStart: new Date(now).toISOString(),
         currentPeriodEnd: new Date(now + MONTH_MS).toISOString(),
         cancelAtPeriodEnd: false,
         created: Math.floor(now / 1000) + n,

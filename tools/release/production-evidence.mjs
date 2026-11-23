@@ -192,6 +192,20 @@ function steps(o, cases, pwCases) {
     "RETROFIT_RUN_ID=<this run's id>",
     "JUDGE_CODE=<from the environment, not printed>",
   ];
+  // Before billing can have started the five analyses come first: they create and join one cold crawl. From then on a
+  // network has few free analyses, so the browser's own one goes first and these meet the limit.
+  const analysesFirst = !billingMayHaveStarted();
+  const analyses = {
+    name: "concurrent-analyses",
+    produces: ["concurrent-analyses-five"],
+    show: [
+      `POST ${o.prod}/api/analyze x5 (concurrent): ${OWN_PAGES.map((p) => `${o.prod}${p}`).join(", ")}`,
+      `GET ${o.prod}/api/analyze/<id> for each, every ${POLL_MS / 1000} s until ready, at most ${ANALYSIS_DEADLINE_MS / 1000} s`,
+      "  before the browser suite, on a cold site; from 2027-01-19 after it, whose own analysis needs one of the network's free places",
+      `  from 2027-01-19 the free limit is an expected answer (403 free_limit); then also GET ${o.prod}/api/score?url=<page> x5 until ready`,
+    ],
+    run: concurrentAnalyses,
+  };
   return [
     {
       name: "deployment-record",
@@ -213,6 +227,7 @@ function steps(o, cases, pwCases) {
       show: partners.map((c) => `$ ${process.execPath} ${CHECK_PARTNER} ${c.target}`),
       run: (ctx) => checkPartners(ctx, partners),
     },
+    ...(analysesFirst ? [analyses] : []),
     {
       name: "no-preview-deployments",
       produces: ["no-preview-deployments"],
@@ -230,17 +245,7 @@ function steps(o, cases, pwCases) {
       ],
       run: (ctx) => runPlaywright(ctx, pwCases),
     },
-    {
-      name: "concurrent-analyses",
-      produces: ["concurrent-analyses-five"],
-      show: [
-        `POST ${o.prod}/api/analyze x5 (concurrent): ${OWN_PAGES.map((p) => `${o.prod}${p}`).join(", ")}`,
-        `GET ${o.prod}/api/analyze/<id> for each, every ${POLL_MS / 1000} s until ready, at most ${ANALYSIS_DEADLINE_MS / 1000} s`,
-        "  after the browser suite, whose own analysis needs one of the network's free places after BILLING_START",
-        `  from 2027-01-19 the free limit is an expected answer (403 free_limit); then also GET ${o.prod}/api/score?url=<page> x5 until ready`,
-      ],
-      run: concurrentAnalyses,
-    },
+    ...(analysesFirst ? [] : [analyses]),
     {
       name: "alias-binding",
       produces: ["alias-binding"],

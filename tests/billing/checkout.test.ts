@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleCheckout, handlePortal } from "@/lib/api/billing";
+import { BillingUnavailable } from "@/lib/billing/gateway";
 import { BILLING_TEXT } from "@/lib/site/billing-texts";
 import { accountCookie, captureConsole, OTHER_ACCOUNT, postRequest, PUBLIC_ORIGIN, TEST_ACCOUNT, type TestDeps, type TestDepsOptions } from "../helpers/server-deps";
 import { BILLING_ENV, billingDeps, OWNER, PRICES, SECRET_KEY } from "./setup";
@@ -100,6 +101,18 @@ describe("POST /api/billing/checkout", () => {
     expect((await checkout(d, cookie)).status).toBe(503);
     d.fixtureBilling.fail(false);
     expect((await checkout(d, cookie)).status).toBe(200);
+  });
+
+  // P5-RR2. Fails if a first plan paid while the second one was being opened is answered with a checkout (a second charge), or the
+  // customer is not sent to the portal of the plan just bought.
+  it("a checkout paid meanwhile answers subscribed, and unavailable while Stripe does not show it", async () => {
+    captureConsole([]);
+    const { d, cookie } = await setup();
+    const first = sessionOf((await checkout(d, cookie)).body.url);
+    const racing = (pay: boolean): TestDeps => ({ ...d, billing: { ...d.billing, createCheckout: async () => { if (pay) d.fixtureBilling.complete(first); throw new BillingUnavailable("createCheckout", "paid"); } } });
+    expect((await checkout(racing(false), cookie, { plan: "agency" })).status).toBe(503);
+    expect(await checkout(racing(true), cookie, { plan: "agency" })).toMatchObject({ status: 409, body: { error: "subscribed", portal: true } });
+    expect(await d.accounts.getBilling(OWNER)).toMatchObject({ plan: "pro", status: "active" });
   });
 
   // P5-R5. Fails if the checkout sells a price that is only kept for its subscribers.

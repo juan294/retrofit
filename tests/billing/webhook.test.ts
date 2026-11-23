@@ -424,6 +424,41 @@ describe("account deletion against a checkout", () => {
     expect(await d.accounts.getBilling(userId)).toBeNull();
   });
 
+  // P5-RR3. The one moment the deletion mark does not cover: a person signs in again between the deletion of the data and of the auth
+  // user, and buys a plan; the new record goes with the auth user (its foreign key cascades) and leaves no mark. Fails if a later
+  // payment is then cancelled without proof, or passes without an alert to the owner.
+  it("a checkout opened between the data and the auth user is not cancelled when it is paid later: it raises the alert", async () => {
+    const { d } = billingDeps(0);
+    await d.auth.signInWithOtp("window@example.test", `${PUBLIC_ORIGIN}/auth/confirm`);
+    const userId = d.fixtureAuth.userIdOf("window@example.test") as string;
+    await d.accounts.ensureProfile(userId);
+    const { token } = await createAccountSession(d, { userId, email: "window@example.test" });
+    const account = await readAccountByToken(token, d);
+    let session = "";
+    const auth = {
+      ...d.auth,
+      deleteUser: async (id: string) => {
+        await d.accounts.ensureProfile(id);
+        const again = await createAccountSession(d, { userId: id, email: "window@example.test" });
+        const res = await handleCheckout(postRequest("/api/billing/checkout", { plan: "pro" }, { cookie: `retrofit_account=${again.token}` }), d);
+        session = new URL(((await res.json()) as { url: string }).url).searchParams.get("session") as string;
+        await d.auth.deleteUser(id);
+        // As the database does: the rows of a deleted auth user go with it.
+        d.accountsBacking.billing.delete(id);
+        d.accountsBacking.profiles.delete(id);
+      },
+    };
+    expect(await deleteAccount({ ...d, auth }, account!)).toBe("deleted");
+    const cus = d.fixtureBilling.session(session)?.customerId as string;
+    expect(d.fixtureBilling.complete(session)).not.toBeNull();
+    lines.length = 0;
+    for (const type of [COMPLETED, UPDATED]) expect((await deliver(d, { type, customer: cus, ref: userId })).status).toBe(200);
+    expect((await d.billing.getSubscriptions(cus)).map((s) => s.status)).toEqual(["active"]);
+    expect(lines.filter((l) => l.includes("[BILLING_ALERT]"))).toHaveLength(2);
+    expect(await d.accounts.getBilling(userId)).toBeNull();
+    for (const secret of [userId, cus, "window@example.test"]) expect(lines.join("\n")).not.toContain(secret);
+  });
+
   // Fails if a late event of a customer whose record is gone in the middle of the write creates it again.
   it("a record deleted while the event is applied is not recreated", async () => {
     const { d, cus } = await setup();

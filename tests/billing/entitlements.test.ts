@@ -93,15 +93,26 @@ describe("a plan whose stored period passed", () => {
   });
 
   // Fails if a lost cancellation webhook leaves a plan open for ever.
-  it("ends when Stripe says so, and when Stripe cannot be asked", async () => {
+  it("ends when Stripe says so; while Stripe cannot be asked the answer is a retry, never that a plan is missing", async () => {
     const ended = await lapsed(5, { status: "canceled" });
     expect(await entitlement(ended.d, OWNER, "publish")).toEqual({ allowed: false, reason: "plan_required" });
     const down = await lapsed(5, renewed);
     vi.spyOn(console, "error").mockImplementation(() => {});
     down.d.fixtureBilling.fail(true);
-    expect(await entitlement(down.d, OWNER, "publish")).toEqual({ allowed: false, reason: "plan_required" });
+    expect(await entitlement(down.d, OWNER, "publish")).toEqual({ allowed: false, reason: "unavailable" });
     down.d.fixtureBilling.fail(false);
     expect(await entitlement(down.d, OWNER, "publish")).toEqual({ allowed: true });
+  });
+
+  // P5-RR7. Fails if a paying customer is told that a plan is needed while another request is reading the renewal, or Stripe is slow.
+  it("answers a retry while another read is in progress and when the read takes too long", async () => {
+    const busy = await lapsed(5, renewed);
+    await busy.d.store.acquireLease(`billing-reconcile:${OWNER}`, 60);
+    expect(await entitlement(busy.d, OWNER, "publish")).toEqual({ allowed: false, reason: "unavailable" });
+    expect(busy.reads()).toBe(0);
+    const slow = await lapsed(5, renewed);
+    slow.d.fixtureBilling.before("getSubscriptions", () => new Promise<void>(() => undefined));
+    expect(await entitlement(slow.d, OWNER, "publish")).toEqual({ allowed: false, reason: "unavailable" });
   });
 
   // Fails if requests of an account whose plan stays ended ask Stripe each time.

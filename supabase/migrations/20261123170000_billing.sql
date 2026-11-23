@@ -14,6 +14,8 @@
 -- delete_account_data writes it in the transaction that deletes the row. A missing row alone proves
 -- nothing (a restored database, another project), so nothing is ever cancelled for it. The table keeps a
 -- hash of the customer id and the time, no account and no address. Linking a customer removes its mark.
+-- There is no trigger: a row that goes another way (with its auth user, or cleared by hand) leaves no mark,
+-- because that is no proof either. A later payment of such a customer raises an alert and cancels nothing.
 -- A customer is linked only to an account with a profile, under the profile's lock, and the deletion
 -- deletes the profile first: a link in progress is waited for and marked, a later one finds no account.
 --
@@ -27,7 +29,7 @@ alter table public.billing_customers
   add column subscription_id text
     constraint billing_customers_subscription check (subscription_id ~ '^sub_[A-Za-z0-9_]{1,200}$'),
   add column cancel_at_period_end boolean not null default false,
-  -- While past due: the start of the first unpaid period. Kept while the same subscription stays past due.
+  -- While past due: when Retrofit first saw that. The first time is kept while the same subscription stays past due.
   add column unpaid_since timestamptz,
   -- When the stored state was read from Stripe; null before the first read.
   add column state_at timestamptz,

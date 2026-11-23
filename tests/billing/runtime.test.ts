@@ -22,7 +22,7 @@ describe("the billing gateway of a deployment", () => {
     expect(() => loadConfig({ ...VERCEL_ENV, RETROFIT_TEST_FIXTURES: "1" })).toThrow(/RETROFIT_TEST_FIXTURES/);
     expect(getFixtureBilling(loadConfig(VERCEL_ENV))).toBeNull();
     const none = getBillingGateway(loadConfig({ SESSION_SECRET }));
-    for (const run of [() => none.createCustomer({ accountId: "a", email: "e" }), () => none.getSubscriptions("cus_1"), () => none.cancelSubscriptions("cus_1"), () => none.customerOwner("cus_1"), () => none.getPrice("price_1"), () => none.createPortal({ customerId: "cus_1", returnUrl: "u" }), () => none.verifyWebhook("{}", null, 0), () => none.createCheckout({ accountId: "a", customerId: "c", priceId: "p", attempt: "1", successUrl: "s", cancelUrl: "c" })]) {
+    for (const run of [() => none.createCustomer({ accountId: "a", email: "e" }), () => none.getSubscriptions("cus_1"), () => none.cancelSubscriptions("cus_1"), () => none.customerOwner("cus_1"), () => none.getPrice("price_1"), () => none.createPortal({ customerId: "cus_1", returnUrl: "u" }), () => none.verifyWebhook("{}", null, 0), () => none.createCheckout({ accountId: "a", customerId: "c", priceId: "p", successUrl: "s", cancelUrl: "c" })]) {
       await expect(run()).rejects.toMatchObject({ code: "not_configured" });
       await expect(run()).rejects.toBeInstanceOf(BillingUnavailable);
     }

@@ -129,6 +129,42 @@ describe("the free AI session", () => {
     expect([renewed.status, (await bodyOf(renewed)).pool]).toEqual([200, "judge"]);
   });
 
+  // Second review. Fails if a judge who is signed in to a Free account cannot use the code after the start, the code's checks or limits
+  // are skipped on the way, or the way opens a session without the code.
+  it("a valid judge code works for a signed-in account without a plan, with every check, and for every visitor on both sides", async () => {
+    const judge = (d: TestDeps, code: unknown, cookie: string, o = {}) => handleJudgeUpgrade(postRequest("/api/inference/session/judge", { code }, { cookie, ...o }), d);
+    for (const offset of [-600_000, 0]) {
+      const visitor = billingDeps(offset, { env: { JUDGE_CODE: JUDGE } }).d;
+      expect(await bodyOf(await judge(visitor, JUDGE, cookieFrom(await start(visitor))))).toMatchObject({ pool: "judge" });
+      const paid = billingDeps(offset, { env: { JUDGE_CODE: JUDGE } }).d;
+      await withBilling(paid, OWNER);
+      const paidCookie = await accountCookie(paid);
+      expect(await bodyOf(await judge(paid, JUDGE, `${paidCookie}; ${cookieFrom(await start(paid, paidCookie))}`))).toMatchObject({ pool: "judge" });
+    }
+    const { d } = billingDeps(0, { env: { JUDGE_CODE: JUDGE, JUDGE_SESSIONS_PER_CLIENT_DAY: "1" } });
+    const free = await accountCookie(d);
+    expect((await start(d, free)).status).toBe(403);
+    for (const [code, o, status] of [["wrong-code", {}, 403], [7, {}, 400], [JUDGE, { fetchSite: "cross-site", origin: "https://evil.example" }, 403]] as const) {
+      const refused = await judge(d, code, free, o);
+      expect([refused.status, refused.headers.get("set-cookie")]).toEqual([status, null]);
+    }
+    const on = await judge(d, JUDGE, free);
+    expect([on.status, (await bodyOf(on)).pool]).toEqual([200, "judge"]);
+    // The session renews, and the day's limit of judge sessions holds.
+    expect((await start(d, `${free}; ${cookieFrom(on)}`)).status).toBe(200);
+    expect((await judge(d, JUDGE, free)).status).toBe(429);
+    // Without a session, a visitor without an account, and everybody before the start, is asked for one as today.
+    expect((await judge(d, JUDGE, "")).status).toBe(401);
+    const early = billingDeps(-600_000, { env: { JUDGE_CODE: JUDGE } }).d;
+    expect((await judge(early, JUDGE, await accountCookie(early))).status).toBe(401);
+    // Guesses are limited on this way too.
+    const guesses = billingDeps(0, { env: { JUDGE_CODE: JUDGE } }).d;
+    const cookie = await accountCookie(guesses);
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) statuses.push((await judge(guesses, "guess", cookie)).status);
+    expect(statuses).toEqual([...Array<number>(10).fill(403), 429]);
+  });
+
   // Fails if an outage starts a free session for an account whose plan is unknown, or hides the own-key way out.
   it("answers the own-key text when the plan cannot be read", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});

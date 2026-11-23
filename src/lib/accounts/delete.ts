@@ -32,7 +32,11 @@ export type DeleteOutcome = "deleted" | "subscription_kept" | "nothing_deleted" 
  *    handler clears the cookie anyway.
  *
  * A checkout paid even later reaches the webhook as an event of a customer that is marked as deleted,
- * which cancels it (src/lib/api/billing-webhook.ts). So no moment leaves a live subscription without an account.
+ * which cancels it (src/lib/api/billing-webhook.ts).
+ *
+ * One moment has no mark: a person signs in again between steps 4 and 5 and opens a checkout. Its record
+ * goes with the auth user, as a row cleared by hand would, so nothing proves a deletion: a later payment
+ * raises an alert for the owner and cancels nothing.
  */
 export async function deleteAccount(deps: Pick<ServerDeps, "config" | "clock" | "store" | "accounts" | "auth" | "billing">, account: Pick<Account, "accountId" | "sessionHash">): Promise<DeleteOutcome> {
   const fail = (step: string, e: unknown) => console.error(`Account deletion ${step} failed:`, e instanceof Error ? e.name : "unknown error");

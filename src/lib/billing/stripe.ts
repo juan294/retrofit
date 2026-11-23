@@ -15,7 +15,6 @@ export const STRIPE_API_VERSION = "2026-11-18.endive";
 /** Seconds an event's signature stays valid (Stripe's default). */
 export const WEBHOOK_TOLERANCE_S = 300;
 const TIMEOUT_MS = 8_000;
-const REPLAY_ATTEMPTS = 3;
 
 export interface StripeGatewayOptions {
   readonly secretKey: string;
@@ -66,7 +65,6 @@ function subscriptionOf(s: Stripe.Subscription): StripeSubscription {
     id: s.id,
     status: s.status,
     priceIds: s.items.data.map((i) => i.price.id),
-    currentPeriodStart: iso(item?.current_period_start),
     currentPeriodEnd: iso(end),
     cancelAtPeriodEnd: s.cancel_at_period_end || (cancelAt !== null && cancelAt === end),
     created: s.created,
@@ -121,25 +119,25 @@ export function createStripeGateway(options: StripeGatewayOptions): BillingGatew
   const openSessions = (s: Stripe, customerId: string) => all(s.checkout.sessions.list({ customer: customerId, status: "open", limit: 100 }));
   const priceOf = (session: Stripe.Checkout.Session) => session.metadata?.retrofit_price ?? null;
 
-  /** Closes a checkout; one that is already paid or closed is left as it is. */
-  async function closeSession(s: Stripe, id: string): Promise<void> {
+  /** Closes a checkout, whatever it was: "paid" when it was already completed, "closed" otherwise. Throws while it is open. */
+  async function closeSession(s: Stripe, id: string): Promise<"closed" | "paid"> {
     try {
       await s.checkout.sessions.expire(id);
+      return "closed";
     } catch (e) {
-      if ((await s.checkout.sessions.retrieve(id)).status === "open") throw e;
+      const { status } = await s.checkout.sessions.retrieve(id);
+      if (status === "open") throw e;
+      return status === "complete" ? "paid" : "closed";
     }
   }
 
-  /** A new checkout for the key, or the one an equal key already opened; never one that is closed. */
-  async function openSession(s: Stripe, params: Stripe.Checkout.SessionCreateParams, key: string): Promise<Stripe.Checkout.Session> {
-    for (let attempt = 0; attempt < REPLAY_ATTEMPTS; attempt++) {
-      const { id } = await s.checkout.sessions.create(params, { idempotencyKey: key });
-      // The answer may be a replay as old as the key's first call: that session may be paid or closed since.
-      const session = await s.checkout.sessions.retrieve(id);
-      if (session.status === "open") return session;
-      key = `retrofit-checkout-after-${id}`;
-    }
-    throw new BillingUnavailable("createCheckout", "closed");
+  /** Leaves at most `keep` open. A checkout that was paid meanwhile means a plan was bought: none stays open, and the caller must not offer another. */
+  async function keepOnly(s: Stripe, open: readonly Stripe.Checkout.Session[], keep: Stripe.Checkout.Session | undefined): Promise<void> {
+    let paid = false;
+    for (const other of open) if (other !== keep && (await closeSession(s, other.id)) === "paid") paid = true;
+    if (!paid) return;
+    if (keep) await closeSession(s, keep.id);
+    throw new BillingUnavailable("createCheckout", "paid");
   }
 
   return {
@@ -150,32 +148,29 @@ export function createStripeGateway(options: StripeGatewayOptions): BillingGatew
       });
     },
 
-    createCheckout({ accountId, customerId, priceId, attempt, successUrl, cancelUrl }) {
+    createCheckout({ accountId, customerId, priceId, successUrl, cancelUrl }) {
       return call("createCheckout", async (s) => {
         const open = await openSessions(s, customerId);
         const same = open.find((x) => priceOf(x) === priceId && x.url);
-        for (const other of open) if (other !== same) await closeSession(s, other.id);
+        await keepOnly(s, open, same);
         if (same) return hosted("createCheckout", same.url);
-        await openSession(
-          s,
-          {
-            mode: "subscription",
-            customer: customerId,
-            client_reference_id: accountId,
-            line_items: [{ price: priceId, quantity: 1 }],
-            success_url: successUrl,
-            cancel_url: cancelUrl,
-            // Names the checkout's price, so an open one can be reused. Entitlement never reads it.
-            metadata: { retrofit_price: priceId },
-          },
-          `retrofit-checkout-${accountId}-${priceId}-${attempt}`,
-        );
+        // No idempotency key of ours: it would replay a checkout that is closed by now. The SDK keys its own retries.
+        await s.checkout.sessions.create({
+          mode: "subscription",
+          customer: customerId,
+          client_reference_id: accountId,
+          line_items: [{ price: priceId, quantity: 1 }],
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+          // Names the checkout's price, so an open one can be reused. Entitlement never reads it.
+          metadata: { retrofit_price: priceId },
+        });
         // Another caller may have opened one meanwhile. Every caller that sees the same list keeps the same one:
         // the newest price, and of it the oldest checkout.
         const now = (await openSessions(s, customerId)).sort((x, y) => x.created - y.created || (x.id < y.id ? -1 : 1));
         const newest = now.at(-1);
         const keeper = now.find((x) => newest && priceOf(x) === priceOf(newest));
-        for (const other of now) if (other !== keeper) await closeSession(s, other.id);
+        await keepOnly(s, now, keeper);
         if (!keeper || priceOf(keeper) !== priceId) throw new BillingUnavailable("createCheckout", "superseded");
         return hosted("createCheckout", keeper.url);
       });
