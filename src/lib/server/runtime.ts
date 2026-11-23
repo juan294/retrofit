@@ -5,6 +5,7 @@ import { createMemoryAccountData } from "@/lib/accounts/memory";
 import { createSupabaseAccountData } from "@/lib/accounts/supabase";
 import { unavailableAuthGateway, type AuthGateway } from "@/lib/auth/gateway";
 import { createSupabaseAuthGateway } from "@/lib/auth/supabase";
+import { fixtureTxtResolver, systemTxtResolver, type TxtResolver } from "@/lib/claims/txt";
 import { getConfig, type Config, type SupabaseConfig } from "@/lib/config";
 import { createFetchContext } from "@/lib/fetch/context";
 import type { FetchContext } from "@/lib/fetch/http";
@@ -30,6 +31,8 @@ export interface ServerDeps {
   readonly auth: AuthGateway;
   readonly clock: Clock;
   readonly fetch: FetchContext;
+  /** DNS TXT lookups for ownership claims: the system resolver, or the fixtures resolver in fixtures mode. */
+  readonly txt: TxtResolver;
   /** Keeps background work (crawl workers) alive after the response. `after()` in production. */
   readonly waitUntil: (task: Promise<unknown>) => void;
   /** Computes the score stored on a ready crawl job. */
@@ -169,6 +172,7 @@ export function getServerDeps(): ServerDeps {
       },
       clock: serverClock(config),
       fetch: getFetchContext(config),
+      txt: config.fixturesEnabled ? fixtureTxtResolver : systemTxtResolver,
       waitUntil: runtimeWaitUntil,
       score: scoreSnapshot,
       kick: selfKick(config),

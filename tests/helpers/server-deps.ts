@@ -8,6 +8,7 @@ import { loadConfig, type Env } from "@/lib/config";
 import { slotKey } from "@/lib/analysis/capacity";
 import { createFetchContext } from "@/lib/fetch/context";
 import type { Resolver } from "@/lib/fetch/guard";
+import type { TxtResolver } from "@/lib/claims/txt";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { scoreSnapshot } from "@/lib/score/score";
 import { createMemoryBacking, createMemoryStore, type MemoryBacking } from "@/lib/store/memory";
@@ -30,6 +31,11 @@ export const FAST_TOLERANCE_MS = 20;
 
 /** Every non-fixture name "resolves" to a private address, so a test can never reach the network. */
 export const privateResolver: Resolver = async () => [{ address: "10.0.0.5", family: 4 }];
+
+/** No test may use real DNS for TXT records: every name answers ENOTFOUND unless a test passes its own resolver. */
+export const noRealTxt: TxtResolver = async (name) => {
+  throw Object.assign(new Error(`test TXT resolver: ${name} is not stubbed`), { code: "ENOTFOUND" });
+};
 
 /** No test may contact a non-loopback host: unknown names fail instead of reaching the system resolver. */
 export const noRealDns: Resolver = async (hostname) => {
@@ -77,6 +83,7 @@ export interface TestDepsOptions {
   store?: Store;
   accounts?: AccountData;
   auth?: AuthGateway;
+  txt?: TxtResolver;
 }
 
 export interface TestDeps extends ServerDeps {
@@ -109,6 +116,7 @@ export function testDeps(o: TestDepsOptions = {}): TestDeps {
     auth: o.auth ?? fixtureAuth,
     clock,
     fetch,
+    txt: o.txt ?? noRealTxt,
     score: o.score ?? scoreSnapshot,
     sleep: o.sleep,
     waitUntil: (task) => {

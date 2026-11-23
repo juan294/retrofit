@@ -4,7 +4,7 @@ import { countClientAnalysis } from "@/lib/fetch/limits";
 import { validateUrl } from "@/lib/fetch/url";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { dispatchQueued, startCrawlJob, type Invocation } from "./capacity";
-import { indexVisitorAnalysis } from "./owner";
+import { indexAccountAnalyses, indexVisitorAnalysis } from "./owner";
 import { createAnalysis } from "./record";
 import { COUNTING_RETRY_S, visitorTexts } from "./texts";
 
@@ -63,14 +63,13 @@ export async function startAnalysis(
   if (!crawl.ok) return { ok: false, status: 429, code: "daily_limit", message: visitorTexts.dailyLimit, retryAt: new Date(crawl.retryAt).toISOString() };
 
   // 4. A new analysis owned by this visitor (and attached to the signed-in account, if any). An
-  // anonymous analysis is listed under its visitor so that sign-in can attach it; a failure there
-  // costs only that attachment, so it is logged and the analysis goes on.
+  // anonymous analysis is listed under its visitor so that sign-in can attach it, and an attached
+  // one under its account (the account page offers it for a claim); a failure there costs only
+  // that list, so it is logged and the analysis goes on.
   const analysis = await createAnalysis(deps, { ownerHash: o.ownerHash, jobId: crawl.jobId, inputOrigin: url.origin, accountId: o.accountId });
-  const listed = o.accountId
-    ? null
-    : indexVisitorAnalysis(deps, o.ownerHash, analysis.id).catch((e: unknown) => {
-        console.error("Visitor analysis list failed:", e instanceof Error ? e.name : "unknown error");
-      });
+  const listed = (o.accountId ? indexAccountAnalyses(deps, o.accountId, [analysis.id]) : indexVisitorAnalysis(deps, o.ownerHash, analysis.id)).catch((e: unknown) => {
+    console.error(`${o.accountId ? "Account" : "Visitor"} analysis list failed:`, e instanceof Error ? e.name : "unknown error");
+  });
 
   // 5. Start queued work (this job, when a slot is free) through waitUntil, beside the list write.
   await Promise.all([listed, dispatchQueued(deps, invocation)]);
