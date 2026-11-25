@@ -201,7 +201,7 @@ Body shape: `{"status": "error", "error": "<code>", "message": "<recovery text>"
 
 #### Idempotence and retry guidance
 
-- Safe and idempotent for the caller: the same URL returns the same job while it runs and the same report (same `fetchedAt`) until `cachedUntil`. Two agents asking for one site share one crawl.
+- Safe and idempotent for the caller: the same URL returns the same job while it runs and the same report (same `fetchedAt`) until `cachedUntil` (or until the site's verified owner gets a new read, change 19). Two agents asking for one site share one crawl.
 - Side effect: the first call for an uncached site starts one crawl, and it counts once against the client limit per origin per hour.
 - On 202: call again with the same URL after `retryAfterSeconds`. The server holds each call up to 25 s, so a job finishes within about 6 calls even in the worst case (queue 120 s, crawl 45 s, stale detection 90 s: about 255 s). After 6 running answers, stop and tell the user to try later.
 - On 503 with `retryAfterSeconds`: call again after that time, once. On 429: do not retry before `retryAt`. On 400, 405 and 422: do not retry with the same input; ask the user. On 502: retry only with a changed address (for example `http://`), once.

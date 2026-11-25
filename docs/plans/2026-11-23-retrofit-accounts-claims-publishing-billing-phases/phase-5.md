@@ -11,7 +11,7 @@ Parent plan: [2026-11-23-retrofit-accounts-claims-publishing-billing.md](../2026
 
 1. Create the Stripe account (or use an existing one) and its test-mode products Pro and Agency with monthly prices; amounts are Juan's decision and may stay unset until billing starts.
 2. Test-mode secret key and a test webhook endpoint `https://retrofit.thecreativetoken.com/api/billing/webhook` with its signing secret.
-3. Production variables: `BILLING_START=2027-01-20T00:00:00Z`, `STRIPE_SECRET_KEY` (test), `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_AGENCY` (optional until set).
+3. Production variables: `BILLING_START=2027-01-20T00:00:00Z`; optional until that instant (owner decision 2026-11-25), both or neither: `STRIPE_SECRET_KEY` (test), `STRIPE_WEBHOOK_SECRET`; `STRIPE_PRICE_PRO`, `STRIPE_PRICE_AGENCY` (optional until set).
 4. Live mode (live keys, live webhook, live prices) is out of this plan: a separate authorized release after 2027-01-18.
 
 ## Changes

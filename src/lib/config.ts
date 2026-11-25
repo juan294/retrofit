@@ -227,7 +227,7 @@ const EARLIEST_BILLING_START = "2027-01-20T00:00:00Z";
 
 /**
  * STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET: both or neither. Without them nothing can be bought;
- * getBillingGateway raises an alert when that is still so on Vercel from BILLING_START on.
+ * the daily credit check opens an alert when that is still so from BILLING_START on.
  * STRIPE_PRICE_PRO and STRIPE_PRICE_AGENCY: optional, and only with the secret key; a comma-separated
  * list, the first price for sale and the others kept for their subscribers. Test mode only:
  * a live key is refused everywhere (the live switch is a separate authorized release). No message

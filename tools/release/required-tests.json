@@ -9300,6 +9300,42 @@
       "rule": "publishing",
       "suite": "unit",
       "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner a retry after a failed new read still replaces the old one"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner replaces the old read from the new address http://bakery.example, for the owner only"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner replaces the old read from the new address https://www.bakery.example, for the owner only"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner asks again who owns the host on a retry"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner a retry keeps the host a redirecting address led to"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner keeps the cached read when a new one may not start"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
       "title": "a new read for a verified owner joins the read of another host that the site redirects to now"
     },
     {
@@ -9319,6 +9355,12 @@
       "suite": "unit",
       "file": "tests/api/analyze.test.ts",
       "title": "a new read for the verified owner keeps the cached read for visitors, other accounts, and a pending or lapsed claim"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/api/analyze.test.ts",
+      "title": "a new read for the verified owner keeps the cached read for everybody when the daily host cap is full"
     },
     {
       "rule": "publishing",
@@ -11009,8 +11051,8 @@
     {
       "rule": "billing",
       "suite": "unit",
-      "file": "tests/billing/runtime.test.ts",
-      "title": "the billing gateway of a deployment without Stripe on Vercel raises an alert from the billing start on, and only then"
+      "file": "tests/ops/credit-check.test.ts",
+      "title": "billing without Stripe opens one issue from the billing start on, and only without the Stripe variables"
     },
     {
       "rule": "billing",

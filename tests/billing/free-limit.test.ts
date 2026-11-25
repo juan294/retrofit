@@ -229,7 +229,8 @@ describe("the analysis start before billing", () => {
     for (const signedIn of [false, true]) {
       const before = await run(-1, signedIn);
       expect(before).toEqual(await run(Date.parse("2026-11-23T10:00:00Z") - START, signedIn));
-      expect([before.accounts, before.stripe, before.cookie]).toEqual([[], [], null]);
+      // One ownership read of a signed-in start (an owner's new read, src/lib/claims/owner.ts), which has nothing to do with billing.
+      expect([before.accounts, before.stripe, before.cookie]).toEqual([signedIn ? ["listClaims"] : [], [], null]);
       expect(before.ops.join()).not.toMatch(/free-analyses|account-window|billing/);
     }
     // The spy sees the new calls after the start.

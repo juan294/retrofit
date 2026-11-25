@@ -84,7 +84,8 @@ describe("claimDestination and joins", () => {
 describe("a new read for a verified owner", () => {
   const ORIGIN = "https://bakery.example";
   const HOST = "bakery.example";
-  const owner = { mayReread: async (host: string) => host === HOST };
+  const ownerOf = (...owned: string[]) => ({ ownedOf: async (hosts: readonly string[]) => hosts.filter((h) => owned.includes(h)) });
+  const owner = ownerOf(HOST);
 
   /** A ready read of HOST, `ageS` seconds old. */
   async function readyRead(ageS: number) {
@@ -100,18 +101,18 @@ describe("a new read for a verified owner", () => {
   it("replaces a read one hour old for the owner of its host, and for nobody else", async () => {
     const { a, jobId } = await readyRead(OWNER_REREAD_S);
     expect(await startOrJoinCrawl(a, ORIGIN)).toEqual({ jobId, created: false });
-    expect(await startOrJoinCrawl(a, ORIGIN, { mayReread: async (host) => host === "other.example" })).toEqual({ jobId, created: false });
+    expect(await startOrJoinCrawl(a, ORIGIN, ownerOf("other.example"))).toEqual({ jobId, created: false });
     const next = await startOrJoinCrawl(a, ORIGIN, owner);
     expect(next.created).toBe(true);
     expect(next.jobId).not.toBe(jobId);
-    expect((await getJob(a.store, next.jobId))?.rereadHost).toBe(HOST);
+    expect((await getJob(a.store, next.jobId))?.rereadHosts).toContain(HOST);
   });
 
   // Fails if an owner can make Retrofit read a site more than once an hour, or the ownership is read when it cannot matter.
   it("keeps a younger read without asking who owns the host", async () => {
     const { a, jobId } = await readyRead(OWNER_REREAD_S - 1);
     let asked = 0;
-    expect(await startOrJoinCrawl(a, ORIGIN, { mayReread: async () => (asked++, true) })).toEqual({ jobId, created: false });
+    expect(await startOrJoinCrawl(a, ORIGIN, { ownedOf: async (hosts) => (asked++, hosts) })).toEqual({ jobId, created: false });
     expect(asked).toBe(0);
   });
 
@@ -130,10 +131,60 @@ describe("a new read for a verified owner", () => {
   it("takes over the destination it was started for", async () => {
     const { a, jobId } = await readyRead(OWNER_REREAD_S);
     const next = await startOrJoinCrawl(a, ORIGIN, owner);
-    expect(await claimDestination(a, next.jobId, HOST, HOST)).toBeNull();
+    expect(await claimDestination(a, next.jobId, HOST, [HOST])).toBeNull();
     const later = await startOrJoinCrawl(a, "https://alias.example");
     expect(await claimDestination(a, later.jobId, HOST)).toBe(next.jobId);
     expect(next.jobId).not.toBe(jobId);
+  });
+
+  /** The worker's claim of the destination, with the job's own rereadHosts. */
+  const claim = async (d: JobDeps, jobId: string, host: string) => claimDestination(d, jobId, host, (await getJob(d.store, jobId))!.rereadHosts);
+
+  // Fails if the owner's retry after a failed new read joins the old read again.
+  it("a retry after a failed new read still replaces the old one", async () => {
+    const { a } = await readyRead(OWNER_REREAD_S);
+    const failed = await startOrJoinCrawl(a, ORIGIN, owner);
+    await updateJob(a, (await getJob(a.store, failed.jobId))!, { status: "failed", failure: { code: "crawl_error", message: "x" } });
+    const retry = await startOrJoinCrawl(a, ORIGIN, owner);
+    expect(retry.created).toBe(true);
+    expect(await claim(a, retry.jobId, HOST)).toBeNull();
+  });
+
+  // Fails if the owner gets the old read from another address of the site that was never analyzed, or anybody else gets a new one there.
+  it.each(["http://bakery.example", "https://www.bakery.example"])("replaces the old read from the new address %s, for the owner only", async (address) => {
+    const { a, jobId } = await readyRead(OWNER_REREAD_S);
+    const own = await startOrJoinCrawl(a, address, owner);
+    const other = await startOrJoinCrawl(a, `${address}:8080`);
+    expect(await claim(a, other.jobId, HOST)).toBe(jobId);
+    expect(await claim(a, own.jobId, HOST)).toBeNull();
+  });
+
+  // Fails if an owner's retry keeps a right that the account lost in between.
+  it("asks again who owns the host on a retry", async () => {
+    const { a, jobId } = await readyRead(OWNER_REREAD_S);
+    const failed = await startOrJoinCrawl(a, ORIGIN, owner);
+    await updateJob(a, (await getJob(a.store, failed.jobId))!, { status: "failed", failure: { code: "crawl_error", message: "x" } });
+    const retry = await startOrJoinCrawl(a, ORIGIN, ownerOf());
+    expect(await claim(a, retry.jobId, HOST)).toBe(jobId);
+  });
+
+  // Fails if a retry forgets the host that a redirecting address led to.
+  it("a retry keeps the host a redirecting address led to", async () => {
+    const { a, jobId } = await readyRead(OWNER_REREAD_S);
+    const address = "https://short.example";
+    const joined = await startOrJoinCrawl(a, address);
+    await updateJob(a, (await getJob(a.store, joined.jobId))!, { status: "joined", joinedTo: jobId });
+    const failed = await startOrJoinCrawl(a, address, owner);
+    expect(failed.created).toBe(true);
+    await updateJob(a, (await getJob(a.store, failed.jobId))!, { status: "failed", failure: { code: "crawl_error", message: "x" } });
+    const retry = await startOrJoinCrawl(a, address, owner);
+    expect(await claim(a, retry.jobId, HOST)).toBeNull();
+  });
+
+  // Fails if the cached read is dropped although its replacement may not start (the daily host cap).
+  it("keeps the cached read when a new one may not start", async () => {
+    const { a, jobId } = await readyRead(OWNER_REREAD_S);
+    expect(await startOrJoinCrawl(a, ORIGIN, { ...owner, mayReplace: async () => false })).toEqual({ jobId, created: false });
   });
 
   // Fails if a redirect lets an owner of one host replace the read of another host.
@@ -145,7 +196,7 @@ describe("a new read for a verified owner", () => {
     const old = (await getJob(a.store, other.jobId))!;
     await a.store.set(jobKey(old.id), { ...old, updatedAt: old.updatedAt - OWNER_REREAD_S * 1000 }, 3600);
     const next = await startOrJoinCrawl(a, ORIGIN, owner);
-    expect(await claimDestination(a, next.jobId, "other.example", HOST)).toBe(other.jobId);
+    expect(await claimDestination(a, next.jobId, "other.example", [HOST])).toBe(other.jobId);
   });
 
   // Fails if two addresses of one site let its owner read it twice in an hour.
@@ -154,10 +205,10 @@ describe("a new read for a verified owner", () => {
     const http = await startOrJoinCrawl(a, "http://bakery.example");
     await updateJob(a, (await getJob(a.store, http.jobId))!, { status: "joined", joinedTo: (await startOrJoinCrawl(a, ORIGIN)).jobId });
     const first = await startOrJoinCrawl(a, ORIGIN, owner);
-    expect(await claimDestination(a, first.jobId, HOST, HOST)).toBeNull();
+    expect(await claimDestination(a, first.jobId, HOST, [HOST])).toBeNull();
     await updateJob(a, (await getJob(a.store, first.jobId))!, { status: "ready", destinationHost: HOST });
     const second = await startOrJoinCrawl(a, "http://bakery.example", owner);
-    expect(await claimDestination(a, second.jobId, HOST, HOST)).toBe(first.jobId);
+    expect(await claimDestination(a, second.jobId, HOST, [HOST])).toBe(first.jobId);
   });
 });
 

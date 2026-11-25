@@ -18,8 +18,8 @@ const errorOf = (load: () => unknown): ConfigError => {
 
 describe("billing configuration on Vercel", () => {
   // Fails if a release can ship without the instant billing starts.
-  it.each(["BILLING_START"])("refuses a missing or blank %s", (name) => {
-    for (const value of [undefined, " "]) expect(errorOf(() => loadConfig({ ...VERCEL_ENV, [name]: value })).variable).toBe(name);
+  it("refuses a missing or blank BILLING_START", () => {
+    for (const value of [undefined, " "]) expect(errorOf(() => loadConfig({ ...VERCEL_ENV, BILLING_START: value })).variable).toBe("BILLING_START");
   });
 
   // Owner decision 2026-11-25. Fails if a release before billing starts needs Stripe: every route would fail in production.

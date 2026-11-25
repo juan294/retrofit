@@ -5,7 +5,7 @@ import { getAnalysis } from "@/lib/analysis/record";
 import { handleAnalysisStatus } from "@/lib/api/status";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { getJob, jobKey, leaseKey, OWNER_REREAD_S, startOrJoinCrawl, updateJob, type CrawlJob } from "@/lib/crawl/jobs";
-import { shortHash } from "@/lib/fetch/limits";
+import { shortHash, utcDay } from "@/lib/fetch/limits";
 import { bakery } from "../fixtures/sites";
 import { serveSites } from "../helpers/sites";
 import { lapseNow, pendingClaim, verifiedClaim } from "../publish/setup";
@@ -260,7 +260,7 @@ describe("a new read for the verified owner", () => {
     await aged(OWNER_REREAD_S);
     const next = await analyze(owner);
     expect(next.id).not.toBe(first.id);
-    expect(next).toMatchObject({ status: "ready", destinationHost: host, rereadHost: host });
+    expect(next).toMatchObject({ status: "ready", destinationHost: host, rereadHosts: [host] });
     expect((await analyze()).id).toBe(next.id);
     expect((await analyze(owner)).id).toBe(next.id);
   });
@@ -282,6 +282,19 @@ describe("a new read for the verified owner", () => {
     expect((await analyze(await accountCookie(d, OTHER_ACCOUNT))).id).toBe(first.id);
     await lapseNow(d, claim);
     expect((await analyze(owner)).id).toBe(first.id);
+  });
+
+  // Fails if an owner's new read over the daily host cap costs every visitor the cached one.
+  it("keeps the cached read for everybody when the daily host cap is full", async () => {
+    const { d, host, analyze, first, aged } = await cachedRead();
+    await verifiedClaim(d, undefined, host);
+    await aged(OWNER_REREAD_S);
+    // The site was counted on an earlier day, and today's cap is used.
+    for (const key of [...d.backing.values.keys()]) if (key.startsWith("crawl-origin-day:")) d.backing.values.delete(key);
+    const day = utcDay(d.clock());
+    for (let n = 0; n < d.config.crawlMaxHostsPerDay; n++) await d.store.incrementWindow(`crawl-origins:${day}`, 86_400);
+    expect((await analyze(await accountCookie(d))).id).toBe(first.id);
+    expect((await analyze()).id).toBe(first.id);
   });
 
   // Fails if an outage of the account data stops the owner's analysis instead of giving the cached read.
