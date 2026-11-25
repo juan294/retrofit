@@ -194,6 +194,7 @@ The pre-launch audit of `a6abdb9` found no blocker and 7 high, 16 medium and 6 l
 - BE-M1: a failed check that a visitor starts on a verified claim is shown and does not count; it has its own time column, so it cannot postpone the daily recheck.
 - A lapsed claim's status text no longer mentions the page or badge; the panel adds that sentence only with a publication.
 - `purge_users_without_account` is the only security definer function (service_role has no privileges on `auth.users`); `supabase/tests/purge_access.sql` proves its selection, its grants and that no other one exists.
+- Owner check 1, done 2026-11-25: Juan read both pages locally (build of `474e366`) and approved `/privacy` and `/terms`. The approved source is `src/lib/site/legal-texts.ts` at blob `ecfec04`; only its first comment changed since. A later change of either text needs a new approval.
 - Every per-network limit now counts an IPv6 /64 as one network.
 - Verified on production (read-only): `token_verifications` is 30; the region is `iad1`; six daily physical backups, no point-in-time recovery; `SUPABASE_ANON_KEY` and `BILLING_START` are missing in Vercel. `email_sent` is not returned by the CLI.
 - Known and recorded: a visitor whose first session request fails before the pool is known can still read the own-key text; the confirm button loses focus while the page leaves; no screen reader was run.

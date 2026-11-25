@@ -27,7 +27,7 @@
     "hosting-and-domain-decision"
   ],
   "current_gaps": [
-    "v0.3.0: owner approval of /privacy and /terms, and the UI review.",
+    "v0.3.0: the owner's UI review (the owner approved /privacy and /terms on 2026-11-25).",
     "v0.3.0: production migrations, Auth settings, SUPABASE_ANON_KEY and BILLING_START are not applied yet (docs/release/release-playbook.md, Wave A)."
   ],
   "invariants": [

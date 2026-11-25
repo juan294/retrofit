@@ -6,7 +6,7 @@ All notable changes to Retrofit are recorded here. The format follows [Keep a Ch
 
 ### Added
 
-- `/pricing` with "notify me", drafts of `/privacy` and `/terms` for owner review, and unsubscribe.
+- `/pricing` with "notify me", `/privacy` and `/terms`, and unsubscribe.
 - Accounts: sign-in by email link (no password), saved reports, sign-out and account deletion. A link opened in another browser names its address before it signs in.
 - Ownership claims by meta tag or DNS record, rechecked daily.
 - Publishing: the verified owner of a site can publish its report and agent at `/s/<host>`, and embed a badge. A verified owner gets a new read of the site an hour after the last one.
