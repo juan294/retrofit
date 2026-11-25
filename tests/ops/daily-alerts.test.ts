@@ -71,14 +71,30 @@ describe("the daily cleanup", () => {
     expect(await res.json()).toMatchObject({ stripeEvents: 3, failed: ["store"] });
   });
 
-  // SE-M2. Fails if unconfirmed users without an account are kept, purged while their link can still work, or without a bound.
-  it("purges unconfirmed users older than a day, at most 10,000 a run", async () => {
-    const { d } = setup();
+  const purging = (d: TestDeps, purge: (n: number) => number) => {
     const calls: unknown[][] = [];
-    const deps = { ...d, accounts: { ...d.accounts, purgeUsersWithoutAccount: async (...args: unknown[]) => (calls.push(args), 4) } };
-    const res = await handleCleanup(cron("cleanup"), deps as TestDeps);
-    expect([res.status, (await res.json()).usersWithoutAccount]).toEqual([200, 4]);
-    expect(calls).toEqual([["2026-11-30T03:17:00.000Z", 10_000]]);
+    return { calls, deps: { ...d, accounts: { ...d.accounts, purgeUsersWithoutAccount: async (...args: unknown[]) => (calls.push(args), purge(calls.length)) } } as TestDeps };
+  };
+
+  // SE-M2, reviewer note. Fails if unconfirmed users without an account are kept, purged while their link can still work, or
+  // deleted in one statement that the database's time limit can stop (then no user is ever deleted).
+  it("purges unconfirmed users older than a day in batches, until none is left", async () => {
+    const { d } = setup();
+    const { calls, deps } = purging(d, (n) => (n < 3 ? 500 : 4));
+    const res = await handleCleanup(cron("cleanup"), deps);
+    expect([res.status, (await res.json()).usersWithoutAccount]).toEqual([200, 1004]);
+    expect(calls).toEqual(Array.from({ length: 3 }, () => ["2026-11-30T03:17:00.000Z", 500]));
+    expect(sent).toEqual([]);
+  });
+
+  // Fails if a run has no bound, or goes on so long that the platform ends it (its time limit is 60 seconds) before the answer.
+  it("a run purges at most 10,000 users, and starts no batch after 40 seconds", async () => {
+    const bound = purging(setup().d, () => 500);
+    const res = await handleCleanup(cron("cleanup"), bound.deps);
+    expect([res.status, (await res.json()).usersWithoutAccount, bound.calls.length]).toEqual([200, 10_000, 20]);
+    const { d, clock } = setup();
+    const slow = purging(d, () => (clock.advance(20_000), 500));
+    expect([(await handleCleanup(cron("cleanup"), slow.deps)).status, slow.calls.length]).toEqual([200, 2]);
     expect(sent).toEqual([]);
   });
 });

@@ -11,6 +11,10 @@ const PRUNE_LIMIT = 10_000;
 export const NO_ACCOUNT_KEPT_MS = 24 * 3600_000;
 /** Users purged in one run: more than the provider's email limit (300 an hour) can create in a day. */
 const PURGE_LIMIT = 10_000;
+/** Users purged in one statement: each deletion cascades through the sign-in tables, and the database limits a statement's time. */
+const PURGE_BATCH = 500;
+/** No batch starts after this: the platform ends the run at 60 s (vercel.json), and a batch takes 10 s at most. */
+const PURGE_MS = 40_000;
 
 /**
  * GET /api/cron/cleanup (Vercel Cron): `Authorization: Bearer <CRON_SECRET>`, then deletes expired store rows,
@@ -21,6 +25,14 @@ export async function handleCleanup(request: Request, deps: Pick<ServerDeps, "co
   if (!hasBearer(request, deps.config.cronSecret)) return json(401, { error: "unauthorized" });
   const before = (ms: number) => new Date(deps.clock() - ms).toISOString();
   const { store, accounts } = deps;
+  const purgeUsers = async (): Promise<number> => {
+    const [cutoff, stopAt] = [before(NO_ACCOUNT_KEPT_MS), deps.clock() + PURGE_MS];
+    let purged = 0;
+    for (let n = PURGE_BATCH; n === PURGE_BATCH && purged < PURGE_LIMIT && deps.clock() < stopAt; purged += n) {
+      n = await accounts.purgeUsersWithoutAccount(cutoff, PURGE_BATCH);
+    }
+    return purged;
+  };
   const failed: string[] = [];
   const step = async (name: string, run: () => Promise<number>): Promise<number> => {
     try {
@@ -34,7 +46,7 @@ export async function handleCleanup(request: Request, deps: Pick<ServerDeps, "co
   const [deleted, stripeEvents, usersWithoutAccount] = await Promise.all([
     step("store", async () => store.cleanup?.() ?? 0),
     step("stripe_events", () => accounts.pruneStripeEvents(before(STRIPE_EVENTS_KEPT_MS), PRUNE_LIMIT)),
-    step("users_without_account", () => accounts.purgeUsersWithoutAccount(before(NO_ACCOUNT_KEPT_MS), PURGE_LIMIT)),
+    step("users_without_account", purgeUsers),
   ]);
   const counts = {
     deleted,

@@ -57,8 +57,8 @@ describe("quota caps", () => {
   });
 
   // Strix 2026-11-25, owner decision. Fails if many judge sessions of one network (the code is shared, and sessions last weeks) can make more
-  // calls in a UTC day than the network's limit, if a call that its own session refuses uses the network's, if another network or the public
-  // pool is affected, or if the refusal asks a judge for a key.
+  // calls in a UTC day than the network's limit, if a call that its own session refuses uses the network's, if a call that the network refuses
+  // uses its session's, if another network or the public pool is affected, or if the refusal asks a judge for a key.
   it("refuses judge calls past the network's limit of the UTC day, over all its sessions", async () => {
     const { clock, quota } = setup();
     const call = (sid: string, network = "n") => quota.admitCall({ sid, pool: "judge", network });
@@ -76,7 +76,10 @@ describe("quota caps", () => {
       retryAt,
       message: "Judges on this network made their 1000 AI calls for today. Judge access works again at 00:00 UTC on 16 November 2026.",
     });
+    expect(await quota.callsUsed({ sid: "fresh", pool: "judge" })).toBe(0);
     expect((await call("fresh", "elsewhere")).ok).toBe(true);
+    expect(await quota.callsUsed({ sid: "fresh", pool: "judge" })).toBe(1);
+    expect([await quota.networkCapReached("n"), await quota.networkCapReached("elsewhere")]).toEqual([true, false]);
     expect((await quota.admitCall({ sid: "p", pool: "public", network: "n" })).ok).toBe(true);
     clock.set(retryAt);
     expect((await call("fresh")).ok).toBe(true);
