@@ -22,7 +22,7 @@ import { STRIPE_EVENTS_KEPT_MS } from "@/lib/api/cleanup";
 import { PENDING_COOKIE, PENDING_TTL_S, SIGN_IN_COOKIE, SIGN_IN_TTL_S } from "@/lib/api/sign-in";
 import { BADGE_MAX_AGE_S } from "@/lib/badge/handler";
 import { FREE_ANALYSES, FREE_WINDOW_S } from "@/lib/billing/free-limit";
-import { SESSION_COOKIE, SESSION_TTL_S } from "@/lib/inference/session";
+import { JUDGE_SESSION_TTL_S, SESSION_COOKIE, SESSION_TTL_S } from "@/lib/inference/session";
 import { LEAD_EMAIL, SOURCE_URL } from "./own-site";
 
 export interface LegalSection {
@@ -50,7 +50,7 @@ export const PRIVACY: LegalDocument = {
       heading: "Cookies",
       body: [
         `${VISITOR_COOKIE}: a random identifier for your browser, kept for ${days(VISITOR_MAX_AGE_S)} days. It shows that the analyses you started are yours. Retrofit stores only a hash of it.`,
-        `${SESSION_COOKIE}: set only when you use Retrofit's free AI, kept for ${hours(SESSION_TTL_S)} hours and sent only to Retrofit's AI routes.`,
+        `${SESSION_COOKIE}: set only when you use Retrofit's free AI, kept for ${hours(SESSION_TTL_S)} hours (with judge access, for ${days(JUDGE_SESSION_TTL_S)} days after the last visit) and sent only to Retrofit's AI routes.`,
         `__Host-${ACCOUNT_COOKIE}: set when you sign in. It keeps you signed in on this browser until you sign out, or until ${days(ACCOUNT_SESSION_TTL_S)} days pass without a visit. Retrofit stores only a hash of it, with your account id and email address.`,
         `__Host-${SIGN_IN_COOKIE}: set for ${hours(SIGN_IN_TTL_S)} hour when you ask for a sign-in link, so the link returns you to the page you were on. Retrofit stores only a hash of it.`,
         `__Host-${PENDING_COOKIE}: set for ${PENDING_TTL_S / 60} minutes when you open a sign-in link that this browser did not ask for, while you confirm your address. Retrofit stores a hash of it, with that address until you confirm or cancel, or the time ends.`,
@@ -86,6 +86,7 @@ export const PRIVACY: LegalDocument = {
       body: [
         "An account is your email address, kept by Supabase Auth. Retrofit stores no password.",
         "When you sign in, the analyses this browser started are added to your account, but only in the browser that asked for the sign-in link.",
+        "When somebody asks for a sign-in link, the sign-in provider keeps the typed address. If nobody opens the link, it is deleted after about a day.",
         "To limit sign-in emails, Retrofit keeps a keyed hash of your email address for about an hour. It does not keep the address for that." +
           ` A browser that signed in is remembered for that address with the same keyed hash and a hash of its ${VISITOR_COOKIE} cookie for ${days(VISITOR_MAX_AGE_S)} days, also after the account is deleted, so it keeps one sign-in email an hour that other browsers cannot use up.`,
         "A report you save is kept until you delete your account.",

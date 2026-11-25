@@ -515,7 +515,7 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
         none("published_sites", "refreshed_at"),
         none("deleted_customers", "customer_hash"),
         none("api_keys", "hint"),
-        none("site_claims", "last_attempt_at"),
+        none("site_claims", "last_attempt_at, visitor_checked_at"),
         call<unknown>("checkReady", () => client.rpc("claims_due", { p_checked_before: past, p_slow_lapsed_before: past, p_slow_checked_before: past, p_limit: 0 })),
         call<number>("checkReady", () => client.rpc("purge_unconfirmed_users", { p_before: past, p_limit: 0 })),
       ]);
