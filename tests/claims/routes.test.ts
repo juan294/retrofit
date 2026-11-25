@@ -149,6 +149,25 @@ describe("check, start over and remove", () => {
     expect(second.claim).toMatchObject({ status: "verified", reason: "Retrofit found the record at _retrofit-verification.shop.example.com." });
   });
 
+  // BE-M1. Fails if Check again during an outage ends a verified claim (and its published page), hides what it found, or a
+  // later pass does not clear it.
+  it("Check again on a verified claim shows a failure and never ends the claim", async () => {
+    const clock = fakeClock(Date.parse("2026-11-23T10:00:00.000Z"));
+    const { d, claimId, token, check, records } = await withClaim({ clock });
+    records.current = [[`retrofit-site-verification=${token}`]];
+    expect((await read(await check(claimId))).claim?.status).toBe("verified");
+    records.current = [];
+    clock.advance(60_000);
+    for (let n = 0; n < 3; n++) {
+      const failed = await read(await check(claimId));
+      expect(failed.claim).toMatchObject({ status: "verified", reason: expect.stringContaining("found no TXT record"), lastChecked: expect.stringContaining("10:01 UTC") });
+      expect(failed.message).toBe(failed.claim?.reason);
+    }
+    expect(await d.accounts.getClaim(TEST_ACCOUNT.userId, claimId)).toMatchObject({ status: "verified", failures: 0 });
+    records.current = [[`retrofit-site-verification=${token}`]];
+    expect((await read(await check(claimId))).claim).toMatchObject({ status: "verified", reason: expect.stringContaining("found the record") });
+  });
+
   // Fails if a claim can be checked more than CLAIM_CHECKS_PER_HOUR times an hour (Start over included), or the 429 lacks the retry time.
   it(`allows ${CLAIM_CHECKS_PER_HOUR} checks per claim per hour, Start over included, then 429 with retryAt`, async () => {
     const clock = fakeClock(Date.parse("2026-11-23T10:20:00.000Z"));

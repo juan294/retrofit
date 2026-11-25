@@ -14,7 +14,7 @@ const MAX_RUNNING = 6;
 const BRIDGE_POLL_BUDGET_MS = 140_000;
 
 const DESCRIPTION =
-  "Gets Retrofit's agent-readiness score (0 to 100, score/v1) for a public website, with each check's result, rule and evidence. Pass the address as the user gave it; Retrofit scores the site from its home page, so a path is not used. Results are kept for 24 hours. A call can take up to a minute. If the result says the score is still running, call again with the same URL. Read-only: it changes nothing on this page or on the scored site.";
+  "Gets Retrofit's agent-readiness score (0 to 100, score/v1) for a public website, with each check's result, rule and evidence. Pass the address as the user gave it; Retrofit scores the site from its home page, so a path is not used. A result is usually kept for up to 24 hours, and the site's verified owner can replace it sooner: call again when the user asks for a new check. No call can force a new read of the site. A call can take up to a minute. If the result says the score is still running, call again with the same URL. Read-only: it changes nothing on this page or on the scored site.";
 
 const RUNNING_REASON = "The score is still running. Call score_site again in 20 seconds with the same URL.";
 const STOP_REASON = "The score is still running after several checks. Tell the user to try again in a few minutes.";

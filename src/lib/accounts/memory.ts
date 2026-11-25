@@ -66,6 +66,8 @@ interface ClaimRow {
   claim: Claim;
   /** The latest recheck attempt that recorded no result (ms). Never returned. */
   attemptedAt?: number;
+  /** The latest check that counts, when a visitor's failed check is the latest one (the database's last_checked_at). */
+  countedAt?: string | null;
   /** The account that took the host over; null after that account's data is deleted. Never returned. */
   supersededBy: string | null;
   /** Insertion order, for oldest-first lists. */
@@ -356,12 +358,18 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
         const found = checkable(claimId, input.tokenHash);
         if ("done" in found) return found.done;
         const { row } = found;
+        const shown = { lastCheckedAt: checkedAt, lastResult: input.result, lastDetail: input.detail };
+        if (input.byVisitor && row.claim.status === "verified") {
+          row.countedAt ??= row.claim.lastCheckedAt;
+          return { outcome: "updated", claim: update(row, shown) };
+        }
+        row.countedAt = null;
         const failures = row.claim.failures + 1;
         const lapses = (row.claim.status === "verified" || row.claim.status === "lapsed") && failures >= CLAIM_LAPSE_AFTER;
         const status: ClaimStatus = lapses ? "lapsed" : row.claim.status;
         // The lapse instant is the failure that lapsed it; later failures keep it.
         const lapsedAt = status === "lapsed" ? (row.claim.lapsedAt ?? checkedAt) : null;
-        return { outcome: "updated", claim: update(row, { failures, status, lapsedAt, lastCheckedAt: checkedAt, lastResult: input.result, lastDetail: input.detail }) };
+        return { outcome: "updated", claim: update(row, { failures, status, lapsedAt, ...shown }) };
       });
     },
 
@@ -380,6 +388,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
         }
         // The host moved: every publication under another claim ends (also one paused by a pending claim).
         if (published.get(row.claim.host)?.claimId !== row.claim.id) published.delete(row.claim.host);
+        row.countedAt = null;
         const verifiedAt = row.claim.status === "verified" ? row.claim.verifiedAt : checkedAt;
         const claim = update(row, { status: "verified", verifiedAt, lapsedAt: null, lastCheckedAt: checkedAt, failures: 0, lastResult: "verified", lastDetail: null });
         return { outcome: "verified", claim, movedFrom };
@@ -389,18 +398,19 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
     async listClaimsDueForRecheck(rawNow, limit) {
       const now = Date.parse(rawNow);
       // Never checked sorts first, as in the database (nulls first).
-      const checked = (c: Claim) => (c.lastCheckedAt === null ? 0 : Date.parse(c.lastCheckedAt));
-      const due = (c: Claim) => {
-        if (c.status === "verified") return checked(c) < now - CLAIM_RECHECK_AFTER_S * 1000;
+      const checked = (r: ClaimRow) => Date.parse(r.countedAt ?? r.claim.lastCheckedAt ?? iso(0));
+      const due = (r: ClaimRow) => {
+        const c = r.claim;
+        if (c.status === "verified") return checked(r) < now - CLAIM_RECHECK_AFTER_S * 1000;
         if (c.status !== "lapsed") return false;
         const slow = c.lapsedAt !== null && Date.parse(c.lapsedAt) < now - CLAIM_SLOW_AFTER_S * 1000;
-        return checked(c) < now - (slow ? CLAIM_SLOW_RECHECK_AFTER_S : CLAIM_RECHECK_AFTER_S) * 1000;
+        return checked(r) < now - (slow ? CLAIM_SLOW_RECHECK_AFTER_S : CLAIM_RECHECK_AFTER_S) * 1000;
       };
       const rank = (c: Claim) => (c.status === "verified" ? 0 : 1);
-      const tried = (r: ClaimRow) => Math.max(checked(r.claim), r.attemptedAt ?? 0);
+      const tried = (r: ClaimRow) => Math.max(checked(r), r.attemptedAt ?? 0);
       return op(() =>
         [...claims.values()]
-          .filter((r) => due(r.claim))
+          .filter(due)
           .sort((x, y) => rank(x.claim) - rank(y.claim) || tried(x) - tried(y))
           .slice(0, Math.max(0, limit))
           .map((r) => copy(r.claim)),

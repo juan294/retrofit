@@ -349,6 +349,18 @@ begin
   if v ->> 'outcome' <> 'verified' or v -> 'claim' ->> 'status' <> 'verified' or v -> 'moved_from' <> '[]'::jsonb then
     raise exception 'accounts_access: verify_claim did not verify: %', v;
   end if;
+  -- *_claim_checks.sql: a visitor's failed checks of a verified claim are recorded with their time, and neither count nor move the recheck.
+  for n in 1..4 loop
+    v := public.record_claim_failure(v_first, repeat('3', 64), 'robots_unavailable', null, '2026-11-23T10:00:00Z', 3, true);
+  end loop;
+  if v ->> 'outcome' <> 'updated' or v -> 'claim' ->> 'status' <> 'verified' or (v -> 'claim' ->> 'failures')::int <> 0
+     or v -> 'claim' ->> 'last_result' <> 'robots_unavailable' or (v -> 'claim' ->> 'last_checked_at')::timestamptz <> '2026-11-23T09:00:00Z'
+     or (v -> 'claim' ->> 'visitor_checked_at')::timestamptz <> '2026-11-23T10:00:00Z' then
+    raise exception 'accounts_access: a visitor''s failed check of a verified claim counted, moved the recheck or was not recorded: %', v;
+  end if;
+  if not exists (select 1 from pg_catalog.jsonb_array_elements(public.claims_due('2026-11-23T09:30:00Z', '2026-10-01T00:00:00Z', '2026-11-20T00:00:00Z', 50)) x where x ->> 'id' = v_first::text) then
+    raise exception 'accounts_access: a visitor''s failed check postponed the daily recheck';
+  end if;
   perform public.record_claim_failure(v_first, repeat('3', 64), 'tag_missing', null, '2026-11-24T09:00:00Z', 3);
   perform public.record_claim_failure(v_first, repeat('3', 64), 'http_status', 500, '2026-11-25T09:00:00Z', 3);
   v := public.record_claim_failure(v_first, repeat('3', 64), 'record_missing', null, '2026-11-26T09:00:00Z', 3);
@@ -400,6 +412,12 @@ begin
   perform pg_temp.expect_denied('anon', $q$select public.claims_due(now(), now(), now(), 10)$q$);
   perform pg_temp.expect_denied('authenticated', $q$select public.claims_due(now(), now(), now(), 10)$q$);
   perform pg_temp.expect_error('service_role', $q$select public.record_claim_failure('00000000-0000-4000-8000-0000000000c9', repeat('1', 64), 'verified', null, now(), 3)$q$, '22023');
+  perform pg_temp.expect_error('service_role', $q$select public.record_claim_failure('00000000-0000-4000-8000-0000000000c9', repeat('1', 64), 'timeout', null, now(), 3, null)$q$, '22004');
+  perform pg_temp.expect_denied('anon', $q$select public.record_claim_failure('00000000-0000-4000-8000-0000000000c9', repeat('1', 64), 'timeout', null, now(), 3, true)$q$);
+  perform pg_temp.expect_denied('authenticated', $q$select public.record_claim_failure('00000000-0000-4000-8000-0000000000c9', repeat('1', 64), 'timeout', null, now(), 3, true)$q$);
+  if pg_catalog.to_regprocedure('public.record_claim_failure(uuid, text, text, integer, timestamptz, integer)') is not null then
+    raise exception 'accounts_access: the replaced record_claim_failure still exists';
+  end if;
 
   -- Every account function: security invoker, empty search_path, EXECUTE for service_role only.
   select pg_catalog.string_agg(p.proname, ', ') into v_bad

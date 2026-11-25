@@ -379,6 +379,47 @@ describe("chat: refusals before any upstream call", () => {
     expect(upstream).toHaveLength(1);
   });
 
+  // UX-H3. Fails if the judge's daily limit is not applied on the proxy path, reaches the provider, sends the judge to a
+  // paid key or names no retry time, or ends judge access after the day.
+  it("a judge's daily call limit answers 429 with the retry time, and opens at 00:00 UTC", async () => {
+    const { d, clock } = setup({ JUDGE_CALLS_PER_SESSION_DAY: "1" });
+    const cookie = await session(d, true);
+    expect((await handleChat(chat(BODY, { cookie }), d)).status).toBe(200);
+    const res = await handleChat(chat(BODY, { cookie }), d);
+    expect([res.status, res.headers.get("retry-after")]).toEqual([429, String((Date.parse("2026-11-16T00:00:00Z") - clock.now()) / 1000)]);
+    const text = await res.text();
+    const body = JSON.parse(text) as { error: { message: string; code: string }; retryAt: string };
+    expect(body.error.code).toBe("judge_session_calls");
+    expect(body.error.message).toMatch(/00:00 UTC on 16 November 2026\.$/);
+    expect(body.error.message).not.toMatch(/key/i);
+    expect(body.retryAt).toBe("2026-11-16T00:00:00.000Z");
+    // The runtime cuts an error body at 300 characters; the chat then could not show the message.
+    expect(text.length).toBeLessThanOrEqual(300);
+    expect(await (await handleStatus(new Request(`${PUBLIC_ORIGIN}/api/inference/status`, { headers: { cookie } }), d)).json()).toMatchObject({ available: false, pool: "judge", reason: "judge_session_calls" });
+    expect(upstream).toHaveLength(1);
+    clock.set(Date.parse("2026-11-16T00:00:00Z"));
+    expect(await (await handleStatus(new Request(`${PUBLIC_ORIGIN}/api/inference/status`, { headers: { cookie } }), d)).json()).toMatchObject({ available: true, pool: "judge" });
+    expect((await handleChat(chat(BODY, { cookie }), d)).status).toBe(200);
+  });
+
+  // Fails if a provider failure sends a judge to a paid key while the reserve has money.
+  it("a failed call asks a judge to try again, without a key", async () => {
+    const { d } = setup();
+    const cookie = await session(d, true);
+    script = async () => new Response("no", { status: 500 });
+    const res = await handleChat(chat(BODY, { cookie }), d);
+    expect([res.status, (await errorOf(res)).message]).toEqual([502, "The free AI provider did not answer. Try again."]);
+  });
+
+  // Fails if the money limit is not the hard cap for a judge, or its text hides the own-key way out then.
+  it("an empty judge reserve refuses a judge before the provider, with the own-key text", async () => {
+    const { d } = setup({ JUDGE_RESERVE_USD: "0.000001" });
+    const cookie = await session(d, true);
+    const res = await handleChat(chat(BODY, { cookie }), d);
+    expect([res.status, (await errorOf(res)).message]).toEqual([429, capMessage("judge_pool")]);
+    expect(upstream).toHaveLength(0);
+  });
+
   // Fails if the reservation is not taken atomically before forwarding (both would reach the provider).
   it("two parallel requests when only one reservation fits give one 429", async () => {
     const probe = setup();

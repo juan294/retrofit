@@ -33,14 +33,14 @@ export type CheckOutcome =
  * How long a check may take. `notAfter` (ms, deps.clock): no request starts later, and a TXT lookup
  * still waiting then is given up. `maxWaitMs`: the longest wait the caller ever allows; a site whose
  * Crawl-delay is longer can never be read, so the check fails with crawl_delay instead of waiting
- * (otherwise a recheck would be deferred forever). `onTimeout`: a TXT lookup given up at `notAfter`
- * is recorded as dns_timeout (`record`, a visitor's check) or deferred (`defer`, the daily run, whose
- * budget is then spent).
+ * (otherwise a recheck would be deferred forever). `startedBy`: a visitor (Check again) or the daily
+ * recheck. A TXT lookup given up at `notAfter` is recorded as dns_timeout for a visitor and deferred in
+ * the recheck, whose budget is then spent; and only the recheck's failures count against a verified claim.
  */
 export interface CheckDeadline {
   readonly notAfter: number;
   readonly maxWaitMs: number;
-  readonly onTimeout: "record" | "defer";
+  readonly startedBy: "visitor" | "recheck";
 }
 
 /** A visitor's check (Check again or Start over) may start requests for this long; a route invocation has 60 s. */
@@ -105,7 +105,7 @@ async function checkDns(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "token
   try {
     const lookup = deps.txt(claimRecordName(claim.host));
     const answer = deadline ? await beforeDeadline(lookup, Math.max(0, deadline.notAfter - deps.clock()), deps.sleep) : await lookup;
-    if (answer === TIMED_OUT) return deadline?.onTimeout === "record" ? fail("dns_timeout") : { passed: null, deferred: true };
+    if (answer === TIMED_OUT) return deadline?.startedBy === "visitor" ? fail("dns_timeout") : { passed: null, deferred: true };
     records = answer;
   } catch (e) {
     return fail(isNoRecord(e) ? "record_missing" : "dns_failed");
@@ -130,7 +130,8 @@ export async function checkClaim(deps: ClaimCheckDeps, claim: Pick<Claim, "host"
  * Checks the claim and records the result (AccountData verifyClaim or recordClaimFailure), with
  * the time from deps.clock. Returns the claim as stored afterwards, and `checked: false` when
  * nothing was recorded: the claim is superseded, Start over replaced its token during the check,
- * or the check was deferred (`deferred: true`). A verification by another account moves the host and ends the old
+ * or the check was deferred (`deferred: true`). A visitor's failed check never ends a verified claim
+ * (recordClaimFailure `byVisitor`). A verification by another account moves the host and ends the old
  * account's publication (verifyClaim); a lapse hides this account's (AccountData getPublicSite reads
  * the claim's state), so no published page needs a write here.
  * Throws when the account data is unavailable.
@@ -142,7 +143,7 @@ export async function runClaimCheck(deps: ClaimCheckDeps & Pick<ServerDeps, "acc
   const checkedAt = new Date(deps.clock()).toISOString();
   const recorded = outcome.passed
     ? await deps.accounts.verifyClaim(claim.id, { tokenHash: claim.tokenHash, checkedAt })
-    : await deps.accounts.recordClaimFailure(claim.id, { tokenHash: claim.tokenHash, result: outcome.result, detail: outcome.detail, checkedAt });
+    : await deps.accounts.recordClaimFailure(claim.id, { tokenHash: claim.tokenHash, result: outcome.result, detail: outcome.detail, checkedAt, byVisitor: deadline?.startedBy === "visitor" });
   if (recorded.outcome === "missing") return { claim, checked: false };
   return { claim: recorded.claim, checked: recorded.outcome === "verified" || recorded.outcome === "updated" };
 }

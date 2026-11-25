@@ -39,7 +39,7 @@ export async function recheckDueClaims(deps: Deps): Promise<RecheckSummary> {
   const startedAt = deps.clock();
   const notAfter = startedAt + RECHECK_BUDGET_MS;
   // The longest wait is a visitor's own (CHECK_DEADLINE_MS): a longer Crawl-delay fails both, so it cannot be deferred forever.
-  const deadline = { notAfter, maxWaitMs: CHECK_DEADLINE_MS, onTimeout: "defer" } as const;
+  const deadline = { notAfter, maxWaitMs: CHECK_DEADLINE_MS, startedBy: "recheck" } as const;
   // One more than a run checks, to know whether some must wait for the next run.
   const due = await deps.accounts.listClaimsDueForRecheck(new Date(startedAt).toISOString(), RECHECK_PER_RUN + 1);
   if (due.length > RECHECK_PER_RUN) console.warn(`Claim recheck: more than ${RECHECK_PER_RUN} claims were due; the rest wait for the next run.`);

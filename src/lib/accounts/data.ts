@@ -116,9 +116,9 @@ export interface Claim {
   readonly createdAt: string;
   /** ISO 8601: the latest move to verified, or null. */
   readonly verifiedAt: string | null;
-  /** ISO 8601, or null before the first check. */
+  /** ISO 8601 of the check that found lastResult, or null before the first check. */
   readonly lastCheckedAt: string | null;
-  /** Consecutive failed checks since the last pass. */
+  /** Consecutive failed checks since the last pass; a visitor's failed check of a verified claim does not count. */
   readonly failures: number;
   /** ISO 8601: when another account took the host over, or null. */
   readonly supersededAt: string | null;
@@ -154,6 +154,8 @@ export interface ClaimCheckInput {
 export interface ClaimFailureInput extends ClaimCheckInput {
   readonly result: Exclude<ClaimResult, "verified">;
   readonly detail: number | null;
+  /** A visitor started the check (Check again). Default false: the daily recheck. */
+  readonly byVisitor?: boolean;
 }
 
 /**
@@ -332,7 +334,9 @@ export interface AccountData {
   restartClaim(accountId: string, claimId: string, input: Omit<NewClaimInput, "host">): Promise<RestartClaimResult>;
   /**
    * Records a failed check: one more consecutive failure, the result and the time. A verified or
-   * lapsed claim with CLAIM_LAPSE_AFTER failures is lapsed; a pending claim stays pending.
+   * lapsed claim with CLAIM_LAPSE_AFTER failures is lapsed; a pending claim stays pending. A visitor's
+   * failed check (`byVisitor`) of a claim that is verified now only stores the result and the time, for the
+   * page: it is no failure, and the daily recheck stays due as if it had not run.
    */
   recordClaimFailure(claimId: string, input: ClaimFailureInput): Promise<ClaimFailureResult>;
   /**

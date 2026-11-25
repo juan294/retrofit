@@ -102,7 +102,9 @@ export interface FreeConfig {
   readonly inflightGlobal: number;
   readonly callsPerSession: number;
   readonly sessionsPerClientHour: number;
-  readonly judgeCallsPerSession: number;
+  /** Model calls of one judge session in a UTC day. */
+  readonly judgeCallsPerSessionDay: number;
+  /** New judge sessions of one network in a UTC day. */
   readonly judgeSessionsPerClientDay: number;
   readonly upstreamTimeoutMs: number;
   /** Fractions of the credit that raise one alert each, ascending. */
@@ -365,8 +367,8 @@ export function loadFreeConfig(env: Env, onVercel: boolean): FreeConfig {
     inflightGlobal: n("FREE_INFLIGHT_GLOBAL", 16),
     callsPerSession: n("FREE_CALLS_PER_SESSION", 40),
     sessionsPerClientHour: n("FREE_SESSIONS_PER_CLIENT_HOUR", 6),
-    judgeCallsPerSession: n("JUDGE_CALLS_PER_SESSION", 200),
-    judgeSessionsPerClientDay: n("JUDGE_SESSIONS_PER_CLIENT_DAY", 3),
+    judgeCallsPerSessionDay: n("JUDGE_CALLS_PER_SESSION_DAY", 200),
+    judgeSessionsPerClientDay: n("JUDGE_SESSIONS_PER_CLIENT_DAY", 20),
     upstreamTimeoutMs: n("FREE_UPSTREAM_TIMEOUT_MS", 45000),
     alertThresholds: Object.freeze(thresholds),
     upstreamUrl,

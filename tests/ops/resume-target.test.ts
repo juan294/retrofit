@@ -43,6 +43,7 @@ describe("resumeTargetFromEnv", () => {
     for (const name of ["FREE_MODEL", "FREE_MAX_BODY_BYTES", "FREE_FRAMING_TOKENS_PER_MESSAGE", "FREE_MAX_MESSAGES", "FREE_MAX_TOOLS", "FREE_MAX_TOOL_BYTES", "CREDIT_ALERT_THRESHOLDS"]) {
       expect(byName.get(name)?.source, name).toBe("default");
     }
+    expect(byName.get("JUDGE_CALLS_PER_SESSION_DAY")).toEqual({ name: "JUDGE_CALLS_PER_SESSION_DAY", value: "200", source: "default" });
     const printed = JSON.stringify(target.settings);
     expect(printed).not.toContain("sk-secret-value");
     expect(printed).not.toContain("judge-code-secret-1234");

@@ -79,7 +79,8 @@ export function handleCreateClaim(request: Request, deps: Deps): Promise<Respons
 
 /**
  * POST /api/claims/check `{claimId}` -> 200 `{claim, message}`: Check again. Reads the home page or
- * the TXT record now and records what it found. 409 superseded (terminal: nothing is read), 429
+ * the TXT record now and records what it found; a failure never ends a verified claim (only the daily
+ * recheck's failures do). 409 superseded (terminal: nothing is read), 429
  * limit `{retryAt}` past CLAIM_CHECKS_PER_HOUR checks of the account's claims for the host in the hour.
  */
 export function handleCheckClaim(request: Request, deps: Deps): Promise<Response> {
@@ -89,7 +90,7 @@ export function handleCheckClaim(request: Request, deps: Deps): Promise<Response
     if (claim.status === "superseded") return refused(deps, claim);
     const limited = await countCheck(deps, account, claim.host);
     if (limited) return limited;
-    const { claim: after, checked } = await runClaimCheck(deps, claim, { notAfter: deps.clock() + CHECK_DEADLINE_MS, maxWaitMs: CHECK_DEADLINE_MS, onTimeout: "record" });
+    const { claim: after, checked } = await runClaimCheck(deps, claim, { notAfter: deps.clock() + CHECK_DEADLINE_MS, maxWaitMs: CHECK_DEADLINE_MS, startedBy: "visitor" });
     const shown = view(deps, after);
     return json(200, { claim: shown, message: checked ? (shown.reason ?? shown.statusText) : T.notChecked });
   });
