@@ -19,6 +19,9 @@ export const PRICING_TEXT = {
   /** Beside a plan whose price could not be read: no amount and no button. */
   priceUnavailable: "The price could not be loaded right now. Try again in a few minutes.",
   aiNote: "The preview uses Retrofit's AI within its free limits, with or without an account. Your own AI key always works.",
+  /** Before the link to /account (which asks a signed-out visitor to sign in). */
+  accountBefore: "You claim a site, publish its agent, save reports and create API keys in your account. ",
+  accountLink: "Sign in or go to your account",
   notifyHeading: "Hear when paid plans start",
 } as const;
 

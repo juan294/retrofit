@@ -38,6 +38,12 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
           {unpriced ? `${PRICING_TEXT.freeNotice} ${PRICING_TEXT.pricesNotSet}` : PRICING_TEXT.freeNotice}
         </p>
       ) : null}
+      <p className="mt-4">
+        {PRICING_TEXT.accountBefore}
+        <a href="/account" className="underline">
+          {PRICING_TEXT.accountLink}
+        </a>
+      </p>
       <ul className="mt-8 flex flex-col gap-4">
         {PLANS.map((plan) => {
           const offer = isPaidPlan(plan.id) ? planOffer({ started: !free, priced: prices[plan.id] !== undefined, amount: amounts[plan.id] }) : null;

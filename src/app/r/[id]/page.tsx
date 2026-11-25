@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { AnalysisView } from "@/components/analysis/AnalysisView";
+import { SiteNav } from "@/components/SiteNav";
 import { accountCookieName } from "@/lib/accounts/session";
 import { findOwnedAnalysis } from "@/lib/analysis/owner";
 import { VISITOR_COOKIE } from "@/lib/analysis/visitor";
@@ -21,11 +22,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   const signedIn = account !== null;
   return (
     <main className="mx-auto max-w-3xl px-4 py-12">
-      <p>
-        <a href="/" className="underline">
-          Retrofit
-        </a>
-      </p>
+      <SiteNav />
       <h1 className="mt-4 text-3xl font-semibold">Agent readiness</h1>
       <p className="mt-2" style={{ color: "var(--color-muted)" }}>
         {analysis.inputOrigin}

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ScoreReport, storedReportView } from "@/components/analysis/ScoreReport";
+import { SiteNav } from "@/components/SiteNav";
 import { isUuid } from "@/lib/accounts/data";
 import { signInHref } from "@/lib/accounts/return-to";
 import { accountCookieName, readAccountByToken } from "@/lib/accounts/session";
@@ -25,11 +26,8 @@ export default async function SavedReportPage({ params }: { params: Promise<{ id
   if (!saved) notFound();
   return (
     <main className="mx-auto max-w-3xl px-4 py-12 [overflow-wrap:anywhere]">
-      <p>
-        <Link href="/" className="underline">
-          Retrofit
-        </Link>{" "}
-        ·{" "}
+      <SiteNav />
+      <p className="mt-2">
         <Link href="/account" className="underline">
           {T.back}
         </Link>
