@@ -9,9 +9,8 @@ test.afterEach(async ({ request }) => {
 });
 
 // Fails if Enter before hydration can submit the form as GET, or at all.
-test("before hydration the judge code cannot enter the URL", async ({ browser }) => {
-  const context = await browser.newContext({ javaScriptEnabled: false });
-  const page = await context.newPage();
+test("before hydration the judge code cannot enter the URL", async ({ page }) => {
+  await page.route("**/_next/static/**", (route) => (route.request().resourceType() === "script" ? route.abort() : route.fallback()));
   const urls: string[] = [];
   page.on("request", (r) => void urls.push(r.url()));
   await page.goto("/judges");
@@ -20,7 +19,6 @@ test("before hydration the judge code cannot enter the URL", async ({ browser })
   await page.getByLabel("Judge code").press("Enter");
   await expect(page).toHaveURL(/\/judges$/);
   expect(urls.filter((u) => u.includes(CODE))).toEqual([]);
-  await context.close();
 });
 
 // Fails if the code needs a public session first, the page leaves a judge without a next step, the panel does not say

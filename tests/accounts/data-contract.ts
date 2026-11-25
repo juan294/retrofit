@@ -349,6 +349,47 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         expect((await b.getClaim(owner, pending.id))?.lapsedAt).toBeNull();
       });
 
+      // BE-M1. Fails if a visitor's failed check of a verified claim counts as a failure (three clicks in an outage would lapse
+      // it), postpones the daily recheck (the owner of a lost claim could hold it verified), or is not shown with its time.
+      it("a visitor's failed check of a verified claim is shown, and neither counts nor moves the daily recheck", async () => {
+        const owner = await newAccount();
+        // Only this case checks claims in 2004.
+        const at = (day: number) => `2004-01-${String(day).padStart(2, "0")}T00:00:00.000Z`;
+        const c = (await verified(a, await claimed(a, owner, "visitor"), at(1))).claim;
+        const later = (await verified(a, await claimed(a, owner, "visitor-later"), at(2))).claim;
+        const byVisitor = (day: number) => b.recordClaimFailure(c.id, { tokenHash: c.tokenHash, result: "robots_unavailable", detail: null, checkedAt: at(day), byVisitor: true });
+        const due = async (day: number) => (await b.listClaimsDueForRecheck(at(day), 50)).filter((x) => x.accountId === owner).map((x) => x.id);
+        for (let n = 0; n < CLAIM_LAPSE_AFTER + 1; n++) {
+          const r = await byVisitor(4);
+          expect(r.outcome === "updated" && r.claim).toMatchObject({ status: "verified", failures: 0, lastResult: "robots_unavailable", lastCheckedAt: at(4), verifiedAt: at(1), lapsedAt: null });
+        }
+        expect(await a.getClaim(owner, c.id)).toMatchObject({ status: "verified", failures: 0, lastResult: "robots_unavailable", lastCheckedAt: at(4) });
+        // Due as if the visitor had not checked, and still first in order.
+        expect(await due(4)).toEqual([c.id, later.id]);
+        // The daily recheck still lapses it after three failures, with visitor checks between them.
+        for (let n = 1; n <= CLAIM_LAPSE_AFTER; n++) {
+          const day = 4 + 2 * n;
+          const r = await a.recordClaimFailure(c.id, { tokenHash: c.tokenHash, result: "tag_missing", detail: null, checkedAt: at(day) });
+          expect(r.outcome === "updated" && r.claim).toMatchObject({ status: n < CLAIM_LAPSE_AFTER ? "verified" : "lapsed", failures: n, lastCheckedAt: at(day) });
+          if (n < CLAIM_LAPSE_AFTER) await byVisitor(day + 1);
+        }
+        // A lapsed claim's check by a visitor is recorded as before, and a pass restores it.
+        const onLapsed = await byVisitor(12);
+        expect(onLapsed.outcome === "updated" && onLapsed.claim).toMatchObject({ status: "lapsed", failures: CLAIM_LAPSE_AFTER + 1, lastCheckedAt: at(12) });
+        expect((await verified(b, c, at(13))).claim).toMatchObject({ failures: 0, lastResult: "verified", lastCheckedAt: at(13) });
+        expect(await due(14)).toEqual([later.id]);
+      });
+
+      // BE-M1. Fails if a pending claim's failed check by a visitor is recorded differently from before.
+      it("a visitor's failed check of a pending claim counts as before, and Start over clears it", async () => {
+        const owner = await newAccount();
+        const c = await claimed(a, owner, "visitor-pending");
+        const r = await b.recordClaimFailure(c.id, { tokenHash: c.tokenHash, result: "tag_missing", detail: null, checkedAt: "2026-11-23T10:00:00.000Z", byVisitor: true });
+        expect(r.outcome === "updated" && r.claim).toMatchObject({ status: "pending", failures: 1, lastResult: "tag_missing", lastCheckedAt: "2026-11-23T10:00:00.000Z" });
+        const again = await a.restartClaim(owner, c.id, { method: "meta", tokenHash: hash("visitor-pending-2") });
+        expect(again.outcome === "restarted" && again.claim).toMatchObject({ failures: 0, lastCheckedAt: null, lastResult: null });
+      });
+
       // Fails if a check result is applied after Start over replaced the token it checked, or for an unknown claim.
       it("a check against a replaced token is stale and changes nothing; an unknown claim is missing", async () => {
         const owner = await newAccount();

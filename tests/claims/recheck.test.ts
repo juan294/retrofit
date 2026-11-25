@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountData, Claim } from "@/lib/accounts/data";
 import { handleClaimsRecheck } from "@/lib/api/claims-recheck";
 import { RECHECK_BUDGET_MS, RECHECK_PER_RUN, recheckDueClaims } from "@/lib/claims/recheck";
+import { runClaimCheck } from "@/lib/claims/verify";
 import { claimView } from "@/lib/claims/view";
 import { sha256Hex } from "@/lib/security/tokens";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
@@ -97,6 +98,23 @@ describe("lapse and restore", () => {
     }
     expect(await d.accounts.getClaim(TEST_ACCOUNT.userId, c.id)).toMatchObject({ status: "verified", failures: 2 });
   });
+});
+
+// BE-M1. Fails if failed visitor checks postpone the daily recheck, so the owner of a lost claim could hold it verified.
+it("a removed record lapses after three daily rechecks whatever the owner checks between them", async () => {
+  const { d, clock, state } = setup();
+  let c = await verifiedClaim(d.accounts, "held.example.com", clock.now(), TEST_ACCOUNT.userId);
+  state.records = [];
+  for (let day = 1; day <= 3; day++) {
+    for (let hour = 0; hour < 24; hour++) {
+      clock.advance(3600_000);
+      await runClaimCheck(d, c, { notAfter: clock.now() + 20_000, maxWaitMs: 20_000, startedBy: "visitor" });
+    }
+    clock.advance(60_000);
+    expect(await recheckDueClaims(d)).toMatchObject({ checked: 1, failed: 1, lapsed: day === 3 ? 1 : 0 });
+    c = (await d.accounts.getClaim(TEST_ACCOUNT.userId, c.id))!;
+  }
+  expect(c).toMatchObject({ status: "lapsed", failures: 3 });
 });
 
 describe("what a run checks", () => {

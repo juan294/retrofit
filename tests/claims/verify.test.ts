@@ -107,11 +107,11 @@ describe("meta method", () => {
     const host = await serve({ slowbot: { "/robots.txt": { headers: { "content-type": "text/plain" }, body: "User-agent: *\nCrawl-delay: 3600\nAllow: /\n" }, "/": page(tag(TOKEN)) } });
     const clock = fakeClock();
     const d = deps({ clock: clock.clock });
-    const deadline = (maxWaitMs: number) => ({ notAfter: clock.now() + maxWaitMs, maxWaitMs, onTimeout: "record" as const });
+    const deadline = (maxWaitMs: number) => ({ notAfter: clock.now() + maxWaitMs, maxWaitMs, startedBy: "visitor" as const });
     expect(await checkClaim(d, claim(host("slowbot")), deadline(20_000))).toEqual({ passed: false, result: "crawl_delay", detail: 3600 });
     expect(server?.requests.map((r) => r.path)).toEqual(["/robots.txt"]);
     // A check that may wait longer than the delay, but whose own deadline is already near, is deferred.
-    expect(await checkClaim(d, claim(host("slowbot")), { notAfter: clock.now() + 1000, maxWaitMs: 7_200_000, onTimeout: "record" })).toEqual({ passed: null, deferred: true });
+    expect(await checkClaim(d, claim(host("slowbot")), { notAfter: clock.now() + 1000, maxWaitMs: 7_200_000, startedBy: "visitor" })).toEqual({ passed: null, deferred: true });
   });
 
   // Fails if one matching tag among several does not verify.
@@ -231,12 +231,12 @@ describe("dns method", () => {
     const waits: number[] = [];
     const d = deps({ clock: clock.clock, txt: () => new Promise<string[][]>(() => {}), sleep: async (ms) => (waits.push(ms), clock.advance(ms)) });
     const at = clock.now();
-    expect(await checkClaim(d, claim("shop.example.com", "dns"), { notAfter: at + 20_000, maxWaitMs: 20_000, onTimeout: "record" })).toEqual({ passed: false, result: "dns_timeout", detail: null });
+    expect(await checkClaim(d, claim("shop.example.com", "dns"), { notAfter: at + 20_000, maxWaitMs: 20_000, startedBy: "visitor" })).toEqual({ passed: false, result: "dns_timeout", detail: null });
     expect(waits).toEqual([20_000]);
-    expect(await checkClaim(d, claim("shop.example.com", "dns"), { notAfter: clock.now() + 5_000, maxWaitMs: 40_000, onTimeout: "defer" })).toEqual({ passed: null, deferred: true });
+    expect(await checkClaim(d, claim("shop.example.com", "dns"), { notAfter: clock.now() + 5_000, maxWaitMs: 40_000, startedBy: "recheck" })).toEqual({ passed: null, deferred: true });
     // A lookup that answers in time is not cut short.
     const fast = deps({ clock: clock.clock, txt: async () => [[`retrofit-site-verification=${TOKEN}`]], sleep: () => new Promise(() => {}) });
-    expect(await checkClaim(fast, claim("shop.example.com", "dns"), { notAfter: clock.now() + 20_000, maxWaitMs: 20_000, onTimeout: "record" })).toEqual({ passed: true });
+    expect(await checkClaim(fast, claim("shop.example.com", "dns"), { notAfter: clock.now() + 20_000, maxWaitMs: 20_000, startedBy: "visitor" })).toEqual({ passed: true });
   });
 
   // Fails if an IDN host is looked up in Unicode instead of punycode.

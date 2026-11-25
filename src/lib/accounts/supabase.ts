@@ -81,6 +81,7 @@ interface ClaimRow {
   created_at: string;
   verified_at: string | null;
   last_checked_at: string | null;
+  visitor_checked_at: string | null;
   failures: number;
   superseded_at: string | null;
   lapsed_at: string | null;
@@ -137,9 +138,12 @@ interface ApiKeyRow {
 
 const iso = (t: string) => new Date(t).toISOString();
 const isoOrNull = (t: string | null) => (t === null ? null : iso(t));
-const CLAIM_COLUMNS = "id, account_id, host, method, token_hash, status, created_at, verified_at, last_checked_at, failures, superseded_at, lapsed_at, last_result, last_detail";
+const CLAIM_COLUMNS = "id, account_id, host, method, token_hash, status, created_at, verified_at, last_checked_at, visitor_checked_at, failures, superseded_at, lapsed_at, last_result, last_detail";
 
 function claimOf(row: ClaimRow): Claim {
+  // A visitor's failed check of a verified claim keeps last_checked_at (the recheck's); a restarted claim has no check.
+  const checkedAt = isoOrNull(row.last_checked_at);
+  const visitorAt = isoOrNull(row.visitor_checked_at);
   return {
     id: row.id,
     accountId: row.account_id,
@@ -149,7 +153,7 @@ function claimOf(row: ClaimRow): Claim {
     status: row.status,
     createdAt: iso(row.created_at),
     verifiedAt: isoOrNull(row.verified_at),
-    lastCheckedAt: isoOrNull(row.last_checked_at),
+    lastCheckedAt: checkedAt !== null && visitorAt !== null && visitorAt > checkedAt ? visitorAt : checkedAt,
     failures: row.failures,
     supersededAt: isoOrNull(row.superseded_at),
     lapsedAt: isoOrNull(row.lapsed_at),
@@ -370,6 +374,7 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
         p_detail: input.detail,
         p_now: iso(input.checkedAt),
         p_lapse_after: CLAIM_LAPSE_AFTER,
+        p_visitor: input.byVisitor ?? false,
       }, ["updated", "stale", "superseded"], ["missing"]);
       return "claim" in r ? { outcome: r.outcome, claim: r.claim } : r;
     },
