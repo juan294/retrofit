@@ -53,6 +53,14 @@ describe("the daily cleanup", () => {
     expect(sent).toHaveLength(2);
   });
 
+  // Fails if a Store that cannot mark the alert turns the crons' answers into an exception.
+  it("answers 503 also when the alert itself cannot be marked", async () => {
+    const { d } = setup();
+    const store = { ...d.store, cleanup: down, putIfAbsent: down };
+    expect((await handleCleanup(cron("cleanup"), { ...d, store })).status).toBe(503);
+    expect((await handleClaimsRecheck(cron("claims"), { ...d, store, accounts: { ...d.accounts, listClaimsDueForRecheck: down } })).status).toBe(503);
+  });
+
   // Fails if a Store failure stops the account steps.
   it("runs the account steps when the Store cleanup fails", async () => {
     const { d } = setup();
@@ -64,13 +72,13 @@ describe("the daily cleanup", () => {
   });
 
   // SE-M2. Fails if unconfirmed users without an account are kept, purged while their link can still work, or without a bound.
-  it("purges unconfirmed users older than a day, at most 1,000 a run", async () => {
+  it("purges unconfirmed users older than a day, at most 10,000 a run", async () => {
     const { d } = setup();
     const calls: unknown[][] = [];
     const deps = { ...d, accounts: { ...d.accounts, purgeUsersWithoutAccount: async (...args: unknown[]) => (calls.push(args), 4) } };
     const res = await handleCleanup(cron("cleanup"), deps as TestDeps);
     expect([res.status, (await res.json()).usersWithoutAccount]).toEqual([200, 4]);
-    expect(calls).toEqual([["2026-11-30T03:17:00.000Z", 1000]]);
+    expect(calls).toEqual([["2026-11-30T03:17:00.000Z", 10_000]]);
     expect(sent).toEqual([]);
   });
 });

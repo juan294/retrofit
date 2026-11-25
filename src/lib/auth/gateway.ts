@@ -36,7 +36,7 @@ export interface AuthGateway {
 /**
  * The provider failed or could not be reached. Callers fail closed. `code` is the provider's error code, never a
  * message. `outage`: false when the provider answered and refused this one request (a refused address), which says
- * nothing about other visitors; a refused key or permission (401, 403) is an outage.
+ * nothing about other visitors.
  */
 export class AuthUnavailable extends Error {
   constructor(

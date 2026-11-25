@@ -31,7 +31,13 @@ begin
     ('00000000-0000-4000-8000-00000000d005', 'new-link@example.test', v_old, v_old, pg_catalog.now() - interval '10 minutes', null, null),
     ('00000000-0000-4000-8000-00000000d006', 'recent@example.test', pg_catalog.now(), pg_catalog.now(), null, null, null),
     ('00000000-0000-4000-8000-00000000d007', 'never-mailed@example.test', v_old, null, null, null, null),
-    ('00000000-0000-4000-8000-00000000d008', 'claim@example.test', v_old, v_old, null, v_old, v_old);
+    ('00000000-0000-4000-8000-00000000d008', 'claim@example.test', v_old, v_old, null, v_old, v_old),
+    ('00000000-0000-4000-8000-00000000d009', 'billing@example.test', v_old, v_old, null, v_old, v_old),
+    ('00000000-0000-4000-8000-00000000d00a', 'report@example.test', v_old, v_old, null, v_old, v_old),
+    ('00000000-0000-4000-8000-00000000d00b', 'key@example.test', v_old, v_old, null, v_old, v_old);
+  insert into public.billing_customers (account_id, stripe_customer_id) values ('00000000-0000-4000-8000-00000000d009', 'cus_purge');
+  insert into public.saved_reports (account_id, host, report, fetched_at) values ('00000000-0000-4000-8000-00000000d00a', 'purge.example', '{}', v_old);
+  insert into public.api_keys (account_id, key_hash, hint) values ('00000000-0000-4000-8000-00000000d00b', repeat('b', 64), 'beef');
   insert into public.site_claims (account_id, host, method, token_hash) values ('00000000-0000-4000-8000-00000000d008', 'purge.example', 'dns', repeat('a', 64));
   insert into public.account_profiles (account_id) values ('00000000-0000-4000-8000-00000000d004');
 
@@ -50,7 +56,7 @@ begin
 
   select pg_catalog.string_agg(pg_catalog.right(u.id::text, 1), ',' order by u.id) into v_left
   from auth.users u where u.id::text like '00000000-0000-4000-8000-00000000d00_';
-  if v_left is distinct from '3,4,5,6,8' then
+  if v_left is distinct from '3,4,5,6,8,9,a,b' then
     raise exception 'purge_access: the wrong users are left: %', v_left;
   end if;
 end;

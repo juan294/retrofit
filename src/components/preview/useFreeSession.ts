@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FREE_PLACEHOLDER_KEY, UNAVAILABLE_MESSAGE } from "@/lib/inference/errors";
+import { FREE_PLACEHOLDER_KEY, JUDGE_UNAVAILABLE_MESSAGE, UNAVAILABLE_MESSAGE } from "@/lib/inference/errors";
 import type { Inference } from "./Preview";
 
 export const RENEW_EVERY_MS = 30 * 60 * 1000;
@@ -13,6 +13,9 @@ export type FreeState =
   | { readonly status: "starting" }
   | { readonly status: "ready"; readonly inference: Inference; readonly pool: FreePool }
   | { readonly status: "unavailable"; readonly message: string };
+
+/** A judge is never told to bring a key. */
+export const unavailableText = (pool: FreePool | null) => (pool === "judge" ? JUDGE_UNAVAILABLE_MESSAGE : UNAVAILABLE_MESSAGE);
 
 async function startSession(): Promise<{ ok: true; pool: FreePool } | { ok: false; message: string }> {
   const res = await fetch("/api/inference/session", { method: "POST", credentials: "same-origin" });
@@ -41,16 +44,18 @@ export function useFreeSession(active: boolean): FreeState {
     if (!active) return;
     let stopped = false;
     const begin = async () => {
+      let pool: FreePool | null = null;
       try {
         const started = await startSession();
         if (stopped) return;
         if (!started.ok) return setState({ status: "unavailable", message: started.message });
+        pool = started.pool;
         const model = await freeModel();
         if (stopped) return;
-        if (!model) return setState({ status: "unavailable", message: UNAVAILABLE_MESSAGE });
+        if (!model) return setState({ status: "unavailable", message: unavailableText(pool) });
         setState({ status: "ready", pool: started.pool, inference: { router: `${window.location.origin}/api/inference/v1`, key: FREE_PLACEHOLDER_KEY, model } });
       } catch {
-        if (!stopped) setState({ status: "unavailable", message: UNAVAILABLE_MESSAGE });
+        if (!stopped) setState({ status: "unavailable", message: unavailableText(pool) });
       }
     };
     void begin();

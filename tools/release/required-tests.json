@@ -10239,6 +10239,24 @@
       "title": "Supabase auth gateway verifyOtp: a used-up shared limit is an outage"
     },
     {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp: {\"status\":404,\"body\":{\"message\":\"no Route matched\"}} is an outage: true"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp: {\"status\":422,\"body\":{\"code\":\"email_provider_disabled\",\"message\":\"x\"}} is an outage: true"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp: {\"status\":422,\"body\":{\"code\":\"signup_disabled\",\"message\":\"x\"}} is an outage: true"
+    },
+    {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
@@ -13110,12 +13128,6 @@
       "rule": "pre-launch repairs",
       "suite": "unit",
       "file": "tests/ops/daily-alerts.test.ts",
-      "title": "the daily cleanup purges unconfirmed users older than a day, at most 1,000 a run"
-    },
-    {
-      "rule": "pre-launch repairs",
-      "suite": "unit",
-      "file": "tests/ops/daily-alerts.test.ts",
       "title": "the daily cleanup runs every step although one fails, answers 503 and opens one issue a day"
     },
     {
@@ -13123,6 +13135,18 @@
       "suite": "unit",
       "file": "tests/ops/daily-alerts.test.ts",
       "title": "the daily cleanup runs the account steps when the Store cleanup fails"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "the daily cleanup answers 503 also when the alert itself cannot be marked"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "the daily cleanup purges unconfirmed users older than a day, at most 10,000 a run"
     },
     {
       "rule": "pre-launch repairs",

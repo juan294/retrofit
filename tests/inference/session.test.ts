@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleJudgeUpgrade, handleSession, JUDGE_ATTEMPTS_PER_CLIENT_HOUR, JUDGE_SESSION_TTL_S, readSession, sessionKey, sessionTexts } from "@/lib/inference/session";
+import { unavailableText } from "@/components/preview/useFreeSession";
 import { verifySession } from "@/lib/inference/token";
 import { captureConsole, cookieFrom, fakeClock, PUBLIC_ORIGIN, postRequest, storeDump, testDeps, type RequestOptions } from "../helpers/server-deps";
 
@@ -287,6 +288,8 @@ describe("a session renewal while the Store cannot be read", () => {
     expect(await text(judge)).toBe(sessionTexts.judgeUnavailable);
     expect(await text(judge)).not.toMatch(/key/i);
     expect(await text(visitor)).toBe(sessionTexts.unavailable);
+    expect(unavailableText("judge")).toBe(sessionTexts.judgeUnavailable);
+    expect(unavailableText("public")).toMatch(/own key/);
   });
 });
 

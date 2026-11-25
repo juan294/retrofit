@@ -9,8 +9,8 @@ export const STRIPE_EVENTS_KEPT_MS = 90 * 24 * 3600_000;
 const PRUNE_LIMIT = 10_000;
 /** A typed address without an account is kept at the sign-in provider at least this long; its link works for one hour. */
 export const NO_ACCOUNT_KEPT_MS = 24 * 3600_000;
-/** Users purged in one run. */
-const PURGE_LIMIT = 1000;
+/** Users purged in one run: more than the provider's email limit (300 an hour) can create in a day. */
+const PURGE_LIMIT = 10_000;
 
 /**
  * GET /api/cron/cleanup (Vercel Cron): `Authorization: Bearer <CRON_SECRET>`, then deletes expired store rows,

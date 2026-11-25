@@ -4,6 +4,7 @@ import { formatDate, hhmmUtc } from "@/lib/analysis/texts";
 import { isSecureRequest, sameHash } from "@/lib/analysis/visitor";
 import { buildCookie, cookieValue } from "@/lib/security/cookies";
 import { sha256Hex } from "@/lib/security/tokens";
+import { JUDGE_UNAVAILABLE_MESSAGE } from "./errors";
 import { json } from "@/lib/api/json";
 import { clientIdFromRequest, clientWindow, nextUtcMidnight, ttlUntil, utcDay } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
@@ -37,7 +38,7 @@ export const sessionTexts = {
   invalidCode: "That judge code is not valid.",
   notConfigured: "Judge access is not configured.",
   judgeLimit: (retryAt: Date) => `Judge access was turned on too many times from this network today. Try again after ${hhmmUtc(retryAt)} UTC on ${formatDate(retryAt)}.`,
-  judgeUnavailable: "Judge access is not available right now. Try again in a minute.",
+  judgeUnavailable: JUDGE_UNAVAILABLE_MESSAGE,
   tooManyCodes: "Too many judge code attempts from this network. Try again in an hour.",
 } as const;
 

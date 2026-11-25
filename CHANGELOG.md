@@ -7,10 +7,23 @@ All notable changes to Retrofit are recorded here. The format follows [Keep a Ch
 ### Added
 
 - `/pricing` with "notify me", drafts of `/privacy` and `/terms` for owner review, and unsubscribe.
-- Accounts: sign-in by email link, saved reports, sign-out and account deletion.
+- Accounts: sign-in by email link (no password), saved reports, sign-out and account deletion. A link opened in another browser names its address before it signs in.
 - Ownership claims by meta tag or DNS record, rechecked daily.
-- Publishing: the verified owner of a site can publish its report and agent at `/s/<host>`, and embed a badge.
-- Billing in Stripe test mode, plans, a free-analysis limit and API keys. All of it starts only at `BILLING_START` (2027-01-20T00:00:00Z); before that Retrofit stays open and free.
+- Publishing: the verified owner of a site can publish its report and agent at `/s/<host>`, and embed a badge. A verified owner gets a new read of the site an hour after the last one.
+- Billing in Stripe test mode, plans, a free-analysis limit and API keys. All of it starts only at `BILLING_START` (2027-01-20T00:00:00Z); before that Retrofit stays open and free. Signed-in Free accounts keep the free AI.
+- Navigation to the plans and the account on every page.
+- `/api/health` names the account data, and the production evidence checks it and sends a sign-in email.
+
+### Changed
+
+- Judge access lasts through judging after one entry of the code, with a daily call limit.
+- A production build with a missing or malformed variable fails instead of taking the site down.
+- Every per-network limit counts an IPv6 /64 as one network.
+
+### Fixed
+
+- The judge form and the address form no longer submit before the page is ready.
+- A failing step of the daily cleanup no longer stops the others; failures reach the owner.
 
 ## [0.2.0] - 2026-11-22
 
