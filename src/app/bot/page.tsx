@@ -24,7 +24,7 @@ export default function BotPage() {
       <ul className="mt-2 list-disc pl-6">
         <li>At most one request per second to a host, or your full Crawl-delay if it is longer. When the next request would not fit in the time limit of one crawl, it stops instead of waiting less.</li>
         <li>At most 2 MB per page, 8 seconds per request and 45 seconds per site.</li>
-        <li>Results are kept for 24 hours. It sends no cookies and keeps no email addresses.</li>
+        <li>Results are kept for 24 hours; a site's verified owner can ask for a new read one hour after the last one. It sends no cookies and keeps no email addresses.</li>
         <li>It reads only public addresses on ports 80 and 443.</li>
       </ul>
       <h2 className="mt-8 text-xl font-semibold">How to block it</h2>

@@ -247,9 +247,9 @@ test.describe("published sites", () => {
     expect(result.readable).toBe(false);
   });
 
-  // P4-R1. Fails if a refresh inside the crawl cache window is shown as a failed refresh, or does not say (in the owner's own time) when a
-  // new read is possible; or a new analysis inside the window changes that.
-  test("a refresh inside the read's 24 hours says when a new read is possible, and is not a failed refresh", async ({ page }) => {
+  // P4-R1. Fails if a refresh inside the owner's hour is shown as a failed refresh, or does not say (in the owner's own time) when a
+  // new read is possible; or a new analysis inside the hour changes that.
+  test("a refresh inside the owner's hour says when a new read is possible, and is not a failed refresh", async ({ page }) => {
     test.setTimeout(60_000);
     await publishedOwner(page, CLAIM_HOST, "window");
     await analyzeFixture(page, CLAIM_HOST);
@@ -262,9 +262,9 @@ test.describe("published sites", () => {
     const { retryAt } = (await response.json()) as { retryAt: string };
     const ahead = Date.parse(retryAt) - Date.now();
     expect(ahead).toBeGreaterThan(0);
-    expect(ahead).toBeLessThanOrEqual(24 * 3600_000 + 60_000);
+    expect(ahead).toBeLessThanOrEqual(3600_000 + 60_000);
     const local = await page.evaluate((iso) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }), retryAt);
-    await expect(panel.getByTestId("claim-message")).toHaveText(new RegExp(`Retrofit reuses one read of a site for 24 hours, so a new analysis brings nothing newer before ${local}\\. Analyze it again after that, then refresh\\.$`));
+    await expect(panel.getByTestId("claim-message")).toHaveText(new RegExp(`Retrofit reads a site again for its verified owner 60 minutes after the last read, so a new analysis brings nothing newer before ${local}\\. Analyze it again after that, then refresh\\.$`));
     await expect(panel.getByTestId("publish-error")).toHaveCount(0);
     await expect(panel.getByRole("button", { name: PUBLISH_TEXT.refresh, exact: true })).toBeEnabled();
     await page.reload();

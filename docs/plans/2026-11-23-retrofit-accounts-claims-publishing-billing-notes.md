@@ -34,10 +34,10 @@ On 2026-11-23 Juan authorized all five phases of 2026-11-23-retrofit-accounts-cl
 - Publication and transfer. Chose: verifying a host deletes every other claim's publication of it, so an old owner's page can never return. `published_sites` gains `fetched_at`; a refresh must use a newer read of the site.
 - Cross-origin reads cover all published agent JSON, including `site-content.json` and the bridge manifest. A site with no score shows "Agent-ready check · verified by Retrofit" on the badge. An expired analysis cannot be published.
 - Production case `published-unknown` fails against a release without this phase.
-- Refresh and the crawl cache. Chose: keep the 24-hour cache (project rule: cache results and limit requests per site) and tell the owner when a new read is possible (review P4-R1). Letting a verified owner's refresh bypass the cache is an open product option for Juan.
-- Billing variables. `BILLING_START`, `STRIPE_SECRET_KEY` (test) and `STRIPE_WEBHOOK_SECRET` are required on Vercel as the plan's stuck-state row says; prices are optional. Effect: a release of any of these phases needs the Stripe test account first, because the configuration loads on every route. Set the variables before the deployment.
-- Live Stripe keys and live events are refused everywhere, not only on Vercel. An earlier `BILLING_START` than 2027-01-19T00:00:00Z is refused on Vercel, so manual check 4 works before that date only locally.
-- `BILLING_START` is 2027-01-18 16:00 in Pacific time. The instant follows the plan. Whether judging needs the rest of that day is an open owner decision (review P5-R4).
+- Refresh and the crawl cache. Chose: keep the 24-hour cache (project rule: cache results and limit requests per site) and tell the owner when a new read is possible (review P4-R1). Letting a verified owner's refresh bypass the cache is an open product option for Juan. Superseded on 2026-11-25: see "Owner decisions, 2026-11-25".
+- Billing variables. `BILLING_START`, `STRIPE_SECRET_KEY` (test) and `STRIPE_WEBHOOK_SECRET` are required on Vercel as the plan's stuck-state row says; prices are optional. Effect: a release of any of these phases needs the Stripe test account first, because the configuration loads on every route. Set the variables before the deployment. Superseded for the two Stripe variables on 2026-11-25: see "Owner decisions, 2026-11-25".
+- Live Stripe keys and live events are refused everywhere, not only on Vercel. An earlier `BILLING_START` than 2027-01-19T00:00:00Z is refused on Vercel, so manual check 4 works before that date only locally. Since 2026-11-25 the earliest instant is 2027-01-20T00:00:00Z.
+- `BILLING_START` is 2027-01-18 16:00 in Pacific time. The instant follows the plan. Whether judging needs the rest of that day is an open owner decision (review P5-R4). Superseded on 2026-11-25: see "Owner decisions, 2026-11-25".
 - Score and key limits the plan left open: 20 an hour anonymous, 60 Pro, 300 Agency, with per-account daily caps; at most 5 keys per account; key prefix `rk_retrofit_` because Stripe's restricted keys also start with `rk_`.
 - Free limit: a fixed 30-day window from `BILLING_START`, per visitor cookie and per network (a keyed hash of the address kept up to 30 days, stated in the privacy draft).
 - When a plan ends, published pages, badges and saved reports stay; a new publish, refresh or save needs a plan. Juan may choose otherwise.
@@ -136,7 +136,7 @@ Independent review returned CHANGES REQUIRED with fourteen findings; a second re
 
 - P5-R1 (S2) fixed in `2333920` and the commits after it: an orphan subscription is cancelled only on a hashed customer marker written in the deletion transaction; `getUser` and `deleteUser` accept only the provider's explicit user-not-found answer. Without a marker the webhook raises an alert and leaves the subscription alone.
 - P5-R2, P5-R3, P5-R6, P5-R7, P5-R8, P5-R9 (S3 and S4) fixed: access always ends (period end plus three days, no grace when cancelled; seven days from the first time Retrofit saw a past-due status); keys add no capacity before the start and have per-account daily caps after it; price variables accept a list; a living customer without a record is linked again; a lease and a second list keep one payable checkout.
-- P5-R4 (S3) not changed: the start instant is the plan's. It is 16:00 Pacific time on 2027-01-18. Owner decision.
+- P5-R4 (S3) not changed: the start instant is the plan's. It is 16:00 Pacific time on 2027-01-18. Owner decision. Resolved on 2026-11-25: see "Owner decisions, 2026-11-25".
 - P5-R5 and P5-RR1 (S3) fixed: after the start the production evidence runs the browser suite first and treats the exact limit answer as an expected result; before it, the order and the cold concurrent case are unchanged. No product bypass was added. The limit branch of `e2e-prod/probes.spec.ts` has not been run.
 - P5-R10 to P5-R13 and the nits fixed. P5-R14 is this entry.
 - P5-RR2, P5-RR4 to P5-RR8 fixed in `e9111a3`. P5-RR3 fixed as a correction: after the data deletion and before the auth user is deleted, a sign-in and checkout in another browser leaves an alert, not a cancellation. No automatic marker was added, because clearing billing rows by hand would then cancel subscriptions.
@@ -155,3 +155,15 @@ Phase 5 passed all 15 local checks on `1b6c4c4` (full identity in the receipt). 
 ## Integration
 
 `develop` had not moved since the base, so `feat/accounts` merged without conflicts and the merged tree equaled the branch. The full gate runs again on `develop` with this entry; its receipt is kept under `.local/runs/2026-11-23-accounts/integrated/`. Nothing was pushed.
+
+## Owner decisions, 2026-11-25
+
+`develop` at `8531dd8` was pushed by Juan on 2026-11-24. CI run 45465345924 failed on one browser test. Decisions and their commits on `fix/release-decisions`:
+
+- CI failure: a race in `e2e/preview-theme.spec.ts`, reproduced in 7 of 60 local runs and in 0 of 100 after the repair (`c53a9b2`). The test measured the old page's detached heading. No product defect.
+- P5-R4: billing starts at 2027-01-20T00:00:00Z. The organizers' hosting cutoff is 2027-01-18 17:00 Pacific time (2027-01-19T01:00Z), one hour after the old start (source: a Codex session's summary of the 2026-11-24 office-hours email).
+- Stripe variables: optional on Vercel, both or neither. A missing pair after the start logs `[BILLING_ALERT]` and is not refused, because a refusal would stop every production route at the start instant.
+- Limits accepted: 20, 60 and 300 score calls an hour; 50, 100 and 300 sites a day; 5 free analyses in 30 days.
+- Refresh: a signed-in account with a verified claim for the scored host gets a new read when the cached one is at least one hour old (`OWNER_REREAD_S`), also when the site's typed address redirects to that host. The new read replaces the cached one for every visitor. Robots rules, pacing, the daily host count and the analysis limits are unchanged. Accepted effect: while a new read is refused or fails, the older cached read is no longer offered at that address.
+- Still open: what stays public when a plan ends, and free AI after signing out.
+- Amazon SES: production access for `us-east-1` was requested on 2026-11-25; the review was pending at that time.

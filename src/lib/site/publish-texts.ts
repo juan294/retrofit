@@ -30,9 +30,9 @@ export const PUBLISH_TEXT = {
     too_large: (host: string) => `The newest analysis of ${host} is too large to publish.`,
   } satisfies Record<RefreshError, (host: string) => string>,
   notNewer: (host: string) => `The published page already shows your newest analysis of ${host}. Analyze it again, then refresh.`,
-  /** Inside the crawl cache window a new analysis would bring the same read. `from`: when a new read is possible. */
-  sameRead: (host: string, hours: number, from: Date) =>
-    `The published page already shows your newest analysis of ${host}. Retrofit reuses one read of a site for ${hours} ${hours === 1 ? "hour" : "hours"}, so a new analysis brings nothing newer before ${hhmmUtc(from)} UTC. Analyze it again after that, then refresh.`,
+  /** Too soon after the last read a new analysis would bring the same read. `from`: when a new read is possible for the verified owner. */
+  sameRead: (host: string, minutes: number, from: Date) =>
+    `The published page already shows your newest analysis of ${host}. Retrofit reads a site again for its verified owner ${minutes} minutes after the last read, so a new analysis brings nothing newer before ${hhmmUtc(from)} UTC. Analyze it again after that, then refresh.`,
   notPublished: (host: string) => `${host} is not published.`,
   limit: (retryAt: Date) => `You can publish or refresh ${PUBLISH_PER_HOUR} times an hour. Try again at ${hhmmUtc(retryAt)} UTC.`,
   tries: (retryAt: Date) => `You tried to publish or refresh more than ${PUBLISH_TRIES_PER_HOUR} times this hour. Try again at ${hhmmUtc(retryAt)} UTC.`,

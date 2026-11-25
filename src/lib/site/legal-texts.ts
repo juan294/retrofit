@@ -60,7 +60,7 @@ export const PRIVACY: LegalDocument = {
       heading: "Analyses of websites",
       body: [
         "When you ask Retrofit to score a website, RetrofitBot reads its public pages and follows its robots rules. It skips sign-in, account, cart and checkout pages.",
-        `The pages it read are kept for ${CRAWL_CACHE_HOURS} hours and shared between visitors who analyze the same site.`,
+        `The pages it read are kept for ${CRAWL_CACHE_HOURS} hours and shared between visitors who analyze the same site. The site's verified owner can replace them with a new read after one hour.`,
         `Your analysis (a copy of those pages and the score) is private to the browser that ran it and to the signed-in account it is attached to. It is kept for ${ANALYSIS_DAYS} days, then shown as expired for ${days(EXPIRED_GRACE_S)} more days, then deleted.`,
         "To limit use, Retrofit counts requests per network with a hash of your IP address that changes every day. It does not store the address itself.",
         `From the day paid plans start, Retrofit counts the ${FREE_ANALYSES} free analyses of visitors without an account per browser and per network, with a keyed hash of your IP address (for an IPv6 address, of its first half), for up to ${days(FREE_WINDOW_S)} days. It does not store the address itself.`,

@@ -9264,31 +9264,85 @@
       "rule": "publishing",
       "suite": "unit",
       "file": "tests/publish/publish.test.ts",
-      "title": "a refresh inside the crawl cache window says that one read is reused and from when a new one is possible, with the time as retryAt"
+      "title": "a refresh inside the owner's hour says that one read is reused and from when a new one is possible, with the time as retryAt"
     },
     {
       "rule": "publishing",
       "suite": "unit",
       "file": "tests/publish/publish.test.ts",
-      "title": "a refresh inside the crawl cache window uses the configured window"
+      "title": "a refresh inside the owner's hour uses the configured window"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner replaces a read one hour old for the owner of its host, and for nobody else"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner keeps a younger read without asking who owns the host"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner starts one new read for ten concurrent requests and joins it while it runs"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner takes over the destination it was started for"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner joins the read of another host that the site redirects to now"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner joins a younger read of the same host from another address"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/api/analyze.test.ts",
+      "title": "a new read for the verified owner reads the site again for the owner after an hour, and later visitors get that read"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/api/analyze.test.ts",
+      "title": "a new read for the verified owner keeps the cached read for visitors, other accounts, and a pending or lapsed claim"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/api/analyze.test.ts",
+      "title": "a new read for the verified owner gives the cached read when the claims cannot be read"
     },
     {
       "rule": "publishing",
       "suite": "unit",
       "file": "tests/publish/publish.test.ts",
-      "title": "a refresh inside the crawl cache window is not a failed refresh: it keeps an earlier error and does not count against the hourly limit"
+      "title": "a refresh inside the owner's hour is not a failed refresh: it keeps an earlier error and does not count against the hourly limit"
     },
     {
       "rule": "publishing",
       "suite": "unit",
       "file": "tests/publish/publish.test.ts",
-      "title": "a refresh inside the crawl cache window after the window it says to analyze again, and a new analysis refreshes the page"
+      "title": "a refresh inside the owner's hour after the window it says to analyze again, and a new analysis refreshes the page"
     },
     {
       "rule": "publishing",
       "suite": "unit",
       "file": "tests/publish/publish.test.ts",
-      "title": "a refresh inside the crawl cache window answers 429 after 60 tries in an hour"
+      "title": "a refresh inside the owner's hour answers 429 after 60 tries in an hour"
     },
     {
       "rule": "published page policies",
@@ -9378,7 +9432,7 @@
       "rule": "publishing",
       "suite": "playwright",
       "file": "publish.spec.ts",
-      "title": "published sites a refresh inside the read's 24 hours says when a new read is possible, and is not a failed refresh"
+      "title": "published sites a refresh inside the owner's hour says when a new read is possible, and is not a failed refresh"
     },
     {
       "rule": "publishing",

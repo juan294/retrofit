@@ -1,6 +1,7 @@
 import { countAccountSite } from "@/lib/billing/daily-sites";
 import { accountPlan, billingStarted } from "@/lib/billing/entitlements";
 import { reserveFreeAnalysis, type FreeCount } from "@/lib/billing/free-limit";
+import { ownsHost } from "@/lib/claims/owner";
 import type { Config } from "@/lib/config";
 import { NotPublicError } from "@/lib/fetch/errors";
 import { countAccountAnalysis, countClientAnalysis } from "@/lib/fetch/limits";
@@ -89,8 +90,10 @@ export async function startAnalysis(
 /** The start itself, after every per-visitor limit admitted it. */
 async function startCounted(deps: ServerDeps, url: URL, o: { ownerHash: string; invocation?: Invocation; accountId?: string }): Promise<StartOutcome> {
   const invocation = o.invocation ?? { startedAt: deps.clock() };
-  // 5. Start or join the shared crawl; a new job is queued for a slot.
-  const crawl = await startCrawlJob(deps, url.origin);
+  // 5. Start or join the shared crawl; a new job is queued for a slot. A signed-in verified owner of the
+  // host gets a new read in place of one that is an hour old (OWNER_REREAD_S).
+  const { accountId } = o;
+  const crawl = await startCrawlJob(deps, url.origin, accountId ? { mayReread: (host) => ownsHost(deps, accountId, host) } : {});
   if (!crawl.ok && crawl.code === "counting") return { ok: false, status: 503, code: "counting", message: visitorTexts.counting, retryAfterSeconds: COUNTING_RETRY_S };
   if (!crawl.ok) return { ok: false, status: 429, code: "daily_limit", message: visitorTexts.dailyLimit, retryAt: new Date(crawl.retryAt).toISOString() };
 

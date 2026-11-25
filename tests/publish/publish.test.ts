@@ -215,9 +215,10 @@ describe("refresh", () => {
   });
 });
 
-// P4-R1. Retrofit reuses one read of a site for CRAWL_CACHE_TTL_S, so a second analysis inside it brings no newer read.
-describe("a refresh inside the crawl cache window", () => {
-  const READ = "2026-11-21T09:15:30.000Z";
+// P4-R1, owner decision 2026-11-25: the verified owner gets a new read one hour after the last one (OWNER_REREAD_S), so a second
+// analysis inside that hour brings no newer read.
+describe("a refresh inside the owner's hour", () => {
+  const READ = "2026-11-21T09:55:30.000Z";
   async function publishedFromRead() {
     const s = await setup("2026-11-21T10:00:00.000Z");
     await verifiedClaim(s.d);
@@ -233,21 +234,21 @@ describe("a refresh inside the crawl cache window", () => {
   it("says that one read is reused and from when a new one is possible, with the time as retryAt", async () => {
     const { publish, marker, d } = await publishedFromRead();
     const r = await publish();
-    // The read ended at 09:15:30, so a new one is possible 24 hours later, shown as the next whole minute.
-    const at = new Date("2026-11-22T09:16:00.000Z");
+    // The read ended at 09:55:30, so a new one is possible an hour later, shown as the next whole minute.
+    const at = new Date("2026-11-21T10:56:00.000Z");
     expect(r.status).toBe(409);
-    expect(r.body).toMatchObject({ error: "not_newer", message: PUBLISH_TEXT.sameRead(HOST, 24, at), retryAt: at.toISOString(), site: { error: null } });
-    expect(r.body.message).toMatch(/reuses one read of a site for 24 hours.*09:16 UTC/);
+    expect(r.body).toMatchObject({ error: "not_newer", message: PUBLISH_TEXT.sameRead(HOST, 60, at), retryAt: at.toISOString(), site: { error: null } });
+    expect(r.body.message).toMatch(/reads a site again for its verified owner 60 minutes after the last read.*10:56 UTC/);
     expect(await marker()).toBe("one read");
     expect((await d.accounts.listPublishedSites(OWNER))[0]?.lastRefreshError).toBeNull();
   });
 
-  // Fails if the window is the 24-hour default and not the configured one.
+  // Fails if a cache window shorter than the owner's hour is ignored (a new read is possible already when the cache ends).
   it("uses the configured window", async () => {
     const { d, publish } = await publishedFromRead();
-    const deps = { ...d, config: { ...d.config, crawlCacheTtlS: 2 * 3600 } };
-    const at = new Date("2026-11-21T11:16:00.000Z");
-    expect((await publish({ deps })).body).toMatchObject({ message: PUBLISH_TEXT.sameRead(HOST, 2, at), retryAt: at.toISOString() });
+    const deps = { ...d, config: { ...d.config, crawlCacheTtlS: 1800 } };
+    const at = new Date("2026-11-21T10:26:00.000Z");
+    expect((await publish({ deps })).body).toMatchObject({ message: PUBLISH_TEXT.sameRead(HOST, 30, at), retryAt: at.toISOString() });
   });
 
   // Fails if the answer counts as a failed refresh: it would overwrite a real error or use up the hourly limit.
@@ -263,11 +264,11 @@ describe("a refresh inside the crawl cache window", () => {
   // Fails if a refresh after the window, from a new analysis, does not work, or without one still gives a past time.
   it("after the window it says to analyze again, and a new analysis refreshes the page", async () => {
     const { d, clock, publish, marker } = await publishedFromRead();
-    clock.set(Date.parse("2026-11-22T09:16:00.000Z"));
+    clock.set(Date.parse("2026-11-21T10:56:00.000Z"));
     const r = await publish();
     expect(r.body).toMatchObject({ error: "not_newer", message: PUBLISH_TEXT.notNewer(HOST) });
     expect(r.body.retryAt).toBeUndefined();
-    await listedAnalysis(d, { snapshot: snapshotOf(HOST, "2026-11-22T09:16:20.000Z", "a new read") });
+    await listedAnalysis(d, { snapshot: snapshotOf(HOST, "2026-11-21T10:56:20.000Z", "a new read") });
     expect((await publish()).status).toBe(200);
     expect(await marker()).toBe("a new read");
   });

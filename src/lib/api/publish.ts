@@ -1,4 +1,5 @@
 import { PUBLISH_PER_HOUR, PUBLISH_TRIES_PER_HOUR } from "@/lib/accounts/limits";
+import { ownerRereadS } from "@/lib/crawl/jobs";
 import { exactHost } from "@/lib/publish/host";
 import { isPublished, newReadFrom, publishHost, publishSource, type PublishHostDeps, type PublishSource } from "@/lib/publish/publish";
 import { publishedView } from "@/lib/publish/view";
@@ -77,12 +78,12 @@ export function handlePublish(request: Request, deps: PublishDeps): Promise<Resp
   });
 }
 
-/** 409 not_newer. `retryAt`: until then Retrofit reuses the analysis's read, so a new analysis brings nothing newer. */
+/** 409 not_newer. `retryAt`: until then Retrofit reuses the analysis's read also for its owner, so a new analysis brings nothing newer. */
 function notNewer({ analysis, current }: PublishSource, host: string, deps: PublishDeps): Response {
   const from = analysis && newReadFrom(analysis, deps);
   return json(409, {
     error: "not_newer",
-    message: from ? T.sameRead(host, Math.round(deps.config.crawlCacheTtlS / 360) / 10, from) : T.notNewer(host),
+    message: from ? T.sameRead(host, Math.round(ownerRereadS(deps.config) / 60), from) : T.notNewer(host),
     ...(from ? { retryAt: from.toISOString() } : {}),
     site: current && publishedView(current, deps.config),
   });

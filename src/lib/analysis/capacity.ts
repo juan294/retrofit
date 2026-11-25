@@ -1,4 +1,4 @@
-import { getJob, isQueueExpired, startOrJoinCrawl, updateJob, type JobDeps } from "@/lib/crawl/jobs";
+import { getJob, isQueueExpired, startOrJoinCrawl, updateJob, type JobDeps, type StartOptions } from "@/lib/crawl/jobs";
 import { runCrawl, type WorkerOutcome } from "@/lib/crawl/worker";
 import { countOnce, nextUtcMidnight, shortHash, ttlUntil, utcDay } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
@@ -35,8 +35,8 @@ export type StartCrawlResult =
  * failed `counting`, so it is never crawled or reused, and the caller answers a
  * short retry. The retry creates a new job and decides again.
  */
-export async function startCrawlJob(deps: JobDeps, inputOrigin: string): Promise<StartCrawlResult> {
-  const { jobId, created } = await startOrJoinCrawl(deps, inputOrigin);
+export async function startCrawlJob(deps: JobDeps, inputOrigin: string, o: StartOptions = {}): Promise<StartCrawlResult> {
+  const { jobId, created } = await startOrJoinCrawl(deps, inputOrigin, o);
   if (!created) return { ok: true, jobId, created };
   const now = deps.clock();
   const midnight = nextUtcMidnight(now);

@@ -1,8 +1,9 @@
 import { jsonBytes, MAX_PUBLISHED_SNAPSHOT_BYTES, MAX_REPORT_BYTES, type PublishedSite, type PublishSiteResult, type RefreshError } from "@/lib/accounts/data";
 import { listAccountAnalyses, MAX_ACCOUNT_ANALYSES } from "@/lib/analysis/account-list";
 import { accountAnalysis } from "@/lib/analysis/owner";
-import { analysisHost, cachedUntil, EXPIRED_GRACE_S, readAnalysisView, readyAnalysis, reportBody, type ReadyAnalysis } from "@/lib/analysis/record";
+import { analysisHost, EXPIRED_GRACE_S, readAnalysisView, readyAnalysis, reportBody, type ReadyAnalysis } from "@/lib/analysis/record";
 import { claimHost } from "@/lib/claims/host";
+import { ownerRereadS } from "@/lib/crawl/jobs";
 import { GenerationFailed, generateNetwork, type NetworkValidator } from "@/lib/generate/network";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { agentSnapshot } from "@/lib/snapshot/types";
@@ -60,9 +61,9 @@ export function isPublished({ analysis, current }: PublishSource): boolean {
   return analysis !== null && current !== null && readOf(analysis) <= Date.parse(current.fetchedAt);
 }
 
-/** When a new read of the analysis's site is possible (cachedUntil, as the next whole minute); null when it is already. */
+/** When the site's verified owner can get a new read (ownerRereadS, as the next whole minute); null when already. */
 export function newReadFrom(a: Pick<ReadyAnalysis, "readyAt">, deps: Pick<PublishHostDeps, "config" | "clock">): Date | null {
-  const at = Math.ceil((cachedUntil(a.readyAt, deps.config) + 1) / MINUTE_MS) * MINUTE_MS;
+  const at = Math.ceil((a.readyAt + ownerRereadS(deps.config) * 1000) / MINUTE_MS) * MINUTE_MS;
   return at > deps.clock() ? new Date(at) : null;
 }
 
