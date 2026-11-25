@@ -27,7 +27,9 @@
     "hosting-and-domain-decision"
   ],
   "current_gaps": [
-    "Install bundle: owner review of the sample README and the install panel during the UI pass."
+    "v0.3.0: owner approval of /privacy and /terms, and the UI review.",
+    "v0.3.0: production migrations, Auth settings, SUPABASE_ANON_KEY and BILLING_START are not applied yet (docs/release/release-playbook.md, Wave A).",
+    "v0.3.0: Juan decides Waves C to H when the candidate is presented."
   ],
   "invariants": [
     "passing-check-count-greater-than-zero",
@@ -74,5 +76,22 @@
         "docs/plans/2026-11-15-retrofit-url-to-preview-notes.md (Phase 7 external actions, 2026-11-20)"
       ]
     }
+  },
+  "releases": [
+    {
+      "version": "v0.2.0",
+      "commit": "7aa6eb18eb13098c37eb2f8f9d12ec92d515ed0b",
+      "date": "2026-11-22",
+      "deployment": "dpl_DiLC69wsp8xZ2QJnxa2xD7ehLouu",
+      "evidence": [
+        "docs/plans/2026-11-15-retrofit-url-to-preview-notes.md (Release of the bundle and the bridge, 2026-11-22)"
+      ]
+    }
+  ],
+  "next_release": {
+    "version": "v0.3.0",
+    "status": "not-ready",
+    "plan": "docs/plans/2026-11-23-retrofit-accounts-claims-publishing-billing.md",
+    "audit": "docs/agents/pre-launch-report.md (ignored): CONDITIONAL on a6abdb9, Wave 1 in repair"
   }
 }

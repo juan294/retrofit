@@ -1,5 +1,7 @@
 # CI handoff for Sutura
 
+> Historical (2026-11-15 to 2026-11-19). Since then `.github/workflows/ci.yml` exists (Gate and Database), Vercel is set up with a Git connection, and `main` deploys production. Current facts: [the release playbook](../release/release-playbook.md).
+
 Proposed by Retrofit Phase 1, 2026-11-15. Sutura owns CI cadence and routing for the fleet. This repository adds no `.github/workflows/`. This file gives Sutura what it needs to install a workflow; it does not activate anything.
 
 ## Facts
