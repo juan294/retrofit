@@ -21,7 +21,7 @@ Machine-readable selection and gaps are in `.rpi/release-profile.json`.
 | Release owner | Juan |
 | Rollback | First release: remove the production aliases with owner authorization. Later releases: `vercel rollback <previous deployment>` with owner authorization; the database keeps its data (no destructive migration in this plan). |
 | Hosted CI | None in this repository. Sutura owns fleet CI routing (`docs/development/ci-handoff.md`). |
-| Deadline | Submission closes 2027-01-11 8:00 am PT. Judges need free access until 2027-01-18. |
+| Deadline | Submission closes 2027-01-11 8:00 am PT. Judges need free access until 2027-01-18 17:00 Pacific time (2027-01-19T01:00Z). |
 | Wave A | Mandatory: fixed candidate, nonempty passing evidence, required miss blocks, tag last. |
 | Wave B | Not selected. Retrofit ships no code that runs unattended or destructively on users' machines. |
 | Waves C to H | Reassess before the second plan's release. |
@@ -42,7 +42,7 @@ Machine-readable selection and gaps are in `.rpi/release-profile.json`.
 | Variable | Rule on Vercel |
 | --- | --- |
 | `SUPABASE_ANON_KEY` | Required. Sign-in through Supabase Auth, server side only. |
-| `BILLING_START` | Required: `2027-01-19T00:00:00Z`. An earlier instant is refused (judges have free access until 2027-01-18). |
+| `BILLING_START` | Required: `2027-01-20T00:00:00Z`. An earlier instant is refused (the hackathon asks for hosting until 2027-01-18 17:00 Pacific time, 2027-01-19T01:00Z). |
 | `STRIPE_SECRET_KEY` | Required, test mode only (`sk_test_` or `rk_test_`). A live key is refused; the live switch is a separate authorized release with its own webhook, prices and cleared test-mode billing rows. |
 | `STRIPE_WEBHOOK_SECRET` | Required (`whsec_`): the signing secret of the test webhook endpoint `/api/billing/webhook` for `checkout.session.completed`, `customer.subscription.updated` and `customer.subscription.deleted`. |
 | `STRIPE_PRICE_PRO`, `STRIPE_PRICE_AGENCY` | Optional until Juan sets the amounts; a Stripe price id (`price_`) or a comma-separated list. The first id is for sale; every id of the list is recognised as its plan. To change a price, put the new id first and keep the old one in the list while it has subscribers. The two lists share no id. A plan without one, or whose amount cannot be read, has no upgrade button. |

@@ -133,9 +133,9 @@ describe("loadConfig", () => {
 
 describe("billing start and notify limit", () => {
   // Fails if billing could start before judging ends (the brief's free-access rule) or the default moves.
-  it("defaults BILLING_START to 2027-01-19T00:00:00Z and NOTIFY_PER_CLIENT_HOUR to 5", () => {
+  it("defaults BILLING_START to 2027-01-20T00:00:00Z and NOTIFY_PER_CLIENT_HOUR to 5", () => {
     const c = loadConfig({ SESSION_SECRET: secret });
-    expect(c.billingStart).toBe(Date.parse("2027-01-19T00:00:00Z"));
+    expect(c.billingStart).toBe(Date.parse("2027-01-20T00:00:00Z"));
     expect(c.notifyPerClientHour).toBe(5);
   });
 

@@ -23,7 +23,7 @@ describe("billing start", () => {
   it("starts exactly at BILLING_START", () => {
     expect(billingStarted(billingDeps(-1).d)).toBe(false);
     expect(billingStarted(billingDeps(0).d)).toBe(true);
-    expect(START).toBe(Date.parse("2027-01-19T00:00:00Z"));
+    expect(START).toBe(Date.parse("2027-01-20T00:00:00Z"));
   });
 });
 
@@ -134,6 +134,6 @@ describe("the default start", () => {
     const unset = { BILLING_START: undefined };
     expect(billingStarted(testDeps({ clock: () => START - 1, env: unset }))).toBe(false);
     expect(billingStarted(testDeps({ clock: () => START, env: unset }))).toBe(true);
-    expect(BILLING_ENV.BILLING_START).toBe("2027-01-19T00:00:00Z");
+    expect(BILLING_ENV.BILLING_START).toBe("2027-01-20T00:00:00Z");
   });
 });

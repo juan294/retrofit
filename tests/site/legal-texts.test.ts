@@ -95,7 +95,7 @@ describe("terms draft", () => {
   // Fails if the terms lose the free judging period, the ownership rule for publishing or the contact address.
   it("states the free period, the claim rule for publishing and the contact address", () => {
     const terms = text(TERMS);
-    for (const s of ["2027-01-18", "claim", "unofficial", "Apache-2.0", LEAD_EMAIL]) expect(terms, s).toContain(s);
+    for (const s of ["until the end of 2027-01-19 (UTC)", "claim", "unofficial", "Apache-2.0", LEAD_EMAIL]) expect(terms, s).toContain(s);
   });
 });
 

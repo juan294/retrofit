@@ -15,7 +15,7 @@ export const VERCEL_ENV: Record<string, string> = {
   SUPABASE_URL: "https://store.supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-key-test",
   SUPABASE_ANON_KEY: "anon-key-test",
-  BILLING_START: "2027-01-19T00:00:00Z",
+  BILLING_START: "2027-01-20T00:00:00Z",
   STRIPE_SECRET_KEY: "sk_test_unit_only",
   STRIPE_WEBHOOK_SECRET: "whsec_unit_only",
 };

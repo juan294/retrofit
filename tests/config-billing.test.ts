@@ -22,10 +22,15 @@ describe("billing configuration on Vercel", () => {
     for (const value of [undefined, " "]) expect(errorOf(() => loadConfig({ ...VERCEL_ENV, [name]: value })).variable).toBe(name);
   });
 
-  // Fails if the judges' free access could end early by a wrong date (free until 2027-01-18 inclusive).
-  it("refuses a BILLING_START before 2027-01-19T00:00:00Z and accepts that instant", () => {
-    expect(errorOf(() => loadConfig({ ...VERCEL_ENV, BILLING_START: "2027-01-18T23:59:59.999Z" })).variable).toBe("BILLING_START");
-    expect(loadConfig({ ...VERCEL_ENV, BILLING_START: "2027-01-19T00:00:00Z" }).billingStart).toBe(Date.parse("2027-01-19T00:00:00Z"));
+  // Fails if the judges' free access could end early by a wrong date (judging needs hosting until 2027-01-18 17:00 Pacific, 2027-01-19T01:00Z).
+  it("refuses a BILLING_START before 2027-01-20T00:00:00Z and accepts that instant", () => {
+    expect(errorOf(() => loadConfig({ ...VERCEL_ENV, BILLING_START: "2027-01-19T23:59:59.999Z" })).variable).toBe("BILLING_START");
+    expect(loadConfig({ ...VERCEL_ENV, BILLING_START: "2027-01-20T00:00:00Z" }).billingStart).toBe(Date.parse("2027-01-20T00:00:00Z"));
+  });
+
+  // Fails if the free limit can start while judges may still use the site: the hosting cutoff is 17:00 Pacific time on 2027-01-18.
+  it("the earliest start is after the hackathon's hosting cutoff", () => {
+    expect(loadConfig({ SESSION_SECRET }).billingStart).toBeGreaterThan(Date.parse("2027-01-18T17:00:00-08:00"));
   });
 
   // Fails if a price must exist before Juan decides the amounts.

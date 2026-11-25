@@ -42,7 +42,7 @@ export interface Config {
   readonly fixturesEnabled: boolean;
   /**
    * The instant billing and the free-analysis limit start (ms since epoch; BILLING_START, default
-   * 2027-01-19T00:00:00Z, the day after judging ends). Before it every visitor keeps open access.
+   * EARLIEST_BILLING_START). Before it every visitor keeps open access.
    * Required on Vercel, and never earlier than that default there.
    */
   readonly billingStart: number;
@@ -211,7 +211,7 @@ export function loadConfig(env: Env): Config {
 
   if (onVercel && !env.BILLING_START?.trim()) throw new ConfigError("BILLING_START", "is required on Vercel");
   const billingStart = parseInstant(env, "BILLING_START", EARLIEST_BILLING_START);
-  // Judges have free access until 2027-01-18: no Vercel setting can start billing earlier.
+  // Judges have free access until then: no Vercel setting can start billing earlier.
   if (onVercel && billingStart < Date.parse(EARLIEST_BILLING_START)) throw new ConfigError("BILLING_START", `must not be before ${EARLIEST_BILLING_START} on Vercel`);
   const billing = loadBillingConfig(env, onVercel);
   const accountSitesPerDay = Object.freeze(Object.fromEntries(PLANS.map(({ id, limits }) => [id, parsePositive(env, `ACCOUNT_SITES_PER_DAY_${id.toUpperCase()}`, limits.sitesPerDay)])) as Record<PlanId, number>);
@@ -219,8 +219,11 @@ export function loadConfig(env: Env): Config {
   return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, billing, accountSitesPerDay, cronSecret, free, supabase });
 }
 
-/** The day after judging ends: the default and, on Vercel, the earliest BILLING_START. */
-const EARLIEST_BILLING_START = "2027-01-19T00:00:00Z";
+/**
+ * The default and, on Vercel, the earliest BILLING_START. Owner decision 2026-11-25: the hackathon asks
+ * for hosting until 2027-01-18 17:00 Pacific time (2027-01-19T01:00Z), so billing starts a day later.
+ */
+const EARLIEST_BILLING_START = "2027-01-20T00:00:00Z";
 
 /**
  * STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET: required on Vercel; off Vercel both or neither.

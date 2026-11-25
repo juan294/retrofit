@@ -4,7 +4,7 @@
 // both values equal to the product's.
 
 /** The earliest BILLING_START the product accepts on Vercel (src/lib/config.ts). */
-export const BILLING_STARTS_AT_EARLIEST = Date.parse("2027-01-19T00:00:00Z");
+export const BILLING_STARTS_AT_EARLIEST = Date.parse("2027-01-20T00:00:00Z");
 
 /** The product's answer past the free analyses (src/lib/analysis/texts.ts). */
 export const FREE_LIMIT_TEXT = "You've used your 5 free analyses. Sign in to keep going.";

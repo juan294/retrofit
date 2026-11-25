@@ -5922,7 +5922,7 @@
       "rule": "billing start",
       "suite": "unit",
       "file": "tests/config.test.ts",
-      "title": "billing start and notify limit defaults BILLING_START to 2027-01-19T00:00:00Z and NOTIFY_PER_CLIENT_HOUR to 5"
+      "title": "billing start and notify limit defaults BILLING_START to 2027-01-20T00:00:00Z and NOTIFY_PER_CLIENT_HOUR to 5"
     },
     {
       "rule": "billing start",
@@ -9528,7 +9528,13 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/config-billing.test.ts",
-      "title": "billing configuration on Vercel refuses a BILLING_START before 2027-01-19T00:00:00Z and accepts that instant"
+      "title": "billing configuration on Vercel refuses a BILLING_START before 2027-01-20T00:00:00Z and accepts that instant"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/config-billing.test.ts",
+      "title": "billing configuration on Vercel the earliest start is after the hackathon's hosting cutoff"
     },
     {
       "rule": "billing start and entitlements",

@@ -2,11 +2,11 @@ import type { AccountData } from "@/lib/accounts/data";
 import type { BillingState } from "@/lib/billing/state";
 import { fakeClock, TEST_ACCOUNT, testDeps, type TestDeps, type TestDepsOptions } from "../helpers/server-deps";
 
-export const START = Date.parse("2027-01-19T00:00:00.000Z");
+export const START = Date.parse("2027-01-20T00:00:00.000Z");
 export const PRICES = { pro: "price_unit_pro", agency: "price_unit_agency" };
 export const WEBHOOK_SECRET = "whsec_unit_Zq9x";
 export const SECRET_KEY = "sk_test_unit_Kk77";
-export const BILLING_ENV = { STRIPE_SECRET_KEY: SECRET_KEY, STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET, STRIPE_PRICE_PRO: PRICES.pro, STRIPE_PRICE_AGENCY: PRICES.agency, BILLING_START: "2027-01-19T00:00:00Z" };
+export const BILLING_ENV = { STRIPE_SECRET_KEY: SECRET_KEY, STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET, STRIPE_PRICE_PRO: PRICES.pro, STRIPE_PRICE_AGENCY: PRICES.agency, BILLING_START: "2027-01-20T00:00:00Z" };
 export const OWNER = TEST_ACCOUNT.userId;
 
 /** Deps with Stripe configured on a fake clock `offsetMs` after BILLING_START. A wait of the score route (SCORE_WAIT_MS) moves the clock. */

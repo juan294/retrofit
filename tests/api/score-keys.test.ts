@@ -48,7 +48,7 @@ describe("creating and revoking API keys", () => {
     expect(status).toBe(201);
     expect(body.key).toMatch(/^rk_retrofit_[0-9a-f]{32}$/);
     const key = body.key as string;
-    expect(body.apiKey).toEqual({ id: expect.any(String), hint: key.slice(-4), createdOn: "19 January 2027" });
+    expect(body.apiKey).toEqual({ id: expect.any(String), hint: key.slice(-4), createdOn: "20 January 2027" });
     expect(body.message).toBe(API_KEY_TEXT.created);
     expect((await d.accounts.listApiKeys(OWNER)).map((k) => k.id)).toEqual([body.apiKey?.id]);
     const stored = JSON.stringify([...d.accountsBacking.apiKeys.values()]);

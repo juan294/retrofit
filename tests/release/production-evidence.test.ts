@@ -331,8 +331,8 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
 // P5-R5: from BILLING_START on, the product gives a network without an account five analyses in 30 days, and the evidence run is no
 // exception. The limit's exact answer is then the expected result, proved beside scores of the same pages from the open score API.
 describe("production-evidence.mjs after BILLING_START", () => {
-  const BEFORE = Date.parse("2027-01-18T23:59:00.000Z");
-  const AFTER = Date.parse("2027-01-19T00:01:00.000Z");
+  const BEFORE = Date.parse("2027-01-19T23:59:00.000Z");
+  const AFTER = Date.parse("2027-01-20T00:01:00.000Z");
   const LIMIT = { error: "free_limit", message: "You've used your 5 free analyses. Sign in to keep going." };
   const READY = { status: "ready", scoreVersion: "score/v1", score: 90 };
 

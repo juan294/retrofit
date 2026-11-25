@@ -201,8 +201,8 @@ function steps(o, cases, pwCases) {
     show: [
       `POST ${o.prod}/api/analyze x5 (concurrent): ${OWN_PAGES.map((p) => `${o.prod}${p}`).join(", ")}`,
       `GET ${o.prod}/api/analyze/<id> for each, every ${POLL_MS / 1000} s until ready, at most ${ANALYSIS_DEADLINE_MS / 1000} s`,
-      "  before the browser suite, on a cold site; from 2027-01-19 after it, whose own analysis needs one of the network's free places",
-      `  from 2027-01-19 the free limit is an expected answer (403 free_limit); then also GET ${o.prod}/api/score?url=<page> x5 until ready`,
+      "  before the browser suite, on a cold site; from 2027-01-20 after it, whose own analysis needs one of the network's free places",
+      `  from 2027-01-20 the free limit is an expected answer (403 free_limit); then also GET ${o.prod}/api/score?url=<page> x5 until ready`,
     ],
     run: concurrentAnalyses,
   };

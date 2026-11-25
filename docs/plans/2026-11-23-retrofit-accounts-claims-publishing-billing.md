@@ -90,7 +90,7 @@ The Supabase access and refresh tokens never reach the browser. Sign-out deletes
 ### Billing and paid features
 
 - Plans (names fixed now, amounts later): Free, Pro, Agency. Features by plan are one table in code (`src/lib/billing/plans.ts`) that the pricing page, the entitlement check and the tests read.
-- Before `BILLING_START` (2027-01-19T00:00:00Z, required on Vercel): every visitor keeps today's open access; every signed-in account has every feature; the pricing page shows features and "notify me".
+- Before `BILLING_START` (2027-01-20T00:00:00Z by the owner decision of 2026-11-25, required on Vercel): every visitor keeps today's open access; every signed-in account has every feature; the pricing page shows features and "notify me".
 - From `BILLING_START`: anonymous visitors get 5 free analyses (counted per visitor cookie and per network), then a sign-in prompt; signed-in Free accounts analyze with per-account fetch limits and preview on their own key; Pro and Agency add publishing, saved reports, the free-AI preview and API keys with higher `/api/score` limits.
 - Stripe Checkout (hosted, subscription mode) and the Stripe customer portal; card data never reaches Retrofit. The webhook (`/api/billing/webhook`) verifies the signature, records the event id once, and updates `billing_customers`. The account page also reconciles from Stripe on load, so a delayed webhook does not block a paying customer.
 - Test mode only in this plan. Switching to live keys is a separate authorized release after 2027-01-18.

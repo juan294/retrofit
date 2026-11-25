@@ -134,8 +134,8 @@ export const TERMS: LegalDocument = {
     {
       heading: "Free period and paid plans",
       body: [
-        "Retrofit is free for everyone, including the hackathon judges, until 2027-01-18. Paid plans start after that date.",
-        `From that day a visitor without an account has ${FREE_ANALYSES} free analyses in ${days(FREE_WINDOW_S)} days. An account is free.`,
+        "Retrofit is free for everyone, including the hackathon judges, until the end of 2027-01-19 (UTC). Paid plans start after that.",
+        `From then on a visitor without an account has ${FREE_ANALYSES} free analyses in ${days(FREE_WINDOW_S)} days. An account is free.`,
         "Prices are shown on the pricing page before you can buy. Payments go through Stripe, for now in Stripe's test mode: no real payment is taken.",
         "Manage billing on your account page opens Stripe's billing page, where you can cancel a plan. Deleting your account cancels a paid plan at once.",
         "When a plan ends, pages you already published stay public until you unpublish them, and reports you saved stay in your account. Publishing, refreshing, saving new reports and API keys need a plan.",
