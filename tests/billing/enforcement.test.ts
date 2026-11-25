@@ -118,13 +118,13 @@ describe("the free AI session", () => {
     expect((await start(d, await accountCookie(d))).status).toBe(200);
   });
 
-  // Fails if a signed-in judge cannot use the code after the start, or a code opens a session that was never started.
+  // Fails if a signed-in judge cannot use the code after the start, with or without a session.
   it("a judge signed in to a Free account uses the code with the session, and the session renews as judge", async () => {
     for (const offset of [-600_000, 0]) {
       const { d } = billingDeps(offset, { env: { JUDGE_CODE: JUDGE } });
       const account = await accountCookie(d);
       const judge = (code: string, cookie: string) => handleJudgeUpgrade(postRequest("/api/inference/session/judge", { code }, { cookie }), d);
-      expect((await judge(JUDGE, account)).status).toBe(401);
+      expect((await judge(JUDGE, account)).status).toBe(200);
       const session = `${account}; ${cookieFrom(await start(d, account))}`;
       expect((await judge("wrong-code", session)).status).toBe(403);
       const up = await judge(JUDGE, session);

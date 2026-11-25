@@ -2,19 +2,21 @@
 
 import { useState, type FormEvent } from "react";
 import { JUDGE_UNAVAILABLE, turnOnJudge, type JudgeAnswer } from "./judge";
+import { useHydrated } from "./useHydrated";
 
-async function post(path: string, body?: unknown): Promise<JudgeAnswer> {
+async function post(path: string, body: unknown): Promise<JudgeAnswer> {
   const res = await fetch(path, {
     method: "POST",
     credentials: "same-origin",
-    headers: body === undefined ? undefined : { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
   });
-  const parsed = (await res.json().catch(() => null)) as { error?: unknown; message?: unknown } | null;
-  return { ok: res.ok, error: typeof parsed?.error === "string" ? parsed.error : null, message: typeof parsed?.message === "string" ? parsed.message : null };
+  const parsed = (await res.json().catch(() => null)) as { pool?: unknown; message?: unknown } | null;
+  return { ok: res.ok, pool: typeof parsed?.pool === "string" ? parsed.pool : null, message: typeof parsed?.message === "string" ? parsed.message : null };
 }
 
 export function JudgeForm() {
+  const hydrated = useHydrated();
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -39,7 +41,7 @@ export function JudgeForm() {
   }
 
   return (
-    <form onSubmit={submit} className="mt-8 flex flex-col gap-2" noValidate>
+    <form method="post" onSubmit={submit} className="mt-8 flex flex-col gap-2" noValidate>
       <label htmlFor="judge-code" className="font-medium">
         Judge code
       </label>
@@ -55,7 +57,7 @@ export function JudgeForm() {
         />
         <button
           type="submit"
-          disabled={busy}
+          disabled={busy || !hydrated}
           className="rounded px-4 py-2 font-medium"
           style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}
         >

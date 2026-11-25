@@ -19,6 +19,8 @@ export type KeyPanelProps = {
   onForget: () => void;
   /** Phase 6: Retrofit's free AI is in use while no key is connected. */
   freePathActive?: boolean;
+  /** The free AI in use is the judges' share (the session's pool is "judge"). */
+  judgeAccess?: boolean;
   /** Retrofit's free AI is starting: the key form stays closed, so it does not flash open first. */
   freePathStarting?: boolean;
   /**
@@ -33,7 +35,7 @@ type Connected = { provider: string; price: string; note: string | null };
 const field = { borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" };
 const muted = { color: "var(--color-muted)" };
 
-export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, freePathStarting = false, askForSavedKey = false }: KeyPanelProps) {
+export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, judgeAccess = false, freePathStarting = false, askForSavedKey = false }: KeyPanelProps) {
   const ids = useId();
   const keyRef = useRef<HTMLInputElement>(null);
   const attempt = useRef(0);
@@ -257,7 +259,7 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, f
     >
       {freeFirst ? (
         <p className="text-sm" style={{ color: freePathActive ? "var(--color-ok)" : "var(--color-muted)" }} role="status">
-          {freePathActive ? <>Using Retrofit&apos;s free AI</> : <>Starting Retrofit&apos;s free AI…</>}
+          {freePathActive ? <>{judgeAccess ? "Judge access is on. " : ""}Using Retrofit&apos;s free AI</> : <>Starting Retrofit&apos;s free AI…</>}
         </p>
       ) : null}
       {/* One structure in every state, so the form is never rebuilt (a key being typed survives the free
