@@ -9,7 +9,7 @@ import { PUBLISH_TEXT } from "@/lib/site/publish-texts";
 import { E2E_BILLING_START } from "../../playwright.config";
 import { newEmail, signIn } from "./account";
 import { analyzeFixture } from "./agent";
-import { claimPanel, setClockOffset, verifyByDns } from "./claims";
+import { claimPanel, setClockOffset, verifyByDns, panelButton } from "./claims";
 
 /** The fixture site that only specs after BILLING_START analyze. */
 export const BILLING_HOST = "billing.fixture.test";
@@ -61,7 +61,7 @@ export async function billingStates(page: Page, label: string, check: (texts: Re
   await page.goto("/pricing?checkout=cancelled");
   await check({ cancelled: page.getByText(BILLING_TEXT.cancelled), price: page.getByTestId("price-pro"), intro: page.getByText(PRICING_TEXT.intro), aiNote: page.getByText(PRICING_TEXT.aiNote), upgrade: page.getByRole("button", { name: BILLING_TEXT.upgrade("Pro") }) });
   await page.getByRole("button", { name: BILLING_TEXT.upgrade("Pro") }).click();
-  await check({ signedOut: page.getByTestId("billing-message"), link: page.getByRole("link", { name: BILLING_TEXT.signIn }) });
+  await check({ signedOut: page.getByTestId("billing-message"), link: page.getByTestId("billing-message").getByRole("link", { name: PLAN_TEXT.signIn }) });
 
   await signIn(page, newEmail(`billing-${label}`));
   await check({ heading: page.getByRole("heading", { level: 2, name: BILLING_TEXT.heading }), plan: page.getByTestId("plan-name"), plans: page.getByTestId("billing").getByRole("link", { name: PLAN_TEXT.seePlans }), keysIntro: page.getByText(API_KEY_TEXT.intro), noKeys: page.getByText(API_KEY_TEXT.none) });
@@ -82,7 +82,7 @@ export async function billingStates(page: Page, label: string, check: (texts: Re
 
   await verifyByDns(page, BILLING_HOST);
   const panel = claimPanel(page, BILLING_HOST);
-  await panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }).click();
+  await panelButton(panel, PUBLISH_TEXT.publish).click();
   await check({ publishRefused: panel.getByTestId("claim-message"), plans: panel.getByRole("link", { name: PLAN_TEXT.seePlans }) });
 
   await openCheckout(page, "Pro");

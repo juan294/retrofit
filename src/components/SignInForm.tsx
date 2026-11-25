@@ -2,11 +2,10 @@
 
 import { useState, type FormEvent } from "react";
 import { SIGN_IN_TEXT as T } from "@/lib/site/sign-in-texts";
-import { localizeRetry } from "./analysis/retry-time";
+import { postJson, statusOf, type Status } from "./post";
+import { StatusMessage } from "./StatusMessage";
 import { useHydrated } from "./useHydrated";
-
-type Status = { readonly ok: boolean; readonly text: string } | null;
-
+import { buttonState, useOneAtATime } from "./useOneAtATime";
 
 /**
  * The sign-in form: one email field. It posts JSON to /api/auth/sign-in and then offers
@@ -14,36 +13,24 @@ type Status = { readonly ok: boolean; readonly text: string } | null;
  * with Enter), and the form is a POST to the API, so the address can never reach a page URL.
  */
 export function SignInForm({ returnTo, privacyHref }: { returnTo: string; privacyHref: string }) {
-  const [status, setStatus] = useState<Status>(null);
-  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<Status | null>(null);
+  const { busy, run } = useOneAtATime();
   const [sent, setSent] = useState(false);
   const hydrated = useHydrated();
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const email = String(new FormData(event.currentTarget).get("email") ?? "").trim();
     if (!email) {
       setStatus({ ok: false, text: T.emptyEmail });
       return;
     }
-    setBusy(true);
-    setStatus(null);
-    try {
-      const res = await fetch("/api/auth/sign-in", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, returnTo }),
-      });
-      const body = (await res.json().catch(() => null)) as { message?: unknown; retryAt?: unknown } | null;
-      const message = typeof body?.message === "string" ? body.message : T.unavailable;
-      const retryAt = typeof body?.retryAt === "string" ? body.retryAt : undefined;
-      setStatus({ ok: res.ok, text: res.ok ? message : localizeRetry(message, retryAt) });
-      if (res.ok) setSent(true);
-    } catch {
-      setStatus({ ok: false, text: T.unavailable });
-    }
-    setBusy(false);
+    void run("send", async () => {
+      setStatus(null);
+      const answer = await postJson("/api/auth/sign-in", { email, returnTo });
+      setStatus(statusOf(answer, T.unavailable, returnTo));
+      if (answer.ok) setSent(true);
+    });
   }
 
   return (
@@ -63,13 +50,14 @@ export function SignInForm({ returnTo, privacyHref }: { returnTo: string; privac
         />
         <button
           type="submit"
-          disabled={busy || !hydrated}
+          {...buttonState(hydrated, busy !== null)}
           className="rounded px-4 py-2 font-medium"
           style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}
         >
           {busy ? T.busy : sent ? T.sendAgain : T.submit}
         </button>
       </div>
+      <p>{T.sameBrowser}</p>
       <p className="text-sm" style={{ color: "var(--color-muted)" }}>
         {T.privacyBefore}
         <a href={privacyHref} className="underline">
@@ -77,11 +65,7 @@ export function SignInForm({ returnTo, privacyHref }: { returnTo: string; privac
         </a>
         {T.privacyAfter}
       </p>
-      {status ? (
-        <p id="sign-in-status" role={status.ok ? "status" : "alert"} style={status.ok ? undefined : { color: "var(--color-danger)" }}>
-          {status.text}
-        </p>
-      ) : null}
+      <StatusMessage status={status} id="sign-in-status" />
     </form>
   );
 }

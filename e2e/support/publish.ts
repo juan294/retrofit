@@ -4,7 +4,7 @@ import { KEY_ITEM } from "@/lib/keys/storage";
 import { PUBLISH_TEXT } from "@/lib/site/publish-texts";
 import { newEmail, signIn } from "./account";
 import { OTARI } from "./agent";
-import { analyzeAny, claimHostOf, claimPanel, FLAKY_HOST, lapseFlaky, setClockOffset, verifyByDns, verifyByTag } from "./claims";
+import { analyzeAny, claimHostOf, claimPanel, FLAKY_HOST, lapseFlaky, setClockOffset, verifyByDns, verifyByTag, panelButton } from "./claims";
 import { RETROFIT_ORIGIN } from "./extra-requests";
 
 /** The public page of a fixture host. */
@@ -14,7 +14,7 @@ export const badgeUrl = (host: string) => `${RETROFIT_ORIGIN}/badge/${claimHostO
 /** Chooses Publish on the host's panel (open on /account) and waits for the answer. */
 export async function publishOn(page: Page, host: string): Promise<void> {
   const panel = claimPanel(page, host);
-  await panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }).click();
+  await panelButton(panel, PUBLISH_TEXT.publish).click();
   await expect(panel.getByTestId("claim-message")).toHaveText(PUBLISH_TEXT.published);
   await expect(panel.getByTestId("publish-link")).toHaveAttribute("href", pageUrl(host));
 }
@@ -45,12 +45,12 @@ export async function failRefresh(page: Page, host: string): Promise<void> {
   const panel = claimPanel(page, host);
   try {
     await setClockOffset(page.request, 8 * 24 * 3600_000);
-    await panel.getByRole("button", { name: PUBLISH_TEXT.refresh, exact: true }).click();
+    await panelButton(panel, PUBLISH_TEXT.refresh).click();
     await expect(panel.getByTestId("publish-error")).toBeVisible();
   } finally {
     await setClockOffset(page.request, 0);
   }
-  await expect(panel.getByRole("button", { name: PUBLISH_TEXT.tryAgain, exact: true })).toBeEnabled();
+  await expect(panelButton(panel, PUBLISH_TEXT.tryAgain)).toBeEnabled();
 }
 
 /** Turns the account data outage on or off (fixtures mode). */

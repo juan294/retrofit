@@ -50,9 +50,9 @@ describe("the billing section", () => {
       renderToStaticMarkup(createElement(ApiKeysSection, { keys: [{ id: OWNER, hint: "beef", createdOn: "1 March 2027" }] })),
     ].join("");
     const forms = html.match(/<form[^>]*>/g) ?? [];
-    expect(forms).toHaveLength(4);
+    expect(forms).toHaveLength(3);
     for (const f of forms) expect(f).toMatch(/method="post"/);
-    expect(forms.map((f) => /action="([^"]*)"/.exec(f)?.[1])).toEqual(["/api/billing/checkout", "/api/billing/portal", "/api/account/keys", "/api/account/keys/revoke"]);
+    expect(forms.map((f) => /action="([^"]*)"/.exec(f)?.[1])).toEqual(["/api/billing/checkout", "/api/billing/portal", "/api/account/keys"]);
     for (const b of html.match(/<button[^>]*>/g) ?? []) expect(b).toMatch(/disabled=""/);
     expect(html).toContain("Key ending in beef, created on 1 March 2027");
   });
@@ -71,7 +71,7 @@ describe("the answer of checkout and the portal in the browser", () => {
 
   // Fails if a signed-out visitor or a customer with a plan is left without the next step.
   it("sends a signed-out visitor to sign in and a customer to the account page", () => {
-    expect(step(401, { error: "signed_out", message: BILLING_TEXT.signedOut })).toEqual({ text: BILLING_TEXT.signedOut, href: "/sign-in?returnTo=%2Fpricing", linkText: BILLING_TEXT.signIn });
+    expect(step(401, { error: "signed_out", message: BILLING_TEXT.signedOut })).toEqual({ text: BILLING_TEXT.signedOut, href: "/sign-in?returnTo=%2Fpricing", linkText: PLAN_TEXT.signIn });
     expect(step(409, { error: "subscribed", message: BILLING_TEXT.subscribed, portal: true })).toEqual({ text: BILLING_TEXT.subscribed, href: "/account", linkText: BILLING_TEXT.openAccount });
     expect(step(409, { error: "no_price", message: BILLING_TEXT.noPrice })).toEqual({ text: BILLING_TEXT.noPrice });
     expect(step(503, null)).toEqual({ text: BILLING_TEXT.unavailable });

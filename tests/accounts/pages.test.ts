@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SaveReportButton } from "@/components/analysis/SaveReportButton";
 import { SignInForm } from "@/components/SignInForm";
+import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
 import { GET as mailbox } from "@/app/test-fixtures/mailbox/route";
 
 describe("sign-in form", () => {
@@ -16,6 +17,16 @@ describe("sign-in form", () => {
     expect(html).toMatch(/<input[^>]*type="email"[^>]*name="email"|<input[^>]*name="email"[^>]*type="email"/);
     expect(/<button[^>]*type="submit"[^>]*>/.exec(html)?.[0]).toMatch(/disabled=""/);
     expect(html).toContain('href="/privacy"');
+  });
+
+  // UX-M2, UX-M3. Fails if the form's answer arrives together with its status region, or the visitor learns only after using the link that it
+  // must be opened in this browser.
+  it("has its status region before any answer, and says which browser opens the link before and after sending", () => {
+    const html = renderToStaticMarkup(createElement(SignInForm, { returnTo: "/account", privacyHref: "/privacy" }));
+    expect(html).toMatch(/<p role="status" id="sign-in-status"[^>]*><\/p>/);
+    expect(html).toContain(SIGN_IN_TEXT.sameBrowser);
+    expect(SIGN_IN_TEXT.sameBrowser).toBe("Open the link in this browser, on this device. A link works once.");
+    expect(SIGN_IN_TEXT.sent).toContain("Open the link in this browser, on this device.");
   });
 
   // Fails if the save button can be clicked before hydration (the click would do nothing and look broken).

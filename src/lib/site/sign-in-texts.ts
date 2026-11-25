@@ -14,7 +14,9 @@ export const SIGN_IN_TEXT = {
   emptyEmail: "Enter your email address.",
   invalidEmail: "Enter a valid email address.",
   /** The same answer for every valid address, whether or not it has an account. */
-  sent: "Check your email. The link works once, for one hour.",
+  sent: "Check your email. Open the link in this browser, on this device. The link works once, for one hour.",
+  /** In the form, before anything is sent: a link opened in another browser is used up there, and the analyses here stay out of the account. */
+  sameBrowser: "Open the link in this browser, on this device. A link works once.",
   crossOrigin: "Open Retrofit at its own address to sign in.",
   limit: (retryAt: Date) => `You asked for too many sign-in links. Try again at ${hhmmUtc(retryAt)} UTC.`,
   /** Supabase refused to send again so soon. */

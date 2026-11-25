@@ -9,7 +9,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { Claim, PublishedSite } from "@/lib/accounts/data";
 import { accountClaimViews } from "@/lib/claims/view";
 import { loadConfig } from "@/lib/config";
-import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISH_TEXT } from "@/lib/site/publish-texts";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
@@ -88,7 +87,20 @@ describe("publish controls", () => {
       for (const t of [PUBLISH_TEXT.refresh, PUBLISH_TEXT.publish, PUBLISH_TEXT.tryAgain]) expect(html).not.toContain(`>${t}<`);
       expect(html).not.toContain(`href="https://retrofit.test/s/${HOST}"`);
     }
-    expect(render({ status: "lapsed", lapsedAt: "2026-11-21T08:00:00.000Z" }, {})).toContain(CLAIMS_TEXT.status.lapsed("2026-11-21T08:00:00.000Z"));
+    expect(render({ status: "lapsed", lapsedAt: "2026-11-21T08:00:00.000Z" }, {})).toContain("Verification failed on 21 November 2026. Your published page and badge are paused.");
+    // UX-L1. A claim that is not lapsed, or has no publication, says nothing of it in its status.
+    expect(render({ status: "lapsed", lapsedAt: "2026-11-21T08:00:00.000Z" }, null)).not.toContain("paused");
+  });
+});
+
+describe("removing a claim with a publication", () => {
+  // UX-M1. Fails if one click on Remove can end a published page whose claim is not verified any more; Unpublish stays one click.
+  it("has a second step in every state, and Unpublish has none", () => {
+    for (const c of [{}, { status: "lapsed", lapsedAt: "2026-11-21T08:00:00.000Z" }, { status: "pending", verifiedAt: null }] as const) {
+      const html = render(c, {});
+      expect(html).not.toContain('action="/api/claims/remove"');
+      expect(html).toContain('action="/api/publish/remove"');
+    }
   });
 });
 

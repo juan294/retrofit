@@ -1,5 +1,5 @@
-// Copy for a feature that needs a plan, apart from the other billing copy, so that a page that can be
-// refused one (/r, a claim panel) does not ship all of it.
+// Copy for a feature that needs a plan and the links a refusal offers, apart from the other billing copy,
+// so that a page that can be refused one (/r, a claim panel) does not ship all of it.
 
 import type { GatedFeature } from "@/lib/billing/plans";
 
@@ -11,4 +11,6 @@ export const PLAN_TEXT = {
   } satisfies Record<GatedFeature, string>,
   unavailable: "Retrofit could not check your plan right now. Nothing was changed. Try again in a few minutes.",
   seePlans: "See the plans",
+  /** The link of every answer to a signed-out visitor. */
+  signIn: "Sign in",
 } as const;

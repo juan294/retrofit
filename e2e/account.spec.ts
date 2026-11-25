@@ -70,7 +70,7 @@ test.describe("accounts", () => {
     await page.getByRole("checkbox", { name: ACCOUNT_TEXT.deleteConfirm }).check();
     await page.getByRole("button", { name: ACCOUNT_TEXT.deleteButton }).click();
     await expect(page).toHaveURL(/\/sign-in\?account=deleted$/);
-    await expect(page.getByRole("status")).toHaveText(SIGN_IN_TEXT.deleted);
+    await expect(page.getByRole("status").filter({ hasText: SIGN_IN_TEXT.deleted })).toHaveText(SIGN_IN_TEXT.deleted);
     expect((await page.context().cookies()).some((c) => c.name === "retrofit_account")).toBe(false);
     await page.goto("/account");
     await expect(page).toHaveURL(/\/sign-in\?returnTo=%2Faccount$/);
@@ -85,6 +85,14 @@ test.describe("accounts", () => {
     await askForLink(page, email);
     expect(urls.filter((u) => u.includes(encodeURIComponent(email)) && !u.includes("/test-fixtures/mailbox"))).toEqual([]);
     expect(urls.filter((u) => u.includes(email))).toEqual([]);
+  });
+
+  // UX-M3. Fails if the form does not say before and after sending which browser opens the link.
+  test("the sign-in form says to open the link in this browser, before and after sending", async ({ page }) => {
+    await page.goto("/sign-in");
+    await expect(page.getByText(SIGN_IN_TEXT.sameBrowser)).toBeVisible();
+    await askForLink(page, newEmail("same-browser"));
+    await expect(page.getByRole("status")).toContainText("Open the link in this browser, on this device.");
   });
 
   // Fails if a page served to a signed-out visitor offers saving, or a signed-in visitor's results page does not.

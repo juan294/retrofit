@@ -1,10 +1,15 @@
 import type { Status } from "./post";
 
-/** The answer to an action: announced as a status, or as an alert in the danger color, with the next step's link. Nothing without one. */
-export function StatusMessage({ status, testId, className }: { status: Status | null; testId?: string; className?: string }) {
-  if (!status) return null;
-  return (
-    <p className={className} role={status.ok ? "status" : "alert"} data-testid={testId} style={status.ok ? undefined : { color: "var(--color-danger)" }}>
+/**
+ * The answer to an action, with the next step's link. The status region is always mounted, so a screen
+ * reader announces the text when it appears (empty, it takes no space); a failure is an alert in the danger
+ * color beside it. `id`, `testId` and `className` are on the one of the two that shows the text.
+ */
+export function StatusMessage({ status, id, testId, className }: { status: Status | null; id?: string; testId?: string; className?: string }) {
+  const failed = status !== null && !status.ok;
+  const own = { id, "data-testid": testId };
+  const body = status ? (
+    <>
       {status.text}
       {status.href ? (
         <>
@@ -14,6 +19,18 @@ export function StatusMessage({ status, testId, className }: { status: Status | 
           </a>
         </>
       ) : null}
-    </p>
+    </>
+  ) : null;
+  return (
+    <>
+      <p role="status" {...(failed ? {} : own)} className={className && !failed ? `empty:absolute ${className}` : "empty:absolute"}>
+        {failed ? null : body}
+      </p>
+      {failed ? (
+        <p role="alert" {...own} className={className} style={{ color: "var(--color-danger)" }}>
+          {body}
+        </p>
+      ) : null}
+    </>
   );
 }

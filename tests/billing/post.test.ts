@@ -22,19 +22,22 @@ describe("an answer on the page", () => {
   });
 
   // Fails if a message is lost, a refusal keeps UTC, a success is changed, or a link the answer names is followed anywhere but to the plans.
-  it("statusOf takes the message, localizes a refusal's time, and links only to the plans", () => {
-    expect(statusOf(answer(200, { message: "Done at 10:00 UTC", retryAt: "2027-01-01T10:00:00Z" }), "no")).toEqual({ ok: true, text: "Done at 10:00 UTC" });
-    expect(statusOf(answer(429, { message: "Try again at 10:00 UTC.", retryAt: "2027-01-01T10:00:00Z" }), "no").text).not.toContain("UTC");
-    expect(statusOf(answer(503, null), "no")).toEqual({ ok: false, text: "no" });
-    expect(statusOf(answer(403, { message: "m", href: "/pricing" }), "no")).toEqual({ ok: false, text: "m", href: "/pricing", linkText: PLAN_TEXT.seePlans });
-    expect(statusOf(answer(403, { message: "m", href: "https://evil.example" }), "no")).toEqual({ ok: false, text: "m" });
+  it("statusOf takes the message, localizes a refusal's time, and links only to the plans or to sign-in", () => {
+    expect(statusOf(answer(200, { message: "Done at 10:00 UTC", retryAt: "2027-01-01T10:00:00Z" }), "no", "/account")).toEqual({ ok: true, text: "Done at 10:00 UTC" });
+    expect(statusOf(answer(429, { message: "Try again at 10:00 UTC.", retryAt: "2027-01-01T10:00:00Z" }), "no", "/account").text).not.toContain("UTC");
+    expect(statusOf(answer(503, null), "no", "/account")).toEqual({ ok: false, text: "no" });
+    expect(statusOf(answer(403, { message: "m", href: "/pricing" }), "no", "/account")).toEqual({ ok: false, text: "m", href: "/pricing", linkText: PLAN_TEXT.seePlans });
+    expect(statusOf(answer(403, { message: "m", href: "https://evil.example" }), "no", "/account")).toEqual({ ok: false, text: "m" });
+    // UX-H1. A signed-out visitor gets the sign-in page, and returns to where they were.
+    expect(statusOf(answer(401, { message: "Sign in again." }), "no", "/r/1")).toEqual({ ok: false, text: "Sign in again.", href: "/sign-in?returnTo=%2Fr%2F1", linkText: PLAN_TEXT.signIn });
   });
 
-  // Fails if a failure is not announced as an alert, a success is, or a text without a link gains a space.
-  it("StatusMessage announces a status or an alert", () => {
-    const html = (status: Parameters<typeof StatusMessage>[0]["status"]) => renderToStaticMarkup(createElement(StatusMessage, { status, testId: "t" }));
-    expect(html(null)).toBe("");
-    expect(html({ ok: true, text: "Saved." })).toBe('<p role="status" data-testid="t">Saved.</p>');
-    expect(html({ ok: false, text: "No.", href: "/pricing", linkText: "See" })).toBe('<p role="alert" data-testid="t" style="color:var(--color-danger)">No. <a href="/pricing" class="underline">See</a></p>');
+  // UX-M2. Fails if the status region is not mounted before its text (a screen reader announces a live region's changes, not its
+  // insertion), a failure is not an alert, the id and test id are not on the element that shows the text, or a text without a link gains a space.
+  it("StatusMessage keeps a status region mounted, and shows a failure as an alert beside it", () => {
+    const html = (status: Parameters<typeof StatusMessage>[0]["status"]) => renderToStaticMarkup(createElement(StatusMessage, { status, id: "i", testId: "t" }));
+    expect(html(null)).toBe('<p role="status" id="i" data-testid="t" class="empty:absolute"></p>');
+    expect(html({ ok: true, text: "Saved." })).toBe('<p role="status" id="i" data-testid="t" class="empty:absolute">Saved.</p>');
+    expect(html({ ok: false, text: "No.", href: "/pricing", linkText: "See" })).toBe('<p role="status" class="empty:absolute"></p><p role="alert" id="i" data-testid="t" style="color:var(--color-danger)">No. <a href="/pricing" class="underline">See</a></p>');
   });
 });
