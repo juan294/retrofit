@@ -467,6 +467,8 @@ describe("account deletion against a checkout", () => {
     for (const type of [COMPLETED, UPDATED]) expect((await deliver(d, { type, customer: cus, ref: userId })).status).toBe(200);
     expect((await d.billing.getSubscriptions(cus)).map((s) => s.status)).toEqual(["active"]);
     expect(lines.filter((l) => l.includes("[BILLING_ALERT]"))).toHaveLength(2);
+    await d.settle();
+    expect(d.errors).toEqual([]);
     expect(await d.accounts.getBilling(userId)).toBeNull();
     for (const secret of [userId, cus, "window@example.test"]) expect(lines.join("\n")).not.toContain(secret);
   });

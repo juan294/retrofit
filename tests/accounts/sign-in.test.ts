@@ -40,6 +40,15 @@ describe("POST /api/auth/sign-in", () => {
     expect(d.fixtureAuth.latestLink("n6@example.test")).toBeNull();
   });
 
+  // SE-M1. Fails if one IPv6 host counts as many networks: it could use up the project's email limit alone.
+  it("counts an IPv6 /64 as one network", async () => {
+    const d = testDeps({ clock: fakeClock().clock });
+    const ask = async (n: number, ip: string) => (await handleSignIn(signIn({ email: `v${n}@example.test` }, { ip }), d)).status;
+    for (let n = 0; n < 5; n++) expect(await ask(n, `2001:db8:a:b::${n + 1}`)).toBe(200);
+    expect(await ask(6, "2001:db8:a:b:c::9")).toBe(429);
+    expect(await ask(7, "2001:db8:a:c::1")).toBe(200);
+  });
+
   // Fails if one address can be sent more than 3 links an hour by spreading the requests over networks.
   it("limits one address to 3 links an hour across networks, in any letter case", async () => {
     const d = testDeps({ clock: fakeClock().clock });

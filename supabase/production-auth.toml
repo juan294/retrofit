@@ -1,0 +1,39 @@
+# The Auth settings of the production project `retrofit` (uqsiliezqcyzpmbvuruh), without secrets.
+#
+# supabase/config.toml is for the local stacks only: its site URL is loopback and its confirmations are off. Never run
+# `supabase config push` with it. Change production only through this file, in two steps:
+#   node tools/ops/production-auth.mjs            shows the difference and changes nothing
+#   node tools/ops/production-auth.mjs --apply    an authorized production action; asks for the project ref
+#
+# The CLI changes only what a file declares. Not declared on purpose: [auth.email.smtp] (Amazon SES, its password is
+# stored only in Supabase), and every provider but email (off). The test tests/ops/production-auth.test.ts keeps the rules.
+
+project_id = "uqsiliezqcyzpmbvuruh"
+
+[auth]
+enabled = true
+enable_signup = true
+site_url = "https://retrofit.thecreativetoken.com"
+additional_redirect_urls = ["https://retrofit.thecreativetoken.com/auth/confirm"]
+
+[auth.rate_limit]
+# Sign-in emails an hour for the whole project. Retrofit's own limits (5 per network, 3 per address) are per visitor, so
+# this is the only bound over all of them. Amazon SES allows 50,000 a day.
+email_sent = 300
+# Link checks per 5 minutes and client address. Every check comes from Retrofit's server, so this is one shared limit;
+# Retrofit counts 20 an hour per network before it (SIGNIN_VERIFY_PER_CLIENT_HOUR).
+token_verifications = 360
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+max_frequency = "1m0s"
+otp_expiry = 3600
+
+[auth.email.template.magic_link]
+subject = "Your Retrofit sign-in link"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.confirmation]
+subject = "Your Retrofit sign-in link"
+content_path = "./supabase/templates/magic_link.html"

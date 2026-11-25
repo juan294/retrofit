@@ -553,6 +553,16 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
       });
     },
 
+    async checkReady() {
+      return op(() => undefined);
+    },
+
+    /** The memory adapter has no sign-in users. */
+    async purgeUnconfirmedUsers(rawBefore) {
+      requireTime("before", rawBefore);
+      return op(() => 0);
+    },
+
     async pruneStripeEvents(rawBefore, limit) {
       const before = Date.parse(requireTime("before", rawBefore));
       return op(() => {

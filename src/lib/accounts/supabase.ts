@@ -500,6 +500,27 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
       return row !== null;
     },
 
+    async checkReady() {
+      const none = (table: string, columns: string) => call<unknown[]>("checkReady", () => client.from(table).select(columns).limit(0));
+      const past = "2000-01-01T00:00:00.000Z";
+      // One object of every migration since the store: a missing one is an error here, and nothing is read or changed.
+      await Promise.all([
+        none("notify_signups", "unsubscribed_at"),
+        none("saved_reports", "account_id"),
+        none("published_sites", "refreshed_at"),
+        none("deleted_customers", "customer_hash"),
+        none("api_keys", "hint"),
+        none("site_claims", "last_attempt_at"),
+        call<unknown>("checkReady", () => client.rpc("claims_due", { p_checked_before: past, p_slow_lapsed_before: past, p_slow_checked_before: past, p_limit: 0 })),
+        call<number>("checkReady", () => client.rpc("purge_unconfirmed_users", { p_before: past, p_limit: 0 })),
+      ]);
+    },
+
+    async purgeUnconfirmedUsers(rawBefore, limit) {
+      const before = requireTime("before", rawBefore);
+      return (await call<number>("purgeUnconfirmedUsers", () => client.rpc("purge_unconfirmed_users", { p_before: before, p_limit: Math.max(0, limit) }))) ?? 0;
+    },
+
     async pruneStripeEvents(rawBefore, limit) {
       const before = requireTime("before", rawBefore);
       return (await call<number>("pruneStripeEvents", () => client.rpc("prune_stripe_events", { p_before: before, p_limit: Math.max(0, limit) }))) ?? 0;

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryAccountData } from "@/lib/accounts/memory";
 import { handleAnalyze } from "@/lib/api/analyze";
-import { FREE_ANALYSES, FREE_WINDOW_S, networkOf } from "@/lib/billing/free-limit";
+import { FREE_ANALYSES, FREE_WINDOW_S } from "@/lib/billing/free-limit";
+import { networkOf } from "@/lib/fetch/limits";
 import { createMemoryBacking, createMemoryStore } from "@/lib/store/memory";
 import type { Store } from "@/lib/store/types";
 import { accountCookie, analyzeRequest, cookieFrom, holdAllSlots, storeDump, type TestDeps } from "../helpers/server-deps";

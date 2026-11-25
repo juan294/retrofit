@@ -1,5 +1,8 @@
 # Retrofit local Supabase configuration (Supabase CLI 3.2.0).
 #
+# Never run `supabase config push` with this file: it would point production sign-in links at 127.0.0.1 and turn
+# confirmations off. The production settings are in supabase/production-auth.toml (tools/ops/production-auth.mjs).
+#
 # This file defines the reusable dev stack `retrofit` on ports 54720 to 54729
 # (docs/development/resource-lifecycle.md). The disposable gate stack
 # `retrofit-gate` (54730 to 54739) is generated from this file into
@@ -68,7 +71,8 @@ site_url = "http://127.0.0.1:3009"
 additional_redirect_urls = ["http://127.0.0.1:3009/auth/confirm", "http://127.0.0.1:3010/auth/confirm"]
 
 [auth.rate_limit]
-# Retrofit's own limits (5 links per network and 3 per address an hour) sit below these.
+# The local stacks' limit for the whole project. Retrofit's own limits are per network and per address, so several
+# networks together can reach it; production has its own value (supabase/production-auth.toml).
 email_sent = 30
 
 [auth.email]

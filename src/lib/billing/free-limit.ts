@@ -1,6 +1,5 @@
 import { createHmac } from "node:crypto";
-import ipaddr from "ipaddr.js";
-import { clientIpFrom, ttlUntil } from "@/lib/fetch/limits";
+import { clientIpFrom, networkOf, ttlUntil } from "@/lib/fetch/limits";
 import { realSleep } from "@/lib/fetch/timers";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { logBillingFailure } from "./sync";
@@ -24,14 +23,6 @@ type Deps = Pick<ServerDeps, "config" | "clock" | "store">;
 export interface FreeCount {
   readonly keys: readonly string[];
   readonly endsAt: number;
-}
-
-/** The network of an address: IPv4 as it is, IPv6 as its /64 (one home or one server has a whole /64). Anything else as it is. */
-export function networkOf(ip: string): string {
-  const bare = ip.replace(/%.*$/, "");
-  if (!ipaddr.isValid(bare)) return ip;
-  const address = ipaddr.process(bare);
-  return address instanceof ipaddr.IPv6 ? `${address.parts.slice(0, 4).map((p) => p.toString(16)).join(":")}::/64` : address.toString();
 }
 
 /** Call only from BILLING_START on. */

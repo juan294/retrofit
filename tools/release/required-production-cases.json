@@ -5,6 +5,8 @@
     { "id": "partner-retrofit-conformance", "kind": "partner", "target": "https://retrofit.thecreativetoken.com/retrofit_conformance" },
     { "id": "partner-harbor-tours", "kind": "partner", "target": "https://demo-harbor.thecreativetoken.com/harbor_tours" },
     { "id": "health-ok", "kind": "probe", "target": "/api/health returns ok" },
+    { "id": "account-data-ready", "kind": "probe", "target": "/api/health names the account data ok: every migration is applied and can be read" },
+    { "id": "sign-in-send", "kind": "probe", "target": "POST /api/auth/sign-in for a mailbox-simulator address answers 200: the provider sent the email (opening a real link stays an owner check)" },
     { "id": "version-commit", "kind": "probe", "target": "/api/version returns the merge commit" },
     { "id": "alias-binding", "kind": "binding", "aliases": ["retrofit.thecreativetoken.com", "demo-harbor.thecreativetoken.com"], "target": "Vercel binds the deployment URL and each alias to the candidate deployment before and after the suites (identity), and /api/version on the deployment URL and on the production alias both return the merge commit (deploymentCommit, aliasCommit)" },
     { "id": "free-path-real-model-smoke", "kind": "e2e-prod", "target": "real-provider smoke: the landing assistant answers on the published default router (free path, one real model call); it does not prove delegation" },

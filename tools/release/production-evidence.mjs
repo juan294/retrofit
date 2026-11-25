@@ -220,7 +220,13 @@ function steps(o, cases, pwCases) {
       run: aliasIdentityBefore,
     },
     { name: "version", produces: ["version-commit"], show: [`GET ${o.prod}/api/version`], run: checkVersion },
-    { name: "health", produces: ["health-ok"], show: [`GET ${o.prod}/api/health`], run: checkHealth },
+    { name: "health", produces: ["health-ok", "account-data-ready"], show: [`GET ${o.prod}/api/health`], run: checkHealth },
+    {
+      name: "sign-in-send",
+      produces: ["sign-in-send"],
+      show: [`POST ${o.prod}/api/auth/sign-in for a new address of the Amazon SES mailbox simulator`, "  must answer 200: the provider sent the email. At most 5 a hour from one network; the address is not recorded"],
+      run: checkSignInSend,
+    },
     {
       name: "partners",
       produces: partners.map((c) => c.id),
@@ -415,6 +421,15 @@ async function checkAliasBinding(ctx) {
 async function checkHealth(ctx) {
   const res = await http("GET", `${ctx.o.prod}/api/health`);
   record(ctx, "health-ok", res.status === 200 && res.json?.status === "ok", { httpStatus: res.status, ms: res.ms, body: res.json?.status ?? null });
+  // Every migration is applied and the account data can be read (AccountData checkReady).
+  record(ctx, "account-data-ready", res.status === 200 && res.json?.accounts === "ok", { httpStatus: res.status, accounts: res.json?.accounts ?? null });
+}
+
+/** The provider accepts and sends a sign-in email. The simulator takes any label, so no run meets the limit of an address. */
+async function checkSignInSend(ctx) {
+  const email = `success+${ctx.runId.replace(/[^a-z0-9]/gi, "")}@simulator.amazonses.com`;
+  const res = await http("POST", `${ctx.o.prod}/api/auth/sign-in`, { headers: { "content-type": "application/json", origin: ctx.o.prod, "sec-fetch-site": "same-origin" }, body: JSON.stringify({ email }) });
+  record(ctx, "sign-in-send", res.status === 200 && res.json?.sent === true, { httpStatus: res.status, ms: res.ms, error: res.json?.error ?? null });
 }
 
 function checkPartners(ctx, partners) {

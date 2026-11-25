@@ -1,11 +1,13 @@
 import { isCustomerId, isUuid, type BillingRecord } from "@/lib/accounts/data";
 import { BillingUnavailable, WebhookRefused, type BillingEvent } from "@/lib/billing/gateway";
 import { logBillingFailure, readStripe } from "@/lib/billing/sync";
+import { openAlert } from "@/lib/ops/alert";
+import { sha256Hex } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { readLimitedBody } from "./body";
 import { json } from "./json";
 
-type Deps = Pick<ServerDeps, "config" | "accounts" | "auth" | "billing" | "clock">;
+type Deps = Pick<ServerDeps, "config" | "accounts" | "auth" | "billing" | "clock" | "store" | "waitUntil">;
 
 /** Stripe's events are a few kilobytes; a larger body is refused before its signature is checked. */
 export const MAX_WEBHOOK_BYTES = 512 * 1024;
@@ -103,6 +105,8 @@ async function relink(event: BillingEvent, customerId: string, deps: Deps): Prom
     const linked = await deps.accounts.linkBillingCustomer(owner.accountId, customerId);
     if ("billing" in linked && linked.billing.customerId === customerId) return linked.billing;
   }
+  // One issue per customer, by a hash: the alert repository is public.
+  deps.waitUntil(openAlert({ key: `billing-unlinked:${sha256Hex(customerId).slice(0, 16)}`, title: "A Stripe customer has no account", body: "A customer of this Retrofit has no billing record and no deletion mark. Nothing was changed. Find the customer in Stripe by the log line of this day." }, deps).catch(() => undefined));
   console.error("[BILLING_ALERT] POST /api/billing/webhook: a customer of this Retrofit has no billing record and no deletion mark. Nothing was changed. Check it in Stripe.");
   return null;
 }

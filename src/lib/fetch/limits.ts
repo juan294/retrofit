@@ -1,10 +1,11 @@
 import { createHash, createHmac } from "node:crypto";
+import ipaddr from "ipaddr.js";
 import type { Config } from "@/lib/config";
 import type { Store } from "@/lib/store/types";
 import { realSleep } from "./timers";
 
 /**
- * Per-client limits. A client is identified by SHA-256 of its IP address and a
+ * Per-client limits. A client is identified by SHA-256 of its network (networkOf) and a
  * daily salt derived from SESSION_SECRET. The raw IP is never stored, logged
  * or returned; only the hash reaches the Store.
  */
@@ -44,8 +45,16 @@ export function clientIpFrom(request: Request): string {
   return forwarded || "unknown";
 }
 
+/** The network of an address: IPv4 as it is, IPv6 as its /64 (one home or one server has a whole /64). Anything else as it is. */
+export function networkOf(ip: string): string {
+  const bare = ip.replace(/%.*$/, "");
+  if (!ipaddr.isValid(bare)) return ip;
+  const address = ipaddr.process(bare);
+  return address instanceof ipaddr.IPv6 ? `${address.parts.slice(0, 4).map((p) => p.toString(16)).join(":")}::/64` : address.toString();
+}
+
 export function clientIdFromRequest(request: Request, config: Pick<Config, "sessionSecret">, now: number): string {
-  return clientIdFor(clientIpFrom(request), config, now);
+  return clientIdFor(networkOf(clientIpFrom(request)), config, now);
 }
 
 /** Fixed one-hour windows aligned to the hour, so the retry time is known. */

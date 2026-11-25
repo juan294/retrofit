@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
+import { checkProductionBuild } from "./src/lib/build-config";
 import { peerRewrites } from "./src/lib/peer/rewrites";
 import { PUBLISHED_ASSETS } from "./src/lib/publish/assets";
 import { staticSecurityHeaders } from "./src/lib/security/headers";
+
+// A production build with a missing or malformed variable fails here, so the deployment before it keeps serving.
+checkProductionBuild(process.env);
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,

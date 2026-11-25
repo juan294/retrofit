@@ -1,16 +1,16 @@
-import { handleHealth, healthDegraded } from "@/lib/api/health";
-import { getStore } from "@/lib/server/runtime";
-import type { Store } from "@/lib/store/types";
+import { handleHealth, healthDegraded, type HealthDeps } from "@/lib/api/health";
+import { getServerDeps } from "@/lib/server/runtime";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<Response> {
-  let store: Store;
+  let deps: HealthDeps;
   try {
-    store = getStore();
+    const { store, accounts } = getServerDeps();
+    deps = { store, accounts };
   } catch (e) {
     console.error("[TABLE_FALLBACK] health: store not available:", e instanceof Error ? e.message : "unknown");
     return healthDegraded();
   }
-  return handleHealth({ store });
+  return handleHealth(deps);
 }

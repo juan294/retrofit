@@ -7,6 +7,7 @@ import { AuthRateLimited, AuthUnavailable, type VerifiedAccount } from "@/lib/au
 import type { Config } from "@/lib/config";
 import { clientIdFromRequest } from "@/lib/fetch/limits";
 import { buildCookie, hostCookieName } from "@/lib/security/cookies";
+import { signInMailFailed } from "@/lib/ops/daily";
 import { newToken, sha256Hex, TOKEN_PATTERN } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
 import type { Store } from "@/lib/store/types";
@@ -138,9 +139,11 @@ function parse(text: string): { email: string | null; returnTo: unknown } | null
  * lock it out. Then asks the provider for a link to PUBLIC_ORIGIN/auth/confirm. Errors: 400
  * invalid_email, 413 too_large, 429 limit or wait `{error, message, retryAt}`, 429 mail_busy (the
  * provider's project-wide email limit; no retry time is known), 503 mail_unavailable
- * (the provider failed) or unavailable (the Store failed). The address is never logged or stored.
+ * (the provider failed) or unavailable (the Store failed). Retrofit never logs or stores the address here; the
+ * provider keeps an unconfirmed user until the daily cleanup (purgeUnconfirmedUsers). A used-up project limit and
+ * repeated provider failures open an alert for the owner.
  */
-export async function handleSignIn(request: Request, deps: Pick<ServerDeps, "config" | "store" | "auth" | "clock">): Promise<Response> {
+export async function handleSignIn(request: Request, deps: Pick<ServerDeps, "config" | "store" | "auth" | "clock" | "waitUntil">): Promise<Response> {
   if (!isSameOrigin(request, deps.config)) return json(403, { error: "cross_origin", message: SIGN_IN_TEXT.crossOrigin });
   try {
     const text = await readSmallBody(request);
@@ -162,12 +165,19 @@ export async function handleSignIn(request: Request, deps: Pick<ServerDeps, "con
     try {
       await deps.auth.signInWithOtp(email, `${deps.config.publicOrigin}/auth/confirm`);
     } catch (e) {
-      if (e instanceof AuthRateLimited && e.scope === "project") return json(429, { error: "mail_busy", message: SIGN_IN_TEXT.mailBusy });
+      if (e instanceof AuthRateLimited && e.scope === "project") {
+        console.error("[AUTH_UNAVAILABLE] sign-in email limit of the project is used up");
+        deps.waitUntil(signInMailFailed(deps, "limit"));
+        return json(429, { error: "mail_busy", message: SIGN_IN_TEXT.mailBusy });
+      }
       if (e instanceof AuthRateLimited) {
         const retryAt = new Date(now + (e.retryAfterSeconds ?? PROVIDER_WAIT_S) * 1000);
         return json(429, { error: "wait", message: SIGN_IN_TEXT.wait(retryAt), retryAt: retryAt.toISOString() });
       }
-      if (e instanceof AuthUnavailable) return json(503, { error: "mail_unavailable", message: SIGN_IN_TEXT.mailUnavailable });
+      if (e instanceof AuthUnavailable) {
+        deps.waitUntil(signInMailFailed(deps, "provider"));
+        return json(503, { error: "mail_unavailable", message: SIGN_IN_TEXT.mailUnavailable });
+      }
       throw e;
     }
 

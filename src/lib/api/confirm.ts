@@ -4,6 +4,7 @@ import { attachVisitorAnalyses } from "@/lib/analysis/owner";
 import { isSameOrigin } from "@/lib/analysis/run";
 import { isSecureRequest, readVisitorToken, visitorSetCookie } from "@/lib/analysis/visitor";
 import { AuthUnavailable, type VerifiedAccount } from "@/lib/auth/gateway";
+import { clientIdFromRequest, countClientWindow } from "@/lib/fetch/limits";
 import { cookieValue } from "@/lib/security/cookies";
 import { newToken, sha256Hex } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
@@ -29,6 +30,9 @@ export function confirmPageState(params: Record<string, string | string[] | unde
   return { kind: "confirm", tokenHash };
 }
 
+/** No account has this id. */
+const NO_ACCOUNT = "00000000-0000-4000-8000-000000000000";
+
 const redirect = (deps: Pick<ServerDeps, "config">, path: string, cookies: readonly string[] = []) => seeOther(deps, path, cookies, { "referrer-policy": "no-referrer" });
 
 /**
@@ -36,7 +40,8 @@ const redirect = (deps: Pick<ServerDeps, "config">, path: string, cookies: reado
  * emailed link opens (/auth/confirm, confirmPageState). Same-origin only (403), so another site
  * cannot post a link to sign a visitor in.
  *
- * 1. Validates the fields and verifies the token once with the provider (server side).
+ * 1. Validates the fields, counts the network's link checks (the provider sees every visitor from Retrofit's
+ *    own addresses, so its limit is shared), and verifies the token once with the provider (server side).
  * 2. When this browser did not ask for a link for the verified address (the sign-in cookie), nothing is
  *    signed in: the verified account waits for this browser (startPending), and the page names its
  *    address. A link that somebody else sent cannot sign a visitor in to their account unseen. That
@@ -49,7 +54,8 @@ const redirect = (deps: Pick<ServerDeps, "config">, path: string, cookies: reado
  *    the page sign-in started from.
  *
  * Every other answer is a 303 with no-store and no referrer. An expired, used, unknown or malformed link
- * (or wait) goes to /sign-in?link=expired; a provider or Store failure, or an account that is being
+ * (or wait) goes to /sign-in?link=expired; past the network's limit, with the link unused, to
+ * /sign-in?link=busy; a provider or Store failure, or an account that is being
  * deleted, to /sign-in?link=unavailable. The provider's own tokens never leave the gateway.
  */
 export async function handleConfirm(request: Request, deps: Pick<ServerDeps, "config" | "store" | "accounts" | "auth" | "clock">): Promise<Response> {
@@ -68,6 +74,10 @@ export async function handleConfirm(request: Request, deps: Pick<ServerDeps, "co
     let account: VerifiedAccount;
     let intent: SignInIntent | null = null;
     if (step === "link") {
+      const limit = await countClientWindow(store, "signin-verify", config.signInVerifyPerClientHour, clientIdFromRequest(request, config, deps.clock()), deps.clock());
+      if (!limit.ok) return redirect(deps, "/sign-in?link=busy");
+      // A link works once: it is not checked while the account data, which the next step needs, cannot be read.
+      await deps.accounts.getProfile(NO_ACCOUNT);
       const verified = await deps.auth.verifyOtp(tokenHash, "email");
       if (!verified.ok) return redirect(deps, "/sign-in?link=expired");
       account = { userId: verified.userId, email: verified.email };

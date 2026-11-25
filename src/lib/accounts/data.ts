@@ -265,6 +265,17 @@ export type CreateApiKeyResult = { readonly outcome: "created"; readonly key: Ap
 
 export interface AccountData {
   /**
+   * Resolves when the newest objects that the account features need exist and can be read (it reads no row), so a
+   * deployment before its migrations is found. Throws AccountDataUnavailable.
+   */
+  checkReady(): Promise<void>;
+  /**
+   * Deletes sign-in users that were never confirmed, have no account profile, and whose last email was sent before
+   * `before` (ISO 8601), at most `limit`. Returns how many. A confirmed user, or one with a profile, is never deleted.
+   */
+  purgeUnconfirmedUsers(before: string, limit: number): Promise<number>;
+
+  /**
    * Stores a signup for `email` (trimmed, lower case) with `consent` (default
    * false) and a new unsubscribe token hash. A repeat signup for a stored
    * address changes nothing, including consent and an earlier unsubscribe.

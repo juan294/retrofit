@@ -219,7 +219,8 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
       versionOrigins.push(u.pathname === "/api/version" ? u.origin : "");
       expect(u.origin).toBe(u.pathname === "/api/version" && u.origin === DEPLOYMENT_URL ? DEPLOYMENT_URL : PROD);
       if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: COMMIT }), { status: 200 });
-      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok", accounts: "ok" }), { status: 200 });
+      if (u.pathname === "/api/auth/sign-in") return new Response(JSON.stringify({ sent: true, message: "Check your email." }), { status: 200 });
       if (u.pathname === "/api/analyze" && init?.method === "POST") {
         expect((init.headers as Record<string, string>).origin).toBe(PROD);
         const id = ids[posted++]!;
@@ -314,7 +315,8 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
     fetchStub.mockImplementation(async (url: string) => {
       const u = new URL(url);
       if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: "c".repeat(40) }), { status: 200 });
-      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok", accounts: "ok" }), { status: 200 });
+      if (u.pathname === "/api/auth/sign-in") return new Response(JSON.stringify({ sent: true, message: "Check your email." }), { status: 200 });
       return new Response("{}", { status: 503 });
     });
     const { io } = capture();
@@ -353,7 +355,8 @@ describe("production-evidence.mjs after BILLING_START", () => {
     fetchStub.mockImplementation(async (url: string, init?: RequestInit) => {
       const u = new URL(url);
       if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: COMMIT }), { status: 200 });
-      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok", accounts: "ok" }), { status: 200 });
+      if (u.pathname === "/api/auth/sign-in") return new Response(JSON.stringify({ sent: true, message: "Check your email." }), { status: 200 });
       if (u.pathname === "/api/analyze" && init?.method === "POST") {
         order.push("analyze");
         const n = posted++;
@@ -439,13 +442,63 @@ describe("production-evidence.mjs after BILLING_START", () => {
   });
 });
 
+// DO-H2: a release whose account data or sign-in email does not work must not be accepted.
+describe("production-evidence.mjs account data and sign-in", () => {
+  async function runWith(health: unknown, signIn: { status: number; body: unknown }) {
+    const inspect = boundEverywhere();
+    let posted: { headers: Headers; body: string } | null = null;
+    fetchStub.mockImplementation(async (url: string, init: RequestInit) => {
+      const u = new URL(url);
+      if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: COMMIT }), { status: 200 });
+      if (u.pathname === "/api/health") return new Response(JSON.stringify(health), { status: 200 });
+      if (u.pathname === "/api/auth/sign-in") {
+        posted = { headers: new Headers(init.headers), body: String(init.body) };
+        return new Response(JSON.stringify(signIn.body), { status: signIn.status });
+      }
+      return new Response("{}", { status: 503 });
+    });
+    spawnSync.mockImplementation((cmd: string, args: string[]) => (cmd === "vercel" && args[0] === "inspect" ? inspect(args[1]!) : { status: 0, stdout: "partner ok", stderr: "" }));
+    const { io, lines } = capture();
+    await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--created-at", CREATED_AT()], io);
+    const read = (id: string) => JSON.parse(fs.readFileSync(path.join(tmp, DEPLOYMENT_ID, `${id}.json`), "utf8"));
+    return { health: read("health-ok"), accounts: read("account-data-ready"), signIn: read("sign-in-send"), posted: posted as { headers: Headers; body: string } | null, out: lines.join("\n") };
+  }
+  const SENT = { status: 200, body: { sent: true, message: "Check your email." } };
+
+  it("passes when the account data is ready and the email was sent, and records no address", async () => {
+    const r = await runWith({ status: "ok", accounts: "ok" }, SENT);
+    expect([r.health.status, r.accounts.status, r.signIn.status]).toEqual(["passed", "passed", "passed"]);
+    const email = (JSON.parse(r.posted!.body) as { email: string }).email;
+    expect(email).toMatch(/^success\+run[a-z0-9]+@simulator\.amazonses\.com$/i);
+    expect([r.posted!.headers.get("origin"), r.posted!.headers.get("sec-fetch-site")]).toEqual([PROD, "same-origin"]);
+    expect(JSON.stringify(r) .replaceAll(r.posted!.body, "")).not.toContain("simulator.amazonses.com\"");
+  });
+
+  // Fails if a store that works hides account data that does not (a missing migration), or an unknown answer counts as ready.
+  it.each([[{ status: "ok", accounts: "unavailable" }], [{ status: "ok" }]])("fails account-data-ready for %j and keeps health-ok", async (health) => {
+    const r = await runWith(health, SENT);
+    expect([r.health.status, r.accounts.status]).toEqual(["passed", "failed"]);
+  });
+
+  // Fails if a provider failure, a limit or an answer without `sent` counts as a sent email.
+  it.each([
+    [503, { error: "mail_unavailable" }],
+    [429, { error: "limit" }],
+    [429, { error: "mail_busy" }],
+    [200, {}],
+  ])("fails sign-in-send for %i %j", async (status, body) => {
+    expect((await runWith({ status: "ok", accounts: "ok" }, { status, body })).signIn.status).toBe("failed");
+  });
+});
+
 describe("production-evidence.mjs alias identity (V10)", () => {
   /** A run where every /api/version answers the candidate commit and every other probe passes. */
   function healthyProduction() {
     fetchStub.mockImplementation(async (url: string) => {
       const u = new URL(url);
       if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: COMMIT }), { status: 200 });
-      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok", accounts: "ok" }), { status: 200 });
+      if (u.pathname === "/api/auth/sign-in") return new Response(JSON.stringify({ sent: true, message: "Check your email." }), { status: 200 });
       return new Response("{}", { status: 503 });
     });
   }

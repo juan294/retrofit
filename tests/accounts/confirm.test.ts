@@ -274,6 +274,52 @@ describe("POST /auth/verify (the confirm page's Sign in button)", () => {
   });
 });
 
+// SE-H1: every link is checked from Retrofit's own few addresses, so the provider's limit is shared by all visitors.
+describe("the limit of link checks per network", () => {
+  const from = (ip: string, link: string) => {
+    const request = confirmPost(link, VISITOR);
+    request.headers.set("x-real-ip", ip);
+    return request;
+  };
+  const guess = `${PUBLIC_ORIGIN}/auth/confirm?token_hash=${"a".repeat(56)}&type=email`;
+
+  // Fails if one client can use up the provider's shared limit, the refused link is consumed, or another network is refused too.
+  it("refuses past the limit before asking the provider, and the link still works afterwards", async () => {
+    const clock = fakeClock();
+    const d = testDeps({ clock: clock.clock });
+    const { link } = await askForLink(d, "busy@example.test", { visitor: VISITOR });
+    for (let n = 0; n < 20; n++) expect((await handleConfirm(from("198.51.100.7", guess), d)).headers.get("location")).toBe(`${PUBLIC_ORIGIN}/sign-in?link=expired`);
+    const asked = d.fixtureAuth.calls.length;
+    const refused = await handleConfirm(from("198.51.100.7", link), d);
+    expect([refused.status, refused.headers.get("location")]).toEqual([303, `${PUBLIC_ORIGIN}/sign-in?link=busy`]);
+    expect(d.fixtureAuth.calls).toHaveLength(asked);
+    expect(refused.headers.get("set-cookie")).toBeNull();
+    const elsewhere = await handleConfirm(from("203.0.113.9", link), d);
+    expect(elsewhere.headers.get("location")).toBe(ADDRESS_STEP);
+    // Continue and Cancel ask the provider nothing and are never refused.
+    expect(setCookies(await proceed(d, pendingCookie(elsewhere)))[ACCOUNT_COOKIE]).toBeDefined();
+  });
+
+  // Fails if one IPv6 host counts as many networks.
+  it("counts an IPv6 /64 as one network", async () => {
+    const d = testDeps({ clock: fakeClock().clock });
+    for (let n = 0; n < 20; n++) await handleConfirm(from(`2001:db8:1:2::${n.toString(16)}`, guess), d);
+    expect((await handleConfirm(from("2001:db8:1:2:ffff::1", guess), d)).headers.get("location")).toBe(`${PUBLIC_ORIGIN}/sign-in?link=busy`);
+    expect((await handleConfirm(from("2001:db8:1:3::1", guess), d)).headers.get("location")).toBe(`${PUBLIC_ORIGIN}/sign-in?link=expired`);
+  });
+
+  // BE-M2. Fails if a link is used up while the account data cannot be read (a deployment before its migrations burns every link).
+  it("does not use up the link while the account data is unavailable", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const d = testDeps({ clock: fakeClock().clock });
+    const { link, signIn } = await askForLink(d, "outage@example.test", { visitor: VISITOR });
+    const broken = { ...d, accounts: { ...d.accounts, getProfile: () => Promise.reject(new Error("down")) } };
+    const res = await handleConfirm(confirmPost(link, `${VISITOR}; ${signIn}`), broken);
+    expect(res.headers.get("location")).toBe(`${PUBLIC_ORIGIN}/sign-in?link=unavailable`);
+    expect(setCookies(await open(d, link, `${VISITOR}; ${signIn}`))[ACCOUNT_COOKIE]).toBeDefined();
+  });
+});
+
 describe("sign-in confirm page review repairs", () => {
   // P2-R1. Fails if another site can post a stolen or attacker link to sign a visitor in (login CSRF), or the provider is asked.
   it("refuses a cross-origin post before asking the provider", async () => {
