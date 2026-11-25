@@ -152,7 +152,10 @@ for (const colorScheme of ["light", "dark"] as const) {
       confirm: page.getByText(ACCOUNT_TEXT.deleteConfirm),
     });
     await page.getByTestId("saved-reports").getByRole("link").first().click();
-    await readable({ heading: page.getByRole("heading", { level: 1 }), back: page.getByRole("link", { name: SAVED_REPORT_TEXT.back }), score: page.getByTestId("score-total") });
+    // Both pages have a level 1 heading: until the next page replaces this one, the heading measured could be the old, detached one.
+    const back = page.getByRole("link", { name: SAVED_REPORT_TEXT.back });
+    await expect(back).toBeVisible();
+    await readable({ heading: page.getByRole("heading", { level: 1 }), back, score: page.getByTestId("score-total") });
   });
 }
 
