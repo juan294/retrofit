@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { isSameOrigin } from "@/lib/analysis/run";
 import { formatDate, hhmmUtc } from "@/lib/analysis/texts";
 import { isSecureRequest, sameHash } from "@/lib/analysis/visitor";
-import { buildCookie, cookieValue } from "@/lib/security/cookies";
+import { buildCookie, cookieValues } from "@/lib/security/cookies";
 import { sha256Hex } from "@/lib/security/tokens";
 import { JUDGE_UNAVAILABLE_MESSAGE } from "./errors";
 import { json } from "@/lib/api/json";
@@ -23,7 +23,8 @@ import { JUDGE_SESSION_TTL_MS, judgeCodeTag, SESSION_TTL_MS, sessionTtlMs, signS
  * a free way around the call limit) and the code itself (a replaced JUDGE_CODE ends its sessions).
  *
  * The code always opens a session with a new sid: a cookie can be planted (another subdomain can set one), and whoever
- * planted it must not get the access that the code gives. A public session never becomes a judge session.
+ * planted it must not get the access that the code gives. A public session never becomes a judge session, and a planted
+ * cookie does not hide the judge's own (signedSessions).
  */
 
 export const SESSION_COOKIE = "retrofit_session";
@@ -70,7 +71,22 @@ export function sessionSetCookie(token: string, pool: SessionPool, secure: boole
 /** The current JUDGE_CODE's tag, or null when judge access is not configured. */
 const currentJudgeTag = ({ free, sessionSecret }: ServerDeps["config"]) => (free.judgeCode === null ? null : judgeCodeTag(free.judgeCode, sessionSecret));
 
-const readSessionToken = (request: Request) => cookieValue(request.headers.get("cookie"), SESSION_COOKIE);
+/** Sessions of one request that are looked up in the Store. */
+const MAX_SESSION_READS = 3;
+
+/**
+ * The claims of the valid, unexpired session cookies, one for each sid, judge sessions first: a cookie that another
+ * subdomain planted has the same name and can come before the judge's own.
+ */
+function signedSessions(request: Request, deps: Pick<ServerDeps, "config" | "clock">): SessionClaims[] {
+  const bySid = new Map<string, SessionClaims>();
+  for (const token of cookieValues(request.headers.get("cookie"), SESSION_COOKIE)) {
+    const claims = verifySession(token, deps.config.sessionSecret, deps.clock());
+    if (claims && !bySid.has(claims.sid)) bySid.set(claims.sid, claims);
+  }
+  const all = [...bySid.values()];
+  return [...all.filter((c) => c.pool === "judge"), ...all.filter((c) => c.pool !== "judge")];
+}
 
 /**
  * The request's session: a valid, unexpired cookie whose Store record still
@@ -78,13 +94,11 @@ const readSessionToken = (request: Request) => cookieValue(request.headers.get("
  * comes from the Store record. Throws when the Store is unavailable.
  */
 export async function readSession(request: Request, deps: Pick<ServerDeps, "config" | "store" | "clock">): Promise<{ claims: SessionClaims } | null> {
-  const token = readSessionToken(request);
-  if (!token) return null;
-  const claims = verifySession(token, deps.config.sessionSecret, deps.clock());
-  if (!claims) return null;
-  const state = await deps.store.get<SessionState>(sessionKey(claims.sid));
-  if (!state || (state.pool === "judge" && state.judgeTag !== currentJudgeTag(deps.config))) return null;
-  return { claims: { ...claims, pool: state.pool } };
+  for (const claims of signedSessions(request, deps).slice(0, MAX_SESSION_READS)) {
+    const state = await deps.store.get<SessionState>(sessionKey(claims.sid));
+    if (state && (state.pool !== "judge" || state.judgeTag === currentJudgeTag(deps.config))) return { claims: { ...claims, pool: state.pool } };
+  }
+  return null;
 }
 
 /** Extends the record's life; its content stays. Null when it is gone. */
@@ -146,8 +160,7 @@ export async function handleSession(request: Request, deps: ServerDeps): Promise
   } catch (e) {
     logFailure("/api/inference/session", e);
     // The signed token names the pool also while the Store cannot be read: no judge is told to bring a key.
-    const token = readSessionToken(request);
-    const judge = token !== null && verifySession(token, deps.config.sessionSecret, deps.clock())?.pool === "judge";
+    const judge = signedSessions(request, deps)[0]?.pool === "judge";
     return unavailable(judge ? sessionTexts.judgeUnavailable : sessionTexts.unavailable);
   }
 }

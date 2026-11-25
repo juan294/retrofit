@@ -50,7 +50,7 @@ Add them to `src/lib/config.ts` with tests.
 
 - `src/lib/inference/token.ts`: HMAC-SHA-256 with `SESSION_SECRET`; `SessionClaims`: `sid`, `iat`, `exp` (2 h), `client`, `pool` (`public` or `judge`).
 - `src/app/api/inference/session/route.ts` (`POST`, same-origin only): with no valid cookie, applies the per-client cap and creates a session; with a valid cookie, renews it with the same `sid`, `pool` and counters. Cookie `retrofit_session`: `HttpOnly`, `Secure` on HTTPS, `SameSite=Strict`, `Path=/api/inference`, `Max-Age` 7200. Renewal lives under `/api/inference` so that the browser sends the cookie to it.
-- `src/app/judges/page.tsx` and `POST /api/inference/session/judge`: a correct code (constant-time compare, never logged) makes the current session a judge session.
+- `src/app/judges/page.tsx` and `POST /api/inference/session/judge`: a correct code (constant-time compare, never logged) opens a judge session with a new session id (changed 2026-11-25; before, the current session became a judge session).
 
 ### Ledger and quotas
 

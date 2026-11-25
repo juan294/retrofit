@@ -148,6 +148,35 @@ describe("POST /api/inference/session/judge", () => {
     expect(claimsOf(await handleSession(old, d))).toMatchObject({ sid: before.sid, pool: "public" });
   });
 
+  // Reviewer. Fails if a session cookie that another subdomain planted (browsers send an older cookie first) or a broken one hides the
+  // judge's own: the judge would stay public, and every further code entry would open and count another judge session.
+  it("the judge's own session counts, whatever other session cookies the browser sends", async () => {
+    const { d, claimsOf } = setup();
+    const planted = await Promise.all([1, 2, 3, 4].map((n) => handleSession(sessionReq({ ip: `198.51.100.${n}` }), d)));
+    const own = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(planted[0]!) }), d);
+    const { sid } = claimsOf(own)!;
+    const cookie = ["retrofit_session=broken", ...[...planted, own].map(cookieFrom)].join("; ");
+    expect((await readSession(sessionReq({ cookie }), d))?.claims).toMatchObject({ sid, pool: "judge" });
+    expect(claimsOf(await handleSession(sessionReq({ cookie }), d))).toMatchObject({ sid, pool: "judge" });
+    expect(claimsOf(await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie }), d))).toMatchObject({ sid, pool: "judge" });
+    // A judge session that ended (its code was replaced) does not hide a live public one.
+    const other = { ...d, config: { ...d.config, free: { ...d.config.free, judgeCode: "another-code-0123456789" } } };
+    expect((await readSession(sessionReq({ cookie }), other))?.claims).toMatchObject({ sid: claimsOf(planted[0]!)!.sid, pool: "public" });
+    const down = { ...d, store: { ...d.store, get: () => Promise.reject(new Error("down")) } };
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await (await handleSession(sessionReq({ cookie }), down)).json()).toMatchObject({ message: sessionTexts.judgeUnavailable });
+  });
+
+  // Fails if a request with many session cookies makes as many Store reads.
+  it("reads at most three sessions for one request", async () => {
+    const { d } = setup();
+    const cookies = await Promise.all([1, 2, 3, 4, 5].map(async (n) => cookieFrom(await handleSession(sessionReq({ ip: `198.51.100.${n}` }), d))));
+    const reads: string[] = [];
+    const store = { ...d.store, get: async (key: string) => (reads.push(key), null) } as typeof d.store;
+    expect(await readSession(sessionReq({ cookie: [...cookies, cookies[0]].join("; ") }), { ...d, store })).toBeNull();
+    expect([reads.length, new Set(reads).size]).toEqual([3, 3]);
+  });
+
   // Fails if entering the code again starts a new session, with a new daily call count.
   it("keeps the sid of a live judge session when the code is entered again", async () => {
     const { d, claimsOf } = setup();

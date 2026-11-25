@@ -13,8 +13,8 @@ export const NO_ACCOUNT_KEPT_MS = 24 * 3600_000;
 const PURGE_LIMIT = 10_000;
 /** Users purged in one statement: each deletion cascades through the sign-in tables, and the database limits a statement's time. */
 const PURGE_BATCH = 500;
-/** No batch starts after this: the platform ends the run at 60 s (vercel.json), and a batch takes 10 s at most. */
-const PURGE_MS = 40_000;
+/** No batch starts after this: the platform ends the run at 60 s (vercel.json), a batch takes 10 s at most, and so does an alert. */
+const PURGE_MS = 30_000;
 
 /**
  * GET /api/cron/cleanup (Vercel Cron): `Authorization: Bearer <CRON_SECRET>`, then deletes expired store rows,

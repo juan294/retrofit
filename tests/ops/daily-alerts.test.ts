@@ -88,12 +88,12 @@ describe("the daily cleanup", () => {
   });
 
   // Fails if a run has no bound, or goes on so long that the platform ends it (its time limit is 60 seconds) before the answer.
-  it("a run purges at most 10,000 users, and starts no batch after 40 seconds", async () => {
+  it("a run purges at most 10,000 users, and starts no batch after 30 seconds", async () => {
     const bound = purging(setup().d, () => 500);
     const res = await handleCleanup(cron("cleanup"), bound.deps);
     expect([res.status, (await res.json()).usersWithoutAccount, bound.calls.length]).toEqual([200, 10_000, 20]);
     const { d, clock } = setup();
-    const slow = purging(d, () => (clock.advance(20_000), 500));
+    const slow = purging(d, () => (clock.advance(15_000), 500));
     expect([(await handleCleanup(cron("cleanup"), slow.deps)).status, slow.calls.length]).toEqual([200, 2]);
     expect(sent).toEqual([]);
   });

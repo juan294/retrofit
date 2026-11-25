@@ -1020,6 +1020,18 @@
       "rule": "client limits",
       "suite": "unit",
       "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge the judge's own session counts, whatever other session cookies the browser sends"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge reads at most three sessions for one request"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
       "title": "POST /api/inference/session/judge keeps the sid of a live judge session when the code is entered again"
     },
     {
@@ -13170,7 +13182,7 @@
       "rule": "pre-launch repairs",
       "suite": "unit",
       "file": "tests/ops/daily-alerts.test.ts",
-      "title": "the daily cleanup a run purges at most 10,000 users, and starts no batch after 40 seconds"
+      "title": "the daily cleanup a run purges at most 10,000 users, and starts no batch after 30 seconds"
     },
     {
       "rule": "pre-launch repairs",
