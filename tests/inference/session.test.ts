@@ -167,13 +167,13 @@ describe("POST /api/inference/session/judge", () => {
     expect(await (await handleSession(sessionReq({ cookie }), down)).json()).toMatchObject({ message: sessionTexts.judgeUnavailable });
   });
 
-  // Fails if a request with many session cookies makes as many Store reads.
+  // Fails if a request with many session cookies makes as many Store reads, or copies of one cookie use up the reads.
   it("reads at most three sessions for one request", async () => {
     const { d } = setup();
     const cookies = await Promise.all([1, 2, 3, 4, 5].map(async (n) => cookieFrom(await handleSession(sessionReq({ ip: `198.51.100.${n}` }), d))));
     const reads: string[] = [];
     const store = { ...d.store, get: async (key: string) => (reads.push(key), null) } as typeof d.store;
-    expect(await readSession(sessionReq({ cookie: [...cookies, cookies[0]].join("; ") }), { ...d, store })).toBeNull();
+    expect(await readSession(sessionReq({ cookie: [cookies[0], cookies[0], ...cookies].join("; ") }), { ...d, store })).toBeNull();
     expect([reads.length, new Set(reads).size]).toEqual([3, 3]);
   });
 
