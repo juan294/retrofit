@@ -18,5 +18,5 @@ export async function handleSignOut(request: Request, deps: Pick<ServerDeps, "co
   } catch (e) {
     console.error("POST /api/auth/sign-out failed:", e instanceof Error ? e.name : "unknown error");
   }
-  return seeOther(deps, "/", [accountClearCookie(isSecureRequest(request, deps.config))]);
+  return seeOther(deps, "/", [accountClearCookie(deps.config, isSecureRequest(request, deps.config))]);
 }

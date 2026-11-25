@@ -37,9 +37,15 @@ export async function signIn(page: Page, email: string, returnTo?: string): Prom
 /** A well-formed confirm link (the page checks only its shape; nothing is verified until Sign in). */
 export const CONFIRM_PATH = `/auth/confirm?token_hash=${"a".repeat(56)}&type=email`;
 
-/** Gives the browser a sign-in cookie, as if it had asked for the link (the confirm page then shows no warning). */
-export async function markAsAsker(page: Page): Promise<void> {
-  await page.context().addCookies([{ name: "retrofit_signin", value: "0".repeat(32), domain: "127.0.0.1", path: "/auth", httpOnly: true, sameSite: "Lax" }]);
+/** Reaches the address step: a link opened by a browser that did not ask for it (its sign-in cookie is gone). Returns the address. */
+export async function addressStep(page: Page): Promise<string> {
+  const email = newEmail("address-step");
+  await page.goto("/sign-in");
+  const link = await askForLink(page, email);
+  await page.context().clearCookies({ name: "retrofit_signin" });
+  await openLink(page, link);
+  await expect(page.getByTestId("confirm-address")).toHaveText(email);
+  return email;
 }
 
 /** The sign-in form's states: `sent` (a real send), and `limit` or `error` answered by a mocked API. Returns the message element. */

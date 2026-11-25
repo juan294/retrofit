@@ -10,6 +10,15 @@ export function cookieValue(header: string | null, name: string): string | null 
   return null;
 }
 
+/**
+ * The name a cookie has on this deployment. Over https it carries the `__Host-` prefix: browsers then accept it
+ * only from this exact host (Secure, Path=/, no Domain), so a cookie that another subdomain sets for the parent
+ * domain never counts. Browsers refuse the prefix on plain http (local development, browser tests).
+ */
+export function hostCookieName(name: string, config: { readonly publicOrigin: string }): string {
+  return config.publicOrigin.startsWith("https:") ? `__Host-${name}` : name;
+}
+
 export interface CookieOptions {
   readonly path: string;
   /** Seconds; 0 clears the cookie. */

@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ConfirmSignInForm } from "@/components/ConfirmSignInForm";
-import { ACCOUNT_COOKIE, createAccountSession, readAccount, readAccountByToken } from "@/lib/accounts/session";
+import { ConfirmAddressForm, ConfirmSignInForm } from "@/components/ConfirmSignInForm";
+import { createAccountSession, readAccount, readAccountByToken } from "@/lib/accounts/session";
 import { getAnalysis } from "@/lib/analysis/record";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { confirmPageState, handleConfirm } from "@/lib/api/confirm";
-import { SIGN_IN_COOKIE, handleSignIn } from "@/lib/api/sign-in";
+import { handleSignIn, isRememberedBrowser, pendingAddress, PENDING_TTL_S } from "@/lib/api/sign-in";
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
-import { analyzeRequest, fakeClock, holdAllSlots, PUBLIC_ORIGIN, postRequest, testDeps, type TestDeps } from "../helpers/server-deps";
+import { ACCOUNT_COOKIE, analyzeRequest, fakeClock, holdAllSlots, postRequest, PUBLIC_ORIGIN, SIGN_IN_COOKIE, storeDump, testDeps, type TestDeps } from "../helpers/server-deps";
 
 const VISITOR = `retrofit_visitor=${"a".repeat(32)}`;
 const OTHER_VISITOR = `retrofit_visitor=${"b".repeat(32)}`;
@@ -36,6 +36,11 @@ function confirmPost(link: string, cookie?: string, o: { cross?: boolean } = {})
   return new Request(`${PUBLIC_ORIGIN}/auth/verify`, { method: "POST", headers, body: new URL(link).search.slice(1) });
 }
 const open = (d: TestDeps, link: string, cookie?: string) => handleConfirm(confirmPost(link, cookie), d);
+
+/** The address step's "Continue" post. */
+const proceed = (d: TestDeps, cookie: string, o: { cross?: boolean } = {}) => handleConfirm(confirmPost(`${PUBLIC_ORIGIN}/auth/confirm?continue=yes`, cookie, o), d);
+const ADDRESS_STEP = `${PUBLIC_ORIGIN}/auth/confirm?step=address`;
+const pendingCookie = (res: Response) => `${SIGN_IN_COOKIE}=${valueOf(setCookies(res)[SIGN_IN_COOKIE])}`;
 
 async function startAnalysis(d: TestDeps, cookie: string): Promise<string> {
   const res = await handleAnalyze(analyzeRequest({ url: "https://bakery.example.com" }, { cookie }), d);
@@ -76,7 +81,9 @@ describe("POST /auth/verify (the confirm page's Sign in button)", () => {
     await holdAllSlots(d);
     const mine = await startAnalysis(d, OTHER_VISITOR);
     const { link } = await askForLink(d, "person@example.test", { visitor: VISITOR, returnTo: "/pricing" });
-    const res = await open(d, link, OTHER_VISITOR);
+    const step = await open(d, link, OTHER_VISITOR);
+    expect(step.headers.get("location")).toBe(ADDRESS_STEP);
+    const res = await proceed(d, `${OTHER_VISITOR}; ${pendingCookie(step)}`);
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe(`${PUBLIC_ORIGIN}/account`);
     expect(setCookies(res)[ACCOUNT_COOKIE]).toBeDefined();
@@ -90,9 +97,72 @@ describe("POST /auth/verify (the confirm page's Sign in button)", () => {
     const mine = await startAnalysis(d, VISITOR);
     const { signIn } = await askForLink(d, "victim@example.test", { visitor: VISITOR });
     const { link: attackerLink } = await askForLink(d, "attacker@example.test", { visitor: OTHER_VISITOR });
-    const res = await open(d, attackerLink, `${VISITOR}; ${signIn}`);
+    const step = await open(d, attackerLink, `${VISITOR}; ${signIn}`);
+    expect(step.headers.get("location")).toBe(ADDRESS_STEP);
+    const res = await proceed(d, `${VISITOR}; ${pendingCookie(step)}`);
     expect(res.headers.get("location")).toBe(`${PUBLIC_ORIGIN}/account`);
     expect((await getAnalysis(d.store, mine))?.accountId).toBeUndefined();
+  });
+
+  // Strix 2026-11-25 (login CSRF). Fails if a link that this browser did not ask for (none, for another address, or with a made-up
+  // cookie) signs in before its address was shown and confirmed, or changes the browser's session or the account before that.
+  it("shows the address of a link this browser did not ask for, and signs in only after Continue", async () => {
+    const clock = fakeClock();
+    const d = testDeps({ clock: clock.clock });
+    const old = (await createAccountSession(d, { userId: "5f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "me@example.test" })).token;
+    for (const kind of ["none", "other address", "made up"] as const) {
+      const asked = kind === "none" ? "" : kind === "made up" ? `${SIGN_IN_COOKIE}=${"0".repeat(32)}` : (await askForLink(d, "me@example.test", { visitor: VISITOR })).signIn;
+      const { link } = await askForLink(d, "attacker@example.test", { visitor: OTHER_VISITOR });
+      const step = await open(d, link, `${VISITOR}; ${asked}; ${ACCOUNT_COOKIE}=${old}`);
+      expect([step.status, step.headers.get("location")], kind).toEqual([303, ADDRESS_STEP]);
+      expect(setCookies(step)[ACCOUNT_COOKIE]).toBeUndefined();
+      expect(setCookies(step)[SIGN_IN_COOKIE]?.split("; ")).toEqual(expect.arrayContaining(["HttpOnly", "SameSite=Lax", "Path=/", "Secure", `Max-Age=${PENDING_TTL_S}`]));
+      expect((await readAccountByToken(old, d))?.email).toBe("me@example.test");
+      const token = valueOf(setCookies(step)[SIGN_IN_COOKIE]);
+      expect(await pendingAddress(d.store, token)).toBe("attacker@example.test");
+      expect(storeDump(d.backing)).not.toContain(token);
+      clock.advance(3600_000);
+    }
+    expect(await d.accounts.getProfile(d.fixtureAuth.userIdOf("attacker@example.test")!)).toBeNull();
+  });
+
+  // Fails if Continue works twice, after its ten minutes, from another site, without the cookie, or with another browser's one.
+  it("Continue works once, for ten minutes, on that browser and from Retrofit's own page only", async () => {
+    const clock = fakeClock();
+    const d = testDeps({ clock: clock.clock });
+    const start = async (email: string) => {
+      const { link } = await askForLink(d, email, { visitor: OTHER_VISITOR });
+      return pendingCookie(await open(d, link, VISITOR));
+    };
+    const pending = await start("p1@example.test");
+    expect((await proceed(d, pending, { cross: true })).status).toBe(403);
+    for (const cookie of ["", `${SIGN_IN_COOKIE}=${"0".repeat(32)}`]) {
+      const none = await proceed(d, cookie);
+      expect(none.headers.get("location")).toBe(`${PUBLIC_ORIGIN}/sign-in?link=expired`);
+      expect(setCookies(none)[ACCOUNT_COOKIE]).toBeUndefined();
+    }
+    const ok = await proceed(d, pending);
+    expect(setCookies(ok)[ACCOUNT_COOKIE]).toBeDefined();
+    expect(setCookies(ok)[SIGN_IN_COOKIE]).toMatch(/Max-Age=0/);
+    expect((await proceed(d, pending)).headers.get("location")).toBe(`${PUBLIC_ORIGIN}/sign-in?link=expired`);
+    const late = await start("p2@example.test");
+    clock.advance(PENDING_TTL_S * 1000 + 1);
+    expect((await proceed(d, late)).headers.get("location")).toBe(`${PUBLIC_ORIGIN}/sign-in?link=expired`);
+  });
+
+  // Fails if a browser that signed in is not remembered for the sign-in limits, or one that only opened a link is.
+  it("remembers the browser for the address after a sign-in, not before", async () => {
+    const d = testDeps({ clock: fakeClock().clock });
+    const known = (email: string, visitor: string) => isRememberedBrowser(d, email, visitor);
+    const own = await askForLink(d, "own@example.test", { visitor: VISITOR });
+    await open(d, own.link, `${VISITOR}; ${own.signIn}`);
+    expect(await known("own@example.test", "a".repeat(32))).toBe(true);
+    expect(await known("own@example.test", "b".repeat(32))).toBe(false);
+    const other = await askForLink(d, "else@example.test", { visitor: VISITOR });
+    const step = await open(d, other.link, OTHER_VISITOR);
+    expect(await known("else@example.test", "b".repeat(32))).toBe(false);
+    await proceed(d, `${OTHER_VISITOR}; ${pendingCookie(step)}`);
+    expect(await known("else@example.test", "b".repeat(32))).toBe(true);
   });
 
   // Fails if an expired link signs in, or the visitor does not reach the send-again page.
@@ -163,26 +233,34 @@ describe("sign-in confirm page review repairs", () => {
   // P2-R1. Fails if the page that the emailed link opens would verify the link itself (mail scanners would use it up).
   it("the confirm page state needs no provider and offers the button only for a well-formed link", () => {
     const hash = "0123456789abcdef0123456789abcdef";
-    expect(confirmPageState({ token_hash: hash, type: "email" }, true)).toEqual({ kind: "confirm", tokenHash: hash, otherBrowser: false });
-    expect(confirmPageState({ token_hash: hash, type: "email" }, false)).toEqual({ kind: "confirm", tokenHash: hash, otherBrowser: true });
+    expect(confirmPageState({ token_hash: hash, type: "email" })).toEqual({ kind: "confirm", tokenHash: hash });
+    expect(confirmPageState({ step: "address" })).toEqual({ kind: "address" });
     for (const bad of [{ type: "email" }, { token_hash: hash, type: "magiclink" }, { token_hash: "<script>", type: "email" }, { token_hash: [hash, hash], type: "email" }]) {
-      expect(confirmPageState(bad, true)).toEqual({ kind: "invalid" });
+      expect(confirmPageState(bad)).toEqual({ kind: "invalid" });
     }
   });
 
-  // P2-R1. Fails if the form can submit as GET before hydration, loses the token, or hides the other-browser warning.
-  it("the confirm form posts the token to /auth/verify with its button disabled until hydration, and warns for another browser", () => {
-    const render = (otherBrowser: boolean) => renderToStaticMarkup(createElement(ConfirmSignInForm, { tokenHash: "abc0123456789abcdef", otherBrowser }));
-    const html = render(true);
+  // P2-R1. Fails if the form can submit as GET before hydration, or loses the token.
+  it("the confirm form posts the token to /auth/verify with its button disabled until hydration", () => {
+    const html = renderToStaticMarkup(createElement(ConfirmSignInForm, { tokenHash: "abc0123456789abcdef" }));
     const form = /<form[^>]*>/.exec(html)?.[0] ?? "";
     expect(form).toMatch(/method="post"/);
     expect(form).toMatch(/action="\/auth\/verify"/);
     expect(html).toMatch(/<input[^>]*name="token_hash"[^>]*value="abc0123456789abcdef"/);
     expect(html).toMatch(/<input[^>]*name="type"[^>]*value="email"/);
     expect(/<button[^>]*type="submit"[^>]*>/.exec(html)?.[0]).toMatch(/disabled=""/);
-    const warning = SIGN_IN_TEXT.otherBrowser.replaceAll("'", "&#x27;");
-    expect(html).toContain(warning);
-    expect(render(false)).not.toContain(warning);
+  });
+
+  // Fails if the address step hides the address or the warning, renders the address as HTML, or its form is not a POST without a token.
+  it("the address step names the address, warns, and posts only Continue", () => {
+    const html = renderToStaticMarkup(createElement(ConfirmAddressForm, { email: "<b>x</b>@example.test" }));
+    expect(html).toContain("&lt;b&gt;x&lt;/b&gt;@example.test");
+    expect(html).toContain(SIGN_IN_TEXT.otherBrowser.replaceAll("'", "&#x27;"));
+    expect(/<form[^>]*>/.exec(html)?.[0]).toMatch(/method="post"/);
+    expect(/<form[^>]*>/.exec(html)?.[0]).toMatch(/action="\/auth\/verify"/);
+    expect(html).toMatch(/<input[^>]*name="continue"[^>]*value="yes"/);
+    expect(html).not.toContain("token_hash");
+    expect(/<button[^>]*type="submit"[^>]*>/.exec(html)?.[0]).toMatch(/disabled=""/);
   });
 
   // P2-R4. Fails if signing in on a browser that already has a session leaves that older session usable.

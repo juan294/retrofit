@@ -59,7 +59,7 @@ export interface StatusMeasurement {
 }
 
 export async function handleAnalysisStatus(request: Request, deps: ServerDeps, id: string, measure?: StatusMeasurement): Promise<Response> {
-  const who = requesterOf(request);
+  const who = requesterOf(request, deps.config);
   if ((!who.visitorToken && !who.accountToken) || !isAnalysisId(id)) return notFound();
   try {
     const { analysis } = await findOwnedAnalysis(id, who, deps);

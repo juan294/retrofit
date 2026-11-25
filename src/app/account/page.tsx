@@ -17,7 +17,7 @@ import { listAccountAnalyses } from "@/lib/analysis/account-list";
 import { CLAIM_RECENT_ANALYSES, claimOptions, type ClaimOption } from "@/lib/claims/sources";
 import { accountClaimViews, type AccountClaimView } from "@/lib/claims/view";
 import { signInHref } from "@/lib/accounts/return-to";
-import { ACCOUNT_COOKIE, readAccountByToken, type Account } from "@/lib/accounts/session";
+import { accountCookieName, readAccountByToken, type Account } from "@/lib/accounts/session";
 import { getServerDeps } from "@/lib/server/runtime";
 import { ACCOUNT_TEXT as T, dateText } from "@/lib/site/account-texts";
 
@@ -44,7 +44,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   // Undefined before BILLING_START; null when the plan could not be read.
   let billing: BillingView | null | undefined;
   try {
-    account = await readAccountByToken((await cookies()).get(ACCOUNT_COOKIE)?.value, deps);
+    account = await readAccountByToken((await cookies()).get(accountCookieName(deps.config))?.value, deps);
     if (account) {
       const [saved, held, published, analyses, apiKeys, plan] = await Promise.all([
         deps.accounts.listSavedReports(account.accountId),

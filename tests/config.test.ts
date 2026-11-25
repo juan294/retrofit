@@ -156,12 +156,12 @@ describe("billing start and notify limit", () => {
 
 describe("accounts sign-in configuration", () => {
   // Fails if a sign-in limit default moves (5 links per network and 3 per address an hour, the plan's design).
-  it("defaults SIGNIN_PER_CLIENT_HOUR to 5 and SIGNIN_PER_EMAIL_HOUR to 3, and reads both as positive numbers", () => {
+  it("defaults SIGNIN_PER_CLIENT_HOUR to 5, SIGNIN_PER_EMAIL_HOUR to 3 and SIGNIN_PER_EMAIL_NETWORK_HOUR to 2, and reads each as a positive number", () => {
     const c = loadConfig({ SESSION_SECRET: secret });
     expect(c.signInPerClientHour).toBe(5);
-    expect(c.signInPerEmailHour).toBe(3);
-    const set = loadConfig({ SESSION_SECRET: secret, SIGNIN_PER_CLIENT_HOUR: "50", SIGNIN_PER_EMAIL_HOUR: "30" });
-    expect([set.signInPerClientHour, set.signInPerEmailHour]).toEqual([50, 30]);
+    expect([c.signInPerEmailHour, c.signInPerEmailNetworkHour]).toEqual([3, 2]);
+    const set = loadConfig({ SESSION_SECRET: secret, SIGNIN_PER_CLIENT_HOUR: "50", SIGNIN_PER_EMAIL_HOUR: "30", SIGNIN_PER_EMAIL_NETWORK_HOUR: "20" });
+    expect([set.signInPerClientHour, set.signInPerEmailHour, set.signInPerEmailNetworkHour]).toEqual([50, 30, 20]);
     expect(() => loadConfig({ SESSION_SECRET: secret, SIGNIN_PER_EMAIL_HOUR: "0" })).toThrow(/SIGNIN_PER_EMAIL_HOUR/);
   });
 

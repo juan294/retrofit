@@ -30,7 +30,7 @@ export async function handleSaveReport(request: Request, deps: Pick<ServerDeps, 
   try {
     const text = await readSmallBody(request);
     const id = (text === "too large" ? null : analysisIdFrom(text)) ?? "";
-    const { analysis, account } = await findOwnedAnalysis(id, requesterOf(request), deps);
+    const { analysis, account } = await findOwnedAnalysis(id, requesterOf(request, deps.config), deps);
     if (!account) return json(401, { error: "signed_out", message: SAVE_REPORT_TEXT.signedOut });
     if (!analysis) return json(404, { error: "not_found", message: SAVE_REPORT_TEXT.notFound });
     const refused = await refuseFeature(deps, account.accountId, "saved_reports");

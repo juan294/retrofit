@@ -58,7 +58,7 @@ function resolveArtifact(g: GeneratedPreview, segments: readonly string[]): Arti
  * content-actions.js finds ./site-content.json next to its own module URL.
  */
 export async function handlePreviewFile(request: Request, deps: PreviewDeps, id: string, segments: readonly string[]): Promise<Response> {
-  const who = requesterOf(request);
+  const who = requesterOf(request, deps.config);
   if ((!who.visitorToken && !who.accountToken) || !isAnalysisId(id)) return otherBrowser();
   let generated: GeneratedPreview;
   try {

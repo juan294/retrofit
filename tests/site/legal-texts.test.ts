@@ -72,6 +72,7 @@ describe("privacy notice for accounts", () => {
   // P2-R3. Fails if the sign-in limit's keyed hash of the address goes unmentioned or its lifetime drifts from about an hour.
   it("states the keyed hash of the address kept about an hour for sign-in limits", () => {
     expect(privacy).toContain("a keyed hash of your email address for about an hour");
+    expect(privacy).toContain(`A browser that signed in is remembered for that address with the same keyed hash and a hash of its ${VISITOR_COOKIE} cookie for ${VISITOR_MAX_AGE_S / 86400} days`);
   });
 
   // P2-R3. Fails if the notice says an analysis is private to the browser only, or hides when analyses join an account.

@@ -47,6 +47,7 @@ export default defineConfig({
       // The sign-in limits (5 links per network, 3 per address an hour) have unit tests; every spec shares one client IP.
       SIGNIN_PER_CLIENT_HOUR: "1000",
       SIGNIN_PER_EMAIL_HOUR: "1000",
+      SIGNIN_PER_EMAIL_NETWORK_HOUR: "1000",
       FREE_UPSTREAM_URL: "http://127.0.0.1:3013/otari/v1",
       OTARI_API_KEY: "otk_server_e2e_only",
       JUDGE_CODE: "judge-code-e2e",

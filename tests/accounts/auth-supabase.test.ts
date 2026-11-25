@@ -5,12 +5,12 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ACCOUNT_COOKIE } from "@/lib/accounts/session";
+
 import { handleConfirm } from "@/lib/api/confirm";
 import { handleSignIn } from "@/lib/api/sign-in";
 import { AuthRateLimited, AuthUnavailable } from "@/lib/auth/gateway";
 import { createSupabaseAuthGateway } from "@/lib/auth/supabase";
-import { captureConsole, cookieFrom, PUBLIC_ORIGIN, postRequest, storeDump, testDeps } from "../helpers/server-deps";
+import { ACCOUNT_COOKIE, captureConsole, cookieFrom, postRequest, PUBLIC_ORIGIN, storeDump, testDeps } from "../helpers/server-deps";
 
 const FAKE_ACCESS = "FAKE-ACCESS-TOKEN-must-never-leave-the-gateway";
 const FAKE_REFRESH = "FAKE-REFRESH-TOKEN-must-never-leave-the-gateway";

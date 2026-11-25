@@ -8,7 +8,7 @@ import { handleAnalysisStatus } from "@/lib/api/status";
 import { handlePreviewFile } from "@/lib/preview/artifacts";
 import { sha256Hex } from "@/lib/security/tokens";
 import { previewRequest, readyBakeryPreview, type ReadyPreview } from "../generate/preview-setup";
-import { accountCookie, analyzeRequest, holdAllSlots, OTHER_ACCOUNT as OTHER, statusRequest, storeDump, TEST_ACCOUNT as OWNER, testDeps } from "../helpers/server-deps";
+import { ACCOUNT_COOKIE, accountCookie, analyzeRequest, holdAllSlots, OTHER_ACCOUNT as OTHER, statusRequest, storeDump, TEST_ACCOUNT as OWNER, testDeps } from "../helpers/server-deps";
 const notFound = { error: "not_found", message: visitorTexts.otherBrowser };
 
 let preview: ReadyPreview | undefined;
@@ -107,7 +107,7 @@ describe("one owner lookup (P2-R10)", () => {
     await holdAllSlots(d);
     const visitor = "c".repeat(32);
     const token = (await createAccountSession(d, OWNER)).token;
-    const { id } = (await (await handleAnalyze(analyzeRequest({ url: "https://bakery.example.com" }, { cookie: `retrofit_visitor=${visitor}; retrofit_account=${token}` }), d)).json()) as { id: string };
+    const { id } = (await (await handleAnalyze(analyzeRequest({ url: "https://bakery.example.com" }, { cookie: `retrofit_visitor=${visitor}; ${ACCOUNT_COOKIE}=${token}` }), d)).json()) as { id: string };
     const other = (await createAccountSession(d, OTHER)).token;
     sessionReads = 0;
 

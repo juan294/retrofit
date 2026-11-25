@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures/csp";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
-import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
+import { addressStep, CONFIRM_PATH, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture, mockOtari, submitKey } from "./support/agent";
 import { CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockLimit, setClockOffset } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
@@ -52,15 +52,16 @@ for (const state of ["sent", "limit", "error"] as const) {
   });
 }
 
-for (const asker of [false, true]) {
-  test(`the sign-in confirm page ${asker ? "without" : "with"} the other-browser warning fits a 320 px phone screen`, async ({ page }) => {
-    if (asker) await markAsAsker(page);
-    await page.goto(CONFIRM_PATH);
-    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-    await expect(page.getByTestId("other-browser")).toHaveCount(asker ? 0 : 1);
-    await fits(page);
-  });
-}
+test("the sign-in confirm page fits a 320 px phone screen", async ({ page }) => {
+  await page.goto(CONFIRM_PATH);
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await fits(page);
+});
+
+test("the sign-in address step fits a 320 px phone screen", async ({ page }) => {
+  await addressStep(page);
+  await fits(page);
+});
 
 test("the save button's error fits a 320 px phone screen", async ({ page }) => {
   const id = await analyzeFixture(page, "bakery.fixture.test");

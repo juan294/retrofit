@@ -42,6 +42,7 @@ Machine-readable selection and gaps are in `.rpi/release-profile.json`.
 | Variable | Rule on Vercel |
 | --- | --- |
 | `SUPABASE_ANON_KEY` | Required. Sign-in through Supabase Auth, server side only. |
+| `SIGNIN_PER_CLIENT_HOUR`, `SIGNIN_PER_EMAIL_NETWORK_HOUR`, `SIGNIN_PER_EMAIL_HOUR` | Optional (5, 2, 3). Sign-in links per hour: per network, per network and address, and per address (a browser that signed in to the address before has its own third limit). Amazon SES was told 3 per address and 5 per network; keep them at or below that. |
 | `BILLING_START` | Required: `2027-01-20T00:00:00Z`. An earlier instant is refused (the hackathon asks for hosting until 2027-01-18 17:00 Pacific time, 2027-01-19T01:00Z). |
 | `STRIPE_SECRET_KEY` | Optional until `BILLING_START`, then needed to sell plans: without it plan limits apply, nobody can buy a plan, and the daily credit check opens one alert issue. Set it with `STRIPE_WEBHOOK_SECRET` or not at all. Test mode only (`sk_test_` or `rk_test_`). A live key is refused; the live switch is a separate authorized release with its own webhook, prices and cleared test-mode billing rows. |
 | `STRIPE_WEBHOOK_SECRET` | Set exactly when `STRIPE_SECRET_KEY` is set (`whsec_`): the signing secret of the test webhook endpoint `/api/billing/webhook` for `checkout.session.completed`, `customer.subscription.updated` and `customer.subscription.deleted`. |

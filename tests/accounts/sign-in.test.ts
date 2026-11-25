@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_RETURN, safeReturnTo } from "@/lib/accounts/return-to";
-import { SIGN_IN_COOKIE, handleSignIn } from "@/lib/api/sign-in";
+import { handleSignIn, rememberBrowser } from "@/lib/api/sign-in";
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
-import { captureConsole, fakeClock, PUBLIC_ORIGIN, postRequest, storeDump, testDeps } from "../helpers/server-deps";
+import { captureConsole, fakeClock, postRequest, PUBLIC_ORIGIN, SIGN_IN_COOKIE, storeDump, testDeps } from "../helpers/server-deps";
 
 const signIn = (body: unknown, o: Parameters<typeof postRequest>[2] = {}) => postRequest("/api/auth/sign-in", body, o);
 // 10:20 UTC (fakeClock's start): the hourly windows end at 11:00 UTC.
@@ -48,6 +48,34 @@ describe("POST /api/auth/sign-in", () => {
     expect(refused.status).toBe(429);
     expect(((await refused.json()) as { retryAt: string }).retryAt).toBe(WINDOW_END);
     expect(d.fixtureAuth.sent).toHaveLength(3);
+  });
+
+  // Strix 2026-11-25. Fails if one network can use up an address's hourly links, so that its owner cannot ask for one elsewhere.
+  it("limits one network to 2 links an hour for one address; another network still gets one", async () => {
+    const d = testDeps({ clock: fakeClock().clock });
+    const ask = async (ip: string) => (await handleSignIn(signIn({ email: "target@example.test" }, { ip }), d)).status;
+    expect([await ask("198.51.100.1"), await ask("198.51.100.1"), await ask("198.51.100.1"), await ask("198.51.100.1")]).toEqual([200, 200, 429, 429]);
+    expect(await ask("203.0.113.9")).toBe(200);
+  });
+
+  // Strix 2026-11-25. Fails if strangers who use up an address's links lock out its owner on a browser that signed in before, if the reserve has
+  // no limit, or another browser, or the same browser for another address, gets it.
+  it("keeps links for a browser that signed in to the address before", async () => {
+    const clock = fakeClock();
+    const d = testDeps({ clock: clock.clock });
+    const VISITOR = `retrofit_visitor=${"a".repeat(32)}`;
+    await rememberBrowser(d, "target@example.test", "a".repeat(32));
+    for (let i = 0; i < 4; i++) await handleSignIn(signIn({ email: "target@example.test" }, { ip: `198.51.100.${i}` }), d);
+    const ask = async (cookie: string, ip: string, email = "target@example.test") => (await handleSignIn(signIn({ email }, { ip, cookie }), d)).status;
+    expect(await ask("", "203.0.113.1")).toBe(429);
+    expect(await ask(`retrofit_visitor=${"b".repeat(32)}`, "203.0.113.1")).toBe(429);
+    expect([await ask(VISITOR, "203.0.113.2"), await ask(VISITOR, "203.0.113.3"), await ask(VISITOR, "203.0.113.4"), await ask(VISITOR, "203.0.113.5")]).toEqual([200, 200, 200, 429]);
+    expect([await ask(VISITOR, "203.0.113.6", "x@example.test"), await ask(VISITOR, "203.0.113.6", "x@example.test"), await ask(VISITOR, "203.0.113.6", "x@example.test")]).toEqual([200, 200, 429]);
+    // The browser is forgotten with the visitor cookie's life.
+    clock.advance(31 * 86_400_000);
+    for (let i = 0; i < 4; i++) await handleSignIn(signIn({ email: "target@example.test" }, { ip: `198.51.100.${i}` }), d);
+    expect(await ask(VISITOR, "203.0.113.7")).toBe(429);
+    expect(storeDump(d.backing)).not.toContain("target@example.test");
   });
 
   // Fails if the raw address is used as a Store key or value, or reaches a log line.
@@ -108,12 +136,12 @@ describe("POST /api/auth/sign-in", () => {
   });
 
   // Fails if the browser that asked is not marked (confirm would attach analyses for any browser that opens the link).
-  it("marks the asking browser with an HttpOnly cookie scoped to /auth for one hour", async () => {
+  it("marks the asking browser with an HttpOnly, host-locked cookie for one hour", async () => {
     const d = testDeps();
     const res = await handleSignIn(signIn({ email: "a@example.test", returnTo: "/r/0123" }), d);
     const cookie = (res.headers.get("set-cookie") ?? "").split("; ");
     expect(cookie[0]).toMatch(new RegExp(`^${SIGN_IN_COOKIE}=[0-9a-f]{32}$`));
-    expect(cookie).toEqual(expect.arrayContaining(["HttpOnly", "SameSite=Lax", "Path=/auth", "Max-Age=3600", "Secure"]));
+    expect(cookie).toEqual(expect.arrayContaining(["HttpOnly", "SameSite=Lax", "Path=/", "Max-Age=3600", "Secure"]));
   });
 });
 

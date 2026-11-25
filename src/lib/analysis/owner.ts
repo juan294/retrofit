@@ -32,8 +32,8 @@ export interface Requester {
   readonly accountToken: string | null;
 }
 
-export function requesterOf(request: Request): Requester {
-  return { visitorToken: readVisitorToken(request), accountToken: readAccountToken(request) };
+export function requesterOf(request: Request, config: Pick<Config, "publicOrigin">): Requester {
+  return { visitorToken: readVisitorToken(request), accountToken: readAccountToken(request, config) };
 }
 
 type Owned = Pick<Analysis, "ownerHash" | "accountId">;

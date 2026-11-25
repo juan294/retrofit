@@ -1,12 +1,13 @@
 import type { VerifiedAccount } from "@/lib/auth/gateway";
-import { buildCookie, cookieValue } from "@/lib/security/cookies";
+import type { Config } from "@/lib/config";
+import { buildCookie, cookieValue, hostCookieName } from "@/lib/security/cookies";
 import { newToken, sha256Hex, TOKEN_PATTERN } from "@/lib/security/tokens";
-import { appendBounded, readIdList, updateIdList } from "@/lib/store/id-list";
+import { appendBounded, updateIdList } from "@/lib/store/id-list";
 import type { Clock, Store } from "@/lib/store/types";
 
 /**
  * Retrofit's own account sessions (parent plan, "Accounts and sessions").
- * After Supabase Auth verifies the email link, Retrofit issues `retrofit_account`:
+ * After Supabase Auth verifies the email link, Retrofit issues `retrofit_account` (`__Host-retrofit_account` over https):
  * a random 128-bit id. The Store keeps the record under the id's SHA-256 only,
  * so a Store dump signs nobody in, and no secret is needed to check a cookie.
  *
@@ -18,7 +19,11 @@ import type { Clock, Store } from "@/lib/store/types";
  * account deletion can find every one of them.
  */
 
+/** The cookie's base name; accountCookieName gives the one in use. */
 export const ACCOUNT_COOKIE = "retrofit_account";
+
+type CookieConfig = Pick<Config, "publicOrigin">;
+export const accountCookieName = (config: CookieConfig) => hostCookieName(ACCOUNT_COOKIE, config);
 export const ACCOUNT_SESSION_TTL_S = 30 * 24 * 3600;
 /** A record is rewritten (its TTL renewed) when it was last refreshed this long ago. */
 export const ACCOUNT_SESSION_REFRESH_S = 24 * 3600;
@@ -47,20 +52,30 @@ type SessionDeps = { readonly store: Store; readonly clock: Clock; readonly wait
 
 const sessionKey = (hash: string) => `account-session:${hash}`;
 const accountSessionsKey = (accountId: string) => `account-sessions:${accountId}`;
+const deletingKey = (accountId: string) => `account-deleting:${accountId}`;
+/** A deletion's marker lives longer than any function that could still create a session for the account. */
+const DELETING_TTL_S = 600;
 
-export const accountSetCookie = (token: string, secure: boolean) => buildCookie(ACCOUNT_COOKIE, token, { path: "/", maxAge: ACCOUNT_COOKIE_MAX_AGE_S, secure });
-export const accountClearCookie = (secure: boolean) => buildCookie(ACCOUNT_COOKIE, "", { path: "/", maxAge: 0, secure });
+/** A sign-in for an account that is being, or was just, deleted. */
+export class AccountDeleting extends Error {
+  override readonly name = "AccountDeleting";
+}
+
+export const accountSetCookie = (token: string, config: CookieConfig, secure: boolean) => buildCookie(accountCookieName(config), token, { path: "/", maxAge: ACCOUNT_COOKIE_MAX_AGE_S, secure });
+export const accountClearCookie = (config: CookieConfig, secure: boolean) => buildCookie(accountCookieName(config), "", { path: "/", maxAge: 0, secure });
 
 /** The account cookie's session id, or null when absent or malformed. */
-export function readAccountToken(request: Request): string | null {
-  const value = cookieValue(request.headers.get("cookie"), ACCOUNT_COOKIE);
+export function readAccountToken(request: Request, config: CookieConfig): string | null {
+  const value = cookieValue(request.headers.get("cookie"), accountCookieName(config));
   return value !== null && TOKEN_PATTERN.test(value) ? value : null;
 }
 
 /**
  * Starts a session for a verified account and returns its id (for the cookie). A sign-in past the
  * limit ends the account's oldest session. `replace`: the browser's current session, ended in the
- * same step (for the same account, in the same index write).
+ * same step (for the same account, in the same index write). Throws AccountDeleting, and leaves no
+ * session, when the account is being deleted: the marker is read after the session entered the index, and
+ * a deletion sets it before it ends the sessions of the index, so one of the two always sees the other.
  */
 export async function createAccountSession(deps: SessionDeps, account: VerifiedAccount, replace: Account | null = null): Promise<{ token: string }> {
   const token = newToken();
@@ -78,6 +93,10 @@ export async function createAccountSession(deps: SessionDeps, account: VerifiedA
   ]);
   const evicted = before.filter((h) => !after.includes(h) && h !== replace?.sessionHash);
   await Promise.all(evicted.map((h) => deps.store.delete(sessionKey(h))));
+  if (await deps.store.get(deletingKey(account.userId))) {
+    await endAccountSession(deps.store, { accountId: account.userId, sessionHash: hash });
+    throw new AccountDeleting("the account is being deleted");
+  }
   return { token };
 }
 
@@ -108,8 +127,8 @@ export async function readAccountByToken(token: string | null | undefined, deps:
 }
 
 /** The request's signed-in account (readAccountByToken on the account cookie). */
-export function readAccount(request: Request, deps: SessionDeps): Promise<Account | null> {
-  return readAccountByToken(readAccountToken(request), deps);
+export function readAccount(request: Request, deps: SessionDeps & { readonly config: CookieConfig }): Promise<Account | null> {
+  return readAccountByToken(readAccountToken(request, deps.config), deps);
 }
 
 /** Ends one session (sign-out). */
@@ -120,12 +139,20 @@ export async function endAccountSession(store: Store, account: Pick<Account, "ac
   ]);
 }
 
-/** Ends every session of the account except `keep` (a session hash), if given. */
-export async function endAccountSessions(store: Store, accountId: string, keep?: string): Promise<void> {
-  const key = accountSessionsKey(accountId);
-  await Promise.all((await readIdList(store, key)).filter((h) => h !== keep).map((h) => store.delete(sessionKey(h))));
-  if (keep) await updateIdList(store, key, (ids) => ids.filter((h) => h === keep), ACCOUNT_SESSION_TTL_S);
-  else await store.delete(key);
+/** Ends every session of the account except `keep` (a session hash): exactly the ones that leave the index in one atomic step. */
+export async function endAccountSessions(store: Store, accountId: string, keep: string): Promise<void> {
+  const { before } = await updateIdList(store, accountSessionsKey(accountId), (ids) => ids.filter((h) => h === keep), ACCOUNT_SESSION_TTL_S);
+  await Promise.all(before.filter((h) => h !== keep).map((h) => store.delete(sessionKey(h))));
+}
+
+/** From here on createAccountSession refuses the account. Call before endAccountSessions. */
+export async function beginAccountDeletion(store: Store, accountId: string): Promise<void> {
+  await store.set(deletingKey(accountId), { version: 1 }, DELETING_TTL_S);
+}
+
+/** The deletion did not finish: the owner may sign in again. */
+export async function abandonAccountDeletion(store: Store, accountId: string): Promise<void> {
+  await store.delete(deletingKey(accountId));
 }
 
 /** Ends the account's last session and drops its index: the final step of account deletion, after endAccountSessions kept only this one. */

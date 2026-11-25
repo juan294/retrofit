@@ -5,7 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { ScoreReport, storedReportView } from "@/components/analysis/ScoreReport";
 import { isUuid } from "@/lib/accounts/data";
 import { signInHref } from "@/lib/accounts/return-to";
-import { ACCOUNT_COOKIE, readAccountByToken } from "@/lib/accounts/session";
+import { accountCookieName, readAccountByToken } from "@/lib/accounts/session";
 import { getServerDeps } from "@/lib/server/runtime";
 import { SAVED_REPORT_TEXT as T, dateText } from "@/lib/site/account-texts";
 
@@ -19,7 +19,7 @@ export default async function SavedReportPage({ params }: { params: Promise<{ id
   const { id } = await params;
   if (!isUuid(id)) notFound();
   const deps = getServerDeps();
-  const account = await readAccountByToken((await cookies()).get(ACCOUNT_COOKIE)?.value, deps);
+  const account = await readAccountByToken((await cookies()).get(accountCookieName(deps.config))?.value, deps);
   if (!account) redirect(signInHref(`/account/reports/${id}`));
   const saved = await deps.accounts.getSavedReport(account.accountId, id);
   if (!saved) notFound();

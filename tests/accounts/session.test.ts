@@ -1,15 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  ACCOUNT_COOKIE,
-  ACCOUNT_SESSION_TTL_S,
-  MAX_SESSIONS_PER_ACCOUNT,
-  accountSetCookie,
-  createAccountSession,
-  readAccount,
-} from "@/lib/accounts/session";
+import { ACCOUNT_SESSION_TTL_S, MAX_SESSIONS_PER_ACCOUNT, accountClearCookie, accountSetCookie, createAccountSession, readAccount } from "@/lib/accounts/session";
 import { handleSignOut } from "@/lib/api/sign-out";
 import { sha256Hex } from "@/lib/security/tokens";
-import { fakeClock, PUBLIC_ORIGIN, postRequest, storeDump, TEST_ACCOUNT, testDeps } from "../helpers/server-deps";
+import { ACCOUNT_COOKIE, fakeClock, postRequest, PUBLIC_ORIGIN, storeDump, TEST_ACCOUNT, testDeps } from "../helpers/server-deps";
 
 const DAY = 86_400_000;
 const ACCOUNT = TEST_ACCOUNT;
@@ -20,10 +13,30 @@ afterEach(() => vi.restoreAllMocks());
 describe("account session cookie", () => {
   // Fails if the cookie becomes readable by scripts, is sent on cross-site posts, is scoped to one path, or drops Secure on HTTPS.
   it("is HttpOnly, SameSite=Lax and Path=/, and Secure over HTTPS only", () => {
-    const secure = accountSetCookie("0".repeat(32), true).split("; ");
+    const https = { publicOrigin: PUBLIC_ORIGIN };
+    const http = { publicOrigin: "http://127.0.0.1:3010" };
+    const secure = accountSetCookie("0".repeat(32), https, true).split("; ");
     expect(secure[0]).toBe(`${ACCOUNT_COOKIE}=${"0".repeat(32)}`);
     expect(secure).toEqual(expect.arrayContaining(["HttpOnly", "SameSite=Lax", "Path=/", "Secure"]));
-    expect(accountSetCookie("0".repeat(32), false).split("; ")).not.toContain("Secure");
+    const plain = accountSetCookie("0".repeat(32), http, false).split("; ");
+    expect(plain[0]).toBe(`retrofit_account=${"0".repeat(32)}`);
+    expect(plain).not.toContain("Secure");
+    // Deleting it needs the same attributes.
+    expect(accountClearCookie(https, true).split("; ")).toEqual(expect.arrayContaining([`${ACCOUNT_COOKIE}=`, "Path=/", "Secure", "Max-Age=0"]));
+  });
+
+  // Strix 2026-11-25. Fails if another subdomain can sign this browser in to its account with a cookie for the parent domain
+  // (such a cookie cannot have the __Host- prefix), or the cookie has an attribute that a browser refuses with that prefix.
+  it("a cookie without the host lock does not sign in over HTTPS", async () => {
+    const d = testDeps();
+    const { token } = await createAccountSession(d, ACCOUNT);
+    const planted = new Request(`${PUBLIC_ORIGIN}/account`, { headers: { cookie: `retrofit_account=${token}` } });
+    expect(await readAccount(planted, d)).toBeNull();
+    expect((await readAccount(withCookie(token), d))?.accountId).toBe(ACCOUNT.userId);
+    expect(accountSetCookie(token, d.config, true)).not.toMatch(/domain=/i);
+    const local = testDeps({ env: { PUBLIC_ORIGIN: "http://127.0.0.1:3010" } });
+    const dev = await createAccountSession(local, ACCOUNT);
+    expect(await readAccount(new Request("http://127.0.0.1:3010/account", { headers: { cookie: `retrofit_account=${dev.token}` } }), local)).not.toBeNull();
   });
 });
 

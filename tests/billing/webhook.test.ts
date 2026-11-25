@@ -5,7 +5,7 @@ import { deleteAccount } from "@/lib/accounts/delete";
 import { createAccountSession, readAccountByToken } from "@/lib/accounts/session";
 import { handleCheckout } from "@/lib/api/billing";
 import { handleBillingWebhook, MAX_WEBHOOK_BYTES } from "@/lib/api/billing-webhook";
-import { captureConsole, OTHER_ACCOUNT, postRequest, PUBLIC_ORIGIN, testDeps, type TestDeps, type TestDepsOptions } from "../helpers/server-deps";
+import { ACCOUNT_COOKIE, captureConsole, OTHER_ACCOUNT, postRequest, PUBLIC_ORIGIN, testDeps, type TestDeps, type TestDepsOptions } from "../helpers/server-deps";
 import { billingDeps, brokenBilling, customer, OWNER, PRICES, SECRET_KEY, WEBHOOK_SECRET } from "./setup";
 
 const lines: string[] = [];
@@ -399,7 +399,7 @@ describe("account deletion against a checkout", () => {
     const userId = d.fixtureAuth.userIdOf("race@example.test") as string;
     await d.accounts.ensureProfile(userId);
     const { token } = await createAccountSession(d, { userId, email: "race@example.test" });
-    const cookie = `retrofit_account=${token}`;
+    const cookie = `${ACCOUNT_COOKIE}=${token}`;
     const res = await handleCheckout(postRequest("/api/billing/checkout", { plan: "pro" }, { cookie }), d);
     const session = new URL(((await res.json()) as { url: string }).url).searchParams.get("session") as string;
     const cus = (await d.accounts.getBilling(userId))?.customerId as string;
@@ -429,15 +429,16 @@ describe("account deletion against a checkout", () => {
     d.fixtureBilling.before("createCustomer", async () => {
       expect(await deleteAccount(d, account!)).toMatchObject({ stage: "deleted" });
     });
-    const res = await handleCheckout(postRequest("/api/billing/checkout", { plan: "pro" }, { cookie: `retrofit_account=${token}` }), d);
+    const res = await handleCheckout(postRequest("/api/billing/checkout", { plan: "pro" }, { cookie: `${ACCOUNT_COOKIE}=${token}` }), d);
     expect(res.status).toBe(401);
     expect(d.fixtureBilling.calls).not.toContain("createCheckout");
     expect(await d.accounts.getBilling(userId)).toBeNull();
   });
 
-  // P5-RR3. The one moment the deletion mark does not cover: a person signs in again between the deletion of the data and of the auth
-  // user, and buys a plan; the new record goes with the auth user (its foreign key cascades) and leaves no mark. Fails if a later
-  // payment is then cancelled without proof, or passes without an alert to the owner.
+  // P5-RR3. The one moment the deletion mark does not cover: between the deletion of the data and of the auth user, another tab of the
+  // deleting browser (its session is kept for a retry) buys a plan; the new record goes with the auth user (its foreign key cascades) and
+  // leaves no mark. Fails if a later payment is then cancelled without proof, or passes without an alert to the owner, or if a new sign-in
+  // can still reach that moment (Strix 2026-11-25).
   it("a checkout opened between the data and the auth user is not cancelled when it is paid later: it raises the alert", async () => {
     const { d } = billingDeps(0);
     await d.auth.signInWithOtp("window@example.test", `${PUBLIC_ORIGIN}/auth/confirm`);
@@ -450,8 +451,8 @@ describe("account deletion against a checkout", () => {
       ...d.auth,
       deleteUser: async (id: string) => {
         await d.accounts.ensureProfile(id);
-        const again = await createAccountSession(d, { userId: id, email: "window@example.test" });
-        const res = await handleCheckout(postRequest("/api/billing/checkout", { plan: "pro" }, { cookie: `retrofit_account=${again.token}` }), d);
+        await expect(createAccountSession(d, { userId: id, email: "window@example.test" })).rejects.toThrow("being deleted");
+        const res = await handleCheckout(postRequest("/api/billing/checkout", { plan: "pro" }, { cookie: `${ACCOUNT_COOKIE}=${token}` }), d);
         session = new URL(((await res.json()) as { url: string }).url).searchParams.get("session") as string;
         await d.auth.deleteUser(id);
         // As the database does: the rows of a deleted auth user go with it.

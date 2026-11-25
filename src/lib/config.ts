@@ -31,6 +31,8 @@ export interface Config {
   readonly signInPerClientHour: number;
   /** Sign-in links per email address per hour; the window is keyed by a keyed hash of the address. */
   readonly signInPerEmailHour: number;
+  /** Sign-in links per network and email address per hour, so one network cannot use up an address's links. */
+  readonly signInPerEmailNetworkHour: number;
   /** Distinct sites one account may analyze or score in a UTC day, by plan, from BILLING_START on (never more than half of CRAWL_MAX_HOSTS_PER_DAY). */
   readonly accountSitesPerDay: Readonly<Record<PlanId, number>>;
   readonly staleAfterS: number;
@@ -127,6 +129,7 @@ const NUMBERS = {
   notifyPerClientHour: ["NOTIFY_PER_CLIENT_HOUR", 5],
   signInPerClientHour: ["SIGNIN_PER_CLIENT_HOUR", 5],
   signInPerEmailHour: ["SIGNIN_PER_EMAIL_HOUR", 3],
+  signInPerEmailNetworkHour: ["SIGNIN_PER_EMAIL_NETWORK_HOUR", 2],
   staleAfterS: ["STALE_AFTER_S", 90],
   analysisTtlS: ["ANALYSIS_TTL_S", 604800],
   scoreWaitMs: ["SCORE_WAIT_MS", 25000],

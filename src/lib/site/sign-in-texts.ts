@@ -39,8 +39,11 @@ export const SIGN_IN_TEXT = {
   confirmIntro: "Choose Sign in to finish signing in on this browser.",
   confirmButton: "Sign in",
   confirmBusy: "Signing in…",
-  /** /auth/confirm without the retrofit_signin cookie: the link was asked for on another browser (or by someone else). */
-  otherBrowser: "This link was requested from another browser. Only continue if you asked for this link. Signing in here will not add this browser's analyses to your account.",
+  /** /auth/confirm?step=address: the link was not asked for on this browser for this address (another device, or a link someone else sent). */
+  addressIntro: "This link signs in to the account of:",
+  otherBrowser: "This link was requested from another browser. Only continue if this is your email address and you asked for this link. Signing in here will not add this browser's analyses to your account.",
+  continueButton: "Continue",
+  cancel: "Cancel",
   confirmInvalid: "This sign-in link is not complete. Ask for a new link.",
   newLink: "Ask for a new link",
 } as const;

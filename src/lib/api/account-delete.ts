@@ -34,6 +34,6 @@ export async function handleAccountDelete(request: Request, deps: Pick<ServerDep
   if (!confirmed) return seeOther(deps, "/account?delete=confirm");
 
   const { stage, cancelled } = await deleteAccount(deps, account);
-  if (stage === "deleted") return seeOther(deps, "/sign-in?account=deleted", [accountClearCookie(isSecureRequest(request, deps.config))]);
+  if (stage === "deleted") return seeOther(deps, "/sign-in?account=deleted", [accountClearCookie(deps.config, isSecureRequest(request, deps.config))]);
   return seeOther(deps, `/account?delete=${NOTICE[stage][cancelled ? 1 : 0]}`);
 }

@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 import type { AccountData } from "@/lib/accounts/data";
 import { createAccountMemoryBacking, createMemoryAccountData, type AccountMemoryBacking } from "@/lib/accounts/memory";
-import { ACCOUNT_COOKIE, createAccountSession } from "@/lib/accounts/session";
+import { createAccountSession } from "@/lib/accounts/session";
 import type { AuthGateway, VerifiedAccount } from "@/lib/auth/gateway";
 import type { BillingGateway } from "@/lib/billing/gateway";
 import { createFixtureAuth, type FixtureAuth } from "@/lib/test-fixtures/auth";
@@ -285,7 +285,11 @@ export function scoreRequest(query: string, o: { method?: string; ip?: string; c
   return new Request(`${PUBLIC_ORIGIN}/api/score${query}`, { method: o.method ?? "GET", headers });
 }
 
-/** A new session for `account` as a Cookie header value (`retrofit_account=<id>`). */
+/** The cookie names on PUBLIC_ORIGIN (https): host-locked. Plain http (local development, e2e) has no prefix. */
+export const ACCOUNT_COOKIE = "__Host-retrofit_account";
+export const SIGN_IN_COOKIE = "__Host-retrofit_signin";
+
+/** A new session for `account` as a Cookie header value (`__Host-retrofit_account=<id>`). */
 export async function accountCookie(d: Pick<ServerDeps, "store" | "clock">, account: VerifiedAccount = TEST_ACCOUNT): Promise<string> {
   return `${ACCOUNT_COOKIE}=${(await createAccountSession(d, account)).token}`;
 }

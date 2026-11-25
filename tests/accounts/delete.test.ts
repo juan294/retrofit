@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountData } from "@/lib/accounts/data";
 import { deleteAccount } from "@/lib/accounts/delete";
 import { indexAccountAnalyses } from "@/lib/analysis/owner";
-import { ACCOUNT_COOKIE, createAccountSession, readAccount, readAccountByToken } from "@/lib/accounts/session";
+import { createAccountSession, endAccountSessions, readAccount, readAccountByToken } from "@/lib/accounts/session";
 import { handleAccountDelete } from "@/lib/api/account-delete";
 import type { AuthGateway } from "@/lib/auth/gateway";
 import { createFixtureAuth } from "@/lib/test-fixtures/auth";
 import { createAccountMemoryBacking, createMemoryAccountData } from "@/lib/accounts/memory";
 import { ACCOUNT_TEXT } from "@/lib/site/account-texts";
-import { fakeClock, PUBLIC_ORIGIN, storeAnalysis, testDeps } from "../helpers/server-deps";
+import { ACCOUNT_COOKIE, fakeClock, PUBLIC_ORIGIN, storeAnalysis, storeDump, testDeps } from "../helpers/server-deps";
 
 const REPORT = { host: "d.example", report: { score: 12, host: "d.example" }, fetchedAt: "2026-11-22T08:00:00.000Z" };
 
@@ -62,6 +62,56 @@ describe("account deletion", () => {
     expect(await readAccountByToken(s.elsewhere, s.d)).toBeNull();
     expect(s.fixture.userIdOf("gone@example.test")).toBeNull();
     expect([...s.d.backing.values.keys()].filter((k) => k.startsWith("account-session"))).toEqual([]);
+  });
+
+  // Strix 2026-11-25. Fails if a sign-in that runs during the deletion, at any of its steps, leaves a session of the deleted account.
+  it.each(["auth.getUser", "accounts.deleteAccountData", "auth.deleteUser"])("no session created during %s survives", async (step) => {
+    const s = await signedIn();
+    const created: string[] = [];
+    const push = s.log.push.bind(s.log);
+    let racing: Promise<unknown> = Promise.resolve();
+    s.log.push = (...entries: string[]) => {
+      if (entries[0] === step) racing = createAccountSession(s.d, { userId: s.userId, email: "gone@example.test" }).then((r) => created.push(r.token), () => undefined);
+      return push(...entries);
+    };
+    expect(await deleteAccount(s.d, s.account)).toMatchObject({ stage: "deleted" });
+    await racing;
+    for (const token of created) expect(await readAccountByToken(token, s.d)).toBeNull();
+    expect([...s.d.backing.values.keys()].filter((k) => k.startsWith("account-session:"))).toEqual([]);
+    expect(storeDump(s.d.backing)).not.toContain("gone@example.test");
+  });
+
+  // Fails if a session written between the index read and the index write of the deletion survives (its record would have no index entry).
+  it("a session that enters the index while the others end is ended too", async () => {
+    const s = await signedIn();
+    const store = s.d.store;
+    let raced = false;
+    const get = store.get.bind(store);
+    const racy = { ...store, get: async <T,>(key: string) => {
+      const value = await get<T>(key);
+      if (!raced && key.startsWith("account-sessions:")) {
+        raced = true;
+        await createAccountSession({ ...s.d, store }, { userId: s.userId, email: "gone@example.test" }).catch(() => undefined);
+      }
+      return value;
+    } };
+    await endAccountSessions(racy, s.userId, s.account.sessionHash);
+    expect([...s.d.backing.values.keys()].filter((k) => k.startsWith("account-session:"))).toEqual([`account-session:${s.account.sessionHash}`]);
+  });
+
+  // Fails if a deletion that failed blocks the owner from signing in again, or a deleted account's marker blocks another account.
+  it("signing in works again after a deletion that failed, and for other accounts after one that succeeded", async () => {
+    const failed = await signedIn({ failData: true });
+    expect(await deleteAccount(failed.d, failed.account)).toMatchObject({ stage: "data" });
+    expect((await createAccountSession(failed.d, { userId: failed.userId, email: "gone@example.test" })).token).toMatch(/^[0-9a-f]{32}$/);
+    const late = await signedIn();
+    const auth: AuthGateway = { ...late.d.auth, deleteUser: async () => { throw new Error("provider down"); } };
+    expect(await deleteAccount({ ...late.d, auth }, late.account)).toMatchObject({ stage: "user" });
+    expect((await createAccountSession(late.d, { userId: late.userId, email: "gone@example.test" })).token).toMatch(/^[0-9a-f]{32}$/);
+    const s = await signedIn();
+    await deleteAccount(s.d, s.account);
+    await expect(createAccountSession(s.d, { userId: s.userId, email: "gone@example.test" })).rejects.toThrow();
+    expect((await createAccountSession(s.d, { userId: "6f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "other@example.test" })).token).toMatch(/^[0-9a-f]{32}$/);
   });
 
   // P3-R7. Fails if the account's list of analyses (the claim choices) outlives the account.

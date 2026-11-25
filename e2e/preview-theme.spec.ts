@@ -3,7 +3,7 @@ import { PRIVACY, TERMS } from "@/lib/site/legal-texts";
 import { PRICING_TEXT, UNSUBSCRIBE_TEXT } from "@/lib/site/pricing-texts";
 import { ACCOUNT_TEXT, SAVE_REPORT_TEXT, SAVED_REPORT_TEXT } from "@/lib/site/account-texts";
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
-import { CONFIRM_PATH, markAsAsker, newEmail, signIn, signInFormState } from "./support/account";
+import { addressStep, CONFIRM_PATH, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture, mockOtari, submitKey } from "./support/agent";
 import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockLimit, setClockOffset } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
@@ -159,7 +159,7 @@ for (const colorScheme of ["light", "dark"] as const) {
   });
 }
 
-// The sign-in form's answers, the confirm page (with and without the other-browser warning) and the save error.
+// The sign-in form's answers, the confirm page, its address step and the save error.
 for (const colorScheme of ["light", "dark"] as const) {
   for (const state of ["sent", "limit", "error"] as const) {
     test(`the sign-in form's ${state} state is readable in ${colorScheme} mode`, async ({ page }) => {
@@ -168,14 +168,18 @@ for (const colorScheme of ["light", "dark"] as const) {
     });
   }
 
-  test(`the sign-in confirm page is readable in ${colorScheme} mode, with and without the warning`, async ({ page }) => {
+  test(`the sign-in confirm page and its address step are readable in ${colorScheme} mode`, async ({ page }) => {
     await page.emulateMedia({ colorScheme });
     await page.goto(CONFIRM_PATH);
-    await readable({ heading: page.getByRole("heading", { level: 1 }), intro: page.getByText(SIGN_IN_TEXT.confirmIntro), warning: page.getByTestId("other-browser"), button: page.getByRole("button", { name: SIGN_IN_TEXT.confirmButton }) });
-    await markAsAsker(page);
-    await page.goto(CONFIRM_PATH);
-    await expect(page.getByTestId("other-browser")).toHaveCount(0);
-    await readable({ button: page.getByRole("button", { name: SIGN_IN_TEXT.confirmButton }) });
+    await readable({ heading: page.getByRole("heading", { level: 1 }), intro: page.getByText(SIGN_IN_TEXT.confirmIntro), button: page.getByRole("button", { name: SIGN_IN_TEXT.confirmButton }) });
+    await addressStep(page);
+    await readable({
+      intro: page.getByText(SIGN_IN_TEXT.addressIntro),
+      address: page.getByTestId("confirm-address"),
+      warning: page.getByTestId("other-browser"),
+      button: page.getByRole("button", { name: SIGN_IN_TEXT.continueButton }),
+      cancel: page.getByRole("link", { name: SIGN_IN_TEXT.cancel }),
+    });
   });
 
   test(`the save button's error is readable in ${colorScheme} mode`, async ({ page }) => {

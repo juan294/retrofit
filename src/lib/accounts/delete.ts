@@ -2,7 +2,7 @@ import { forgetAccountAnalyses } from "@/lib/analysis/account-list";
 import { logBillingFailure, readStripe } from "@/lib/billing/sync";
 import type { ServerDeps } from "@/lib/server/runtime";
 import type { BillingRecord } from "./data";
-import { endAccountSessions, endLastAccountSession, type Account } from "./session";
+import { abandonAccountDeletion, beginAccountDeletion, endAccountSessions, endLastAccountSession, type Account } from "./session";
 
 /**
  * How far the deletion came. `deleted`: everything is gone. `subscription`: Stripe did not confirm the
@@ -24,7 +24,8 @@ export interface DeleteOutcome {
  * 2. Close the customer's open checkouts and cancel every subscription, at once. A failure stops here;
  *    a repeat of a cancellation that succeeded cancels nothing more.
  *    The state it leaves is stored, so a page that shows the account after a later failure is right.
- * 3. End the account's other sessions (this one stays, so the visitor can retry).
+ * 3. Refuse new sessions of the account (until the deletion fails), then end its other sessions (this one
+ *    stays, so the visitor can retry).
  * 4. Delete every account row in one atomic step (AccountData.deleteAccountData), which also marks the
  *    customer as deleted and keeps a checkout request under way from binding one.
  * 5. Delete the Supabase Auth user. A user already gone counts as deleted.
@@ -36,7 +37,7 @@ export interface DeleteOutcome {
  * A checkout paid even later reaches the webhook as an event of a customer that is marked as deleted,
  * which cancels it (src/lib/api/billing-webhook.ts).
  *
- * One moment has no mark: a person signs in again between steps 4 and 5 and opens a checkout. Its record
+ * One moment has no mark: another tab of this browser opens a checkout between steps 4 and 5. Its record
  * goes with the auth user, as a row cleared by hand would, so nothing proves a deletion: a later payment
  * raises an alert for the owner and cancels nothing.
  */
@@ -59,17 +60,22 @@ export async function deleteAccount(deps: Pick<ServerDeps, "config" | "clock" | 
     return { stage: "subscription", cancelled };
   }
   if (record && cancelled) await storeState(deps, record);
+  // A failure below lets the owner sign in again. When even that fails, the marker ends by itself.
+  const abandon = () => abandonAccountDeletion(deps.store, account.accountId).catch((e: unknown) => fail("of its marker", e));
   try {
+    await beginAccountDeletion(deps.store, account.accountId);
     await endAccountSessions(deps.store, account.accountId, account.sessionHash);
     await deps.accounts.deleteAccountData(account.accountId);
   } catch (e) {
     fail("before data deletion", e);
+    await abandon();
     return { stage: "data", cancelled };
   }
   try {
     await deps.auth.deleteUser(account.accountId);
   } catch (e) {
     fail("of the auth user", e);
+    await abandon();
     return { stage: "user", cancelled };
   }
   if (record) await deps.billing.cancelSubscriptions(record.customerId).catch((e: unknown) => logBillingFailure("Account deletion, the last subscription check", e));

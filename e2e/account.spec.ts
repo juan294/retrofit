@@ -97,22 +97,25 @@ test.describe("accounts", () => {
     await expect(page.getByRole("link", { name: SAVE_REPORT_TEXT.signIn })).toHaveCount(0);
   });
 
-  // P2-R1. Fails if a link opened in a browser that did not ask for it signs in without the warning, or attaches anything.
-  test("a link opened in another browser warns before signing in and returns to the account page", async ({ page, browser }) => {
+  // P2-R1. Fails if a link opened in a browser that did not ask for it signs in before its address was shown and confirmed.
+  test("a link opened in another browser names its address and signs in only after Continue", async ({ page, browser }) => {
     const email = newEmail("other");
     await page.goto("/sign-in");
     const link = await askForLink(page, email);
     const other = await browser.newContext();
     const otherPage = await other.newPage();
     await otherPage.goto(link);
-    await expect(otherPage.getByTestId("other-browser")).toHaveText(SIGN_IN_TEXT.otherBrowser);
     await otherPage.getByRole("button", { name: SIGN_IN_TEXT.confirmButton }).click();
+    await expect(otherPage).toHaveURL(/\/auth\/confirm\?step=address$/);
+    await expect(otherPage.getByTestId("confirm-address")).toHaveText(email);
+    await expect(otherPage.getByTestId("other-browser")).toHaveText(SIGN_IN_TEXT.otherBrowser);
+    expect((await other.cookies()).some((c) => c.name === "retrofit_account")).toBe(false);
+    await otherPage.getByRole("button", { name: SIGN_IN_TEXT.continueButton }).click();
     await expect(otherPage).toHaveURL(/\/account$/);
     await expect(otherPage.getByTestId("account-email")).toHaveText(email);
     await other.close();
-    // The browser that asked sees no warning.
-    await page.goto(link);
-    await expect(page.getByRole("button", { name: SIGN_IN_TEXT.confirmButton })).toBeVisible();
-    await expect(page.getByTestId("other-browser")).toHaveCount(0);
+    // Continue worked once: without a waiting sign-in the page asks for a new link.
+    await page.goto("/auth/confirm?step=address");
+    await expect(page.getByText(SIGN_IN_TEXT.confirmInvalid)).toBeVisible();
   });
 });
