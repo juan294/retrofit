@@ -101,6 +101,10 @@ function retryParts(retryAfterSeconds: number, retryAt: Date) {
   return { time: hhmmUtc(retryAt), minutes: Math.ceil(retryAfterSeconds / 60) };
 }
 
+/** The public description of GET /api/score on /bot: the contract's Surface 1 text, verbatim (changes 18 and 19). */
+export const SCORE_ENDPOINT_TEXT =
+  "GET https://retrofit.thecreativetoken.com/api/score?url=<public website address> returns Retrofit's agent-readiness score (score/v1, 0 to 100) for a public website, read from its home page and up to 11 more linked pages, with a pass, fail or not-checked result and evidence for each of 16 checks. Retrofit reads public pages only and follows robots.txt for RetrofitBot. A result is usually kept for up to 24 hours, and the site's verified owner can replace it sooner: call again when the user asks for a new check. No call can force a new read of the site. A call waits up to 25 seconds. A 202 answer means the score is still running: call again with the same URL after retryAfterSeconds. Errors are JSON with error, message and, when a later call can help, retryAfterSeconds. No key, cookie or account is needed. A server can send a Retrofit API key in the header Authorization: Bearer rk_retrofit_<32 hex characters> to use its account's own limits. Keys are for servers only: never put one in a web page or a browser. A key that is not valid answers 401 invalid_key, a key whose account's plan has ended answers 403 plan_required, and a used-up limit answers 429 client_limit with retryAt. A refused key never counts as a call without a key: to use the anonymous limit, call again without the header.";
+
 export const agentTexts = {
   running: "The score is still running. Call again in 20 seconds with the same URL.",
   missing_url: "Add the website address in the url query parameter, such as /api/score?url=https%3A%2F%2Fexample.com.",
@@ -122,19 +126,19 @@ export const agentTexts = {
     const r = retryParts(retryAfterSeconds, retryAt);
     return `This client reached the limit of ${limit} site scores per hour. Call again after ${r.time} UTC (in ${r.minutes} minutes).`;
   },
-  // Not in the contract table: a `client_limit` of an API key's account and UTC day.
+  // A `client_limit` of an API key's account and UTC day.
   account_limit: (limit: number, retryAfterSeconds: number, retryAt: Date) => {
     const r = retryParts(retryAfterSeconds, retryAt);
     return `The account of this API key reached its limit of ${limit} sites per day. Call again after ${r.time} UTC (in ${r.minutes} minutes).`;
   },
   daily_limit: "Retrofit reached today's analysis limit. Try again tomorrow.",
   unavailable: "Retrofit is having trouble. Try again in a few minutes.",
-  // Not in the contract table: a 503 `unavailable` while another call's count-once decision is pending.
+  // A 503 `unavailable` while another call's count-once decision is pending.
   counting: "Retrofit is still counting another call for this site from this client. Call again in 2 seconds with the same URL.",
-  // Not in the contract table: a 503 `unavailable` while the site's daily count is undecided.
+  // A 503 `unavailable` while the site's daily count is undecided.
   countingSite: "Retrofit is still starting another score of this site. Call again in 2 seconds with the same URL.",
   method_not_allowed: "Use GET /api/score with the website address in the url query parameter.",
-  // Not in the contract's first table: a call with an API key (Authorization: Bearer).
+  // A call with an API key (Authorization: Bearer).
   invalid_key: "This API key is not valid, or it was revoked. Ask the user for a key from their Retrofit account page, or call again without the Authorization header to use the anonymous limit.",
   plan_required: "The plan of this API key's account has ended. The user can renew it on Retrofit's pricing page. Until then, call again without the Authorization header to use the anonymous limit.",
 } as const;
