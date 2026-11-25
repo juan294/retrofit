@@ -169,20 +169,20 @@ export interface StartResult {
  */
 export async function startOrJoinCrawl(deps: JobDeps, inputOrigin: string, o: StartOptions = {}): Promise<StartResult> {
   const key = originAliasKey(inputOrigin);
-  const rereadHosts = async (last: CrawlJob | null) => (await o.ownedOf?.(likelyHosts(inputOrigin, last))) ?? [];
-  const owns = async (host: string) => ((await o.ownedOf?.([host])) ?? []).includes(host);
+  const ownedHosts = async (last: CrawlJob | null) => (await o.ownedOf?.(likelyHosts(inputOrigin, last))) ?? [];
   for (let attempt = 0; attempt < 5; attempt++) {
     const now = deps.clock();
     const alias = await deps.store.get<Alias>(key);
     if (alias) {
       const job = await resolveJob(deps.store, alias.jobId);
       const live = job !== null && reusable(job, deps.config, now);
-      const dest = job?.destinationHost;
-      if (live && !(dest && rereadable(job, deps.config, now) && (await owns(dest)) && (await (o.mayReplace?.() ?? true)))) return { jobId: job.id, created: false };
+      if (live && !rereadable(job, deps.config, now)) return { jobId: job.id, created: false };
+      const rereadHosts = await ownedHosts(job);
+      if (live && !(rereadHosts.includes(job.destinationHost ?? "") && (await (o.mayReplace?.() ?? true)))) return { jobId: job.id, created: false };
       // Replace a failed, stale, expired or (for its owner) old job atomically. The new job is
       // written before the alias points at it, so no reader sees a missing job.
       const id = newJobId();
-      await createJob(deps, id, inputOrigin, await rereadHosts(job));
+      await createJob(deps, id, inputOrigin, rereadHosts);
       if (await deps.store.compareAndSet(key, alias, { version: alias.version + 1, jobId: id }, deps.config.crawlCacheTtlS)) {
         return { jobId: id, created: true };
       }
@@ -190,7 +190,7 @@ export async function startOrJoinCrawl(deps: JobDeps, inputOrigin: string, o: St
       continue;
     }
     const id = newJobId();
-    await createJob(deps, id, inputOrigin, await rereadHosts(null));
+    await createJob(deps, id, inputOrigin, await ownedHosts(null));
     const put = await deps.store.putIfAbsent<Alias>(key, { version: 1, jobId: id }, deps.config.crawlCacheTtlS);
     if (put.created) return { jobId: id, created: true };
     await deps.store.delete(jobKey(id));

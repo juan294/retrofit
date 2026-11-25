@@ -181,6 +181,15 @@ describe("a new read for a verified owner", () => {
     expect(await claim(a, retry.jobId, HOST)).toBeNull();
   });
 
+  // Fails if a replacement depends on a second ownership read: when that one fails, the new job would join the old read.
+  it("reads the ownership once for a replacement", async () => {
+    const { a } = await readyRead(OWNER_REREAD_S);
+    let asked = 0;
+    const next = await startOrJoinCrawl(a, ORIGIN, { ownedOf: async (hosts) => (asked++ === 0 ? hosts.filter((h) => h === HOST) : []) });
+    expect(asked).toBe(1);
+    expect(await claim(a, next.jobId, HOST)).toBeNull();
+  });
+
   // Fails if the cached read is dropped although its replacement may not start (the daily host cap).
   it("keeps the cached read when a new one may not start", async () => {
     const { a, jobId } = await readyRead(OWNER_REREAD_S);

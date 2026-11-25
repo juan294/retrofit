@@ -9336,6 +9336,12 @@
       "rule": "publishing",
       "suite": "unit",
       "file": "tests/crawl/jobs.test.ts",
+      "title": "a new read for a verified owner reads the ownership once for a replacement"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/crawl/jobs.test.ts",
       "title": "a new read for a verified owner joins the read of another host that the site redirects to now"
     },
     {
