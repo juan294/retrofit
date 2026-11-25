@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Claim } from "@/lib/accounts/data";
 import { claimRecordName } from "@/lib/claims/host";
-import { checkClaim, runClaimCheck } from "@/lib/claims/verify";
+import { checkClaim, runClaimCheck, staysOnOrigin } from "@/lib/claims/verify";
 import type { TxtResolver } from "@/lib/claims/txt";
 import { sha256Hex } from "@/lib/security/tokens";
 import { blocked, hostile, materialize, type FixtureSite } from "../fixtures/sites";
@@ -143,6 +143,25 @@ describe("meta method", () => {
     const host = await serve({ moved: { "/robots.txt": allow }, target: { "/robots.txt": allow, "/": page(tag(TOKEN)) } });
     routesOf()["moved.fixture.test"]!["/"] = { status: 301, headers: { location: `http://${host("target")}/` } };
     expect(await checkClaim(deps(), claim(host("moved")))).toEqual({ passed: false, result: "redirected", detail: null });
+  });
+
+  // Strix 2026-11-25. Fails if a page counts that was reached over another origin: plain http on the same host (a network attacker could
+  // add a tag there), or another host on the way back to this one.
+  it("counts a tag only when every redirect stays on the claimed page's own origin", async () => {
+    const host = await serve({ bounce: { "/robots.txt": allow, "/home": page(tag(TOKEN)) }, other: { "/robots.txt": allow } });
+    routesOf()["bounce.fixture.test"]!["/"] = { status: 302, headers: { location: `http://${host("other")}/` } };
+    routesOf()["other.fixture.test"]!["/"] = { status: 302, headers: { location: `http://${host("bounce")}/home` } };
+    expect(await checkClaim(deps(), claim(host("bounce")))).toEqual({ passed: false, result: "redirected", detail: null });
+    routesOf()["bounce.fixture.test"]!["/"] = { status: 302, headers: { location: "/home" } };
+    expect(await checkClaim(deps(), claim(host("bounce")))).toEqual({ passed: true });
+
+    const page1 = new URL("https://shop.example.com/");
+    expect(staysOnOrigin(page1, [])).toBe(true);
+    expect(staysOnOrigin(page1, ["https://shop.example.com/en"])).toBe(true);
+    for (const hop of ["http://shop.example.com/", "https://www.shop.example.com/", "https://shop.example.com:8443/"]) {
+      expect(staysOnOrigin(page1, [hop]), hop).toBe(false);
+      expect(staysOnOrigin(page1, [hop, "https://shop.example.com/en"]), hop).toBe(false);
+    }
   });
 
   // Fails if an error status or a non-HTML answer verifies, or the status is not reported.

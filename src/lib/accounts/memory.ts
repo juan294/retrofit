@@ -64,6 +64,8 @@ interface SavedReportRow {
 
 interface ClaimRow {
   claim: Claim;
+  /** The latest recheck attempt that recorded no result (ms). Never returned. */
+  attemptedAt?: number;
   /** The account that took the host over; null after that account's data is deleted. Never returned. */
   supersededBy: string | null;
   /** Insertion order, for oldest-first lists. */
@@ -395,14 +397,22 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
         return checked(c) < now - (slow ? CLAIM_SLOW_RECHECK_AFTER_S : CLAIM_RECHECK_AFTER_S) * 1000;
       };
       const rank = (c: Claim) => (c.status === "verified" ? 0 : 1);
+      const tried = (r: ClaimRow) => Math.max(checked(r.claim), r.attemptedAt ?? 0);
       return op(() =>
         [...claims.values()]
-          .map((r) => r.claim)
-          .filter(due)
-          .sort((x, y) => rank(x) - rank(y) || checked(x) - checked(y))
+          .filter((r) => due(r.claim))
+          .sort((x, y) => rank(x.claim) - rank(y.claim) || tried(x) - tried(y))
           .slice(0, Math.max(0, limit))
-          .map(copy),
+          .map((r) => copy(r.claim)),
       );
+    },
+
+    async recordClaimAttempt(claimId, rawAt) {
+      const at = Date.parse(iso(rawAt));
+      return op(() => {
+        const row = claims.get(claimId);
+        if (row) row.attemptedAt = at;
+      });
     },
 
     async deleteClaim(accountId, claimId) {

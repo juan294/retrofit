@@ -335,9 +335,11 @@ export interface AccountData {
   /**
    * The claims due for the daily recheck at `now` (ISO 8601), at most `limit`: verified and lapsed claims last checked over
    * CLAIM_RECHECK_AFTER_S before `now`; a claim lapsed over CLAIM_SLOW_AFTER_S before `now` only once its last check is over
-   * CLAIM_SLOW_RECHECK_AFTER_S old. Verified claims first, then lapsed ones, each least recently checked first.
+   * CLAIM_SLOW_RECHECK_AFTER_S old. Verified claims first, then lapsed ones, each least recently checked or attempted first.
    */
   listClaimsDueForRecheck(now: string, limit: number): Promise<Claim[]>;
+  /** Records that a recheck was attempted at `at` (ISO 8601) without a result, so the claim goes behind the others that are due. An unknown claim is no error. */
+  recordClaimAttempt(claimId: string, at: string): Promise<void>;
   /** Withdraws one claim of the account (a published site of the claim goes with it). False when there was none. */
   deleteClaim(accountId: string, claimId: string): Promise<boolean>;
 

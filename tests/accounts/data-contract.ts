@@ -431,6 +431,26 @@ export function runAccountDataContract(name: string, makeClients: () => Promise<
         expect(capped.length).toBeLessThanOrEqual(2);
       });
 
+      // Strix 2026-11-25. Fails if an attempt that recorded no check leaves the claim at the head of the list, makes it undue, or changes its state.
+      it("recordClaimAttempt puts a due claim behind those that wait, and changes nothing else", async () => {
+        const owner = await newAccount();
+        // Only this case checks claims in 2003.
+        const at = (day: number) => `2003-01-${String(day).padStart(2, "0")}T00:00:00.000Z`;
+        const first = (await verified(a, await claimed(a, owner, "attempt1"), at(1))).claim;
+        const second = (await verified(a, await claimed(a, owner, "attempt2"), at(2))).claim;
+        const mine = async () => (await b.listClaimsDueForRecheck(at(11), 50)).filter((c) => c.accountId === owner).map((c) => c.id);
+        expect(await mine()).toEqual([first.id, second.id]);
+        await a.recordClaimAttempt(first.id, at(10));
+        expect(await mine()).toEqual([second.id, first.id]);
+        expect(await b.getClaim(owner, first.id)).toEqual(first);
+        await a.recordClaimAttempt(second.id, at(11));
+        expect(await mine()).toEqual([first.id, second.id]);
+        // A recorded check counts as the latest again, and an unknown claim is no error.
+        await verified(a, first, at(10));
+        await a.recordClaimAttempt("nope", at(11));
+        expect((await b.listClaimsDueForRecheck(at(13), 50)).filter((c) => c.accountId === owner).map((c) => c.id)).toEqual([first.id, second.id]);
+      });
+
       // P3-R4. Fails if a claim lapsed over 30 days ago is rechecked more than weekly, or never again.
       it("a claim lapsed over 30 days ago is due only when its last check is over 7 days old", async () => {
         const owner = await newAccount();

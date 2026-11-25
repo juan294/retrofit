@@ -1,6 +1,6 @@
 import type { Claim } from "@/lib/accounts/data";
 import type { ServerDeps } from "@/lib/server/runtime";
-import { runClaimCheck } from "./verify";
+import { CHECK_DEADLINE_MS, runClaimCheck } from "./verify";
 
 /**
  * The daily recheck (GET /api/cron/claims, phase-3.md): the due claims (AccountData
@@ -8,7 +8,8 @@ import { runClaimCheck } from "./verify";
  * RECHECK_PER_RUN per run; a run with more due logs that (counts only). A few
  * checks run at once; each meta check is paced per host and follows robots rules through the fetch
  * context. No check starts after RECHECK_BUDGET_MS, and no request after it either, so a run ends
- * well inside one 60 s function; the claims it did not reach stay due for the next run. Three
+ * well inside one 60 s function; the claims it did not reach stay due for the next run, and a claim whose check
+ * was deferred goes behind them. Three
  * consecutive failures lapse a claim (AccountData recordClaimFailure); one pass restores it. Times
  * come from deps.clock.
  */
@@ -37,7 +38,8 @@ type Deps = Pick<ServerDeps, "config" | "accounts" | "clock" | "fetch" | "txt" |
 export async function recheckDueClaims(deps: Deps): Promise<RecheckSummary> {
   const startedAt = deps.clock();
   const notAfter = startedAt + RECHECK_BUDGET_MS;
-  const deadline = { notAfter, maxWaitMs: RECHECK_BUDGET_MS, onTimeout: "defer" } as const;
+  // The longest wait is a visitor's own (CHECK_DEADLINE_MS): a longer Crawl-delay fails both, so it cannot be deferred forever.
+  const deadline = { notAfter, maxWaitMs: CHECK_DEADLINE_MS, onTimeout: "defer" } as const;
   // One more than a run checks, to know whether some must wait for the next run.
   const due = await deps.accounts.listClaimsDueForRecheck(new Date(startedAt).toISOString(), RECHECK_PER_RUN + 1);
   if (due.length > RECHECK_PER_RUN) console.warn(`Claim recheck: more than ${RECHECK_PER_RUN} claims were due; the rest wait for the next run.`);
@@ -50,7 +52,9 @@ export async function recheckDueClaims(deps: Deps): Promise<RecheckSummary> {
       return;
     }
     try {
-      const { claim: after, checked } = await runClaimCheck(deps, claim, deadline);
+      const { claim: after, checked, deferred } = await runClaimCheck(deps, claim, deadline);
+      // Nothing was checked: the claim stays due, behind the claims that were not tried yet.
+      if (deferred) await deps.accounts.recordClaimAttempt(claim.id, new Date(deps.clock()).toISOString());
       if (!checked) {
         tally.skipped++;
         return;

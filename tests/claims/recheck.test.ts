@@ -163,6 +163,57 @@ describe("what a run checks", () => {
     expect(server.requests.map((r) => r.path)).not.toContain("/");
   });
 
+  // Strix 2026-11-25. Fails if a delay that a visitor's own check refuses only defers the daily recheck, so that the claim never lapses.
+  it("a Crawl-delay too long for a visitor's check fails the recheck too", async () => {
+    const { d, clock } = setup();
+    server = await startFixtureServer({
+      "slowbot.fixture.test": {
+        "/robots.txt": { headers: { "content-type": "text/plain" }, body: `User-agent: *\nCrawl-delay: ${RECHECK_BUDGET_MS / 1000}\nAllow: /\n` },
+        "/": { headers: { "content-type": "text/html" }, body: `<html><head><meta name="retrofit-site-verification" content="${TOKEN}"></head></html>` },
+      },
+    });
+    const created = await d.accounts.createClaim(TEST_ACCOUNT.userId, { host: `slowbot.fixture.test:${server.port}`, method: "meta", tokenHash: sha256Hex(TOKEN) });
+    if (created.outcome !== "created") throw new Error("create failed");
+    await d.accounts.verifyClaim(created.claim.id, { tokenHash: created.claim.tokenHash, checkedAt: new Date(clock.now()).toISOString() });
+    clock.advance(DAY + 60_000);
+    expect(await recheckDueClaims(d)).toMatchObject({ checked: 1, failed: 1, skipped: 0 });
+  });
+
+  // Strix 2026-11-25. Fails if claims whose check is always deferred stay first in the queue: every claim behind them would never be rechecked.
+  it("deferred checks go behind the claims that wait, so they cannot starve them", async () => {
+    const { d, clock, state } = setup();
+    const start = clock.now();
+    for (let n = 0; n < RECHECK_PER_RUN; n++) await verifiedClaim(d.accounts, `hang${n}.example.com`, start);
+    const waiting = await verifiedClaim(d.accounts, "waiting.example.com", start + 60_000, TEST_ACCOUNT.userId);
+    const answers = new Set<string>();
+    const deps = { ...d, txt: async (name: string) => {
+      answers.add(name);
+      // A name server that never answers: the lookup is given up at the run's deadline, or here at once.
+      if (name.includes("hang")) return new Promise<string[][]>(() => undefined);
+      return state.records;
+    }, sleep: async () => undefined };
+    clock.advance(DAY + 120_000);
+    expect(await recheckDueClaims(deps)).toMatchObject({ checked: 0, skipped: RECHECK_PER_RUN });
+    expect([...answers].some((n) => n.includes("waiting"))).toBe(false);
+    clock.advance(60_000);
+    expect(await recheckDueClaims(deps)).toMatchObject({ checked: 1, verified: 1 });
+    expect(await d.accounts.getClaim(TEST_ACCOUNT.userId, waiting.id)).toMatchObject({ lastCheckedAt: new Date(clock.now()).toISOString() });
+    // The deferred claims are still due: nothing was recorded as a check.
+    expect((await d.accounts.listClaimsDueForRecheck(new Date(clock.now()).toISOString(), 100)).length).toBe(RECHECK_PER_RUN);
+  });
+
+  // Fails if the claims that the budget did not reach lose their place to claims that were attempted.
+  it("claims not reached in a run keep their place", async () => {
+    const { d, clock } = setup();
+    for (let n = 0; n < 10; n++) await verifiedClaim(d.accounts, `late${n}.example.com`, clock.now());
+    clock.advance(DAY + 60_000);
+    const before = await d.accounts.listClaimsDueForRecheck(new Date(clock.now()).toISOString(), 100);
+    const deps = { ...d, txt: async () => (clock.advance(RECHECK_BUDGET_MS), []) };
+    expect(await recheckDueClaims(deps)).toMatchObject({ checked: 1, skipped: 9 });
+    const after = await d.accounts.listClaimsDueForRecheck(new Date(clock.now()).toISOString(), 100);
+    expect(after.map((c) => c.id)).toEqual(before.map((c) => c.id).filter((id) => after.some((c) => c.id === id)));
+  });
+
   // Fails if a run starts checks after its time budget (the cron would outlive its function), or records the skipped ones.
   it("starts no check after the time budget; the rest stay due", async () => {
     const { d, clock, state } = setup();

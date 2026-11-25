@@ -2,7 +2,7 @@ import { CLAIM_CHANGES_PER_HOUR, CLAIM_CHECKS_PER_HOUR } from "@/lib/accounts/li
 import type { Account } from "@/lib/accounts/session";
 import { claimPageUrl } from "@/lib/claims/host";
 import { hostOfSource, parseClaimSource } from "@/lib/claims/sources";
-import { runClaimCheck } from "@/lib/claims/verify";
+import { CHECK_DEADLINE_MS, runClaimCheck } from "@/lib/claims/verify";
 import { claimView } from "@/lib/claims/view";
 import type { Claim, ClaimMethod } from "@/lib/accounts/data";
 import { newToken, sha256Hex } from "@/lib/security/tokens";
@@ -21,8 +21,6 @@ import { countIn } from "./limits";
 
 type Deps = Pick<ServerDeps, "config" | "store" | "accounts" | "clock" | "fetch" | "txt" | "sleep">;
 
-/** A check (Check again or Start over) may start requests for this long; a route invocation has 60 s. */
-export const CHECK_DEADLINE_MS = 20_000;
 const CHECK_WINDOW = "claim-check";
 const CHANGE_WINDOW = "claim-change";
 

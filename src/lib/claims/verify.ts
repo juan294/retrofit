@@ -15,8 +15,8 @@ import { isNoRecord } from "./txt";
  *
  * Meta: the home page is read with guardedFetch (robots rules, pacing per host, the address guard,
  * the size and time limits); only `<head>` is parsed, and only `<meta name="retrofit-site-verification">`
- * (name matched without case) counts. A redirect to another host does not count: the tag must be
- * on the claimed host. DNS: the TXT records of `_retrofit-verification.<host name>`, each record's
+ * (name matched without case) counts. A redirect that leaves the page's origin does not count (staysOnOrigin): the
+ * tag must be on the claimed host. DNS: the TXT records of `_retrofit-verification.<host name>`, each record's
  * strings joined; a record must equal `retrofit-site-verification=<token>` exactly.
  *
  * The page and the records are untrusted data: a check returns only a result code and a number,
@@ -43,6 +43,9 @@ export interface CheckDeadline {
   readonly onTimeout: "record" | "defer";
 }
 
+/** A visitor's check (Check again or Start over) may start requests for this long; a route invocation has 60 s. */
+export const CHECK_DEADLINE_MS = 20_000;
+
 export type ClaimCheckDeps = Pick<ServerDeps, "config" | "fetch" | "txt" | "clock" | "sleep">;
 
 /** HTML's ASCII whitespace (the spec's "strip leading and trailing ASCII whitespace"). */
@@ -55,6 +58,14 @@ function anyMatches(values: readonly string[], tokenHash: string): boolean {
   let found = false;
   for (const v of values) found = sameHash(sha256Hex(v), tokenHash) || found;
   return found;
+}
+
+/**
+ * True when every redirect target is on the page's own origin (scheme, host and port). The tag must be read
+ * from the claimed site itself: over plain http, or after another host, somebody else can have answered.
+ */
+export function staysOnOrigin(page: URL, redirects: readonly string[]): boolean {
+  return redirects.every((hop) => new URL(hop).origin === page.origin);
 }
 
 async function checkMeta(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "tokenHash">, deadline: CheckDeadline | undefined): Promise<CheckOutcome> {
@@ -75,7 +86,7 @@ async function checkMeta(deps: ClaimCheckDeps, claim: Pick<Claim, "host" | "toke
     if (e instanceof NotPublicError) return fail("not_public");
     return fail("fetch_failed");
   }
-  if (new URL(res.url).host !== url.host) return fail("redirected");
+  if (!staysOnOrigin(url, res.redirects)) return fail("redirected");
   if (res.status < 200 || res.status > 299) return fail("http_status", res.status);
   const type = (res.headers["content-type"] ?? "").split(";")[0]?.trim().toLowerCase();
   if (res.body === null || (type !== "text/html" && type !== "application/xhtml+xml")) return fail("not_html");
@@ -119,15 +130,15 @@ export async function checkClaim(deps: ClaimCheckDeps, claim: Pick<Claim, "host"
  * Checks the claim and records the result (AccountData verifyClaim or recordClaimFailure), with
  * the time from deps.clock. Returns the claim as stored afterwards, and `checked: false` when
  * nothing was recorded: the claim is superseded, Start over replaced its token during the check,
- * or the check was deferred. A verification by another account moves the host and ends the old
+ * or the check was deferred (`deferred: true`). A verification by another account moves the host and ends the old
  * account's publication (verifyClaim); a lapse hides this account's (AccountData getPublicSite reads
  * the claim's state), so no published page needs a write here.
  * Throws when the account data is unavailable.
  */
-export async function runClaimCheck(deps: ClaimCheckDeps & Pick<ServerDeps, "accounts">, claim: Claim, deadline?: CheckDeadline): Promise<{ claim: Claim; checked: boolean }> {
+export async function runClaimCheck(deps: ClaimCheckDeps & Pick<ServerDeps, "accounts">, claim: Claim, deadline?: CheckDeadline): Promise<{ claim: Claim; checked: boolean; deferred?: true }> {
   if (claim.status === "superseded") return { claim, checked: false };
   const outcome = await checkClaim(deps, claim, deadline);
-  if (outcome.passed === null) return { claim, checked: false };
+  if (outcome.passed === null) return { claim, checked: false, deferred: true };
   const checkedAt = new Date(deps.clock()).toISOString();
   const recorded = outcome.passed
     ? await deps.accounts.verifyClaim(claim.id, { tokenHash: claim.tokenHash, checkedAt })

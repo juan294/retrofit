@@ -392,6 +392,12 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
       return (rows ?? []).map(claimOf);
     },
 
+    async recordClaimAttempt(claimId, rawAt) {
+      if (!isUuid(claimId)) return;
+      const at = iso(rawAt);
+      await call<null>("recordClaimAttempt", () => claims().update({ last_attempt_at: at }).eq("id", claimId));
+    },
+
     async deleteClaim(accountId, claimId) {
       if (!isUuid(accountId) || !isUuid(claimId)) return false;
       // published_sites rows of the claim go with it (claim_id ... on delete cascade).
