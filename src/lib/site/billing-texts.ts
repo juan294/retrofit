@@ -20,7 +20,6 @@ export const BILLING_TEXT = {
   manage: "Manage billing",
   busy: "Opening…",
   upgrade: (plan: string) => `Upgrade to ${plan}`,
-  signIn: "Sign in",
   openAccount: "Open your account",
   /** The parent plan's stuck-state text, on /pricing. */
   cancelled: "Checkout was cancelled. Nothing was charged.",
@@ -39,10 +38,15 @@ export const BILLING_TEXT = {
 
 export const API_KEY_TEXT = {
   heading: "API keys",
-  intro: "Use a key to score many sites from your own server with GET /api/score. Send it as Authorization: Bearer <key>. Never put a key in a web page.",
+  intro: "Use a key to score sites from your own server with GET /api/score. Send it as Authorization: Bearer <key>. Never put a key in a web page. Until paid plans start, a key gives no higher limits than a call without one.",
   none: "You have no API keys.",
   create: "Create an API key",
   revoke: "Revoke",
+  revokeQuestion: (hint: string | null) => `Revoke ${hint ? `the key ending in ${hint}` : "this key"}? It stops working at once, and you cannot restore it.`,
+  revokeConfirm: "Yes, revoke the key",
+  revokeCancel: "Keep the key",
+  /** A button's accessible name: its text, then the key it acts on. */
+  buttonName: (label: string, item: string) => `${label}: ${item}`,
   busy: "Working…",
   item: (hint: string | null, createdOn: string) => `${hint ? `Key ending in ${hint}` : "Key"}, created on ${createdOn}`,
   created: "Copy your key now. Retrofit shows it only once.",

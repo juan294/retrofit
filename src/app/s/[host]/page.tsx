@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { ScoreReport, storedReportView } from "@/components/analysis/ScoreReport";
+import { SiteNav } from "@/components/SiteNav";
 import { PublishedAgent } from "@/components/publish/PublishedAgent";
 import { readPublishedPage } from "@/lib/publish/page";
 import { publishedUrl } from "@/lib/publish/url";
@@ -32,11 +32,7 @@ export default async function PublishedPage({ params }: Props) {
   const saved = dateText(site.fetchedAt);
   return (
     <main className="mx-auto max-w-3xl px-4 py-12 [overflow-wrap:anywhere]">
-      <p>
-        <Link href="/" className="underline">
-          Retrofit
-        </Link>
-      </p>
+      <SiteNav />
       <h1 className="mt-4 text-3xl font-semibold">{T.title(site.host)}</h1>
       <p className="mt-2" data-testid="published-by">
         {T.publishedBy(site.host, saved)}

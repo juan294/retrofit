@@ -5,21 +5,23 @@ import { SAVE_REPORT_TEXT as T } from "@/lib/site/account-texts";
 import { postJson, statusOf, type Status } from "../post";
 import { StatusMessage } from "../StatusMessage";
 import { useHydrated } from "../useHydrated";
+import { buttonState, useOneAtATime } from "../useOneAtATime";
 
 /** "Save this report" for a signed-in visitor: copies the ready report to the account (POST /api/account/reports). */
 export function SaveReportButton({ analysisId }: { analysisId: string }) {
   const [status, setStatus] = useState<Status | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useOneAtATime();
   const [saved, setSaved] = useState(false);
   const hydrated = useHydrated();
 
-  async function save() {
-    setBusy(true);
-    setStatus(null);
-    const answer = await postJson("/api/account/reports", { analysisId });
-    setStatus({ ...statusOf(answer, T.unavailable), ...(answer.ok ? { href: "/account", linkText: T.openAccount } : {}) });
-    if (answer.ok) setSaved(true);
-    setBusy(false);
+  function save() {
+    if (saved) return;
+    void run("save", async () => {
+      setStatus(null);
+      const answer = await postJson("/api/account/reports", { analysisId });
+      setStatus({ ...statusOf(answer, T.unavailable, `/r/${analysisId}`), ...(answer.ok ? { href: "/account", linkText: T.openAccount } : {}) });
+      if (answer.ok) setSaved(true);
+    });
   }
 
   return (
@@ -27,7 +29,7 @@ export function SaveReportButton({ analysisId }: { analysisId: string }) {
       <button
         type="button"
         onClick={save}
-        disabled={busy || saved || !hydrated}
+        {...buttonState(hydrated, busy !== null || saved)}
         className="rounded px-4 py-2 font-medium"
         style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}
       >

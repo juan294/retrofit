@@ -51,7 +51,7 @@ function setup() {
 
 describe("lapse and restore", () => {
   // Fails if a claim lapses before three consecutive failed daily checks, or not after them, or shows the wrong text.
-  it("three failed rechecks lapse a verified claim; the owner sees the paused text with the date", async () => {
+  it("three failed rechecks lapse a verified claim; the owner sees the failed text with the date", async () => {
     const { d, clock, state } = setup();
     const c = await verifiedClaim(d.accounts, "lapse.example.com", clock.now(), TEST_ACCOUNT.userId);
     state.records = [];
@@ -62,14 +62,14 @@ describe("lapse and restore", () => {
     }
     const lapsed = (await d.accounts.getClaim(TEST_ACCOUNT.userId, c.id))!;
     expect(lapsed.failures).toBe(3);
-    expect(claimView(lapsed, d.config).statusText).toBe("Verification failed on 26 November 2026. Your published page and badge are paused.");
+    expect(claimView(lapsed, d.config).statusText).toBe("Verification failed on 26 November 2026.");
     expect(claimView(lapsed, d.config).statusText).toBe(CLAIMS_TEXT.status.lapsed(lapsed.lapsedAt!));
     // P3-R8. A later failed recheck keeps the date the claim lapsed.
     clock.advance(DAY + 60_000);
     await recheckDueClaims(d);
     const later = (await d.accounts.getClaim(TEST_ACCOUNT.userId, c.id))!;
     expect(later.lastCheckedAt).not.toBe(lapsed.lastCheckedAt);
-    expect(claimView(later, d.config).statusText).toBe("Verification failed on 26 November 2026. Your published page and badge are paused.");
+    expect(claimView(later, d.config).statusText).toBe("Verification failed on 26 November 2026.");
   });
 
   // Fails if a lapsed claim is not rechecked, or one passing check does not restore it with no failures.

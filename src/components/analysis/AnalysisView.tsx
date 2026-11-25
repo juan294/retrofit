@@ -9,6 +9,7 @@ import { signInHref } from "@/lib/accounts/return-to";
 import { SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
 import { SaveReportButton } from "./SaveReportButton";
 import { SignInForm } from "../SignInForm";
+import { buttonState } from "../useOneAtATime";
 import { ScoreReport, type ReportView } from "./ScoreReport";
 import { localizeRetry } from "./retry-time";
 import { COUNTING_ATTEMPTS } from "./request";
@@ -41,6 +42,28 @@ function stepText(s: Status): string {
   if (s.step.startsWith("probe")) return "Checking robots.txt, sitemap, llms.txt and agent manifest";
   if (s.step.startsWith("page")) return `Reading linked pages (${s.step})`;
   return STEP_TEXT[s.step] ?? "Reading the site";
+}
+
+/**
+ * The one status region of the results page. It stays mounted from the first render to the report, so a
+ * screen reader announces each step and then that the report is ready. A failure is an alert of its own (Notice).
+ */
+export function AnalysisStatus({ state, status }: { state: "working" | "ready" | "failed"; status: Status | null }) {
+  return (
+    <div role="status">
+      {state === "ready" ? <p className="sr-only">The report is ready.</p> : null}
+      {state !== "working" ? null : status ? (
+        <div className="mt-8" data-testid="analysis-progress">
+          <p className="font-medium">{status.status === "queued" ? visitorTexts.queued : "Reading the site…"}</p>
+          <p className="mt-1" style={{ color: "var(--color-muted)" }}>
+            {stepText(status)}
+          </p>
+        </div>
+      ) : (
+        <p className="mt-8">Loading…</p>
+      )}
+    </div>
+  );
 }
 
 /** `canSave`: the visitor is signed in, so the ready report offers "Save this report". */
@@ -110,22 +133,18 @@ export function AnalysisView({ id, inputOrigin, canSave = false }: { id: string;
     };
   }, [id]);
 
-  if (error) return <Notice failure={error} inputOrigin={inputOrigin} />;
-  if (!status) return <p className="mt-8">Loading…</p>;
-  if (status.status === "failed" || status.status === "expired") {
-    return <Notice failure={status.failure ?? { code: "crawl_error", message: visitorTexts.crawlError }} inputOrigin={inputOrigin} />;
-  }
-  if (status.status !== "ready" || !report) {
-    return (
-      <div className="mt-8" data-testid="analysis-progress" role="status" aria-live="polite">
-        <p className="font-medium">{status.status === "queued" ? visitorTexts.queued : "Reading the site…"}</p>
-        <p className="mt-1" style={{ color: "var(--color-muted)" }}>
-          {stepText(status)}
-        </p>
-      </div>
-    );
-  }
+  const ended = status?.status === "failed" || status?.status === "expired";
+  const failure = error ?? (ended ? (status.failure ?? { code: "crawl_error", message: visitorTexts.crawlError }) : null);
+  const ready = status?.status === "ready" ? report : null;
+  return (
+    <>
+      <AnalysisStatus state={failure ? "failed" : ready ? "ready" : "working"} status={status} />
+      {failure ? <Notice failure={failure} inputOrigin={inputOrigin} /> : ready ? <ReadyReport id={id} report={ready} canSave={canSave} /> : null}
+    </>
+  );
+}
 
+function ReadyReport({ id, report, canSave }: { id: string; report: Report; canSave: boolean }) {
   return (
     <ScoreReport report={report} readOn={new Date(report.fetchedAt).toLocaleString()}>
       <AgentPanel
@@ -177,7 +196,7 @@ function Notice({ failure, inputOrigin }: { failure: Failure; inputOrigin: strin
         <p>{waiting ?? localizeRetry(shown.message, shown.retryAt)}</p>
         <p className="mt-4 flex gap-3">
           {RETRYABLE.has(failure.code) && !(failure.retryAt && Date.parse(failure.retryAt) > Date.now()) ? (
-            <button type="button" onClick={() => starts.current?.start(inputOrigin)} disabled={busy} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
+            <button type="button" onClick={() => busy || starts.current?.start(inputOrigin)} {...buttonState(true, busy)} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
               {busy ? "Starting…" : failure.code === "expired" ? "Analyze again" : "Retry"}
             </button>
           ) : null}

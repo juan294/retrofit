@@ -98,7 +98,12 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
 
       <h2 className="mt-10 text-xl font-semibold">{T.reportsHeading}</h2>
       {reports.length === 0 ? (
-        <p className="mt-2">{T.noReports}</p>
+        <p className="mt-2">
+          {T.noReports}{" "}
+          <a href="/" className="underline">
+            {T.analyze}
+          </a>
+        </p>
       ) : (
         <ul className="mt-2 flex flex-col gap-2" data-testid="saved-reports">
           {reports.map((r) => (

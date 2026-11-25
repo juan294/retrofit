@@ -98,6 +98,12 @@ describe("pricing, privacy and terms pages", () => {
     }
   });
 
+  // UX-L1. Fails if the /pricing summary says anything that stops being true when paid plans start.
+  it("the pricing summary does not depend on the date", () => {
+    const { summary } = OWN_PAGES.find((p) => p.path === "/pricing")!;
+    expect(summary).not.toMatch(/free|judging|join|until|start/i);
+  });
+
   // Fails if robots.txt blocks a new public page, or stops blocking the unsubscribe links (they carry a token).
   it("are allowed by robots while unsubscribe links are not", () => {
     const disallow = robots().rules;

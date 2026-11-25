@@ -1,3 +1,4 @@
+import { signInHref } from "@/lib/accounts/return-to";
 import { PLAN_TEXT } from "@/lib/site/plan-texts";
 import { localizeRetry } from "./analysis/retry-time";
 
@@ -33,9 +34,13 @@ export async function postJson<T = object>(path: string, body: unknown): Promise
   }
 }
 
-/** The answer's message, with a refusal's retry time in the visitor's own zone and the plans link it names; `unavailable` without a message. */
-export function statusOf({ ok, body }: PostAnswer<unknown>, unavailable: string): Status {
+/**
+ * The answer's message (`unavailable` without one), with a refusal's retry time in the visitor's own zone and
+ * its next step: the sign-in page for a signed-out visitor, returning to `returnTo`, or the plans link it names.
+ */
+export function statusOf({ status, ok, body }: PostAnswer<unknown>, unavailable: string, returnTo: string): Status {
   const message = typeof body?.message === "string" ? body.message : unavailable;
   const text = ok ? message : localizeRetry(message, typeof body?.retryAt === "string" ? body.retryAt : undefined);
+  if (status === 401) return { ok, text, href: signInHref(returnTo), linkText: PLAN_TEXT.signIn };
   return { ok, text, ...(body?.href === "/pricing" ? { href: "/pricing", linkText: PLAN_TEXT.seePlans } : {}) };
 }

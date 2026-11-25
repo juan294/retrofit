@@ -24,6 +24,9 @@ export const claimHostOf = (host: string) => new URL(fixtureOrigin(host)).host;
 /** The panel of the claim for `host` on /account. */
 export const claimPanel = (page: Page, host: string): Locator => page.locator(`[data-testid="claim"][data-host="${claimHostOf(host)}"]`);
 
+/** A panel's button by its text: its accessible name is the text and then the panel's host. */
+export const panelButton = (panel: Locator, label: string): Locator => panel.getByRole("button", { name: new RegExp(`^${label}: `) });
+
 /** Analyzes a fixture site; the robots-blocked one settles on its failure text instead of a score. */
 export const analyzeAny = (page: Page, host: string) =>
   analyzeFixture(page, host, host === BLOCKED_HOST ? (p) => p.getByText("This site asks automated tools not to read it.", { exact: false }) : undefined);
@@ -44,13 +47,14 @@ export async function claimSite(page: Page, host: string, method: "meta" | "dns"
   await page.getByRole("button", { name: CLAIMS_TEXT.claimButton }).click();
   const panel = claimPanel(page, host);
   await expect(panel.getByTestId("claim-token")).toBeVisible();
-  await expect(panel.getByTestId("claim-message")).toHaveText(CLAIMS_TEXT.created);
+  await expect(panel.getByTestId("claim-message")).toHaveText(CLAIMS_TEXT.addShown[method]);
+  await expect(page.getByTestId("claims-message")).toHaveText(CLAIMS_TEXT.created);
   return { panel, token: await shownToken(panel) };
 }
 
 /** Chooses Check again on a panel and waits for the answer. */
 export async function checkAgain(panel: Locator): Promise<void> {
-  await panel.getByRole("button", { name: CLAIMS_TEXT.checkAgain }).click();
+  await panelButton(panel, CLAIMS_TEXT.checkAgain).click();
   await expect(panel.getByTestId("claim-message")).toBeVisible();
 }
 
@@ -149,7 +153,7 @@ export async function claimStates(page: Page, browser: Browser, label: string): 
 
   await page.goto("/account");
   await expect(claimPanel(page, CLAIM_HOST).getByTestId("claim-status")).toHaveText(/^Ownership moved to another account on /);
-  await expect(claimPanel(page, FLAKY_HOST).getByTestId("claim-status")).toHaveText(/^Verification failed on .*Your published page and badge are paused\.$/);
+  await expect(claimPanel(page, FLAKY_HOST).getByTestId("claim-status")).toHaveText(/^Verification failed on \d{1,2} \w+ \d{4}\.$/);
   await checkAgain((await claimSite(page, MISSING_HOST, "meta")).panel);
   await expect(claimPanel(page, MISSING_HOST).getByTestId("claim-reason")).toContainText("found no retrofit-site-verification tag");
   // A reload drops the token, so the panel shows the plain pending state.

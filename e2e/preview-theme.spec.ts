@@ -5,7 +5,7 @@ import { ACCOUNT_TEXT, SAVE_REPORT_TEXT, SAVED_REPORT_TEXT } from "@/lib/site/ac
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
 import { addressStep, CONFIRM_PATH, newEmail, signIn, signInFormState } from "./support/account";
 import { analyzeFixture, mockOtari, submitKey } from "./support/agent";
-import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockLimit, setClockOffset } from "./support/claims";
+import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockLimit, setClockOffset, panelButton } from "./support/claims";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
 import { billingStates, startBilling } from "./support/billing";
@@ -94,6 +94,7 @@ const TEXT_PAGES: Record<string, (page: Page) => Record<string, Locator>> = {
     plan: page.getByRole("heading", { level: 2, name: "Pro", exact: true }),
     button: page.getByRole("button", { name: "Notify me" }),
     privacy: page.getByRole("link", { name: "privacy notice" }),
+    account: page.getByRole("link", { name: PRICING_TEXT.accountLink }),
   }),
   "/privacy": (page) => ({ text: page.getByText(PRIVACY.intro) }),
   "/terms": (page) => ({ text: page.getByText(TERMS.intro) }),
@@ -214,17 +215,20 @@ for (const colorScheme of ["light", "dark"] as const) {
       tokenNote: fresh.getByText(CLAIMS_TEXT.tokenOnce),
       created: fresh.getByTestId("claim-message"),
       lastChecked: claimPanel(page, BLOCKED_HOST).getByText(/^Last checked /),
-      checkAgain: fresh.getByRole("button", { name: CLAIMS_TEXT.checkAgain }),
-      startOver: fresh.getByRole("button", { name: CLAIMS_TEXT.startOver }),
+      checkAgain: panelButton(fresh, CLAIMS_TEXT.checkAgain),
+      startOver: panelButton(fresh, CLAIMS_TEXT.startOver),
       source: page.getByLabel(CLAIMS_TEXT.sourceLabel),
       claim: page.getByRole("button", { name: CLAIMS_TEXT.claimButton }),
     });
     await mockLimit(page, "/api/claims/check", CLAIMS_TEXT.limit);
-    await fresh.getByRole("button", { name: CLAIMS_TEXT.checkAgain }).click();
+    await panelButton(fresh, CLAIMS_TEXT.checkAgain).click();
     await readable({ limit: fresh.getByRole("alert") });
     await other.emulateMedia({ colorScheme });
     await other.goto("/account");
     await readable({ verified: other.getByTestId("claim-status"), verifiedReason: other.getByTestId("claim-reason") });
+    const panel = claimPanel(other, CLAIM_HOST);
+    await panelButton(panel, CLAIMS_TEXT.remove).click();
+    await readable({ question: panel.getByTestId("second-step").locator("p"), confirm: panelButton(panel, CLAIMS_TEXT.removeConfirm), cancel: panelButton(panel, CLAIMS_TEXT.removeCancel) });
     await close();
   });
 }
@@ -240,8 +244,8 @@ for (const colorScheme of ["light", "dark"] as const) {
       link: panel.getByTestId("publish-link"),
       saved: panel.getByTestId("publish-saved"),
       error: panel.getByTestId("publish-error"),
-      tryAgain: panel.getByRole("button", { name: PUBLISH_TEXT.tryAgain, exact: true }),
-      unpublish: panel.getByRole("button", { name: PUBLISH_TEXT.unpublish }),
+      tryAgain: panelButton(panel, PUBLISH_TEXT.tryAgain),
+      unpublish: panelButton(panel, PUBLISH_TEXT.unpublish),
       badgeHeading: panel.getByText(PUBLISH_TEXT.badgeHeading),
       snippet: panel.getByTestId("badge-snippet"),
     });
@@ -265,7 +269,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     await visitor.goto(visitor.url());
     await readable({ heading: visitor.getByRole("heading", { level: 1, name: PUBLISHED_PAGE_TEXT.notFoundTitle }), text: visitor.getByText(PUBLISHED_PAGE_TEXT.notFound), analyze: visitor.getByRole("link", { name: PUBLISHED_PAGE_TEXT.analyze }) });
     await close();
-    await panel.getByRole("button", { name: PUBLISH_TEXT.unpublish }).click();
+    await panelButton(panel, PUBLISH_TEXT.unpublish).click();
     await readable({ unpublished: panel.getByText(PUBLISH_TEXT.unpublished) });
   });
 
@@ -274,9 +278,9 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
     await verifiedOwner(page, FLAKY_HOST, `theme-offer-${colorScheme}`);
     const panel = claimPanel(page, FLAKY_HOST);
-    await readable({ intro: panel.getByText(PUBLISH_TEXT.intro), publish: panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }) });
+    await readable({ intro: panel.getByText(PUBLISH_TEXT.intro), publish: panelButton(panel, PUBLISH_TEXT.publish) });
     await mockLimit(page, "/api/publish", PUBLISH_TEXT.limit);
-    await panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }).click();
+    await panelButton(panel, PUBLISH_TEXT.publish).click();
     await readable({ limit: panel.getByRole("alert") });
   });
 }

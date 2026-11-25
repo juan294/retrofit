@@ -24,6 +24,11 @@ describe("NotifyForm", () => {
     expect(/<button[^>]*type="submit"[^>]*>/.exec(html)?.[0]).toMatch(/disabled=""/);
   });
 
+  // UX-M2. Fails if the confirmation arrives together with its status region.
+  it("has its status region before any answer", () => {
+    expect(renderToStaticMarkup(createElement(NotifyForm, { privacyHref: "/privacy" }))).toMatch(/<p role="status" id="notify-status"[^>]*><\/p>/);
+  });
+
   // Fails if the form can be shown without a privacy link (the plan refuses the form then).
   it("renders nothing without a privacy link", () => {
     expect(renderToStaticMarkup(createElement(NotifyForm, { privacyHref: "" }))).toBe("");

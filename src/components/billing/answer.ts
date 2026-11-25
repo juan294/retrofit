@@ -1,4 +1,3 @@
-import { signInHref } from "@/lib/accounts/return-to";
 import { isBillingUrl } from "@/lib/billing/urls";
 import { BILLING_TEXT as T } from "@/lib/site/billing-texts";
 import { statusOf } from "../post";
@@ -10,8 +9,8 @@ export type BillingStep = { readonly go: string } | { readonly text: string; rea
 export function billingStep(status: number, raw: unknown, fixtureOrigin: string | null, returnTo: string): BillingStep {
   const body = (raw ?? {}) as { url?: unknown; portal?: unknown; message?: unknown };
   if (status === 200 && isBillingUrl(body.url, fixtureOrigin)) return { go: body.url };
-  const { text } = statusOf({ status, ok: false, body }, T.unavailable);
-  if (status === 401) return { text, href: signInHref(returnTo), linkText: T.signIn };
+  const { text, href, linkText } = statusOf({ status, ok: false, body }, T.unavailable, returnTo);
+  if (status === 401) return { text, href, linkText };
   if (body.portal === true) return { text, href: "/account", linkText: T.openAccount };
   return { text };
 }

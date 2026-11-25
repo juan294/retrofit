@@ -5,7 +5,7 @@ import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
 import { networkNameFor } from "@/lib/generate/network";
 import { analyzeFixture, mockOtari, OTARI, submitKey, traceEvents } from "./support/agent";
-import { addClaimTag, checkAgain, claimHostOf, claimPanel, CLAIM_HOST, FLAKY_HOST, lapseFlaky, setClockOffset, shownToken } from "./support/claims";
+import { addClaimTag, checkAgain, claimHostOf, claimPanel, CLAIM_HOST, FLAKY_HOST, lapseFlaky, setClockOffset, shownToken, panelButton } from "./support/claims";
 import { expectInert, hostileScript, IMG, injectHostileContent, JS_LINK, SCRIPT } from "./support/extra-hostile";
 import { recordRequests, RETROFIT_ORIGIN } from "./support/extra-requests";
 import { fixtureOrigin } from "./support/global-setup";
@@ -104,9 +104,9 @@ test.describe("published sites", () => {
 
     await page.goto("/account");
     const panel = claimPanel(page, CLAIM_HOST);
-    await panel.getByRole("button", { name: PUBLISH_TEXT.unpublish }).click();
+    await panelButton(panel, PUBLISH_TEXT.unpublish).click();
     await expect(panel.getByTestId("claim-message")).toHaveText(PUBLISH_TEXT.unpublished);
-    await expect(panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true })).toBeEnabled();
+    await expect(panelButton(panel, PUBLISH_TEXT.publish)).toBeEnabled();
     await expect(panel.getByTestId("claim-status")).toHaveText(/^Verified on /);
     for (const url of [pageUrl(CLAIM_HOST), `${pageUrl(CLAIM_HOST)}/agent-manifest.json`, `${networkUrl(CLAIM_HOST)}.network.json`, `${pageUrl(CLAIM_HOST)}/content-actions.js`, `${pageUrl(CLAIM_HOST)}/bridge/action-bridge.html`, badgeUrl(CLAIM_HOST)]) {
       expect((await request.get(url)).status(), url).toBe(404);
@@ -133,7 +133,7 @@ test.describe("published sites", () => {
     for (const url of [pageUrl(FLAKY_HOST), `${pageUrl(FLAKY_HOST)}/agent-manifest.json`, badgeUrl(FLAKY_HOST)]) expect((await request.get(url)).status(), url).toBe(404);
 
     // The tag comes back: any token of this host's earlier claims plus this one's. Start over shows a new token.
-    await panel.getByRole("button", { name: CLAIMS_TEXT.startOver }).click();
+    await panelButton(panel, CLAIMS_TEXT.startOver).click();
     await addClaimTag(request, FLAKY_HOST, await shownToken(panel));
     await checkAgain(panel);
     await expect(panel.getByTestId("claim-status")).toHaveText(/^Verified on /);
@@ -256,7 +256,7 @@ test.describe("published sites", () => {
     await page.goto("/account");
     const panel = claimPanel(page, CLAIM_HOST);
     const answered = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/publish");
-    await panel.getByRole("button", { name: PUBLISH_TEXT.refresh, exact: true }).click();
+    await panelButton(panel, PUBLISH_TEXT.refresh).click();
     const response = await answered;
     expect(response.status()).toBe(409);
     const { retryAt } = (await response.json()) as { retryAt: string };
@@ -266,7 +266,7 @@ test.describe("published sites", () => {
     const local = await page.evaluate((iso) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }), retryAt);
     await expect(panel.getByTestId("claim-message")).toHaveText(new RegExp(`Retrofit reads a site again for its verified owner 60 minutes after the last read, so a new analysis brings nothing newer before ${local}\\. Analyze it again after that, then refresh\\.$`));
     await expect(panel.getByTestId("publish-error")).toHaveCount(0);
-    await expect(panel.getByRole("button", { name: PUBLISH_TEXT.refresh, exact: true })).toBeEnabled();
+    await expect(panelButton(panel, PUBLISH_TEXT.refresh)).toBeEnabled();
     await page.reload();
     await expect(panel.getByTestId("publish-error")).toHaveCount(0);
   });
@@ -348,11 +348,11 @@ test.describe("published sites", () => {
     const panel = claimPanel(page, CLAIM_HOST);
     // The analysis expires after 7 days; the claim and the publication stay.
     await setClockOffset(page.request, 8 * 24 * 3600_000);
-    await panel.getByRole("button", { name: PUBLISH_TEXT.refresh, exact: true }).click();
+    await panelButton(panel, PUBLISH_TEXT.refresh).click();
     await expect(panel.getByTestId("claim-message")).toHaveText(PUBLISH_TEXT.refreshError.no_analysis(claimHostOf(CLAIM_HOST)));
     await analyzeFixture(page, CLAIM_HOST);
     await page.goto("/account");
-    await panel.getByRole("button", { name: PUBLISH_TEXT.tryAgain, exact: true }).click();
+    await panelButton(panel, PUBLISH_TEXT.tryAgain).click();
     await expect(panel.getByTestId("claim-message")).toHaveText(PUBLISH_TEXT.refreshed);
     await expect(panel.getByTestId("publish-error")).toHaveCount(0);
   });

@@ -10,7 +10,7 @@ import { BASE_URL } from "../playwright.config";
 import { mailboxLink, newEmail, openLink, signIn } from "./support/account";
 import { analyzeFixture } from "./support/agent";
 import { BILLING_HOST, buyPlan, openCheckout, startBilling } from "./support/billing";
-import { claimPanel, setClockOffset, verifyByDns } from "./support/claims";
+import { claimPanel, setClockOffset, verifyByDns, panelButton } from "./support/claims";
 import { fixtureOrigin } from "./support/global-setup";
 import { pageUrl, publishOn } from "./support/publish";
 
@@ -36,7 +36,7 @@ test.describe("plans after BILLING_START", () => {
 
     await verifyByDns(page, BILLING_HOST);
     const panel = claimPanel(page, BILLING_HOST);
-    await panel.getByRole("button", { name: PUBLISH_TEXT.publish, exact: true }).click();
+    await panelButton(panel, PUBLISH_TEXT.publish).click();
     await expect(panel.getByTestId("claim-message")).toContainText(PLAN_TEXT.required.publish);
     await expect(panel.getByRole("link", { name: PLAN_TEXT.seePlans })).toHaveAttribute("href", "/pricing");
     expect((await page.request.get(pageUrl(BILLING_HOST))).status()).toBe(404);
@@ -105,7 +105,7 @@ test.describe("plans after BILLING_START", () => {
     await page.goto("/pricing");
     await page.getByRole("button", { name: BILLING_TEXT.upgrade("Pro") }).click();
     await expect(page.getByTestId("billing-message")).toContainText(BILLING_TEXT.signedOut);
-    await expect(page.getByRole("link", { name: BILLING_TEXT.signIn })).toHaveAttribute("href", "/sign-in?returnTo=%2Fpricing");
+    await expect(page.getByTestId("billing-message").getByRole("link", { name: PLAN_TEXT.signIn })).toHaveAttribute("href", "/sign-in?returnTo=%2Fpricing");
     await signIn(page, newEmail("activating"), "/pricing");
     await openCheckout(page, "Agency");
     await page.goto("/account?checkout=success");
@@ -127,7 +127,17 @@ test.describe("plans after BILLING_START", () => {
     await page.reload();
     await expect(page.getByTestId("api-key-item")).toContainText(`Key ending in ${key.slice(-4)}`);
     expect(await page.content()).not.toContain(key);
-    await page.getByRole("button", { name: API_KEY_TEXT.revoke }).click();
+    // Revoke asks first (UX-M1); the keyboard focus goes to the second step and back, and to the heading when the key is gone (UX-M2).
+    const item = page.getByTestId("api-key-item");
+    await item.getByRole("button", { name: API_KEY_TEXT.revoke }).click();
+    await expect(item.getByTestId("second-step")).toBeFocused();
+    await expect(item.getByTestId("second-step")).toContainText(API_KEY_TEXT.revokeQuestion(key.slice(-4)));
+    expect([200, 202]).toContain((await score()).status());
+    await item.getByRole("button", { name: API_KEY_TEXT.revokeCancel }).click();
+    await expect(item.getByRole("button", { name: API_KEY_TEXT.revoke })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await item.getByRole("button", { name: API_KEY_TEXT.revokeConfirm }).click();
+    await expect(page.getByRole("heading", { level: 2, name: API_KEY_TEXT.heading })).toBeFocused();
     await expect(page.getByTestId("api-keys-message")).toHaveText(API_KEY_TEXT.revoked);
     const refused = await score();
     expect(refused.status()).toBe(401);

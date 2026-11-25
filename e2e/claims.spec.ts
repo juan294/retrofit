@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/csp";
 import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
+import { PLAN_TEXT } from "@/lib/site/plan-texts";
 import { newEmail, signIn } from "./support/account";
 import {
   addClaimTag,
@@ -12,10 +13,13 @@ import {
   checkAgain,
   FLAKY_HOST,
   lapseFlaky,
+  MISSING_HOST,
   publishTxt,
   runRecheck,
   setClockOffset,
   shownToken,
+  verifyByTag,
+  panelButton,
 } from "./support/claims";
 
 // Ownership claims (phase-3.md; parent success criterion 4). Each spec reads the token from the account page and
@@ -60,8 +64,57 @@ test.describe("ownership claims", () => {
     await page.reload();
     const moved = claimPanel(page, CLAIM_HOST);
     await expect(moved.getByTestId("claim-status")).toHaveText(/^Ownership moved to another account on \d{1,2} \w+ \d{4}\.$/);
-    await expect(moved.getByRole("button", { name: CLAIMS_TEXT.checkAgain })).toHaveCount(0);
-    await expect(moved.getByRole("button", { name: CLAIMS_TEXT.remove })).toBeEnabled();
+    await expect(panelButton(moved, CLAIMS_TEXT.checkAgain)).toHaveCount(0);
+    await expect(panelButton(moved, CLAIMS_TEXT.remove)).toBeEnabled();
+  });
+
+  // UX-M1 and UX-M2. Fails if one click ends a verified claim, the second step does not take and give back the keyboard focus, the removal's
+  // message goes with its panel, the focus is lost, or a pending claim needs a second step.
+  test("Remove of a verified claim asks first, by keyboard, and its message stays", async ({ page }) => {
+    test.setTimeout(90_000);
+    await signIn(page, newEmail("claims-remove"));
+    await analyzeAny(page, CLAIM_HOST);
+    await analyzeAny(page, MISSING_HOST);
+    await verifyByTag(page, CLAIM_HOST);
+    await claimSite(page, MISSING_HOST, "meta");
+    const panel = claimPanel(page, CLAIM_HOST);
+    let removals = 0;
+    page.on("request", (r) => void (r.url().endsWith("/api/claims/remove") && removals++));
+    const remove = panelButton(panel, CLAIMS_TEXT.remove);
+    await remove.focus();
+    await page.keyboard.press("Enter");
+    const step = panel.getByTestId("second-step");
+    await expect(step).toBeFocused();
+    await expect(step).toContainText(CLAIMS_TEXT.removeQuestion(claimHostOf(CLAIM_HOST), false));
+    await panelButton(panel, CLAIMS_TEXT.removeCancel).click();
+    await expect(remove).toBeFocused();
+    expect(removals).toBe(0);
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Tab");
+    await expect(panelButton(panel, CLAIMS_TEXT.removeConfirm)).toBeFocused();
+    await page.keyboard.press("Enter");
+    const message = page.getByTestId("claims-message");
+    await expect(message).toHaveText(`${claimHostOf(CLAIM_HOST)}: ${CLAIMS_TEXT.removed}`);
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 2, name: CLAIMS_TEXT.heading })).toBeFocused();
+    // The removed site can be claimed again once the page read the server data again; the message is still there.
+    await expect(page.getByRole("option", { name: CLAIMS_TEXT.sourceFromAnalysis(claimHostOf(CLAIM_HOST)) })).toHaveCount(1);
+    await expect(message).toHaveText(`${claimHostOf(CLAIM_HOST)}: ${CLAIMS_TEXT.removed}`);
+
+    await panelButton(claimPanel(page, MISSING_HOST), CLAIMS_TEXT.remove).click();
+    await expect(message).toHaveText(`${claimHostOf(MISSING_HOST)}: ${CLAIMS_TEXT.removed}`);
+    expect(removals).toBe(2);
+  });
+
+  // UX-H1. Fails if a signed-out answer in a panel has no way to sign in, or sign-in does not return to the account.
+  test("a claim action after sign-out links to sign-in", async ({ page }) => {
+    await signIn(page, newEmail("claims-401"));
+    await analyzeAny(page, MISSING_HOST);
+    await page.goto("/account");
+    await page.context().clearCookies({ name: "retrofit_account" });
+    await page.getByRole("button", { name: CLAIMS_TEXT.claimButton }).click();
+    await expect(page.getByTestId("claims-message")).toContainText(CLAIMS_TEXT.signedOut);
+    await expect(page.getByTestId("claims-message").getByRole("link", { name: PLAN_TEXT.signIn })).toHaveAttribute("href", "/sign-in?returnTo=%2Faccount");
   });
 
   // Fails if a robots-blocked site is read anyway or its owner is not pointed to DNS, or the DNS path through the
@@ -74,8 +127,8 @@ test.describe("ownership claims", () => {
     await expect(panel.getByTestId("claim-reason")).toHaveText("Your robots.txt blocks RetrofitBot, so Retrofit cannot read the tag. Use the DNS method instead.");
     await expect(panel.getByTestId("claim-status")).toHaveText(CLAIMS_TEXT.status.pending);
 
-    await panel.getByRole("button", { name: CLAIMS_TEXT.useDns }).click();
-    await expect(panel.getByTestId("claim-message")).toHaveText(CLAIMS_TEXT.restarted);
+    await panelButton(panel, CLAIMS_TEXT.useDns).click();
+    await expect(panel.getByTestId("claim-message")).toHaveText(`${CLAIMS_TEXT.restarted} ${CLAIMS_TEXT.addShown.dns}`);
     await expect(panel.getByTestId("claim-token")).toContainText(CLAIMS_TEXT.addRecord("_retrofit-verification.blocked.fixture.test"));
     const token = await shownToken(panel);
     await expect(panel.getByTestId("claim-token").locator("code")).toHaveText(CLAIMS_TEXT.txtValue(token));
@@ -101,7 +154,7 @@ test.describe("ownership claims", () => {
     await lapseFlaky(request);
     await page.goto("/account");
     const lapsed = claimPanel(page, FLAKY_HOST);
-    await expect(lapsed.getByTestId("claim-status")).toHaveText(/^Verification failed on \d{1,2} \w+ \d{4}\. Your published page and badge are paused\.$/);
+    await expect(lapsed.getByTestId("claim-status")).toHaveText(/^Verification failed on \d{1,2} \w+ \d{4}\.$/);
     await expect(lapsed.getByTestId("claim-reason")).toContainText("found no retrofit-site-verification tag");
 
     await addClaimTag(request, FLAKY_HOST, token);

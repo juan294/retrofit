@@ -38,6 +38,13 @@ export const CLAIMS_TEXT = {
   useDns: "Use DNS instead",
   useMeta: "Use the tag instead",
   remove: "Remove",
+  /** The second step of Remove on a verified or published claim. */
+  removeQuestion: (host: string, published: boolean) =>
+    `Remove the claim of ${host}? ${published ? "Its public page and its badge end with it. To publish again" : "To publish this site later"}, you must claim and verify it again.`,
+  removeConfirm: "Yes, remove the claim",
+  removeCancel: "Keep the claim",
+  /** A panel button's accessible name: its text, then the host it acts on. */
+  buttonName: (label: string, host: string) => `${label}: ${host}`,
 
   /** The record to add, with the token: shown once, right after a claim or Start over. */
   addTag: (url: string) => `Add this tag inside the <head> of ${url}, then choose Check again:`,
@@ -52,9 +59,11 @@ export const CLAIMS_TEXT = {
   status: {
     pending: "Waiting for verification",
     verified: (verifiedAt: string) => `Verified on ${date(verifiedAt)}`,
-    lapsed: (checkedAt: string) => `Verification failed on ${date(checkedAt)}. Your published page and badge are paused.`,
+    lapsed: (checkedAt: string) => `Verification failed on ${date(checkedAt)}.`,
     superseded: (movedAt: string) => `Ownership moved to another account on ${date(movedAt)}.`,
   } satisfies Record<ClaimStatus, unknown>,
+  /** After the lapsed text, for a claim with a publication. */
+  lapsedPaused: "Your published page and badge are paused.",
   lastChecked: (iso: string) => `Last checked ${at(iso)}.`,
   neverChecked: "Not checked yet.",
 
@@ -99,8 +108,13 @@ export const CLAIMS_TEXT = {
     }
   },
 
-  created: "Claim started. Add the record below, then choose Check again.",
-  restarted: "New token ready. Add the record below, then choose Check again.",
+  created: "Claim started. Its panel shows what to add to your site.",
+  restarted: "New token ready.",
+  /** In the panel, under the new token. */
+  addShown: {
+    meta: "Add the tag above to your site, then choose Check again.",
+    dns: "Add the record above to your DNS, then choose Check again.",
+  } satisfies Record<ClaimMethod, string>,
   removed: "Claim removed.",
   /** A check that could not start before the deadline: nothing was recorded. */
   notChecked: "Retrofit could not check this site right now. Check again in a few minutes.",

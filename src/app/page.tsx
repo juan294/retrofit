@@ -3,6 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { getConfig } from "@/lib/config";
 import { CONTACT_URL, LEAD_EMAIL, leadMailto, retrofitJsonLd, SOURCE_URL } from "@/lib/site/own-site";
+import { SiteNav } from "@/components/SiteNav";
 import { UrlForm } from "@/components/UrlForm";
 import { AgentPanel } from "@/components/preview/AgentPanel";
 
@@ -16,7 +17,8 @@ export default async function Home() {
     <main className="mx-auto max-w-2xl px-4 py-16">
       {/* eslint-disable-next-line react/no-danger -- JSON-LD is a data block built from constants with "<" escaped; React would entity-encode it as text */}
       <script type="application/ld+json" nonce={nonce} dangerouslySetInnerHTML={{ __html: jsonLd }} />
-      <h1 className="text-4xl font-semibold">Retrofit</h1>
+      <SiteNav />
+      <h1 className="mt-8 text-4xl font-semibold">Retrofit</h1>
       <p className="mt-4 text-lg" style={{ color: "var(--color-muted)" }}>
         An agent on your own website that can take the order, and it is yours to keep.
       </p>

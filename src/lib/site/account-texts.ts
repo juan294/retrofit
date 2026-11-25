@@ -10,6 +10,8 @@ export const ACCOUNT_TEXT = {
   signedInAs: "Signed in as",
   reportsHeading: "Saved reports",
   noReports: "No saved reports yet. On a results page, choose Save this report.",
+  /** The link of the empty states, to the home page. */
+  analyze: "Analyze a site",
   score: (score: number | null) => (score === null ? "No score" : `${score} / 100`),
   readOn: "read on",
   signOut: "Sign out",
