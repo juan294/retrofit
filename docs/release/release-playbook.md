@@ -28,7 +28,7 @@ Do not report a test count or coverage that the current gate run did not produce
 | Deadline | Submission closes 2027-01-11 8:00 am PT. Judges need free access until 2027-01-18 17:00 Pacific time (2027-01-19T01:00Z). |
 | Wave A | Mandatory: fixed candidate, nonempty passing evidence, required miss blocks, tag last. |
 | Wave B | Not selected. Retrofit ships no code that runs unattended or destructively on users' machines. |
-| Waves C to H | Juan decides for v0.3.0 when the candidate is presented. Proposed: not selected, because the pre-launch audit of 2026-11-25 covered all nine domains on this candidate line. |
+| Waves C to H | Not selected for v0.3.0 (Juan, 2026-11-25): the pre-launch audit covered all nine domains on this candidate line. |
 
 ### Wave A commands for this stack
 

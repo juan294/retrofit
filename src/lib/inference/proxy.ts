@@ -6,6 +6,7 @@ import type { ServerDeps } from "@/lib/server/runtime";
 import { CountersUnavailable, FREE_PLACEHOLDER_KEY, HOLD_MESSAGE, UNAVAILABLE_MESSAGE } from "./errors";
 import { type OverrunAlert, createHold, holdId, recordOverrun } from "./hold";
 import { type Pool, counterDepsOf, createLedger } from "./ledger";
+import { clientIdFromRequest } from "@/lib/fetch/limits";
 import { callCap, createQuota, refusal, type QuotaRefusal } from "./quota";
 import { redact, redactText } from "./redact";
 import { reservationFor, usageCharge } from "./reservation";
@@ -268,7 +269,7 @@ export async function handleChat(request: Request, deps: ServerDeps, opts: { sig
       const slot = await quota.acquireInflight(sid, pool);
       if (!slot.ok) return capped(slot, deps.clock());
       release = slot.release;
-      const admitted = await quota.admitCall({ sid, pool });
+      const admitted = await quota.admitCall({ sid, pool, network: clientIdFromRequest(request, deps.config, deps.clock()) });
       if (!admitted.ok) return capped(admitted, deps.clock());
       reservation = reservationFor(body, free);
       const reserved = await ledger.reserve({ pool, sid, microUsd: reservation.microUsd });

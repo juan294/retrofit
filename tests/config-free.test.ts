@@ -23,6 +23,7 @@ describe("free inference configuration", () => {
       callsPerSession: 40,
       sessionsPerClientHour: 6,
       judgeCallsPerSessionDay: 200,
+      judgeCallsPerClientDay: 1000,
       judgeSessionsPerClientDay: 20,
       upstreamTimeoutMs: 45000,
       alertThresholds: [0.5, 0.8, 0.95],

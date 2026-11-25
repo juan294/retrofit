@@ -36,6 +36,7 @@ A visitor or judge without a key can use the preview and Retrofit's own agent. T
 | `FREE_CALLS_PER_SESSION` | 40 | Public session calls |
 | `FREE_SESSIONS_PER_CLIENT_HOUR` | 6 | New sessions per client per hour |
 | `JUDGE_CALLS_PER_SESSION_DAY` | 200 | Judge calls per session and UTC day (since 2026-11-25; `JUDGE_CALLS_PER_SESSION` is no longer read) |
+| `JUDGE_CALLS_PER_CLIENT_DAY` | 1000 | Judge calls of all judge sessions of one network and UTC day |
 | `JUDGE_SESSIONS_PER_CLIENT_DAY` | 20 | New judge sessions per network and UTC day |
 | `FREE_UPSTREAM_TIMEOUT_MS` | 45000 | Upstream timeout (15 s margin inside `maxDuration` 60 s) |
 | `CREDIT_ALERT_THRESHOLDS` | `0.5,0.8,0.95` | Fractions of the ledger that raise an alert |

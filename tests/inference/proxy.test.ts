@@ -379,6 +379,21 @@ describe("chat: refusals before any upstream call", () => {
     expect(upstream).toHaveLength(1);
   });
 
+  // Fails if the network's judge limit is not applied on the proxy path, or counts by session or by a header that a client can choose freely.
+  it("another judge session of the same network meets the network's daily limit", async () => {
+    const { d } = setup({ JUDGE_CALLS_PER_CLIENT_DAY: "2" });
+    const [a, b] = [await session(d, true), await session(d, true)];
+    expect(a).not.toBe(b);
+    expect((await handleChat(chat(BODY, { cookie: a }), d)).status).toBe(200);
+    expect((await handleChat(chat(BODY, { cookie: b }), d)).status).toBe(200);
+    const res = await handleChat(chat(BODY, { cookie: b }), d);
+    expect(res.status).toBe(429);
+    const text = await res.text();
+    expect(text.length).toBeLessThanOrEqual(300);
+    expect((JSON.parse(text) as { error: { code: string; message: string } }).error).toMatchObject({ code: "judge_network_calls", message: expect.not.stringMatching(/key/i) });
+    expect(upstream).toHaveLength(2);
+  });
+
   // UX-H3. Fails if the judge's daily limit is not applied on the proxy path, reaches the provider, sends the judge to a
   // paid key or names no retry time, or ends judge access after the day.
   it("a judge's daily call limit answers 429 with the retry time, and opens at 00:00 UTC", async () => {

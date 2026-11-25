@@ -7,7 +7,7 @@ import type { Pool } from "./ledger";
 
 /**
  * Free-path quotas (phase 6, "Ledger and quotas"): calls per public session, calls per judge
- * session and UTC day, and in-flight slots. New-session caps live in session.ts. Counters use the store's atomic
+ * session and UTC day, calls of a network's judge sessions per UTC day, and in-flight slots. New-session caps live in session.ts. Counters use the store's atomic
  * incrementWindow; in-flight slots are 60 s leases, so a crashed request frees
  * its slot when the lease ends.
  */
@@ -15,14 +15,15 @@ import type { Pool } from "./ledger";
 export type CapReason =
   | "session_calls"
   | "judge_session_calls"
+  | "judge_network_calls"
   | "inflight_session"
   | "inflight_global"
   | "public_pool"
   | "judge_pool"
   | "ledger";
 
-/** The caps of money, and of public use. judge_session_calls has its own text (judgeCallsText). */
-type PhraseReason = Exclude<CapReason, "judge_session_calls">;
+/** The caps of money, and of public use. The judge call caps have their own text (judgeCalls). */
+type PhraseReason = Exclude<CapReason, "judge_session_calls" | "judge_network_calls">;
 
 const REASON_PHRASE: Record<PhraseReason, string> = {
   session_calls: "this session",
@@ -44,8 +45,13 @@ export function capMessage(reason: PhraseReason, pool: Pool = "public"): string 
   return (pool === "judge" && JUDGE_WAIT[reason]) || `Retrofit's free AI is used up for ${REASON_PHRASE[reason]}. Use your own AI key to continue.`;
 }
 
-const judgeCallsText = (limit: number, retryAt: Date) =>
-  `Judge access in this browser made its ${limit} AI calls for today. It works again at ${hhmmUtc(retryAt)} UTC on ${formatDate(retryAt)}.`;
+/** A judge's calls of the UTC day are used up: its session's, or those of all judge sessions of its network. */
+function judgeCalls(reason: "judge_session_calls" | "judge_network_calls", limit: number, now: number): QuotaRefusal {
+  const retryAt = nextUtcMidnight(now);
+  const again = `works again at ${hhmmUtc(new Date(retryAt))} UTC on ${formatDate(new Date(retryAt))}.`;
+  const message = reason === "judge_session_calls" ? `Judge access in this browser made its ${limit} AI calls for today. It ${again}` : `Judges on this network made their ${limit} AI calls for today. Judge access ${again}`;
+  return { ok: false, status: 429, reason, message, retryAt };
+}
 
 /** `retryAt` (ms) when a time ends the cap. */
 export type QuotaRefusal = { ok: false; status: 429; reason: CapReason; message: string; retryAt?: number };
@@ -68,6 +74,7 @@ const id = (s: string) => encodeURIComponent(s);
 const keys = {
   calls: (sid: string) => `inference:quota:calls:${id(sid)}`,
   judgeCalls: (sid: string, day: string) => `inference:quota:judge-calls:${id(sid)}:${day}`,
+  judgeNetwork: (network: string, day: string) => `inference:quota:judge-network-calls:${id(network)}:${day}`,
   sessionSlot: (sid: string, i: number) => `inference:quota:inflight:session:${id(sid)}:${i}`,
   globalSlot: (i: number) => `inference:quota:inflight:global:${i}`,
 };
@@ -97,14 +104,18 @@ export function createQuota(deps: QuotaDeps) {
   }
 
   return {
-    /** Counts one model call for the session; call N+1 of the pool's cap is refused. */
-    async admitCall(input: { sid: string; pool: Pool }): Promise<QuotaResult> {
+    /**
+     * Counts one model call for the session; call N+1 of the pool's cap is refused. A judge's call also counts for its
+     * network in the UTC day: the judge code is shared and a judge session lasts weeks, so sessions add up.
+     */
+    async admitCall(input: { sid: string; pool: Pool; network: string }): Promise<QuotaResult> {
       const now = clock();
       const n = await countCalls(input, 1, now);
-      if (n <= callCap(input.pool, free)) return { ok: true };
-      if (input.pool === "public") return refusal("session_calls", "public");
-      const retryAt = nextUtcMidnight(now);
-      return { ok: false, status: 429, reason: "judge_session_calls", message: judgeCallsText(free.judgeCallsPerSessionDay, new Date(retryAt)), retryAt };
+      const admitted = n <= callCap(input.pool, free);
+      if (input.pool === "public") return admitted ? { ok: true } : refusal("session_calls", "public");
+      if (!admitted) return judgeCalls("judge_session_calls", free.judgeCallsPerSessionDay, now);
+      const ofNetwork = await count("calls", keys.judgeNetwork(input.network, utcDay(now)), ttlUntil(nextUtcMidnight(now), now));
+      return ofNetwork <= free.judgeCallsPerClientDay ? { ok: true } : judgeCalls("judge_network_calls", free.judgeCallsPerClientDay, now);
     },
 
     /** Calls in the session's current cap so far, without counting one (an increment of 0 reads the window). */

@@ -47,6 +47,7 @@ const SETTINGS: ReadonlyArray<readonly [string, (c: FreeConfig) => string | numb
   ["FREE_CALLS_PER_SESSION", (c) => c.callsPerSession],
   ["FREE_SESSIONS_PER_CLIENT_HOUR", (c) => c.sessionsPerClientHour],
   ["JUDGE_CALLS_PER_SESSION_DAY", (c) => c.judgeCallsPerSessionDay],
+  ["JUDGE_CALLS_PER_CLIENT_DAY", (c) => c.judgeCallsPerClientDay],
   ["JUDGE_SESSIONS_PER_CLIENT_DAY", (c) => c.judgeSessionsPerClientDay],
   ["FREE_UPSTREAM_TIMEOUT_MS", (c) => c.upstreamTimeoutMs],
   ["CREDIT_ALERT_THRESHOLDS", (c) => c.alertThresholds.join(",")],

@@ -2548,6 +2548,12 @@
     },
     {
       "rule": "free path",
+      "suite": "unit",
+      "file": "tests/inference/quota.test.ts",
+      "title": "quota caps refuses judge calls past the network's limit of the UTC day, over all its sessions"
+    },
+    {
+      "rule": "free path",
       "suite": "playwright",
       "file": "free-path.spec.ts",
       "title": "a visitor without a key previews bakery on the free path, through a delegation and a tool result"
@@ -4609,6 +4615,12 @@
       "suite": "unit",
       "file": "tests/inference/proxy.test.ts",
       "title": "chat: refusals before any upstream call an empty judge reserve refuses a judge before the provider, with the own-key text"
+    },
+    {
+      "rule": "V09 inherited names refused",
+      "suite": "unit",
+      "file": "tests/inference/proxy.test.ts",
+      "title": "chat: refusals before any upstream call another judge session of the same network meets the network's daily limit"
     },
     {
       "rule": "V09 inherited names refused",

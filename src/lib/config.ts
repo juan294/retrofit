@@ -104,6 +104,8 @@ export interface FreeConfig {
   readonly sessionsPerClientHour: number;
   /** Model calls of one judge session in a UTC day. */
   readonly judgeCallsPerSessionDay: number;
+  /** Model calls of all judge sessions of one network in a UTC day. */
+  readonly judgeCallsPerClientDay: number;
   /** New judge sessions of one network in a UTC day. */
   readonly judgeSessionsPerClientDay: number;
   readonly upstreamTimeoutMs: number;
@@ -368,6 +370,7 @@ export function loadFreeConfig(env: Env, onVercel: boolean): FreeConfig {
     callsPerSession: n("FREE_CALLS_PER_SESSION", 40),
     sessionsPerClientHour: n("FREE_SESSIONS_PER_CLIENT_HOUR", 6),
     judgeCallsPerSessionDay: n("JUDGE_CALLS_PER_SESSION_DAY", 200),
+    judgeCallsPerClientDay: n("JUDGE_CALLS_PER_CLIENT_DAY", 1000),
     judgeSessionsPerClientDay: n("JUDGE_SESSIONS_PER_CLIENT_DAY", 20),
     upstreamTimeoutMs: n("FREE_UPSTREAM_TIMEOUT_MS", 45000),
     alertThresholds: Object.freeze(thresholds),

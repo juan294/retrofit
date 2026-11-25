@@ -10,12 +10,12 @@
   "waves": {
     "A": "required",
     "B": "not-selected",
-    "C": "reassess-after-product-plan",
-    "D": "reassess-after-product-plan",
-    "E": "reassess-after-product-plan",
-    "F": "reassess-after-product-plan",
-    "G": "reassess-after-product-plan",
-    "H": "reassess-after-product-plan"
+    "C": "not-selected-for-v0.3.0",
+    "D": "not-selected-for-v0.3.0",
+    "E": "not-selected-for-v0.3.0",
+    "F": "not-selected-for-v0.3.0",
+    "G": "not-selected-for-v0.3.0",
+    "H": "not-selected-for-v0.3.0"
   },
   "required_before_first_release": [
     "accepted-product-plan-and-stack-decision",
@@ -28,8 +28,7 @@
   ],
   "current_gaps": [
     "v0.3.0: owner approval of /privacy and /terms, and the UI review.",
-    "v0.3.0: production migrations, Auth settings, SUPABASE_ANON_KEY and BILLING_START are not applied yet (docs/release/release-playbook.md, Wave A).",
-    "v0.3.0: Juan decides Waves C to H when the candidate is presented."
+    "v0.3.0: production migrations, Auth settings, SUPABASE_ANON_KEY and BILLING_START are not applied yet (docs/release/release-playbook.md, Wave A)."
   ],
   "invariants": [
     "passing-check-count-greater-than-zero",
