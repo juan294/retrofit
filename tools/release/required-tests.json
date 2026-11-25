@@ -6891,6 +6891,30 @@
       "title": "sign-in confirm page review repairs the confirm form posts the token to /auth/verify with its button disabled until hydration"
     },
     {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "POST /auth/verify (the confirm page's Sign in button) Continue signs in only to the address its page showed; Cancel ends the wait"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "POST /auth/verify (the confirm page's Sign in button) a link for another address leaves this browser's own request in place"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "POST /auth/verify (the confirm page's Sign in button) gives a browser without a visitor cookie one, and renews it at every sign-in"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "POST /auth/verify (the confirm page's Sign in button) two Continue posts at once sign in once"
+    },
+    {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
@@ -7290,12 +7314,6 @@
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/sign-in.test.ts",
-      "title": "POST /api/auth/sign-in keeps links for a browser that signed in to the address before"
-    },
-    {
-      "rule": "accounts sign-in",
-      "suite": "unit",
-      "file": "tests/accounts/sign-in.test.ts",
       "title": "POST /api/auth/sign-in limits one network to 2 links an hour for one address; another network still gets one"
     },
     {
@@ -7303,6 +7321,12 @@
       "suite": "unit",
       "file": "tests/accounts/sign-in.test.ts",
       "title": "POST /api/auth/sign-in marks the asking browser with an HttpOnly, host-locked cookie for one hour"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in keeps one more link for a browser that signed in to the address before"
     },
     {
       "rule": "accounts data",
@@ -10051,6 +10075,18 @@
       "suite": "unit",
       "file": "tests/accounts/delete.test.ts",
       "title": "account deletion signing in works again after a deletion that failed, and for other accounts after one that succeeded"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "account deletion a deletion that fails does not end another one's marker"
+    },
+    {
+      "rule": "accounts deletion",
+      "suite": "unit",
+      "file": "tests/accounts/delete.test.ts",
+      "title": "account deletion a refused sign-in leaves the browser's current session as it is"
     },
     {
       "rule": "accounts data",

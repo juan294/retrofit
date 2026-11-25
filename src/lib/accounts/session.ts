@@ -2,7 +2,7 @@ import type { VerifiedAccount } from "@/lib/auth/gateway";
 import type { Config } from "@/lib/config";
 import { buildCookie, cookieValue, hostCookieName } from "@/lib/security/cookies";
 import { newToken, sha256Hex, TOKEN_PATTERN } from "@/lib/security/tokens";
-import { appendBounded, updateIdList } from "@/lib/store/id-list";
+import { appendBounded, readIdList, updateIdList } from "@/lib/store/id-list";
 import type { Clock, Store } from "@/lib/store/types";
 
 /**
@@ -78,6 +78,8 @@ export function readAccountToken(request: Request, config: CookieConfig): string
  * a deletion sets it before it ends the sessions of the index, so one of the two always sees the other.
  */
 export async function createAccountSession(deps: SessionDeps, account: VerifiedAccount, replace: Account | null = null): Promise<{ token: string }> {
+  // Before anything changes: a refused sign-in leaves the browser's session as it is.
+  if (await isBeingDeleted(deps.store, account.userId)) throw new AccountDeleting("the account is being deleted");
   const token = newToken();
   const hash = sha256Hex(token);
   const now = deps.clock();
@@ -93,7 +95,7 @@ export async function createAccountSession(deps: SessionDeps, account: VerifiedA
   ]);
   const evicted = before.filter((h) => !after.includes(h) && h !== replace?.sessionHash);
   await Promise.all(evicted.map((h) => deps.store.delete(sessionKey(h))));
-  if (await deps.store.get(deletingKey(account.userId))) {
+  if (await isBeingDeleted(deps.store, account.userId)) {
     await endAccountSession(deps.store, { accountId: account.userId, sessionHash: hash });
     throw new AccountDeleting("the account is being deleted");
   }
@@ -145,14 +147,20 @@ export async function endAccountSessions(store: Store, accountId: string, keep: 
   await Promise.all(before.filter((h) => h !== keep).map((h) => store.delete(sessionKey(h))));
 }
 
-/** From here on createAccountSession refuses the account. Call before endAccountSessions. */
-export async function beginAccountDeletion(store: Store, accountId: string): Promise<void> {
-  await store.set(deletingKey(accountId), { version: 1 }, DELETING_TTL_S);
+/** From here on createAccountSession refuses the account. Call before endAccountSessions. Returns this deletion's id. */
+export async function beginAccountDeletion(store: Store, accountId: string): Promise<string> {
+  const id = newToken();
+  await updateIdList(store, deletingKey(accountId), (ids) => [...ids, id], DELETING_TTL_S);
+  return id;
 }
 
-/** The deletion did not finish: the owner may sign in again. */
-export async function abandonAccountDeletion(store: Store, accountId: string): Promise<void> {
-  await store.delete(deletingKey(accountId));
+/** This deletion did not finish: the owner may sign in again, unless another one still runs. */
+export async function abandonAccountDeletion(store: Store, accountId: string, id: string): Promise<void> {
+  await updateIdList(store, deletingKey(accountId), (ids) => ids.filter((x) => x !== id), DELETING_TTL_S);
+}
+
+async function isBeingDeleted(store: Store, accountId: string): Promise<boolean> {
+  return (await readIdList(store, deletingKey(accountId))).length > 0;
 }
 
 /** Ends the account's last session and drops its index: the final step of account deletion, after endAccountSessions kept only this one. */

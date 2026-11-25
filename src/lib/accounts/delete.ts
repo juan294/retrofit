@@ -61,9 +61,12 @@ export async function deleteAccount(deps: Pick<ServerDeps, "config" | "clock" | 
   }
   if (record && cancelled) await storeState(deps, record);
   // A failure below lets the owner sign in again. When even that fails, the marker ends by itself.
-  const abandon = () => abandonAccountDeletion(deps.store, account.accountId).catch((e: unknown) => fail("of its marker", e));
+  let marker: string | null = null;
+  const abandon = async () => {
+    if (marker) await abandonAccountDeletion(deps.store, account.accountId, marker).catch((e: unknown) => fail("of its marker", e));
+  };
   try {
-    await beginAccountDeletion(deps.store, account.accountId);
+    marker = await beginAccountDeletion(deps.store, account.accountId);
     await endAccountSessions(deps.store, account.accountId, account.sessionHash);
     await deps.accounts.deleteAccountData(account.accountId);
   } catch (e) {

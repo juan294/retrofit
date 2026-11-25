@@ -73,7 +73,7 @@ export const CLAIMS_TEXT = {
       case "robots_unavailable":
         return `Retrofit could not read the robots rules of ${t.host}, so it did not read ${t.url}. Check again later, or use the DNS method.`;
       case "redirected":
-        return `${t.url} redirects to another host. Add the tag to the home page of ${t.host} itself, or use the DNS method.`;
+        return `${t.url} redirects to another address. Add the tag to the home page of ${t.host} itself, or use the DNS method.`;
       case "http_status":
         return `Retrofit read ${t.url} and got HTTP status ${detail ?? "an error"}.`;
       case "not_html":

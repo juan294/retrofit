@@ -27,7 +27,7 @@ br: anonymous analysis after billingStart -> allowed while the free count < 5, e
 fail: billing data unreadable -> allow analyses, deny paid writes with a retry text (never charge-blocking a visit)
 ```
 
-- `src/lib/billing/entitlements.ts` (above), called at: analysis start (free limit), publish and refresh, save report, free-AI session start for signed-in Free accounts after `billingStart`, API key creation.
+- `src/lib/billing/entitlements.ts` (above), called at: analysis start (free limit), publish and refresh, save report, API key creation (the free-AI session check was removed by the owner decision of 2026-11-25).
 - Free count: per visitor cookie and per network (`incrementWindow` with a long window); judges unaffected before `billingStart` by construction; after it, the judge code stops mattering because judging has ended.
 - `src/app/api/billing/checkout/route.ts`: signed-in only; creates a Checkout Session (subscription mode, the price for the plan, `client_reference_id` = account id, success and cancel URLs); returns its URL and the page navigates with `location.assign` (no form post to another origin, so `form-action 'self'` stays).
 - `src/app/api/billing/portal/route.ts`: a customer portal session for the account's customer.

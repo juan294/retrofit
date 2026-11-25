@@ -288,6 +288,7 @@ export function scoreRequest(query: string, o: { method?: string; ip?: string; c
 /** The cookie names on PUBLIC_ORIGIN (https): host-locked. Plain http (local development, e2e) has no prefix. */
 export const ACCOUNT_COOKIE = "__Host-retrofit_account";
 export const SIGN_IN_COOKIE = "__Host-retrofit_signin";
+export const PENDING_COOKIE = "__Host-retrofit_confirm";
 
 /** A new session for `account` as a Cookie header value (`__Host-retrofit_account=<id>`). */
 export async function accountCookie(d: Pick<ServerDeps, "store" | "clock">, account: VerifiedAccount = TEST_ACCOUNT): Promise<string> {

@@ -58,23 +58,27 @@ describe("POST /api/auth/sign-in", () => {
     expect(await ask("203.0.113.9")).toBe(200);
   });
 
-  // Strix 2026-11-25. Fails if strangers who use up an address's links lock out its owner on a browser that signed in before, if the reserve has
-  // no limit, or another browser, or the same browser for another address, gets it.
-  it("keeps links for a browser that signed in to the address before", async () => {
+  // Strix 2026-11-25. Fails if strangers who use up an address's links lock out its owner on a browser that signed in before, if the reserve
+  // is more than one link an hour for the address, or another browser, or the same browser for another address, gets it.
+  it("keeps one more link for a browser that signed in to the address before", async () => {
     const clock = fakeClock();
     const d = testDeps({ clock: clock.clock });
-    const VISITOR = `retrofit_visitor=${"a".repeat(32)}`;
-    await rememberBrowser(d, "target@example.test", "a".repeat(32));
-    for (let i = 0; i < 4; i++) await handleSignIn(signIn({ email: "target@example.test" }, { ip: `198.51.100.${i}` }), d);
-    const ask = async (cookie: string, ip: string, email = "target@example.test") => (await handleSignIn(signIn({ email }, { ip, cookie }), d)).status;
-    expect(await ask("", "203.0.113.1")).toBe(429);
-    expect(await ask(`retrofit_visitor=${"b".repeat(32)}`, "203.0.113.1")).toBe(429);
-    expect([await ask(VISITOR, "203.0.113.2"), await ask(VISITOR, "203.0.113.3"), await ask(VISITOR, "203.0.113.4"), await ask(VISITOR, "203.0.113.5")]).toEqual([200, 200, 200, 429]);
-    expect([await ask(VISITOR, "203.0.113.6", "x@example.test"), await ask(VISITOR, "203.0.113.6", "x@example.test"), await ask(VISITOR, "203.0.113.6", "x@example.test")]).toEqual([200, 200, 429]);
+    const [mine, phone] = ["a", "c"].map((c) => c.repeat(32)) as [string, string];
+    for (const token of [mine, phone]) await rememberBrowser(d, "target@example.test", token);
+    const useUp = async () => {
+      for (let i = 0; i < 4; i++) await handleSignIn(signIn({ email: "target@example.test" }, { ip: `198.51.100.${i}` }), d);
+    };
+    const ask = async (token: string | null, ip: string, email = "target@example.test") => (await handleSignIn(signIn({ email }, { ip, cookie: token ? `retrofit_visitor=${token}` : "" }), d)).status;
+    await useUp();
+    expect([await ask(null, "203.0.113.1"), await ask("b".repeat(32), "203.0.113.1")]).toEqual([429, 429]);
+    expect([await ask(mine, "203.0.113.2"), await ask(mine, "203.0.113.3"), await ask(phone, "203.0.113.4")]).toEqual([200, 429, 429]);
+    // Amazon SES was told 3 an hour for an address; its own browser can get one more, and no more.
+    expect(d.fixtureAuth.sent.filter((m) => m.email === "target@example.test")).toHaveLength(4);
+    expect([await ask(mine, "203.0.113.6", "x@example.test"), await ask(mine, "203.0.113.6", "x@example.test"), await ask(mine, "203.0.113.6", "x@example.test")]).toEqual([200, 200, 429]);
     // The browser is forgotten with the visitor cookie's life.
     clock.advance(31 * 86_400_000);
-    for (let i = 0; i < 4; i++) await handleSignIn(signIn({ email: "target@example.test" }, { ip: `198.51.100.${i}` }), d);
-    expect(await ask(VISITOR, "203.0.113.7")).toBe(429);
+    await useUp();
+    expect(await ask(mine, "203.0.113.7")).toBe(429);
     expect(storeDump(d.backing)).not.toContain("target@example.test");
   });
 

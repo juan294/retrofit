@@ -70,7 +70,7 @@ export async function billingStates(page: Page, label: string, check: (texts: Re
 
   const id = await analyzeFixture(page, BILLING_HOST);
   await page.getByRole("button", { name: SAVE_REPORT_TEXT.button }).click();
-  await check({ saveRefused: page.getByTestId("save-report").getByRole("alert"), plans: page.getByTestId("save-report").getByRole("link", { name: PLAN_TEXT.seePlans }), freeAi: page.getByTestId("free-banner") });
+  await check({ saveRefused: page.getByTestId("save-report").getByRole("alert"), plans: page.getByTestId("save-report").getByRole("link", { name: PLAN_TEXT.seePlans }) });
   // A failed analysis whose retry meets the free limit.
   await page.route(`**/api/analyze/${id}`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "failed", step: "failed", scoreReady: false, failure: { code: "crawl_error", message: visitorTexts.crawlError } }) }));
   await mockFreeLimit(page);

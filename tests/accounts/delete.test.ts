@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountData } from "@/lib/accounts/data";
 import { deleteAccount } from "@/lib/accounts/delete";
 import { indexAccountAnalyses } from "@/lib/analysis/owner";
-import { createAccountSession, endAccountSessions, readAccount, readAccountByToken } from "@/lib/accounts/session";
+import { abandonAccountDeletion, beginAccountDeletion, createAccountSession, endAccountSessions, readAccount, readAccountByToken } from "@/lib/accounts/session";
 import { handleAccountDelete } from "@/lib/api/account-delete";
 import type { AuthGateway } from "@/lib/auth/gateway";
 import { createFixtureAuth } from "@/lib/test-fixtures/auth";
@@ -97,6 +97,28 @@ describe("account deletion", () => {
     } };
     await endAccountSessions(racy, s.userId, s.account.sessionHash);
     expect([...s.d.backing.values.keys()].filter((k) => k.startsWith("account-session:"))).toEqual([`account-session:${s.account.sessionHash}`]);
+  });
+
+  // Fails if a sign-in for an account that is being deleted ends another account's session of that browser, or the deleting browser's own.
+  it("a refused sign-in leaves the browser's current session as it is", async () => {
+    const s = await signedIn();
+    const other = await createAccountSession(s.d, { userId: "6f1c2b8e-1d2a-4e55-9c3b-2a1b0c9d8e7f", email: "other@example.test" });
+    await beginAccountDeletion(s.d.store, s.userId);
+    for (const token of [other.token, s.here]) {
+      await expect(createAccountSession(s.d, { userId: s.userId, email: "gone@example.test" }, await readAccountByToken(token, s.d))).rejects.toThrow("being deleted");
+      expect(await readAccountByToken(token, s.d)).not.toBeNull();
+    }
+  });
+
+  // Fails if one of two deletions at once, when it fails, lets sessions be created while the other one runs.
+  it("a deletion that fails does not end another one's marker", async () => {
+    const s = await signedIn();
+    const first = await beginAccountDeletion(s.d.store, s.userId);
+    const second = await beginAccountDeletion(s.d.store, s.userId);
+    await abandonAccountDeletion(s.d.store, s.userId, first);
+    await expect(createAccountSession(s.d, { userId: s.userId, email: "gone@example.test" })).rejects.toThrow("being deleted");
+    await abandonAccountDeletion(s.d.store, s.userId, second);
+    expect((await createAccountSession(s.d, { userId: s.userId, email: "gone@example.test" })).token).toMatch(/^[0-9a-f]{32}$/);
   });
 
   // Fails if a deletion that failed blocks the owner from signing in again, or a deleted account's marker blocks another account.

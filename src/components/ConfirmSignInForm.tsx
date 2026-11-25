@@ -1,18 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { SIGN_IN_TEXT as T } from "@/lib/site/sign-in-texts";
 import { useHydrated } from "./useHydrated";
 
 /** A POST to /auth/verify with one button, disabled until hydration, like every Retrofit form. */
-function VerifyForm({ label, children }: { label: string; children: ReactNode }) {
+function VerifyForm({ label, secondary, children }: { label: string; secondary?: boolean; children: ReactNode }) {
   const hydrated = useHydrated();
   const [busy, setBusy] = useState(false);
   return (
     <form method="post" action="/auth/verify" onSubmit={() => setBusy(true)} className="mt-6 flex flex-col items-start gap-4">
       {children}
-      <button type="submit" disabled={busy || !hydrated} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
+      <button type="submit" disabled={busy || !hydrated} className={secondary ? "underline" : "rounded px-4 py-2 font-medium"} style={secondary ? undefined : { background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
         {busy ? T.confirmBusy : label}
       </button>
     </form>
@@ -32,8 +31,8 @@ export function ConfirmSignInForm({ tokenHash }: { tokenHash: string }) {
   );
 }
 
-/** The address step: the link was verified, and it signs in to `email`. Nothing is signed in until Continue. */
-export function ConfirmAddressForm({ email }: { email: string }) {
+/** The address step: the link was verified, and it signs in to `email`. Nothing is signed in until Continue, which takes only the sign-in shown (`pending`). */
+export function ConfirmAddressForm({ email, pending }: { email: string; pending: string }) {
   return (
     <>
       <p className="mt-4">{T.addressIntro}</p>
@@ -45,12 +44,12 @@ export function ConfirmAddressForm({ email }: { email: string }) {
       </p>
       <VerifyForm label={T.continueButton}>
         <input type="hidden" name="continue" value="yes" />
+        <input type="hidden" name="pending" value={pending} />
       </VerifyForm>
-      <p className="mt-4">
-        <Link href="/" className="underline">
-          {T.cancel}
-        </Link>
-      </p>
+      <VerifyForm label={T.cancel} secondary>
+        <input type="hidden" name="cancel" value="yes" />
+        <input type="hidden" name="pending" value={pending} />
+      </VerifyForm>
     </>
   );
 }

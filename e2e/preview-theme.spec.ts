@@ -178,7 +178,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       address: page.getByTestId("confirm-address"),
       warning: page.getByTestId("other-browser"),
       button: page.getByRole("button", { name: SIGN_IN_TEXT.continueButton }),
-      cancel: page.getByRole("link", { name: SIGN_IN_TEXT.cancel }),
+      cancel: page.getByRole("button", { name: SIGN_IN_TEXT.cancel }),
     });
   });
 

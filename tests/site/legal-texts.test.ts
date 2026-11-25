@@ -9,7 +9,7 @@ import { FREE_ANALYSES, FREE_WINDOW_S } from "@/lib/billing/free-limit";
 import { loadConfig } from "@/lib/config";
 import { SESSION_COOKIE, SESSION_TTL_S } from "@/lib/inference/session";
 import { ACCOUNT_COOKIE, ACCOUNT_SESSION_TTL_S } from "@/lib/accounts/session";
-import { SIGN_IN_COOKIE, SIGN_IN_TTL_S } from "@/lib/api/sign-in";
+import { PENDING_COOKIE, PENDING_TTL_S, SIGN_IN_COOKIE, SIGN_IN_TTL_S } from "@/lib/api/sign-in";
 import { PRIVACY, TERMS, type LegalDocument } from "@/lib/site/legal-texts";
 import { CLAIM_LAPSE_AFTER } from "@/lib/accounts/limits";
 import { BADGE_MAX_AGE_S } from "@/lib/badge/handler";
@@ -31,6 +31,7 @@ describe("privacy notice draft", () => {
     expect(privacy).toContain(`${ACCOUNT_COOKIE}: set when you sign in`);
     expect(privacy).toContain(`${ACCOUNT_SESSION_TTL_S / 86400} days pass without a visit`);
     expect(privacy).toContain(`${SIGN_IN_COOKIE}: set for ${SIGN_IN_TTL_S / 3600} hour`);
+    expect(privacy).toContain(`${PENDING_COOKIE}: set for ${PENDING_TTL_S / 60} minutes`);
   });
 
   // Fails if a retention period in the notice differs from the defaults the code applies.

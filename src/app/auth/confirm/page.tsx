@@ -4,17 +4,17 @@ import Link from "next/link";
 import { ConfirmAddressForm, ConfirmSignInForm } from "@/components/ConfirmSignInForm";
 import { SitePage } from "@/components/SitePage";
 import { confirmPageState } from "@/lib/api/confirm";
-import { pendingAddress, signInCookieName } from "@/lib/api/sign-in";
+import { pendingCookieName, pendingSignIn } from "@/lib/api/sign-in";
 import { getServerDeps } from "@/lib/server/runtime";
 import { SIGN_IN_TEXT as T } from "@/lib/site/sign-in-texts";
 
 export const metadata: Metadata = { title: "Sign in · Retrofit", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
-/** The address that waits for this browser's Continue; null when there is none or the Store cannot be read. */
-async function waitingAddress(): Promise<string | null> {
+/** The sign-in that waits for this browser's Continue; null when there is none or the Store cannot be read. */
+async function waitingSignIn(): Promise<{ email: string; ref: string } | null> {
   const deps = getServerDeps();
   try {
-    return await pendingAddress(deps.store, (await cookies()).get(signInCookieName(deps.config))?.value);
+    return await pendingSignIn(deps.store, (await cookies()).get(pendingCookieName(deps.config))?.value);
   } catch (e) {
     console.error("GET /auth/confirm failed:", e instanceof Error ? e.name : "unknown error");
     return null;
@@ -30,7 +30,7 @@ async function waitingAddress(): Promise<string | null> {
  */
 export default async function ConfirmPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const state = confirmPageState(await searchParams);
-  const address = state.kind === "address" ? await waitingAddress() : null;
+  const waiting = state.kind === "address" ? await waitingSignIn() : null;
   return (
     <SitePage title={T.confirmTitle}>
       {state.kind === "confirm" ? (
@@ -38,8 +38,8 @@ export default async function ConfirmPage({ searchParams }: { searchParams: Prom
           <p className="mt-4">{T.confirmIntro}</p>
           <ConfirmSignInForm tokenHash={state.tokenHash} />
         </>
-      ) : address !== null ? (
-        <ConfirmAddressForm email={address} />
+      ) : waiting ? (
+        <ConfirmAddressForm email={waiting.email} pending={waiting.ref} />
       ) : (
         <>
           <p className="mt-4" role="alert">

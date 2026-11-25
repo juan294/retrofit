@@ -6,9 +6,10 @@ import { createAccountSession, readAccount, readAccountByToken } from "@/lib/acc
 import { getAnalysis } from "@/lib/analysis/record";
 import { handleAnalyze } from "@/lib/api/analyze";
 import { confirmPageState, handleConfirm } from "@/lib/api/confirm";
-import { handleSignIn, isRememberedBrowser, pendingAddress, PENDING_TTL_S } from "@/lib/api/sign-in";
+import { handleSignIn, isRememberedBrowser, pendingSignIn, PENDING_TTL_S } from "@/lib/api/sign-in";
+import { sha256Hex } from "@/lib/security/tokens";
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
-import { ACCOUNT_COOKIE, analyzeRequest, fakeClock, holdAllSlots, postRequest, PUBLIC_ORIGIN, SIGN_IN_COOKIE, storeDump, testDeps, type TestDeps } from "../helpers/server-deps";
+import { ACCOUNT_COOKIE, analyzeRequest, fakeClock, holdAllSlots, PENDING_COOKIE, postRequest, PUBLIC_ORIGIN, SIGN_IN_COOKIE, storeDump, testDeps, type TestDeps } from "../helpers/server-deps";
 
 const VISITOR = `retrofit_visitor=${"a".repeat(32)}`;
 const OTHER_VISITOR = `retrofit_visitor=${"b".repeat(32)}`;
@@ -37,10 +38,12 @@ function confirmPost(link: string, cookie?: string, o: { cross?: boolean } = {})
 }
 const open = (d: TestDeps, link: string, cookie?: string) => handleConfirm(confirmPost(link, cookie), d);
 
-/** The address step's "Continue" post. */
-const proceed = (d: TestDeps, cookie: string, o: { cross?: boolean } = {}) => handleConfirm(confirmPost(`${PUBLIC_ORIGIN}/auth/confirm?continue=yes`, cookie, o), d);
+const pendingToken = (cookie: string) => new RegExp(`${PENDING_COOKIE}=([^;]*)`).exec(cookie)?.[1] ?? "";
+/** The address step's "Continue" (or Cancel) post. `shown`: the waiting sign-in whose address the page showed (default: the cookie's own). */
+const proceed = (d: TestDeps, cookie: string, o: { cross?: boolean; shown?: string; action?: "continue" | "cancel" } = {}) =>
+  handleConfirm(confirmPost(`${PUBLIC_ORIGIN}/auth/confirm?${o.action ?? "continue"}=yes&pending=${sha256Hex(pendingToken(o.shown ?? cookie))}`, cookie, o), d);
 const ADDRESS_STEP = `${PUBLIC_ORIGIN}/auth/confirm?step=address`;
-const pendingCookie = (res: Response) => `${SIGN_IN_COOKIE}=${valueOf(setCookies(res)[SIGN_IN_COOKIE])}`;
+const pendingCookie = (res: Response) => `${PENDING_COOKIE}=${valueOf(setCookies(res)[PENDING_COOKIE])}`;
 
 async function startAnalysis(d: TestDeps, cookie: string): Promise<string> {
   const res = await handleAnalyze(analyzeRequest({ url: "https://bakery.example.com" }, { cookie }), d);
@@ -116,10 +119,10 @@ describe("POST /auth/verify (the confirm page's Sign in button)", () => {
       const step = await open(d, link, `${VISITOR}; ${asked}; ${ACCOUNT_COOKIE}=${old}`);
       expect([step.status, step.headers.get("location")], kind).toEqual([303, ADDRESS_STEP]);
       expect(setCookies(step)[ACCOUNT_COOKIE]).toBeUndefined();
-      expect(setCookies(step)[SIGN_IN_COOKIE]?.split("; ")).toEqual(expect.arrayContaining(["HttpOnly", "SameSite=Lax", "Path=/", "Secure", `Max-Age=${PENDING_TTL_S}`]));
+      expect(setCookies(step)[PENDING_COOKIE]?.split("; ")).toEqual(expect.arrayContaining(["HttpOnly", "SameSite=Lax", "Path=/", "Secure", `Max-Age=${PENDING_TTL_S}`]));
       expect((await readAccountByToken(old, d))?.email).toBe("me@example.test");
-      const token = valueOf(setCookies(step)[SIGN_IN_COOKIE]);
-      expect(await pendingAddress(d.store, token)).toBe("attacker@example.test");
+      const token = valueOf(setCookies(step)[PENDING_COOKIE]);
+      expect(await pendingSignIn(d.store, token)).toEqual({ email: "attacker@example.test", ref: sha256Hex(token) });
       expect(storeDump(d.backing)).not.toContain(token);
       clock.advance(3600_000);
     }
@@ -136,18 +139,71 @@ describe("POST /auth/verify (the confirm page's Sign in button)", () => {
     };
     const pending = await start("p1@example.test");
     expect((await proceed(d, pending, { cross: true })).status).toBe(403);
-    for (const cookie of ["", `${SIGN_IN_COOKIE}=${"0".repeat(32)}`]) {
+    for (const cookie of ["", `${PENDING_COOKIE}=${"0".repeat(32)}`]) {
       const none = await proceed(d, cookie);
       expect(none.headers.get("location")).toBe(`${PUBLIC_ORIGIN}/sign-in?link=expired`);
       expect(setCookies(none)[ACCOUNT_COOKIE]).toBeUndefined();
     }
     const ok = await proceed(d, pending);
     expect(setCookies(ok)[ACCOUNT_COOKIE]).toBeDefined();
-    expect(setCookies(ok)[SIGN_IN_COOKIE]).toMatch(/Max-Age=0/);
+    expect(setCookies(ok)[PENDING_COOKIE]).toMatch(/Max-Age=0/);
     expect((await proceed(d, pending)).headers.get("location")).toBe(`${PUBLIC_ORIGIN}/sign-in?link=expired`);
     const late = await start("p2@example.test");
     clock.advance(PENDING_TTL_S * 1000 + 1);
     expect((await proceed(d, late)).headers.get("location")).toBe(`${PUBLIC_ORIGIN}/sign-in?link=expired`);
+  });
+
+  // Fails if Continue signs in to another address than its page showed: a second link, opened in another tab, replaced the waiting one.
+  it("Continue signs in only to the address its page showed; Cancel ends the wait", async () => {
+    const d = testDeps({ clock: fakeClock().clock });
+    const opened = async (email: string) => pendingCookie(await open(d, (await askForLink(d, email, { visitor: OTHER_VISITOR })).link, VISITOR));
+    const mine = await opened("victim@example.test");
+    const theirs = await opened("attacker@example.test");
+    // The browser now holds the second cookie; the first tab still shows the first address.
+    const wrong = await proceed(d, theirs, { shown: mine });
+    expect(wrong.headers.get("location")).toBe(`${PUBLIC_ORIGIN}/sign-in?link=expired`);
+    expect(setCookies(wrong)[ACCOUNT_COOKIE]).toBeUndefined();
+    const cancelled = await proceed(d, theirs, { action: "cancel" });
+    expect([cancelled.status, cancelled.headers.get("location")]).toEqual([303, `${PUBLIC_ORIGIN}/`]);
+    expect(setCookies(cancelled)[PENDING_COOKIE]).toMatch(/Max-Age=0/);
+    expect(await pendingSignIn(d.store, pendingToken(theirs))).toBeNull();
+    expect(setCookies(await proceed(d, theirs))[ACCOUNT_COOKIE]).toBeUndefined();
+    expect((await proceed(d, mine, { action: "cancel", cross: true })).status).toBe(403);
+    expect(await pendingSignIn(d.store, pendingToken(mine))).not.toBeNull();
+  });
+
+  // Fails if two posts at once each get a session from one verified link.
+  it("two Continue posts at once sign in once", async () => {
+    const d = testDeps({ clock: fakeClock().clock });
+    const pending = pendingCookie(await open(d, (await askForLink(d, "twice@example.test", { visitor: OTHER_VISITOR })).link, VISITOR));
+    const both = await Promise.all([proceed(d, pending), proceed(d, pending)]);
+    expect(both.filter((r) => setCookies(r)[ACCOUNT_COOKIE] !== undefined)).toHaveLength(1);
+  });
+
+  // Fails if a link that somebody else sent uses up this browser's own request: its own link would then attach nothing and forget the page.
+  it("a link for another address leaves this browser's own request in place", async () => {
+    const d = testDeps({ clock: fakeClock().clock });
+    const own = await askForLink(d, "me@example.test", { visitor: VISITOR, returnTo: "/pricing" });
+    const { link } = await askForLink(d, "attacker@example.test", { visitor: OTHER_VISITOR });
+    const step = await open(d, link, `${VISITOR}; ${own.signIn}`);
+    expect(setCookies(step)[SIGN_IN_COOKIE]).toBeUndefined();
+    const res = await open(d, own.link, `${VISITOR}; ${own.signIn}; ${pendingCookie(step)}`);
+    expect(res.headers.get("location")).toBe(`${PUBLIC_ORIGIN}/pricing`);
+    expect(setCookies(res)[ACCOUNT_COOKIE]).toBeDefined();
+  });
+
+  // Fails if a browser that never analyzed a site is not remembered, or the memory ends before its cookie.
+  it("gives a browser without a visitor cookie one, and renews it at every sign-in", async () => {
+    const d = testDeps({ clock: fakeClock().clock });
+    const { link, signIn } = await askForLink(d, "new@example.test");
+    const res = await open(d, link, signIn);
+    const visitor = valueOf(setCookies(res)["retrofit_visitor"]);
+    expect(visitor).toMatch(/^[0-9a-f]{32}$/);
+    expect(await isRememberedBrowser(d, "new@example.test", visitor)).toBe(true);
+    const again = await askForLink(d, "new@example.test", { visitor: `retrofit_visitor=${visitor}` });
+    const renewed = setCookies(await open(d, again.link, `retrofit_visitor=${visitor}; ${again.signIn}`))["retrofit_visitor"];
+    expect(renewed).toContain(`retrofit_visitor=${visitor};`);
+    expect(renewed).toContain("Max-Age=2592000");
   });
 
   // Fails if a browser that signed in is not remembered for the sign-in limits, or one that only opened a link is.
@@ -253,12 +309,14 @@ describe("sign-in confirm page review repairs", () => {
 
   // Fails if the address step hides the address or the warning, renders the address as HTML, or its form is not a POST without a token.
   it("the address step names the address, warns, and posts only Continue", () => {
-    const html = renderToStaticMarkup(createElement(ConfirmAddressForm, { email: "<b>x</b>@example.test" }));
+    const html = renderToStaticMarkup(createElement(ConfirmAddressForm, { email: "<b>x</b>@example.test", pending: "f".repeat(64) }));
     expect(html).toContain("&lt;b&gt;x&lt;/b&gt;@example.test");
     expect(html).toContain(SIGN_IN_TEXT.otherBrowser.replaceAll("'", "&#x27;"));
-    expect(/<form[^>]*>/.exec(html)?.[0]).toMatch(/method="post"/);
-    expect(/<form[^>]*>/.exec(html)?.[0]).toMatch(/action="\/auth\/verify"/);
-    expect(html).toMatch(/<input[^>]*name="continue"[^>]*value="yes"/);
+    const forms = [...html.matchAll(/<form[^>]*>/g)].map((m) => m[0]);
+    expect(forms).toHaveLength(2);
+    for (const form of forms) expect(form).toMatch(/(?=.*method="post")(?=.*action="\/auth\/verify")/);
+    for (const action of ["continue", "cancel"]) expect(html).toMatch(new RegExp(`<input[^>]*name="${action}"[^>]*value="yes"`));
+    expect([...html.matchAll(/<input[^>]*name="pending"[^>]*value="f{64}"/g)]).toHaveLength(2);
     expect(html).not.toContain("token_hash");
     expect(/<button[^>]*type="submit"[^>]*>/.exec(html)?.[0]).toMatch(/disabled=""/);
   });
