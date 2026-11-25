@@ -22,7 +22,7 @@ export type Feature =
   | "api_high_volume";
 
 /** The features a route refuses without a plan (src/lib/api/entitled.ts). */
-export type GatedFeature = Extract<Feature, "publish" | "saved_reports" | "free_ai_preview" | "api_keys">;
+export type GatedFeature = Extract<Feature, "publish" | "saved_reports" | "api_keys">;
 
 export interface Plan {
   readonly id: PlanId;
@@ -47,17 +47,17 @@ export const FEATURE_LABELS: Readonly<Record<Feature, string>> = {
   publish: "Publish the agent on Retrofit for a site you have claimed",
   badge: "Embed the agent-ready badge on your site",
   saved_reports: "Keep reports after the analysis expires",
-  free_ai_preview: "Try the preview agent on Retrofit's AI while you are signed in, without a key",
+  free_ai_preview: "Try the preview agent on Retrofit's AI, within its free limits",
   api_keys: "API keys for the score API",
   api_high_volume: "Higher score API limits for checking many sites",
 };
 
-const FREE: readonly Feature[] = ["analyze", "preview_own_key", "download_bundle"];
-const PRO: readonly Feature[] = [...FREE, "publish", "badge", "saved_reports", "free_ai_preview", "api_keys"];
+const FREE: readonly Feature[] = ["analyze", "preview_own_key", "free_ai_preview", "download_bundle"];
+const PRO: readonly Feature[] = [...FREE, "publish", "badge", "saved_reports", "api_keys"];
 const AGENCY: readonly Feature[] = [...PRO, "api_high_volume"];
 
 export const PLANS: readonly Plan[] = [
-  { id: "free", name: "Free", summary: "Check your site and try its agent with your own AI key.", features: FREE, limits: { scoresPerHour: null, sitesPerDay: 50 } },
+  { id: "free", name: "Free", summary: "Check your site and try its agent.", features: FREE, limits: { scoresPerHour: null, sitesPerDay: 50 } },
   { id: "pro", name: "Pro", summary: "Publish the agent for a site you own, with the badge and saved reports.", features: PRO, limits: { scoresPerHour: 60, sitesPerDay: 100 } },
   { id: "agency", name: "Agency", summary: "For agencies that check many client and prospect sites.", features: AGENCY, limits: { scoresPerHour: 300, sitesPerDay: 300 } },
 ];

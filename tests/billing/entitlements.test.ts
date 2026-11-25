@@ -8,12 +8,12 @@ import { testDeps } from "../helpers/server-deps";
 
 const FEATURES = Object.keys(FEATURE_LABELS) as Feature[];
 /** Every feature a route refuses without a plan. */
-const GATED = ["publish", "saved_reports", "free_ai_preview", "api_keys"] as const satisfies readonly GatedFeature[];
+const GATED = ["publish", "saved_reports", "api_keys"] as const satisfies readonly GatedFeature[];
 /** Written out, so a change of plans.ts that moves a feature between plans fails here. */
 const EXPECTED: Record<PlanId, readonly Feature[]> = {
-  free: ["analyze", "preview_own_key", "download_bundle"],
-  pro: ["analyze", "preview_own_key", "download_bundle", "publish", "badge", "saved_reports", "free_ai_preview", "api_keys"],
-  agency: ["analyze", "preview_own_key", "download_bundle", "publish", "badge", "saved_reports", "free_ai_preview", "api_keys", "api_high_volume"],
+  free: ["analyze", "preview_own_key", "free_ai_preview", "download_bundle"],
+  pro: ["analyze", "preview_own_key", "free_ai_preview", "download_bundle", "publish", "badge", "saved_reports", "api_keys"],
+  agency: ["analyze", "preview_own_key", "free_ai_preview", "download_bundle", "publish", "badge", "saved_reports", "api_keys", "api_high_volume"],
 };
 
 afterEach(() => vi.restoreAllMocks());

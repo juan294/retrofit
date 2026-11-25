@@ -193,13 +193,13 @@ describe("payments, the free limit and API keys in the privacy notice and the te
     expect(privacy).toContain("Retrofit keeps only a hash of the deleted account's Stripe customer id and the time, so that a payment that arrives late is cancelled.");
   });
 
-  // P5-R11. Fails if a text says that Retrofit's AI needs a plan for everybody (visitors without an account keep it), or that it needs none.
+  // P5-R11, owner decision 2026-11-25. Fails if a text says that Retrofit's AI in the preview needs a plan.
   it("is true about Retrofit's AI for visitors without an account, Free accounts and plans", () => {
-    expect(terms).toContain("While you are signed in, Retrofit's AI in the preview needs a plan. Without an account it works within its free limits. Your own AI key always works.");
+    expect(terms).toContain("Retrofit's AI in the preview works within its free limits, with or without an account. Your own AI key always works.");
     expect(terms).not.toMatch(/Retrofit's AI and API keys need a plan/);
-    expect(FEATURE_LABELS.free_ai_preview).toContain("while you are signed in");
-    expect(PLAN_TEXT.required.free_ai_preview).toMatch(/^While you are signed in/);
-    expect(PRICING_TEXT.aiNote).toContain("Without an account");
+    expect(FEATURE_LABELS.free_ai_preview).toContain("within its free limits");
+    expect(Object.keys(PLAN_TEXT.required)).not.toContain("free_ai_preview");
+    expect(PRICING_TEXT.aiNote).toContain("with or without an account");
   });
 
   // P5-R13. Fails if the notice hides that an IPv6 address counts as its network part.

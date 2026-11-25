@@ -21,14 +21,15 @@ test.describe("plans after BILLING_START", () => {
   test.beforeEach(async ({ request }) => startBilling(request));
   test.afterEach(async ({ request }) => setClockOffset(request, 0));
 
-  // Fails if a Free account publishes, saves or uses the free AI, a cancelled checkout says nothing or charges, an upgrade does not
+  // Fails if a Free account publishes or saves, or loses the free AI, a cancelled checkout says nothing or charges, an upgrade does not
   // open publishing at once (no webhook reaches the test server), or the plan outlives the account.
   test("a Free account upgrades to Pro and can publish; a cancelled checkout says so; deleting the account ends it", async ({ page, browser }) => {
     test.setTimeout(120_000);
     await signIn(page, newEmail("billing"));
     await expect(page.getByTestId("plan-name")).toHaveText("Free");
     const id = await analyzeFixture(page, BILLING_HOST);
-    await expect(page.getByTestId("free-banner")).toContainText(PLAN_TEXT.required.free_ai_preview);
+    await expect(page.getByText("Using Retrofit's free AI")).toBeVisible();
+    await expect(page.getByTestId("free-banner")).toHaveCount(0);
     await page.getByRole("button", { name: SAVE_REPORT_TEXT.button }).click();
     await expect(page.getByTestId("save-report").getByRole("alert")).toContainText(PLAN_TEXT.required.saved_reports);
     await expect(page.getByTestId("save-report").getByRole("link", { name: PLAN_TEXT.seePlans })).toHaveAttribute("href", "/pricing");

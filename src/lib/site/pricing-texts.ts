@@ -18,7 +18,7 @@ export const PRICING_TEXT = {
   pricesNotSet: "Prices are not set yet.",
   /** Beside a plan whose price could not be read: no amount and no button. */
   priceUnavailable: "The price could not be loaded right now. Try again in a few minutes.",
-  aiNote: "Without an account, the preview uses Retrofit's AI within its free limits. Your own AI key always works.",
+  aiNote: "The preview uses Retrofit's AI within its free limits, with or without an account. Your own AI key always works.",
   notifyHeading: "Hear when paid plans start",
 } as const;
 
