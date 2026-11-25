@@ -1,6 +1,6 @@
 import { requestAnalysis, type AnalysisRequestResult, type RequestOptions } from "./request";
 
-/** What the page shows: `busy` disables its start buttons; `waiting` is the text while Retrofit waits. */
+/** What the page shows: while `busy`, its start buttons do nothing (aria-disabled); `waiting` is the text while Retrofit waits. */
 export interface StartState {
   readonly busy: boolean;
   readonly waiting: string | null;

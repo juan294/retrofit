@@ -6,12 +6,19 @@ import { localizeRetry } from "./analysis/retry-time";
 import type { RequestFailure } from "./analysis/request";
 import { SignInForm } from "./SignInForm";
 import { createStartController, type StartController, type StartState } from "./analysis/start-controller";
+import { useHydrated } from "./useHydrated";
+import { buttonState } from "./useOneAtATime";
 
+/**
+ * The home page's address form. Before hydration the button is disabled (so is implicit submission with
+ * Enter), and the form is a POST to the API, so an early click never reloads the page with the address in its URL.
+ */
 export function UrlForm() {
   const router = useRouter();
   const [error, setError] = useState<Pick<RequestFailure, "code" | "message"> | null>(null);
   const [{ busy, waiting }, setState] = useState<StartState>({ busy: false, waiting: null });
   const starts = useRef<StartController | null>(null);
+  const hydrated = useHydrated();
 
   // One start at a time; leaving the page aborts it, so a late answer never navigates.
   useEffect(() => {
@@ -25,6 +32,8 @@ export function UrlForm() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Also after a success: the page is leaving.
+    if (busy) return;
     setError(null);
     const url = String(new FormData(event.currentTarget).get("url") ?? "").trim();
     if (!url) {
@@ -36,7 +45,7 @@ export function UrlForm() {
 
   return (
     <>
-      <form onSubmit={submit} className="mt-8 flex flex-col gap-2" noValidate>
+      <form method="post" action="/api/analyze" onSubmit={submit} className="mt-8 flex flex-col gap-2" noValidate>
         <label htmlFor="site-url" className="font-medium">
           Your website address
         </label>
@@ -54,7 +63,7 @@ export function UrlForm() {
           />
           <button
             type="submit"
-            disabled={busy}
+            {...buttonState(hydrated, busy)}
             className="rounded px-4 py-2 font-medium"
             style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}
           >
