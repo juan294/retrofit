@@ -61,7 +61,7 @@ export async function billingStates(page: Page, label: string, check: (texts: Re
   await page.goto("/pricing?checkout=cancelled");
   await check({ cancelled: page.getByText(BILLING_TEXT.cancelled), price: page.getByTestId("price-pro"), intro: page.getByText(PRICING_TEXT.intro), aiNote: page.getByText(PRICING_TEXT.aiNote), upgrade: page.getByRole("button", { name: BILLING_TEXT.upgrade("Pro") }) });
   await page.getByRole("button", { name: BILLING_TEXT.upgrade("Pro") }).click();
-  await check({ signedOut: page.getByTestId("billing-message"), link: page.getByTestId("billing-message").getByRole("link", { name: PLAN_TEXT.signIn }) });
+  await check({ signedOut: page.getByTestId("billing-message").filter({ hasText: /\S/ }), link: page.getByTestId("billing-message").filter({ hasText: /\S/ }).getByRole("link", { name: PLAN_TEXT.signIn }) });
 
   await signIn(page, newEmail(`billing-${label}`));
   await check({ heading: page.getByRole("heading", { level: 2, name: BILLING_TEXT.heading }), plan: page.getByTestId("plan-name"), plans: page.getByTestId("billing").getByRole("link", { name: PLAN_TEXT.seePlans }), keysIntro: page.getByText(API_KEY_TEXT.intro), noKeys: page.getByText(API_KEY_TEXT.none) });
@@ -93,7 +93,7 @@ export async function billingStates(page: Page, label: string, check: (texts: Re
   await check({ detail: page.getByTestId("plan-detail"), manage: page.getByRole("button", { name: BILLING_TEXT.manage }), created: page.getByTestId("api-keys-message"), key: page.getByTestId("api-key"), item: page.getByTestId("api-key-item").locator("span"), revoke: page.getByRole("button", { name: API_KEY_TEXT.revoke }) });
   await page.route("**/api/billing/portal", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable", message: BILLING_TEXT.unavailable }) }));
   await page.getByRole("button", { name: BILLING_TEXT.manage }).click();
-  await check({ outage: page.getByTestId("billing-message") });
+  await check({ outage: page.getByTestId("billing-message").filter({ hasText: /\S/ }) });
   await page.goto("/account?delete=subscription");
   await check({ kept: page.getByText(ACCOUNT_TEXT.deleteSubscriptionKept), deleteIntro: page.getByText(ACCOUNT_TEXT.deleteIntro) });
   await page.goto("/account?delete=cancelled");

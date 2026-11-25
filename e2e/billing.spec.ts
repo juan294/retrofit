@@ -59,7 +59,7 @@ test.describe("plans after BILLING_START", () => {
     // A second plan goes through the portal, never through a second checkout.
     await page.goto("/pricing");
     await page.getByRole("button", { name: BILLING_TEXT.upgrade("Agency") }).click();
-    await expect(page.getByTestId("billing-message")).toContainText(BILLING_TEXT.subscribed);
+    await expect(page.getByTestId("billing-message").filter({ hasText: /\S/ })).toContainText(BILLING_TEXT.subscribed);
     await page.getByRole("link", { name: BILLING_TEXT.openAccount }).click();
     await page.getByRole("button", { name: BILLING_TEXT.manage }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Fixture billing portal" })).toBeVisible();
@@ -104,8 +104,8 @@ test.describe("plans after BILLING_START", () => {
   test("a signed-out visitor is sent to sign in; an unfinished purchase shows the activating text", async ({ page }) => {
     await page.goto("/pricing");
     await page.getByRole("button", { name: BILLING_TEXT.upgrade("Pro") }).click();
-    await expect(page.getByTestId("billing-message")).toContainText(BILLING_TEXT.signedOut);
-    await expect(page.getByTestId("billing-message").getByRole("link", { name: PLAN_TEXT.signIn })).toHaveAttribute("href", "/sign-in?returnTo=%2Fpricing");
+    await expect(page.getByTestId("billing-message").filter({ hasText: /\S/ })).toContainText(BILLING_TEXT.signedOut);
+    await expect(page.getByTestId("billing-message").filter({ hasText: /\S/ }).getByRole("link", { name: PLAN_TEXT.signIn })).toHaveAttribute("href", "/sign-in?returnTo=%2Fpricing");
     await signIn(page, newEmail("activating"), "/pricing");
     await openCheckout(page, "Agency");
     await page.goto("/account?checkout=success");
