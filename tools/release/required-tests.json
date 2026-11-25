@@ -1026,6 +1026,12 @@
       "rule": "client limits",
       "suite": "unit",
       "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge judge cookies of a replaced code do not hide the judge's own"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
       "title": "POST /api/inference/session/judge reads at most three sessions for one request"
     },
     {

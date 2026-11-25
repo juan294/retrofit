@@ -167,6 +167,18 @@ describe("POST /api/inference/session/judge", () => {
     expect(await (await handleSession(sessionReq({ cookie }), down)).json()).toMatchObject({ message: sessionTexts.judgeUnavailable });
   });
 
+  // Reviewer. Fails if three judge cookies of a replaced code, planted before the judge's own, use up the reads.
+  it("judge cookies of a replaced code do not hide the judge's own", async () => {
+    const { d, clock, claimsOf } = setup();
+    const ended = [];
+    for (let n = 0; n < 3; n++) ended.push(cookieFrom(await handleJudgeUpgrade(judgeReq({ code: CODE }), d)));
+    clock.advance(1000);
+    const code = "another-code-0123456789";
+    const now = { ...d, config: { ...d.config, free: { ...d.config.free, judgeCode: code } } };
+    const own = await handleJudgeUpgrade(judgeReq({ code }), now);
+    expect((await readSession(sessionReq({ cookie: [...ended, cookieFrom(own)].join("; ") }), now))?.claims).toMatchObject({ sid: claimsOf(own)!.sid, pool: "judge" });
+  });
+
   // Fails if a request with many session cookies makes as many Store reads, or copies of one cookie use up the reads.
   it("reads at most three sessions for one request", async () => {
     const { d } = setup();

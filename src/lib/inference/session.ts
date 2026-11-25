@@ -75,8 +75,9 @@ const currentJudgeTag = ({ free, sessionSecret }: ServerDeps["config"]) => (free
 const MAX_SESSION_READS = 3;
 
 /**
- * The claims of the valid, unexpired session cookies, one for each sid, judge sessions first: a cookie that another
- * subdomain planted has the same name and can come before the judge's own.
+ * The claims of the valid, unexpired session cookies, one for each sid, judge sessions first and then the newest: a cookie
+ * that another subdomain planted has the same name and can come before the judge's own, and a session of a replaced code
+ * cannot be renewed, so it is older.
  */
 function signedSessions(request: Request, deps: Pick<ServerDeps, "config" | "clock">): SessionClaims[] {
   const bySid = new Map<string, SessionClaims>();
@@ -84,8 +85,7 @@ function signedSessions(request: Request, deps: Pick<ServerDeps, "config" | "clo
     const claims = verifySession(token, deps.config.sessionSecret, deps.clock());
     if (claims && !bySid.has(claims.sid)) bySid.set(claims.sid, claims);
   }
-  const all = [...bySid.values()];
-  return [...all.filter((c) => c.pool === "judge"), ...all.filter((c) => c.pool !== "judge")];
+  return [...bySid.values()].sort((a, b) => Number(b.pool === "judge") - Number(a.pool === "judge") || b.iat - a.iat);
 }
 
 /**
