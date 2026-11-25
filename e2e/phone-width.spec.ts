@@ -14,7 +14,7 @@ test.use({ viewport: { width: 320, height: 640 } });
 const fits = async (page: import("@playwright/test").Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
 
 // Pages with an agent panel wait for the free AI, so late content (key panel, preview) is measured too.
-for (const [path, hasAgent] of [["/", true], ["/conformance", true], ["/bot", false], ["/pricing", false], ["/privacy", false], ["/terms", false], ["/unsubscribe?t=0123456789abcdef0123456789abcdef", false], ["/unsubscribe?t=not-a-token", false], ["/sign-in", false], ["/sign-in?link=expired", false], ["/sign-in?link=unavailable", false], ["/sign-in?account=deleted", false]] as const) {
+for (const [path, hasAgent] of [["/", true], ["/conformance", true], ["/bot", false], ["/pricing", false], ["/privacy", false], ["/terms", false], ["/unsubscribe?t=0123456789abcdef0123456789abcdef", false], ["/unsubscribe?t=not-a-token", false], ["/sign-in", false], ["/sign-in?link=expired", false], ["/sign-in?link=unavailable", false], ["/sign-in?link=busy", false], ["/sign-in?account=deleted", false]] as const) {
   test(`${path} fits a 320 px phone screen without sideways scrolling`, async ({ page }) => {
     await page.goto(path);
     if (hasAgent) await expect(page.getByText("Using Retrofit's free AI")).toBeVisible();

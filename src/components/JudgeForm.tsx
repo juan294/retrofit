@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { JUDGE_UNAVAILABLE, turnOnJudge, type JudgeAnswer } from "./judge";
+import { StatusMessage } from "./StatusMessage";
 import { useHydrated } from "./useHydrated";
 
 async function post(path: string, body: unknown): Promise<JudgeAnswer> {
@@ -53,7 +54,7 @@ export function JudgeForm() {
           autoComplete="off"
           className="min-w-0 flex-1 rounded border px-3 py-2"
           style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-          aria-describedby={status ? "judge-code-status" : undefined}
+          aria-describedby="judge-code-status"
         />
         <button
           type="submit"
@@ -64,11 +65,7 @@ export function JudgeForm() {
           {busy ? "Checking…" : "Turn on judge access"}
         </button>
       </div>
-      {status ? (
-        <p id="judge-code-status" role={status.ok ? "status" : "alert"} style={status.ok ? undefined : { color: "var(--color-danger)" }}>
-          {status.text}
-        </p>
-      ) : null}
+      <StatusMessage status={status} id="judge-code-status" />
     </form>
   );
 }

@@ -34,6 +34,8 @@ export const SIGN_IN_TEXT = {
   expired: "Sign-in links work once and for one hour. Enter your email address to get a new one.",
   /** /sign-in?link=unavailable: Supabase could not check the link (it may be used up), so the visitor asks for a new one. */
   linkUnavailable: "Retrofit could not check your sign-in link. Ask for a new link below in a few minutes.",
+  /** /sign-in?link=busy: too many links were opened from this network; the link was not used. */
+  linkBusy: "Too many sign-in links were opened from your network. Your link was not used. Wait until the next hour starts, then open it again from your email, or ask for a new one.",
   /** /sign-in?account=deleted, after account deletion. */
   deleted: "Your account is deleted. Retrofit deleted your account and its data.",
   /** /auth/confirm: the page the emailed link opens. Nothing happens until the visitor chooses Sign in. */

@@ -52,6 +52,7 @@ export function AgentPanel({ basePath, label, title, network }: AgentPanelProps)
             onConnect={onConnect}
             onForget={onForget}
             freePathActive={!ownKey && free.status === "ready"}
+            judgeAccess={free.status === "ready" && free.pool === "judge"}
             freePathStarting={!ownKey && !hasStoredKey && free.status === "starting"}
           />
         </div>

@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Sign in · Retrofit", robots: { inde
 const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
 
 /**
- * /sign-in[?returnTo=<path>][&link=expired|unavailable][&account=deleted]: the email form. The
+ * /sign-in[?returnTo=<path>][&link=expired|unavailable|busy][&account=deleted]: the email form. The
  * confirm route sends expired, used and malformed links here with `link=expired` ("This link has
  * expired" and the send-again form, prefilled with nothing).
  */
@@ -27,6 +27,11 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
       {link === "unavailable" ? (
         <p className="mt-4" role="alert" style={{ color: "var(--color-danger)" }}>
           {T.linkUnavailable}
+        </p>
+      ) : null}
+      {link === "busy" ? (
+        <p className="mt-4" role="alert" style={{ color: "var(--color-danger)" }}>
+          {T.linkBusy}
         </p>
       ) : null}
       <p className="mt-4">{expired ? T.expired : T.intro}</p>

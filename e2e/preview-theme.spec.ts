@@ -110,6 +110,7 @@ const TEXT_PAGES: Record<string, (page: Page) => Record<string, Locator>> = {
   }),
   "/sign-in?link=expired": (page) => ({ text: page.getByText(SIGN_IN_TEXT.expired) }),
   "/sign-in?link=unavailable": (page) => ({ alert: page.getByText(SIGN_IN_TEXT.linkUnavailable) }),
+  "/sign-in?link=busy": (page) => ({ alert: page.getByText(SIGN_IN_TEXT.linkBusy) }),
   "/sign-in?account=deleted": (page) => ({ status: page.getByText(SIGN_IN_TEXT.deleted) }),
 };
 
