@@ -6882,7 +6882,7 @@
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "sign-in confirm page review repairs the address step names the address, warns, and posts only Continue"
+      "title": "sign-in confirm page review repairs the address step names the address, warns, and posts only Continue or Cancel"
     },
     {
       "rule": "accounts sign-in",
@@ -6906,7 +6906,7 @@
       "rule": "accounts sign-in",
       "suite": "unit",
       "file": "tests/accounts/confirm.test.ts",
-      "title": "POST /auth/verify (the confirm page's Sign in button) gives a browser without a visitor cookie one, and renews it at every sign-in"
+      "title": "POST /auth/verify (the confirm page's Sign in button) gives a browser without a visitor cookie one, and leaves a present one as it is"
     },
     {
       "rule": "accounts sign-in",

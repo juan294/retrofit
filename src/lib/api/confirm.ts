@@ -44,7 +44,7 @@ const redirect = (deps: Pick<ServerDeps, "config">, path: string, cookies: reado
  *    `pending`: the waiting sign-in whose address was shown, so no other one is taken.
  * 3. Ends the browser's current account session, if any, then creates the account profile when absent
  *    and a new Retrofit session (the account cookie), and remembers the browser (its visitor cookie,
- *    created when absent and renewed) for the sign-in limits.
+ *    created when absent) for the sign-in limits.
  * 4. When this browser asked for the link: attaches the visitor's analyses to the account and returns to
  *    the page sign-in started from.
  *
@@ -91,7 +91,7 @@ export async function handleConfirm(request: Request, deps: Pick<ServerDeps, "co
     for (const result of await Promise.allSettled(steps)) {
       if (result.status === "rejected") console.error("Finishing a sign-in failed:", result.reason instanceof Error ? result.reason.name : "unknown error");
     }
-    return redirect(deps, intent?.next ?? DEFAULT_RETURN, [accountSetCookie(token, config, secure), visitorSetCookie(browser, secure), intent ? clearSignInCookie(config, secure) : clearPending]);
+    return redirect(deps, intent?.next ?? DEFAULT_RETURN, [accountSetCookie(token, config, secure), ...(visitorToken ? [] : [visitorSetCookie(browser, secure)]), intent ? clearSignInCookie(config, secure) : clearPending]);
   } catch (e) {
     console.error("POST /auth/verify failed:", e instanceof AuthUnavailable ? `${e.name} (${e.code})` : e instanceof Error ? e.name : "unknown error");
     return redirect(deps, "/sign-in?link=unavailable");

@@ -192,8 +192,8 @@ describe("POST /auth/verify (the confirm page's Sign in button)", () => {
     expect(setCookies(res)[ACCOUNT_COOKIE]).toBeDefined();
   });
 
-  // Fails if a browser that never analyzed a site is not remembered, or the memory ends before its cookie.
-  it("gives a browser without a visitor cookie one, and renews it at every sign-in", async () => {
+  // Fails if a browser that never analyzed a site is not remembered, or a present cookie (which another subdomain may have set) is prolonged.
+  it("gives a browser without a visitor cookie one, and leaves a present one as it is", async () => {
     const d = testDeps({ clock: fakeClock().clock });
     const { link, signIn } = await askForLink(d, "new@example.test");
     const res = await open(d, link, signIn);
@@ -201,9 +201,9 @@ describe("POST /auth/verify (the confirm page's Sign in button)", () => {
     expect(visitor).toMatch(/^[0-9a-f]{32}$/);
     expect(await isRememberedBrowser(d, "new@example.test", visitor)).toBe(true);
     const again = await askForLink(d, "new@example.test", { visitor: `retrofit_visitor=${visitor}` });
-    const renewed = setCookies(await open(d, again.link, `retrofit_visitor=${visitor}; ${again.signIn}`))["retrofit_visitor"];
-    expect(renewed).toContain(`retrofit_visitor=${visitor};`);
-    expect(renewed).toContain("Max-Age=2592000");
+    const cookies = setCookies(await open(d, again.link, `retrofit_visitor=${visitor}; ${again.signIn}`));
+    expect(cookies[ACCOUNT_COOKIE]).toBeDefined();
+    expect(cookies["retrofit_visitor"]).toBeUndefined();
   });
 
   // Fails if a browser that signed in is not remembered for the sign-in limits, or one that only opened a link is.
@@ -308,7 +308,7 @@ describe("sign-in confirm page review repairs", () => {
   });
 
   // Fails if the address step hides the address or the warning, renders the address as HTML, or its form is not a POST without a token.
-  it("the address step names the address, warns, and posts only Continue", () => {
+  it("the address step names the address, warns, and posts only Continue or Cancel", () => {
     const html = renderToStaticMarkup(createElement(ConfirmAddressForm, { email: "<b>x</b>@example.test", pending: "f".repeat(64) }));
     expect(html).toContain("&lt;b&gt;x&lt;/b&gt;@example.test");
     expect(html).toContain(SIGN_IN_TEXT.otherBrowser.replaceAll("'", "&#x27;"));
