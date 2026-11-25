@@ -46,7 +46,7 @@ export interface Config {
    * Required on Vercel, and never earlier than that default there.
    */
   readonly billingStart: number;
-  /** Stripe (test mode only). Required on Vercel; null off Vercel without it (checkout and the webhook answer unavailable). */
+  /** Stripe (test mode only). Null without it (checkout and the webhook answer unavailable). */
   readonly billing: BillingConfig | null;
   /** Bearer secret of every Vercel Cron route (CRON_SECRET). Required on Vercel; null off Vercel without it (the crons refuse). */
   readonly cronSecret: string | null;
@@ -213,7 +213,7 @@ export function loadConfig(env: Env): Config {
   const billingStart = parseInstant(env, "BILLING_START", EARLIEST_BILLING_START);
   // Judges have free access until then: no Vercel setting can start billing earlier.
   if (onVercel && billingStart < Date.parse(EARLIEST_BILLING_START)) throw new ConfigError("BILLING_START", `must not be before ${EARLIEST_BILLING_START} on Vercel`);
-  const billing = loadBillingConfig(env, onVercel);
+  const billing = loadBillingConfig(env);
   const accountSitesPerDay = Object.freeze(Object.fromEntries(PLANS.map(({ id, limits }) => [id, parsePositive(env, `ACCOUNT_SITES_PER_DAY_${id.toUpperCase()}`, limits.sitesPerDay)])) as Record<PlanId, number>);
 
   return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, billing, accountSitesPerDay, cronSecret, free, supabase });
@@ -226,21 +226,20 @@ export function loadConfig(env: Env): Config {
 const EARLIEST_BILLING_START = "2027-01-20T00:00:00Z";
 
 /**
- * STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET: required on Vercel; off Vercel both or neither.
+ * STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET: both or neither. Without them nothing can be bought;
+ * getBillingGateway raises an alert when that is still so on Vercel from BILLING_START on.
  * STRIPE_PRICE_PRO and STRIPE_PRICE_AGENCY: optional, and only with the secret key; a comma-separated
  * list, the first price for sale and the others kept for their subscribers. Test mode only:
  * a live key is refused everywhere (the live switch is a separate authorized release). No message
  * contains any part of a value.
  */
-function loadBillingConfig(env: Env, onVercel: boolean): BillingConfig | null {
+function loadBillingConfig(env: Env): BillingConfig | null {
   const value = (name: string) => env[name]?.trim() || null;
   const secretKey = value("STRIPE_SECRET_KEY");
   const webhookSecret = value("STRIPE_WEBHOOK_SECRET");
   const list = (name: string) => value(name)?.split(",").map((id) => id.trim()) ?? null;
   const pro = list("STRIPE_PRICE_PRO");
   const agency = list("STRIPE_PRICE_AGENCY");
-  if (onVercel && !secretKey) throw new ConfigError("STRIPE_SECRET_KEY", "is required on Vercel");
-  if (onVercel && !webhookSecret) throw new ConfigError("STRIPE_WEBHOOK_SECRET", "is required on Vercel");
   if (!secretKey && (webhookSecret || pro || agency)) throw new ConfigError("STRIPE_SECRET_KEY", "is required with any other Stripe variable");
   if (!secretKey) return null;
   if (!webhookSecret) throw new ConfigError("STRIPE_WEBHOOK_SECRET", "is required when STRIPE_SECRET_KEY is set");

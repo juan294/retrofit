@@ -9516,13 +9516,19 @@
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/config-billing.test.ts",
-      "title": "billing configuration on Vercel refuses a missing or blank STRIPE_SECRET_KEY"
+      "title": "billing configuration on Vercel accepts no Stripe variables (undefined): nothing can be bought"
     },
     {
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/config-billing.test.ts",
-      "title": "billing configuration on Vercel refuses a missing or blank STRIPE_WEBHOOK_SECRET"
+      "title": "billing configuration on Vercel accepts no Stripe variables (\" \"): nothing can be bought"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/config-billing.test.ts",
+      "title": "billing configuration on Vercel refuses one Stripe variable without the other, and prices without the key"
     },
     {
       "rule": "billing start and entitlements",
@@ -10945,6 +10951,12 @@
       "suite": "unit",
       "file": "tests/billing/runtime.test.ts",
       "title": "the billing gateway of a deployment is the Stripe adapter with a key"
+    },
+    {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/runtime.test.ts",
+      "title": "the billing gateway of a deployment without Stripe on Vercel raises an alert from the billing start on, and only then"
     },
     {
       "rule": "billing",

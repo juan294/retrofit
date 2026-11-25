@@ -152,11 +152,19 @@ export function getFixtureAuth(config: Config = getConfig()): FixtureAuth | null
 
 /**
  * The process-wide BillingGateway: the fixtures gateway in fixtures mode (it never contacts Stripe),
- * Stripe when STRIPE_SECRET_KEY is set, and otherwise one that answers unavailable. loadConfig
- * requires the key on Vercel and accepts test-mode keys only.
+ * Stripe when STRIPE_SECRET_KEY is set, and otherwise one that answers unavailable. loadConfig accepts
+ * test-mode keys only. A Vercel process that starts without the key after BILLING_START raises an alert.
  */
 export function getBillingGateway(config: Config = getConfig()): BillingGateway {
-  singletons.billing ??= getFixtureBilling(config) ?? (config.billing ? createStripeGateway({ ...config.billing, origin: config.publicOrigin }) : unavailableBillingGateway());
+  if (!singletons.billing) {
+    const fixture = getFixtureBilling(config);
+    if (fixture) singletons.billing = fixture;
+    else if (config.billing) singletons.billing = createStripeGateway({ ...config.billing, origin: config.publicOrigin });
+    else {
+      singletons.billing = unavailableBillingGateway();
+      if (config.onVercel && systemClock() >= config.billingStart) console.error("[BILLING_ALERT] Billing has started without the Stripe variables. Plan limits apply and nobody can buy a plan.");
+    }
+  }
   return singletons.billing;
 }
 

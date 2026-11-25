@@ -17,9 +17,22 @@ const errorOf = (load: () => unknown): ConfigError => {
 };
 
 describe("billing configuration on Vercel", () => {
-  // Fails if a release can ship without the instant billing starts or without the Stripe test-mode keys.
-  it.each(["BILLING_START", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"])("refuses a missing or blank %s", (name) => {
+  // Fails if a release can ship without the instant billing starts.
+  it.each(["BILLING_START"])("refuses a missing or blank %s", (name) => {
     for (const value of [undefined, " "]) expect(errorOf(() => loadConfig({ ...VERCEL_ENV, [name]: value })).variable).toBe(name);
+  });
+
+  // Owner decision 2026-11-25. Fails if a release before billing starts needs Stripe: every route would fail in production.
+  it.each([undefined, " "])("accepts no Stripe variables (%j): nothing can be bought", (value) => {
+    expect(loadConfig({ ...VERCEL_ENV, STRIPE_SECRET_KEY: value, STRIPE_WEBHOOK_SECRET: value }).billing).toBeNull();
+  });
+
+  // Fails if a half configuration is accepted: payments without a checked webhook, or a webhook or a price without a key.
+  it("refuses one Stripe variable without the other, and prices without the key", () => {
+    const none = { ...VERCEL_ENV, STRIPE_SECRET_KEY: undefined, STRIPE_WEBHOOK_SECRET: undefined };
+    expect(errorOf(() => loadConfig({ ...none, STRIPE_SECRET_KEY: KEY })).variable).toBe("STRIPE_WEBHOOK_SECRET");
+    expect(errorOf(() => loadConfig({ ...none, STRIPE_WEBHOOK_SECRET: WEBHOOK })).variable).toBe("STRIPE_SECRET_KEY");
+    expect(errorOf(() => loadConfig({ ...none, STRIPE_PRICE_PRO: "price_1" })).variable).toBe("STRIPE_SECRET_KEY");
   });
 
   // Fails if the judges' free access could end early by a wrong date (judging needs hosting until 2027-01-18 17:00 Pacific, 2027-01-19T01:00Z).

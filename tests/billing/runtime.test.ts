@@ -14,7 +14,11 @@ const g = globalThis as typeof globalThis & { __retrofitRuntime?: { billing?: un
 beforeEach(() => {
   if (g.__retrofitRuntime) Object.assign(g.__retrofitRuntime, { billing: undefined, fixtureBilling: undefined });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("the billing gateway of a deployment", () => {
   // Fails if production can run on the fixtures gateway (free plans for everybody), or a half-configured server pretends to bill.
@@ -27,6 +31,24 @@ describe("the billing gateway of a deployment", () => {
       await expect(run()).rejects.toBeInstanceOf(BillingUnavailable);
     }
     expect(getFixtureBilling(loadConfig({ SESSION_SECRET, RETROFIT_TEST_FIXTURES: "1", ...BILLING_ENV }))).not.toBeNull();
+  });
+
+  // Fails if production reaches the billing start without Stripe and nobody is told, or if the alert is raised before it or with Stripe.
+  it("without Stripe on Vercel raises an alert from the billing start on, and only then", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const none = loadConfig({ ...VERCEL_ENV, STRIPE_SECRET_KEY: undefined, STRIPE_WEBHOOK_SECRET: undefined });
+    const alertsAt = (config: ReturnType<typeof loadConfig>, now: number) => {
+      g.__retrofitRuntime!.billing = undefined;
+      error.mockClear();
+      vi.useFakeTimers({ toFake: ["Date"], now });
+      getBillingGateway(config);
+      return error.mock.calls.filter(([line]) => String(line).startsWith("[BILLING_ALERT]")).length;
+    };
+    expect(alertsAt(none, none.billingStart - 1)).toBe(0);
+    expect(alertsAt(none, none.billingStart)).toBe(1);
+    await expect(getBillingGateway(none).getPrice("price_1")).rejects.toMatchObject({ code: "not_configured" });
+    expect(alertsAt(loadConfig(VERCEL_ENV), none.billingStart)).toBe(0);
+    expect(alertsAt(loadConfig({ SESSION_SECRET }), none.billingStart)).toBe(0);
   });
 
   // Fails if a production configuration does not use the Stripe adapter (it checks signatures with the configured secret).
