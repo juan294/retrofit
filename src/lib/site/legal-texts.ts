@@ -86,7 +86,7 @@ export const PRIVACY: LegalDocument = {
       body: [
         "An account is your email address, kept by Supabase Auth. Retrofit stores no password.",
         "When you sign in, the analyses this browser started are added to your account, but only in the browser that asked for the sign-in link.",
-        "When somebody asks for a sign-in link, the sign-in provider keeps the typed address. If nobody opens the link, it is deleted after about a day.",
+        "When somebody asks for a sign-in link, the sign-in provider keeps the typed address. If no account comes of it, the address is deleted within about two days.",
         "To limit sign-in emails, Retrofit keeps a keyed hash of your email address for about an hour. It does not keep the address for that." +
           ` A browser that signed in is remembered for that address with the same keyed hash and a hash of its ${VISITOR_COOKIE} cookie for ${days(VISITOR_MAX_AGE_S)} days, also after the account is deleted, so it keeps one sign-in email an hour that other browsers cannot use up.`,
         "A report you save is kept until you delete your account.",
@@ -105,7 +105,7 @@ export const PRIVACY: LegalDocument = {
     {
       heading: "Services that receive data",
       body: [
-        "Vercel hosts Retrofit. Supabase stores its data. Otari runs Retrofit's free AI. Stripe takes payments when paid plans start.",
+        "Vercel hosts Retrofit. Supabase stores its data and keeps daily backups for a limited time, so deleted data can stay in a backup until that backup expires. Otari runs Retrofit's free AI. Stripe takes payments when paid plans start.",
         "Retrofit sends sign-in email through Supabase Auth, which uses Amazon SES. Both receive your email address. Retrofit sends no other email yet.",
         `Retrofit's source code is public: ${SOURCE_URL}.`,
       ],

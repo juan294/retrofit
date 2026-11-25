@@ -34,6 +34,7 @@ export function main(argv, io = {}) {
     const r = spawnSync("supabase", args, { encoding: "utf8", timeout: 120_000 });
     say(`$ supabase ${args.slice(0, -1).join(" ")} <temporary copy of supabase/production-auth.toml>`);
     say(`${r.stdout ?? ""}${r.stderr ?? ""}`.trim());
+    if (r.error) say(`The CLI did not finish: ${r.error.message}.${apply ? " The result is unknown: show the difference again before anything else." : ""}`);
     return typeof r.status === "number" ? r.status : 1;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

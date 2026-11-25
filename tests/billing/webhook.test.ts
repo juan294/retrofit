@@ -324,6 +324,14 @@ describe("customers without a billing record", () => {
       expect(JSON.parse(issues[0]!).title).toBe("A Stripe customer has no account");
       for (const secret of [userId, cus, "example.test"]) expect(issues[0]).not.toContain(secret);
       expect(d.errors).toEqual([]);
+      // A store that cannot mark the alert, or a platform without background work, must not turn Stripe's 200 into a retry.
+      const other = await lone();
+      const failing = { ...other.d, config: deps.config, store: { ...other.d.store, putIfAbsent: () => Promise.reject(new Error("down")) } };
+      expect((await deliver(failing, { type: UPDATED, customer: other.cus, ref: other.userId })).status).toBe(200);
+      await other.d.settle();
+      expect(other.d.errors).toEqual([]);
+      const unscoped = { ...other.d, waitUntil: () => { throw new Error("no request scope"); } };
+      expect((await deliver(unscoped, { type: UPDATED, customer: other.cus, ref: other.userId })).status).toBe(200);
     } finally {
       vi.unstubAllGlobals();
     }

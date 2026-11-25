@@ -568,7 +568,7 @@ export function createMemoryAccountData(options: MemoryAccountDataOptions = {}):
     },
 
     /** The memory adapter has no sign-in users. */
-    async purgeUnconfirmedUsers(rawBefore) {
+    async purgeUsersWithoutAccount(rawBefore) {
       requireTime("before", rawBefore);
       return op(() => 0);
     },

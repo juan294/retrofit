@@ -37,7 +37,9 @@ function unavailable(operation: string, error: unknown): AuthUnavailable {
   const status = isAuthError(error) ? Number(error.status) : 0;
   const code = status > 0 ? codeOf(error as AuthErrorLike, `http_${status}`) : "request_failed";
   console.error(`[AUTH_UNAVAILABLE] auth ${operation} failed (${code})`);
-  return new AuthUnavailable(operation, code);
+  // 429 is a shared limit, 401 and 403 a wrong key: both stop every visitor. Any other 4xx refuses this request only.
+  const refused = status >= 400 && status < 500 && ![401, 403, 429].includes(status);
+  return new AuthUnavailable(operation, code, !refused);
 }
 
 /**

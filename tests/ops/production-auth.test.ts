@@ -60,6 +60,15 @@ describe("tools/ops/production-auth.mjs", () => {
     expect(spawnSync).not.toHaveBeenCalled();
   });
 
+  // Review finding 10. Fails if a missing CLI or a push that timed out (its result is unknown) looks like an empty answer.
+  it("says why the CLI did not finish", () => {
+    spawnSync.mockReturnValue({ status: null, stdout: "", stderr: "", error: Object.assign(new Error("spawnSync supabase ETIMEDOUT"), { code: "ETIMEDOUT" }) });
+    const { code, out } = run("--apply", `--project=${PROJECT}`);
+    expect(code).toBe(1);
+    expect(out).toContain("ETIMEDOUT");
+    expect(out).toContain("show the difference again");
+  });
+
   // Fails if the push does not use the versioned copy, or its failure is hidden.
   it("pushes a copy of the versioned file only with the project named", () => {
     let copied = "";

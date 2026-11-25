@@ -138,7 +138,10 @@ export async function handleSession(request: Request, deps: ServerDeps): Promise
     return await create(request, deps, client, { pool: "public" });
   } catch (e) {
     logFailure("/api/inference/session", e);
-    return unavailable(sessionTexts.unavailable);
+    // The signed token names the pool also while the Store cannot be read: no judge is told to bring a key.
+    const token = readSessionToken(request);
+    const judge = token !== null && verifySession(token, deps.config.sessionSecret, deps.clock())?.pool === "judge";
+    return unavailable(judge ? sessionTexts.judgeUnavailable : sessionTexts.unavailable);
   }
 }
 

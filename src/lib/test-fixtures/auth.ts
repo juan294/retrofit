@@ -24,7 +24,8 @@ export interface SentLink {
 }
 
 /** `rate_limited`: the per-address resend wait (60 s); `project_limited`: the project-wide email limit. */
-export type FixtureFailure = "unavailable" | "rate_limited" | "project_limited";
+/** `refused`: the provider refuses this address only. */
+export type FixtureFailure = "unavailable" | "refused" | "rate_limited" | "project_limited";
 
 export interface FixtureAuth extends AuthGateway {
   /** Every email sent, oldest first. */
@@ -58,7 +59,7 @@ export function createFixtureAuth(options: { clock: Clock; origin: string }): Fi
     const how = failures.get(operation);
     if (how === "rate_limited") throw new AuthRateLimited("address", 60);
     if (how === "project_limited") throw new AuthRateLimited("project");
-    if (how) throw new AuthUnavailable(operation, "fixture_failure");
+    if (how) throw new AuthUnavailable(operation, "fixture_failure", how !== "refused");
   }
 
   const emailOf = (userId: string) => [...users].find(([, id]) => id === userId)?.[0];

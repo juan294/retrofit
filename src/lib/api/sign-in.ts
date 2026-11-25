@@ -7,7 +7,7 @@ import { AuthRateLimited, AuthUnavailable, type VerifiedAccount } from "@/lib/au
 import type { Config } from "@/lib/config";
 import { clientIdFromRequest } from "@/lib/fetch/limits";
 import { buildCookie, hostCookieName } from "@/lib/security/cookies";
-import { signInMailFailed } from "@/lib/ops/daily";
+import { inBackground, signInMailFailed } from "@/lib/ops/daily";
 import { newToken, sha256Hex, TOKEN_PATTERN } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
 import type { Store } from "@/lib/store/types";
@@ -140,7 +140,7 @@ function parse(text: string): { email: string | null; returnTo: unknown } | null
  * invalid_email, 413 too_large, 429 limit or wait `{error, message, retryAt}`, 429 mail_busy (the
  * provider's project-wide email limit; no retry time is known), 503 mail_unavailable
  * (the provider failed) or unavailable (the Store failed). Retrofit never logs or stores the address here; the
- * provider keeps an unconfirmed user until the daily cleanup (purgeUnconfirmedUsers). A used-up project limit and
+ * provider keeps an unconfirmed user until the daily cleanup (purgeUsersWithoutAccount). A used-up project limit and
  * repeated provider failures open an alert for the owner.
  */
 export async function handleSignIn(request: Request, deps: Pick<ServerDeps, "config" | "store" | "auth" | "clock" | "waitUntil">): Promise<Response> {
@@ -167,7 +167,7 @@ export async function handleSignIn(request: Request, deps: Pick<ServerDeps, "con
     } catch (e) {
       if (e instanceof AuthRateLimited && e.scope === "project") {
         console.error("[AUTH_UNAVAILABLE] sign-in email limit of the project is used up");
-        deps.waitUntil(signInMailFailed(deps, "limit"));
+        inBackground(deps, () => signInMailFailed(deps, "limit"));
         return json(429, { error: "mail_busy", message: SIGN_IN_TEXT.mailBusy });
       }
       if (e instanceof AuthRateLimited) {
@@ -175,7 +175,7 @@ export async function handleSignIn(request: Request, deps: Pick<ServerDeps, "con
         return json(429, { error: "wait", message: SIGN_IN_TEXT.wait(retryAt), retryAt: retryAt.toISOString() });
       }
       if (e instanceof AuthUnavailable) {
-        deps.waitUntil(signInMailFailed(deps, "provider"));
+        if (e.outage) inBackground(deps, () => signInMailFailed(deps, "provider"));
         return json(503, { error: "mail_unavailable", message: SIGN_IN_TEXT.mailUnavailable });
       }
       throw e;

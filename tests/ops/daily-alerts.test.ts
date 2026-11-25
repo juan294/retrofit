@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleClaimsRecheck } from "@/lib/api/claims-recheck";
 import { handleCleanup } from "@/lib/api/cleanup";
+import { handleConfirm } from "@/lib/api/confirm";
 import { handleSignIn } from "@/lib/api/sign-in";
 import { CRON_SECRET, GITHUB_TOKEN } from "../helpers/ops";
 import { fakeClock, postRequest, testDeps, type TestDeps } from "../helpers/server-deps";
@@ -38,7 +39,7 @@ describe("the daily cleanup", () => {
     const { d, clock } = setup();
     let cleaned = 0;
     let purged = 0;
-    const deps: TestDeps = { ...d, store: { ...d.store, cleanup: async () => (cleaned++, 7) }, accounts: { ...d.accounts, pruneStripeEvents: down, purgeUnconfirmedUsers: async () => (purged++, 0) } };
+    const deps: TestDeps = { ...d, store: { ...d.store, cleanup: async () => (cleaned++, 7) }, accounts: { ...d.accounts, pruneStripeEvents: down, purgeUsersWithoutAccount: async () => (purged++, 0) } };
     for (let n = 0; n < 2; n++) {
       const res = await handleCleanup(cron("cleanup"), deps);
       expect(res.status).toBe(503);
@@ -66,9 +67,9 @@ describe("the daily cleanup", () => {
   it("purges unconfirmed users older than a day, at most 1,000 a run", async () => {
     const { d } = setup();
     const calls: unknown[][] = [];
-    const deps = { ...d, accounts: { ...d.accounts, purgeUnconfirmedUsers: async (...args: unknown[]) => (calls.push(args), 4) } };
+    const deps = { ...d, accounts: { ...d.accounts, purgeUsersWithoutAccount: async (...args: unknown[]) => (calls.push(args), 4) } };
     const res = await handleCleanup(cron("cleanup"), deps as TestDeps);
-    expect([res.status, (await res.json()).unconfirmedUsers]).toEqual([200, 4]);
+    expect([res.status, (await res.json()).usersWithoutAccount]).toEqual([200, 4]);
     expect(calls).toEqual([["2026-11-30T03:17:00.000Z", 1000]]);
     expect(sent).toEqual([]);
   });
@@ -94,6 +95,28 @@ describe("the daily claim recheck", () => {
     expect((await res.json()).errors).toBe(1);
     expect(titles()).toEqual(["The daily claim recheck failed"]);
     expect(JSON.stringify(sent)).not.toMatch(/example|secret/);
+  });
+});
+
+// Review finding 2. Emails go out and every link ends at "unavailable": nobody can sign in, and no email failure says so.
+describe("sign-in link checks", () => {
+  const open = (d: TestDeps, n: number) =>
+    handleConfirm(new Request("https://retrofit.test/auth/verify", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "sec-fetch-site": "same-origin", "x-real-ip": `198.51.100.${n}` }, body: `token_hash=${"a".repeat(56)}&type=email` }), d);
+
+  // Fails if a provider that cannot check links reaches nobody, or is reported at the first failure or twice a day; or an unknown link counts.
+  it("opens one issue a day from the third provider failure on, and none for links that are only expired", async () => {
+    const { d } = setup();
+    for (let n = 1; n <= 5; n++) expect((await open(d, n)).headers.get("location")).toBe("https://retrofit.test/sign-in?link=expired");
+    await d.settle();
+    expect(sent).toEqual([]);
+    for (let n = 1; n <= 5; n++) {
+      d.fixtureAuth.fail("verifyOtp");
+      expect((await open(d, n)).headers.get("location")).toBe("https://retrofit.test/sign-in?link=unavailable");
+      await d.settle();
+      expect(sent).toHaveLength(n < 3 ? 0 : 1);
+    }
+    expect(titles()).toEqual(["Sign-in links cannot be checked"]);
+    expect(JSON.stringify(sent)).not.toMatch(/example|aaaa/);
   });
 });
 
@@ -128,12 +151,33 @@ describe("sign-in mail", () => {
     expect(sent).toHaveLength(1);
   });
 
-  // Fails if a failed alert, or a store that cannot count, changes the visitor's answer.
-  it("never changes the visitor's answer", async () => {
+  // Review finding 1. Fails if addresses that the provider refuses (anybody can type them) open a public alert, or use up the day's real one.
+  it("does not count an address that the provider refuses", async () => {
     const { d } = setup();
-    vi.stubGlobal("fetch", down);
+    for (let n = 1; n <= 4; n++) {
+      d.fixtureAuth.fail("signInWithOtp", "refused");
+      expect((await ask(d, n)).status).toBe(503);
+    }
+    await d.settle();
+    expect(sent).toEqual([]);
+    for (let n = 5; n <= 7; n++) {
+      d.fixtureAuth.fail("signInWithOtp");
+      await ask(d, n);
+    }
+    await d.settle();
+    expect(titles()).toEqual(["Sign-in email stopped"]);
+  });
+
+  // Fails if a failed alert, a store that cannot count or mark, or a platform without background work changes the visitor's answer.
+  it.each(["github", "store", "platform"])("never changes the visitor's answer: %s fails", async (what) => {
+    const { d } = setup();
+    if (what === "github") vi.stubGlobal("fetch", down);
+    const store = { ...d.store, putIfAbsent: down, incrementWindow: (key: string, ...rest: [number]) => (key.startsWith("signin-provider") ? down() : d.store.incrementWindow(key, ...rest)) };
+    const deps = { ...d, ...(what === "store" ? { store } : {}), ...(what === "platform" ? { waitUntil: () => { throw new Error("no request scope"); } } : {}) } as TestDeps;
     d.fixtureAuth.fail("signInWithOtp", "project_limited");
-    expect((await ask(d, 9)).status).toBe(429);
+    expect((await ask(deps, 9)).status).toBe(429);
+    d.fixtureAuth.fail("signInWithOtp");
+    for (let n = 10; n < 14; n++) expect((await ask(deps, n)).status).toBe(503);
     await d.settle();
     expect(d.errors).toEqual([]);
   });

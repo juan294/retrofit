@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { handleJudgeUpgrade, handleSession, JUDGE_ATTEMPTS_PER_CLIENT_HOUR, JUDGE_SESSION_TTL_S, readSession, sessionKey } from "@/lib/inference/session";
+import { handleJudgeUpgrade, handleSession, JUDGE_ATTEMPTS_PER_CLIENT_HOUR, JUDGE_SESSION_TTL_S, readSession, sessionKey, sessionTexts } from "@/lib/inference/session";
 import { verifySession } from "@/lib/inference/token";
 import { captureConsole, cookieFrom, fakeClock, PUBLIC_ORIGIN, postRequest, storeDump, testDeps, type RequestOptions } from "../helpers/server-deps";
 
@@ -268,6 +268,25 @@ describe("POST /api/inference/session/judge", () => {
     expect(all).not.toContain(CODE);
     expect(all).not.toContain(guess);
     expect(lines.length).toBeGreaterThan(0);
+  });
+});
+
+// Review finding 8 (UX-H3). Fails if a judge is told to bring an AI key because the Store cannot be read, or a visitor is not.
+describe("a session renewal while the Store cannot be read", () => {
+  it("names no key for a judge, and the own key for a visitor", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const d = testDeps({ env: { JUDGE_CODE: "judge-code-unit" } });
+    const judge = cookieFrom(await handleJudgeUpgrade(postRequest("/api/inference/session/judge", { code: "judge-code-unit" }), d));
+    const visitor = cookieFrom(await handleSession(sessionReq(), d));
+    const down = { ...d, store: { ...d.store, get: () => Promise.reject(new Error("down")) } };
+    const text = async (cookie: string) => {
+      const res = await handleSession(postRequest("/api/inference/session", undefined, { cookie }), down);
+      expect(res.status).toBe(503);
+      return ((await res.json()) as { message: string }).message;
+    };
+    expect(await text(judge)).toBe(sessionTexts.judgeUnavailable);
+    expect(await text(judge)).not.toMatch(/key/i);
+    expect(await text(visitor)).toBe(sessionTexts.unavailable);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { UNCONFIRMED_KEPT_MS } from "@/lib/api/cleanup";
+import { NO_ACCOUNT_KEPT_MS } from "@/lib/api/cleanup";
 import { JUDGE_SESSION_TTL_S } from "@/lib/inference/session";
 import { VISITOR_COOKIE, VISITOR_MAX_AGE_S } from "@/lib/analysis/visitor";
 import { EXPIRED_GRACE_S } from "@/lib/analysis/record";
@@ -80,9 +80,11 @@ describe("privacy notice for accounts", () => {
 
   // SE-M2, UX-H3. Fails if the notice hides what the sign-in provider keeps of an unopened link, or how long judge access lasts.
   it("states the life of an address whose link was never opened, and of judge access", () => {
-    expect(privacy).toContain("the sign-in provider keeps the typed address. If nobody opens the link, it is deleted after about a day.");
+    expect(privacy).toContain("the sign-in provider keeps the typed address. If no account comes of it, the address is deleted within about two days.");
     expect(privacy).toContain(`with judge access, for ${JUDGE_SESSION_TTL_S / 86400} days after the last visit`);
-    expect(UNCONFIRMED_KEPT_MS).toBe(24 * 3600_000);
+    // A daily run with a cutoff of a day: at most two days.
+    expect(NO_ACCOUNT_KEPT_MS).toBe(24 * 3600_000);
+    expect(privacy).toContain("deleted data can stay in a backup until that backup expires");
   });
 
   // P2-R3. Fails if the notice says an analysis is private to the browser only, or hides when analyses join an account.

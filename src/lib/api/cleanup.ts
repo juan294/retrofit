@@ -7,14 +7,14 @@ import { json } from "./json";
 export const STRIPE_EVENTS_KEPT_MS = 90 * 24 * 3600_000;
 /** Events pruned in one run. */
 const PRUNE_LIMIT = 10_000;
-/** A typed address that was never confirmed is kept at the sign-in provider this long; its link works for one hour. */
-export const UNCONFIRMED_KEPT_MS = 24 * 3600_000;
-/** Unconfirmed users purged in one run. */
+/** A typed address without an account is kept at the sign-in provider at least this long; its link works for one hour. */
+export const NO_ACCOUNT_KEPT_MS = 24 * 3600_000;
+/** Users purged in one run. */
 const PURGE_LIMIT = 1000;
 
 /**
  * GET /api/cron/cleanup (Vercel Cron): `Authorization: Bearer <CRON_SECRET>`, then deletes expired store rows,
- * old recorded Stripe events, and sign-in users that were never confirmed and have no account. The steps do not
+ * old recorded Stripe events, and sign-in users that have no account. The steps do not
  * depend on each other; 503 with `failed` when one fails, and one alert a day.
  */
 export async function handleCleanup(request: Request, deps: Pick<ServerDeps, "config" | "store" | "accounts" | "clock">): Promise<Response> {
@@ -31,16 +31,16 @@ export async function handleCleanup(request: Request, deps: Pick<ServerDeps, "co
       return 0;
     }
   };
-  const [deleted, stripeEvents, unconfirmedUsers] = await Promise.all([
+  const [deleted, stripeEvents, usersWithoutAccount] = await Promise.all([
     step("store", async () => store.cleanup?.() ?? 0),
     step("stripe_events", () => accounts.pruneStripeEvents(before(STRIPE_EVENTS_KEPT_MS), PRUNE_LIMIT)),
-    step("unconfirmed_users", () => accounts.purgeUnconfirmedUsers(before(UNCONFIRMED_KEPT_MS), PURGE_LIMIT)),
+    step("users_without_account", () => accounts.purgeUsersWithoutAccount(before(NO_ACCOUNT_KEPT_MS), PURGE_LIMIT)),
   ]);
   const counts = {
     deleted,
     ...(store.cleanup ? {} : { note: "This store drops expired entries on read." }),
     ...(stripeEvents > 0 ? { stripeEvents } : {}),
-    ...(unconfirmedUsers > 0 ? { unconfirmedUsers } : {}),
+    ...(usersWithoutAccount > 0 ? { usersWithoutAccount } : {}),
   };
   if (failed.length === 0) return json(200, counts);
   await alertToday(deps, "cleanup", "The daily cleanup failed", `Failed steps: ${failed.join(", ")}. Expired data is kept until a run works.`);

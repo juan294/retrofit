@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { JUDGE_UNAVAILABLE, turnOnJudge, type JudgeAnswer } from "./judge";
 import { StatusMessage } from "./StatusMessage";
 import { useHydrated } from "./useHydrated";
+import { buttonState, useOneAtATime } from "./useOneAtATime";
 
 async function post(path: string, body: unknown): Promise<JudgeAnswer> {
   const res = await fetch(path, {
@@ -19,7 +20,7 @@ async function post(path: string, body: unknown): Promise<JudgeAnswer> {
 export function JudgeForm() {
   const hydrated = useHydrated();
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useOneAtATime();
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,16 +30,16 @@ export function JudgeForm() {
       setStatus({ ok: false, text: "Enter the judge code." });
       return;
     }
-    setBusy(true);
-    setStatus(null);
-    try {
-      const judge = await turnOnJudge(post, code);
-      setStatus(judge);
-      if (judge.ok) form.reset();
-    } catch {
-      setStatus({ ok: false, text: JUDGE_UNAVAILABLE });
-    }
-    setBusy(false);
+    await run("judge", async () => {
+      setStatus(null);
+      try {
+        const judge = await turnOnJudge(post, code);
+        setStatus(judge);
+        if (judge.ok) form.reset();
+      } catch {
+        setStatus({ ok: false, text: JUDGE_UNAVAILABLE });
+      }
+    });
   }
 
   return (
@@ -58,7 +59,7 @@ export function JudgeForm() {
         />
         <button
           type="submit"
-          disabled={busy || !hydrated}
+          {...buttonState(hydrated, busy !== null)}
           className="rounded px-4 py-2 font-medium"
           style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}
         >

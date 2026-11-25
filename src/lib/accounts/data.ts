@@ -272,10 +272,10 @@ export interface AccountData {
    */
   checkReady(): Promise<void>;
   /**
-   * Deletes sign-in users that were never confirmed, have no account profile, and whose last email was sent before
-   * `before` (ISO 8601), at most `limit`. Returns how many. A confirmed user, or one with a profile, is never deleted.
+   * Deletes sign-in users without any account row whose last email, confirmation and sign-in are before `before` (ISO
+   * 8601), at most `limit`: addresses whose link nobody used, or whose sign-in was cancelled. Returns how many.
    */
-  purgeUnconfirmedUsers(before: string, limit: number): Promise<number>;
+  purgeUsersWithoutAccount(before: string, limit: number): Promise<number>;
 
   /**
    * Stores a signup for `email` (trimmed, lower case) with `consent` (default

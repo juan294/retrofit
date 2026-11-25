@@ -87,6 +87,25 @@ describe("GET /api/health and the account data", () => {
     error.mockRestore();
   });
 
+  // Review finding 9. Fails if anybody can make health read the account data at every call, or a hanging account database delays the answer.
+  it("asks the account data at most once in 30 seconds, and waits 3 seconds at most", async () => {
+    vi.useFakeTimers();
+    try {
+      let asked = 0;
+      const accounts = account(async () => void asked++);
+      for (let n = 0; n < 5; n++) await handleHealth({ store: createMemoryStore(), accounts });
+      expect(asked).toBe(1);
+      await vi.advanceTimersByTimeAsync(30_001);
+      await handleHealth({ store: createMemoryStore(), accounts });
+      expect(asked).toBe(2);
+      const hanging = handleHealth({ store: createMemoryStore(), accounts: account(() => new Promise(() => undefined)) });
+      await vi.advanceTimersByTimeAsync(3_001);
+      expect(await (await hanging).json()).toEqual({ status: "ok", accounts: "unavailable" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // Fails if the account data hides a store outage.
   it("is degraded when the store is", async () => {
     const res = await handleHealth({ store: closedStore(), accounts: account(async () => undefined) });

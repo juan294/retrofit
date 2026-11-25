@@ -6,6 +6,7 @@ import { isSecureRequest, readVisitorToken, visitorSetCookie } from "@/lib/analy
 import { AuthUnavailable, type VerifiedAccount } from "@/lib/auth/gateway";
 import { clientIdFromRequest, countClientWindow } from "@/lib/fetch/limits";
 import { cookieValue } from "@/lib/security/cookies";
+import { inBackground, signInCheckFailed } from "@/lib/ops/daily";
 import { newToken, sha256Hex } from "@/lib/security/tokens";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
@@ -58,7 +59,7 @@ const redirect = (deps: Pick<ServerDeps, "config">, path: string, cookies: reado
  * /sign-in?link=busy; a provider or Store failure, or an account that is being
  * deleted, to /sign-in?link=unavailable. The provider's own tokens never leave the gateway.
  */
-export async function handleConfirm(request: Request, deps: Pick<ServerDeps, "config" | "store" | "accounts" | "auth" | "clock">): Promise<Response> {
+export async function handleConfirm(request: Request, deps: Pick<ServerDeps, "config" | "store" | "accounts" | "auth" | "clock" | "waitUntil">): Promise<Response> {
   if (!isSameOrigin(request, deps.config)) return json(403, { error: "cross_origin", message: SIGN_IN_TEXT.crossOrigin });
   const { config, store } = deps;
   const secure = isSecureRequest(request, config);
@@ -103,6 +104,7 @@ export async function handleConfirm(request: Request, deps: Pick<ServerDeps, "co
     }
     return redirect(deps, intent?.next ?? DEFAULT_RETURN, [accountSetCookie(token, config, secure), ...(visitorToken ? [] : [visitorSetCookie(browser, secure)]), intent ? clearSignInCookie(config, secure) : clearPending]);
   } catch (e) {
+    if (e instanceof AuthUnavailable && e.outage) inBackground(deps, () => signInCheckFailed(deps));
     console.error("POST /auth/verify failed:", e instanceof AuthUnavailable ? `${e.name} (${e.code})` : e instanceof Error ? e.name : "unknown error");
     return redirect(deps, "/sign-in?link=unavailable");
   }

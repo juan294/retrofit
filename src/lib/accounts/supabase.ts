@@ -517,13 +517,13 @@ export function createSupabaseAccountData(source: ServiceClientSource): AccountD
         none("api_keys", "hint"),
         none("site_claims", "last_attempt_at, visitor_checked_at"),
         call<unknown>("checkReady", () => client.rpc("claims_due", { p_checked_before: past, p_slow_lapsed_before: past, p_slow_checked_before: past, p_limit: 0 })),
-        call<number>("checkReady", () => client.rpc("purge_unconfirmed_users", { p_before: past, p_limit: 0 })),
+        call<number>("checkReady", () => client.rpc("purge_users_without_account", { p_before: past, p_limit: 0 })),
       ]);
     },
 
-    async purgeUnconfirmedUsers(rawBefore, limit) {
+    async purgeUsersWithoutAccount(rawBefore, limit) {
       const before = requireTime("before", rawBefore);
-      return (await call<number>("purgeUnconfirmedUsers", () => client.rpc("purge_unconfirmed_users", { p_before: before, p_limit: Math.max(0, limit) }))) ?? 0;
+      return (await call<number>("purgeUsersWithoutAccount", () => client.rpc("purge_users_without_account", { p_before: before, p_limit: Math.max(0, limit) }))) ?? 0;
     },
 
     async pruneStripeEvents(rawBefore, limit) {

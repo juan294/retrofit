@@ -918,12 +918,6 @@
       "rule": "client limits",
       "suite": "unit",
       "file": "tests/inference/session.test.ts",
-      "title": "POST /api/inference/session/judge applies the judge sessions per client per day cap"
-    },
-    {
-      "rule": "client limits",
-      "suite": "unit",
-      "file": "tests/inference/session.test.ts",
       "title": "judge code guessing refuses further codes after 10 attempts from one client in an hour, even the right one"
     },
     {
@@ -931,6 +925,102 @@
       "suite": "unit",
       "file": "tests/inference/session.test.ts",
       "title": "judge code guessing under concurrency lets at most 10 of 30 parallel attempts reach the compare"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session creates a public session with the exact cookie attributes"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session omits Secure on plain HTTP"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session refuses cross-origin requests with 403 and creates nothing"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session renews a valid cookie with the same sid and pool"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session treats an invalid cookie as no session"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge answers 503 when judge access is not configured"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge applies the judge sessions per client per day cap to new judge sessions only"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge creates a judge session directly, past the public session cap"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge creates nothing without the right code"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge ends the judge sessions of a replaced code"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge keeps judge access through the judging period, over a break of weeks"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge never echoes or logs the code"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge refuses a cross-origin upgrade"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge refuses a wrong code with 403 and keeps the session public"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "POST /api/inference/session/judge upgrades to pool judge with the same sid on the right code"
+    },
+    {
+      "rule": "client limits",
+      "suite": "unit",
+      "file": "tests/inference/session.test.ts",
+      "title": "a session renewal while the Store cannot be read names no key for a judge, and the own key for a visitor"
     },
     {
       "rule": "crawl job fencing",
@@ -1917,6 +2007,18 @@
       "title": "landing page renders with a per-response nonce and first-party requests only"
     },
     {
+      "rule": "origins",
+      "suite": "playwright",
+      "file": "landing.spec.ts",
+      "title": "before hydration the address form's button is disabled and Enter submits nothing"
+    },
+    {
+      "rule": "origins",
+      "suite": "playwright",
+      "file": "landing.spec.ts",
+      "title": "every public page links to the plans and the account, without asking for the account"
+    },
+    {
       "rule": "redirects",
       "suite": "playwright",
       "file": "redirects.spec.ts",
@@ -2388,12 +2490,6 @@
       "rule": "free path",
       "suite": "unit",
       "file": "tests/inference/quota.test.ts",
-      "title": "quota caps refuses judge session call N+1 with 429 and the cap text"
-    },
-    {
-      "rule": "free path",
-      "suite": "unit",
-      "file": "tests/inference/quota.test.ts",
       "title": "in-flight slots caps per session and frees the slot on completion"
     },
     {
@@ -2431,6 +2527,24 @@
       "suite": "unit",
       "file": "tests/inference/quota.test.ts",
       "title": "throws CountersUnavailable when the store fails"
+    },
+    {
+      "rule": "free path",
+      "suite": "unit",
+      "file": "tests/inference/quota.test.ts",
+      "title": "cap texts asks a judge for a key only when the money is used up"
+    },
+    {
+      "rule": "free path",
+      "suite": "unit",
+      "file": "tests/inference/quota.test.ts",
+      "title": "quota caps keeps the public count over days"
+    },
+    {
+      "rule": "free path",
+      "suite": "unit",
+      "file": "tests/inference/quota.test.ts",
+      "title": "quota caps refuses judge call N+1 of a UTC day with 429 and the retry time"
     },
     {
       "rule": "free path",
@@ -4481,6 +4595,24 @@
     {
       "rule": "V09 inherited names refused",
       "suite": "unit",
+      "file": "tests/inference/proxy.test.ts",
+      "title": "chat: refusals before any upstream call a failed call asks a judge to try again, without a key"
+    },
+    {
+      "rule": "V09 inherited names refused",
+      "suite": "unit",
+      "file": "tests/inference/proxy.test.ts",
+      "title": "chat: refusals before any upstream call a judge's daily call limit answers 429 with the retry time, and opens at 00:00 UTC"
+    },
+    {
+      "rule": "V09 inherited names refused",
+      "suite": "unit",
+      "file": "tests/inference/proxy.test.ts",
+      "title": "chat: refusals before any upstream call an empty judge reserve refuses a judge before the provider, with the own-key text"
+    },
+    {
+      "rule": "V09 inherited names refused",
+      "suite": "unit",
       "file": "tests/inference/schema.test.ts",
       "title": "parseChatRequest rejects the inherited name \"__defineGetter__\" as a field name"
     },
@@ -4941,6 +5073,30 @@
       "title": "Supabase adapter on a closed port claimWithLease throws StoreUnavailable and logs [TABLE_FALLBACK] at ERROR"
     },
     {
+      "rule": "V04 and V16 store contract",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "GET /api/health and the account data asks the account data at most once in 30 seconds, and waits 3 seconds at most"
+    },
+    {
+      "rule": "V04 and V16 store contract",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "GET /api/health and the account data is degraded when the store is"
+    },
+    {
+      "rule": "V04 and V16 store contract",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "GET /api/health and the account data names the account data on its own and stays ok for the store"
+    },
+    {
+      "rule": "V04 and V16 store contract",
+      "suite": "unit",
+      "file": "tests/store/supabase-failure.test.ts",
+      "title": "health probe rows deletes its probe row after reading it"
+    },
+    {
       "rule": "V11 gate database consumers",
       "suite": "unit",
       "file": "tests/tools/gate-db.test.ts",
@@ -5343,6 +5499,12 @@
       "title": "UrlForm (review F5) renders the status region before there is any text in it"
     },
     {
+      "rule": "V04 count-once admission",
+      "suite": "unit",
+      "file": "tests/analysis/url-form.test.ts",
+      "title": "UrlForm (review F5) posts to /api/analyze and keeps its button disabled until the page is hydrated"
+    },
+    {
       "rule": "V01 concurrent result reads",
       "suite": "unit",
       "file": "tests/api/analyze.test.ts",
@@ -5515,6 +5677,18 @@
       "suite": "playwright",
       "file": "analyze.spec.ts",
       "title": "the result page lists the heaviest failed checks first, each with a fix"
+    },
+    {
+      "rule": "the result page leads with what to fix",
+      "suite": "playwright",
+      "file": "analyze.spec.ts",
+      "title": "a visitor pastes the bakery URL, sees progress, then the score and evidence"
+    },
+    {
+      "rule": "the result page leads with what to fix",
+      "suite": "playwright",
+      "file": "analyze.spec.ts",
+      "title": "the landing page links to the RetrofitBot page through client navigation"
     },
     {
       "rule": "router errors reach the visitor as their message, hostile bodies stay inert",
@@ -6471,6 +6645,12 @@
       "title": "NotifyForm renders nothing without a privacy link"
     },
     {
+      "rule": "notify me",
+      "suite": "unit",
+      "file": "tests/site/notify-form.test.ts",
+      "title": "NotifyForm has its status region before any answer"
+    },
+    {
       "rule": "own pages",
       "suite": "unit",
       "file": "tests/site/own-site.test.ts",
@@ -6915,6 +7095,24 @@
       "title": "POST /auth/verify (the confirm page's Sign in button) two Continue posts at once sign in once"
     },
     {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "the limit of link checks per network counts an IPv6 /64 as one network"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "the limit of link checks per network does not use up the link while the account data is unavailable"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/confirm.test.ts",
+      "title": "the limit of link checks per network refuses past the limit before asking the provider, and the link still works afterwards"
+    },
+    {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
@@ -7075,6 +7273,12 @@
       "suite": "unit",
       "file": "tests/accounts/pages.test.ts",
       "title": "fixture mailbox route answers 404 outside fixtures mode"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/pages.test.ts",
+      "title": "sign-in form has its status region before any answer, and says which browser opens the link before and after sending"
     },
     {
       "rule": "saved reports",
@@ -7329,6 +7533,12 @@
       "title": "POST /api/auth/sign-in keeps one more link for a browser that signed in to the address before"
     },
     {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/sign-in.test.ts",
+      "title": "POST /api/auth/sign-in counts an IPv6 /64 as one network"
+    },
+    {
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/supabase-failure.test.ts",
@@ -7501,6 +7711,12 @@
       "suite": "playwright",
       "file": "account.spec.ts",
       "title": "accounts a link opened in another browser names its address and signs in only after Continue"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "playwright",
+      "file": "account.spec.ts",
+      "title": "accounts the sign-in form says to open the link in this browser, before and after sending"
     },
     {
       "rule": "phone layout",
@@ -7734,6 +7950,18 @@
       "rule": "accounts data",
       "suite": "unit",
       "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims a visitor's failed check of a pending claim counts as before, and Start over clears it"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
+      "title": "AccountData contract: memory (two clients, one backing) ownership claims a visitor's failed check of a verified claim is shown, and neither counts nor moves the daily recheck"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "unit",
+      "file": "tests/accounts/data.memory.test.ts",
       "title": "AccountData contract: memory (two clients, one backing) ownership claims deleteClaim withdraws the account's own claim only"
     },
     {
@@ -7787,8 +8015,26 @@
     {
       "rule": "ownership claims",
       "suite": "unit",
-      "file": "tests/claims/recheck.test.ts",
-      "title": "lapse and restore three failed rechecks lapse a verified claim; the owner sees the paused text with the date"
+      "file": "tests/claims/page.test.ts",
+      "title": "claim panels before hydration Remove of a verified claim opens a second step; of a pending one it is one click"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/page.test.ts",
+      "title": "claim panels before hydration every panel button names its host after its text"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/page.test.ts",
+      "title": "claim panels before hydration has its status regions and focus places before any action"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/page.test.ts",
+      "title": "claim panels before hydration the next step after a claim names what its panel shows, by method"
     },
     {
       "rule": "ownership claims",
@@ -8196,6 +8442,18 @@
       "rule": "accounts data",
       "suite": "db",
       "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims a visitor's failed check of a pending claim counts as before, and Start over clears it"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
+      "title": "AccountData contract: supabase (two clients) ownership claims a visitor's failed check of a verified claim is shown, and neither counts nor moves the daily recheck"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/accounts.db.test.ts",
       "title": "AccountData contract: supabase (two clients) ownership claims deleteClaim withdraws the account's own claim only"
     },
     {
@@ -8227,6 +8485,18 @@
       "suite": "playwright",
       "file": "claims.spec.ts",
       "title": "ownership claims three failed daily rechecks lapse a claim, and one passing check restores it"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "playwright",
+      "file": "claims.spec.ts",
+      "title": "ownership claims Remove of a verified claim asks first, by keyboard, and its message stays"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "playwright",
+      "file": "claims.spec.ts",
+      "title": "ownership claims a claim action after sign-out links to sign-in"
     },
     {
       "rule": "phone layout",
@@ -8291,6 +8561,18 @@
     {
       "rule": "ownership claims",
       "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "a removed record lapses after three daily rechecks whatever the owner checks between them"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/recheck.test.ts",
+      "title": "lapse and restore three failed rechecks lapse a verified claim; the owner sees the failed text with the date"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
       "file": "tests/claims/routes.test.ts",
       "title": "check, start over and remove the check limit is per account and host: Remove and a new claim do not reset it"
     },
@@ -8347,6 +8629,12 @@
       "suite": "unit",
       "file": "tests/claims/routes.test.ts",
       "title": "POST /api/claims (create) every claim gets a new random token, fixture hosts in fixtures mode included"
+    },
+    {
+      "rule": "ownership claims",
+      "suite": "unit",
+      "file": "tests/claims/routes.test.ts",
+      "title": "check, start over and remove Check again on a verified claim shows a failure and never ends the claim"
     },
     {
       "rule": "ownership claims",
@@ -8837,6 +9125,12 @@
     {
       "rule": "publishing",
       "suite": "unit",
+      "file": "tests/publish/panel.test.ts",
+      "title": "removing a claim with a publication has a second step in every state, and Unpublish has none"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
       "file": "tests/publish/publish.test.ts",
       "title": "POST /api/publish preconditions refuses cross-origin (403), signed-out (401), too large (413) and invalid hosts (400)"
     },
@@ -9163,6 +9457,12 @@
       "suite": "unit",
       "file": "tests/site/own-site.test.ts",
       "title": "published pages and robots the sitemap lists a published site after Retrofit's own pages until it is unpublished"
+    },
+    {
+      "rule": "publishing",
+      "suite": "unit",
+      "file": "tests/site/own-site.test.ts",
+      "title": "pricing, privacy and terms pages the pricing summary does not depend on the date"
     },
     {
       "rule": "accounts data",
@@ -9895,6 +10195,48 @@
       "suite": "unit",
       "file": "tests/accounts/auth-supabase.test.ts",
       "title": "Supabase auth gateway deleteUser throws AuthUnavailable for a 404 with another code"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp: {\"status\":400,\"body\":{\"code\":\"email_address_invalid\",\"message\":\"x\"}} is an outage: false"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp: {\"status\":401,\"body\":{\"message\":\"Invalid API key\"}} is an outage: true"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp: {\"status\":403,\"body\":{\"code\":\"no_authorization\",\"message\":\"x\"}} is an outage: true"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp: {\"status\":422,\"body\":{\"code\":\"validation_failed\",\"message\":\"x\"}} is an outage: false"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp: {\"status\":500,\"body\":{\"code\":\"unexpected_failure\",\"message\":\"x\"}} is an outage: true"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway signInWithOtp: {} is an outage: true"
+    },
+    {
+      "rule": "accounts sign-in",
+      "suite": "unit",
+      "file": "tests/accounts/auth-supabase.test.ts",
+      "title": "Supabase auth gateway verifyOtp: a used-up shared limit is an outage"
     },
     {
       "rule": "accounts data",
@@ -10908,13 +11250,13 @@
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/post.test.ts",
-      "title": "an answer on the page statusOf takes the message, localizes a refusal's time, and links only to the plans"
+      "title": "an answer on the page StatusMessage keeps a status region mounted, and shows a failure as an alert beside it"
     },
     {
       "rule": "billing",
       "suite": "unit",
       "file": "tests/billing/post.test.ts",
-      "title": "an answer on the page StatusMessage announces a status or an alert"
+      "title": "an answer on the page statusOf takes the message, localizes a refusal's time, and links only to the plans or to sign-in"
     },
     {
       "rule": "billing",
@@ -11913,6 +12255,12 @@
       "title": "account deletion against a checkout a record deleted while the event is applied is not recreated"
     },
     {
+      "rule": "billing",
+      "suite": "unit",
+      "file": "tests/billing/webhook.test.ts",
+      "title": "customers without a billing record opens one issue for such a customer, without naming it"
+    },
+    {
       "rule": "production evidence tooling",
       "suite": "unit",
       "file": "tests/release/production-evidence.test.ts",
@@ -11979,6 +12327,60 @@
       "title": "production-evidence.mjs after BILLING_START uses the product's own limit text and earliest start"
     },
     {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs account data and sign-in fails account-data-ready for {\"status\":\"ok\",\"accounts\":\"unavailable\"} and keeps health-ok"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs account data and sign-in fails account-data-ready for {\"status\":\"ok\"} and keeps health-ok"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs account data and sign-in fails sign-in-send for 200 {}"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs account data and sign-in fails sign-in-send for 429 {\"error\":\"limit\"}"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs account data and sign-in fails sign-in-send for 429 {\"error\":\"mail_busy\"}"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs account data and sign-in fails sign-in-send for 503 {\"error\":\"mail_unavailable\"}"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs account data and sign-in passes when the account data is ready and the email was sent, and records no address"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs run (stubbed boundary) fails the binding case when the alias serves another commit than the deployment"
+    },
+    {
+      "rule": "production evidence tooling",
+      "suite": "unit",
+      "file": "tests/release/production-evidence.test.ts",
+      "title": "production-evidence.mjs run (stubbed boundary) refuses to start over earlier reports; --fresh moves them aside and starts a new run"
+    },
+    {
       "rule": "privacy and terms drafts",
       "suite": "unit",
       "file": "tests/site/legal-texts.test.ts",
@@ -12037,6 +12439,12 @@
       "suite": "unit",
       "file": "tests/site/legal-texts.test.ts",
       "title": "payments, the free limit and API keys in the privacy notice and the terms says what the end of a plan and account deletion do, and promises nothing about refunds or tax"
+    },
+    {
+      "rule": "privacy and terms drafts",
+      "suite": "unit",
+      "file": "tests/site/legal-texts.test.ts",
+      "title": "privacy notice for accounts states the life of an address whose link was never opened, and of judge access"
     },
     {
       "rule": "store contract and database privileges",
@@ -12237,6 +12645,12 @@
       "title": "the sign-in confirm page fits a 320 px phone screen"
     },
     {
+      "rule": "phone layout",
+      "suite": "playwright",
+      "file": "phone-width.spec.ts",
+      "title": "/sign-in?link=busy fits a 320 px phone screen without sideways scrolling"
+    },
+    {
       "rule": "preview readable in both color schemes",
       "suite": "playwright",
       "file": "preview-theme.spec.ts",
@@ -12261,16 +12675,616 @@
       "title": "the sign-in confirm page and its address step are readable in light mode"
     },
     {
-      "rule": "billing start and entitlements",
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /sign-in?link=busy page text is readable in dark mode"
+    },
+    {
+      "rule": "preview readable in both color schemes",
+      "suite": "playwright",
+      "file": "preview-theme.spec.ts",
+      "title": "the /sign-in?link=busy page text is readable in light mode"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "playwright",
+      "file": "judges.spec.ts",
+      "title": "before hydration the judge code cannot enter the URL"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "playwright",
+      "file": "judges.spec.ts",
+      "title": "one code entry keeps judge access on, and the panel says so"
+    },
+    {
+      "rule": "pre-launch repairs",
       "suite": "unit",
-      "file": "tests/billing/judge-form.test.ts",
-      "title": "the judge form asks for a session, then the code"
+      "file": "tests/agent/score-action.test.ts",
+      "title": "Retrofit's published network gives every agent the tool-result rule and the readiness specialist the score tool"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "Retrofit's published network passes the vendored validateNetwork, from the HOCON and from the built file"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "Retrofit's published network publishes the agreed manifest values"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site definition has no length or format limits on url"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site definition is accepted by the vendored runtime registry"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site definition matches the contract"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler aborts the request at 35 s and returns the network text"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler aborts the spacing wait through the context signal without throwing"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler calls the same-origin score API with the trimmed, encoded url"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler does not wait for a different URL"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler gives the stop text on the sixth consecutive running answer and resets on another answer"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler maps every API error to the handler's recovery text"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler maps the API's invalid_url to the recovery text"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler never throws for an argument the schema should have stopped"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler refuses a report that fails the shape check"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler refuses a url over 2048 characters without a request"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler refuses an empty url without a request"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler returns a ready report"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler returns a ready report whose score is null"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler returns the network text when fetch fails"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler returns the running text with retryAfterSeconds on 202"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler returns the unexpected-response text for non-JSON, unknown status or unknown code"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler treats a timed error without its retry time as unexpected"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-action.test.ts",
+      "title": "score_site handler waits 20 s after a running answer before asking again for the same URL"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-texts.test.ts",
+      "title": "the published score texts are the contract's, word for word"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-texts.test.ts",
+      "title": "the published score texts describe API keys: the header, servers only, and the refusals"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-texts.test.ts",
+      "title": "the published score texts list every key refusal in the contract's failure table"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/agent/score-texts.test.ts",
+      "title": "the published score texts say that a verified owner can replace a stored result sooner, and that no call forces a new read"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/analysis/analysis-status.test.ts",
+      "title": "the analysis status (UX-M2) is one region, mounted from the first render"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/analysis/analysis-status.test.ts",
+      "title": "the analysis status (UX-M2) shows the progress, then says that the report is ready"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/billing/api-keys-section.test.ts",
+      "title": "the API keys on /account before hydration Revoke opens a second step and names its key"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/billing/api-keys-section.test.ts",
+      "title": "the API keys on /account before hydration has its status region and focus place before any action"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/billing/api-keys-section.test.ts",
+      "title": "the API keys on /account before hydration says when a key's higher limits start"
     },
     {
       "rule": "billing start and entitlements",
       "suite": "unit",
       "file": "tests/billing/judge-form.test.ts",
-      "title": "the judge form shows every refusal of the session and does not try the code"
+      "title": "the judge form posts and keeps its button disabled until the page is hydrated"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/judge-form.test.ts",
+      "title": "the judge form sends only the code"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/judge-form.test.ts",
+      "title": "the judge form shows every refusal"
+    },
+    {
+      "rule": "billing start and entitlements",
+      "suite": "unit",
+      "file": "tests/billing/judge-form.test.ts",
+      "title": "the key panel says when judge access is on"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration accepts a complete Vercel configuration and uses one key for both pools"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration accepts a per-request fee of zero or more"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration allows FREE_UPSTREAM_URL off Vercel only, and caps the upstream timeout"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration applies the plan's defaults"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration refuses a reserve not below the credit and unordered thresholds"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration requires ALERT_GITHUB_TOKEN on Vercel"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration requires CRON_SECRET on Vercel"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration requires FREE_CREDIT_USD on Vercel"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration requires FREE_PRICE_IN_PER_M on Vercel"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration requires FREE_PRICE_OUT_PER_M on Vercel"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration requires JUDGE_CODE on Vercel"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration requires JUDGE_RESERVE_USD on Vercel"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration requires OTARI_API_KEY on Vercel"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration requires a judge code of at least 16 characters on Vercel"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration selects Otari's regional host with OTARI_REGION, required on Vercel"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/config-free.test.ts",
+      "title": "free inference configuration uses a key per pool when both are given"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/inference/token.test.ts",
+      "title": "session token lasts two hours in the public pool and 60 days in the judge pool"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/inference/token.test.ts",
+      "title": "session token refuses a tampered payload"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/inference/token.test.ts",
+      "title": "session token refuses a tampered signature"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/inference/token.test.ts",
+      "title": "session token refuses a token signed with another secret"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/inference/token.test.ts",
+      "title": "session token refuses an expired token"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/inference/token.test.ts",
+      "title": "session token refuses malformed tokens without throwing"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/inference/token.test.ts",
+      "title": "session token round-trips valid claims and expires after two hours"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "sign-in link checks opens one issue a day from the third provider failure on, and none for links that are only expired"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "sign-in mail does not count an address that the provider refuses"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "sign-in mail never changes the visitor's answer: github fails"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "sign-in mail never changes the visitor's answer: platform fails"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "sign-in mail never changes the visitor's answer: store fails"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "sign-in mail opens one issue a day from the third provider failure on"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "sign-in mail opens one issue a day when the provider's email limit is used up"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "the daily claim recheck opens one issue a day when it fails or has errors"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "the daily cleanup purges unconfirmed users older than a day, at most 1,000 a run"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "the daily cleanup runs every step although one fails, answers 503 and opens one issue a day"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/daily-alerts.test.ts",
+      "title": "the daily cleanup runs the account steps when the Store cleanup fails"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/production-auth.test.ts",
+      "title": "supabase/production-auth.toml has production values and no secret"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/production-auth.test.ts",
+      "title": "supabase/production-auth.toml sets project limits well above one network's"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/production-auth.test.ts",
+      "title": "supabase/production-auth.toml the local file says that it must not be pushed"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/production-auth.test.ts",
+      "title": "tools/ops/production-auth.mjs pushes a copy of the versioned file only with the project named"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/production-auth.test.ts",
+      "title": "tools/ops/production-auth.mjs refuses [\"--apply\",\"--project=other\"] without calling the CLI"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/production-auth.test.ts",
+      "title": "tools/ops/production-auth.mjs refuses [\"--apply\"] without calling the CLI"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/production-auth.test.ts",
+      "title": "tools/ops/production-auth.mjs refuses [\"--force\"] without calling the CLI"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/production-auth.test.ts",
+      "title": "tools/ops/production-auth.mjs says why the CLI did not finish"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/ops/production-auth.test.ts",
+      "title": "tools/ops/production-auth.mjs shows the difference by default"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/release/build-config.test.ts",
+      "title": "the production build's configuration check accepts a valid production environment and checks no other build"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/release/build-config.test.ts",
+      "title": "the production build's configuration check refuses BILLING_START = 2027-01-19T00:00:00Z and names only the variable"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/release/build-config.test.ts",
+      "title": "the production build's configuration check refuses BILLING_START = undefined and names only the variable"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/release/build-config.test.ts",
+      "title": "the production build's configuration check refuses FREE_CREDIT_USD = ten-secret-dollars and names only the variable"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/release/build-config.test.ts",
+      "title": "the production build's configuration check refuses OTARI_REGION = secret-region and names only the variable"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/release/build-config.test.ts",
+      "title": "the production build's configuration check refuses STRIPE_SECRET_KEY = sk_live_51SecretSecret and names only the variable"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/release/build-config.test.ts",
+      "title": "the production build's configuration check refuses SUPABASE_ANON_KEY = undefined and names only the variable"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/release/build-config.test.ts",
+      "title": "the production build's configuration check runs from next.config.ts, and vercel.json pins the functions beside the database"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/release/readme.test.ts",
+      "title": "README.md describes the product, with the live address, the judge page, the score API and the commands"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/release/readme.test.ts",
+      "title": "README.md links to files that exist, names real scripts, and holds no code or key"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/site/one-at-a-time.test.ts",
+      "title": "one action at a time (UX-M2) a button is disabled only before hydration"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/site/one-at-a-time.test.ts",
+      "title": "one action at a time (UX-M2) ignores an action while one works, and takes the next one after it"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/site/one-at-a-time.test.ts",
+      "title": "one action at a time (UX-M2) stays busy when the page leaves, and opens again after an error"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/site/one-at-a-time.test.ts",
+      "title": "where the focus goes when an action removes its own element (UX-M2) moves only a focus that was lost with its element"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/site/site-nav.test.ts",
+      "title": "the site navigation (UX-H1) is on every text page and on the two not-found pages"
+    },
+    {
+      "rule": "pre-launch repairs",
+      "suite": "unit",
+      "file": "tests/site/site-nav.test.ts",
+      "title": "the site navigation (UX-H1) links to the home page, the plans and the account, with no account read"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/purge.db.test.ts",
+      "title": "supabase/tests/purge_access.sql passes"
+    },
+    {
+      "rule": "accounts data",
+      "suite": "db",
+      "file": "tests/db/purge.db.test.ts",
+      "title": "the adapter purges through the function, and checkReady passes with every migration"
     }
   ],
   "repairs": {

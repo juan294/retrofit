@@ -3,7 +3,7 @@
 # supabase/config.toml is for the local stacks only: its site URL is loopback and its confirmations are off. Never run
 # `supabase config push` with it. Change production only through this file, in two steps:
 #   node tools/ops/production-auth.mjs            shows the difference and changes nothing
-#   node tools/ops/production-auth.mjs --apply    an authorized production action; asks for the project ref
+#   node tools/ops/production-auth.mjs --apply    an authorized production action; needs --project=<ref> too
 #
 # The CLI changes only what a file declares. Not declared on purpose: [auth.email.smtp] (Amazon SES, its password is
 # stored only in Supabase), and every provider but email (off). The test tests/ops/production-auth.test.ts keeps the rules.

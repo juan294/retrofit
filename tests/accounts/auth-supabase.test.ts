@@ -70,6 +70,26 @@ describe("Supabase auth gateway", () => {
     expect(new URL(calls[0]!.url).searchParams.get("redirect_to")).toBe("https://retrofit.test/auth/confirm");
   });
 
+  // Fails if one refused address counts as an outage (anybody could then open the owner's alert), or a wrong key, a shared limit, a 5xx or a
+  // transport failure does not.
+  it.each([
+    [{ status: 400, body: { code: "email_address_invalid", message: "x" } }, false],
+    [{ status: 422, body: { code: "validation_failed", message: "x" } }, false],
+    [{ status: 401, body: { message: "Invalid API key" } }, true],
+    [{ status: 403, body: { code: "no_authorization", message: "x" } }, true],
+    [{ status: 500, body: { code: "unexpected_failure", message: "x" } }, true],
+    [new TypeError("fetch failed"), true],
+  ] as [Answer, boolean][])("signInWithOtp: %j is an outage: %s", async (answer, outage) => {
+    const failed = await fakeProvider({ "POST /auth/v1/otp": answer }).gateway.signInWithOtp("a@example.test", "https://r.test/auth/confirm").catch((e: unknown) => e);
+    expect(failed).toBeInstanceOf(AuthUnavailable);
+    expect((failed as AuthUnavailable).outage).toBe(outage);
+  });
+
+  it("verifyOtp: a used-up shared limit is an outage", async () => {
+    const failed = await fakeProvider({ "POST /auth/v1/verify": { status: 429, body: { code: "over_request_rate_limit", message: "x" } } }).gateway.verifyOtp("h", "email").catch((e: unknown) => e);
+    expect((failed as AuthUnavailable).outage).toBe(true);
+  });
+
   // Fails if a provider refusal to send again is reported as an outage, or an outage as success.
   it("signInWithOtp maps 429 to AuthRateLimited and every other failure to AuthUnavailable", async () => {
     await expect(fakeProvider({ "POST /auth/v1/otp": { status: 429, body: { code: "over_email_send_rate_limit", message: "x" } } }).gateway.signInWithOtp("a@example.test", "https://r.test/auth/confirm")).rejects.toBeInstanceOf(AuthRateLimited);

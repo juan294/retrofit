@@ -35,7 +35,7 @@ The declared suite in `.rpi/policy.json` runs, in order: whitespace, RPI install
 - Work in isolated worktrees or local temporary branches, then integrate reviewed changes locally into `develop`.
 - Use a merge commit when promoting `develop` to `main`.
 - The hackathon requires open source. Changing the repository to public, deploying, configuring a domain, submitting to Devpost, posting to the organizers and creating provider accounts each need Juan's explicit authorization for that exact action.
-- Sutura owns fleet CI routing. Do not add routing changes, mode toggles or hosted experimentation here. No project CI workflow is installed at bootstrap.
+- Sutura owns fleet CI routing. Do not add routing changes, mode toggles or hosted experimentation here. Hosted CI is `.github/workflows/ci.yml`; the local gate stays the release gate.
 
 ## Product and data constraints
 

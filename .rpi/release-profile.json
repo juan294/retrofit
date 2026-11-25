@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "retrofit",
-  "release_ready": true,
+  "release_ready": false,
   "stage": "released",
   "integration_branch": "develop",
   "production_branch": "main",
