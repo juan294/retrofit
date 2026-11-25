@@ -310,6 +310,25 @@ describe("customers without a billing record", () => {
     quiet([userId, cus, "lone@example.test"]);
   });
 
+  // DO-M2, BE-L2. Fails if the owner is not told of a paying customer without an account, is told at every event, or the issue (in a public
+  // repository) names the customer, the account or an address.
+  it("opens one issue for such a customer, without naming it", async () => {
+    const issues: string[] = [];
+    vi.stubGlobal("fetch", async (_url: unknown, init?: RequestInit) => (issues.push(String(init?.body)), new Response("{}", { status: 201 })));
+    try {
+      const { d, userId, cus } = await lone();
+      const deps = { ...d, config: { ...d.config, free: { ...d.config.free, alertGithubToken: "github-token-unit" } } };
+      for (const type of [COMPLETED, UPDATED]) await deliver(deps, { type, customer: cus, ref: userId });
+      await d.settle();
+      expect(issues).toHaveLength(1);
+      expect(JSON.parse(issues[0]!).title).toBe("A Stripe customer has no account");
+      for (const secret of [userId, cus, "example.test"]) expect(issues[0]).not.toContain(secret);
+      expect(d.errors).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   // P5-R1. Fails if an outage at any step cancels, acknowledges the event (Stripe would never send it again) or records it.
   it.each([
     ["the billing record", (d: TestDeps): TestDeps => ({ ...d, accounts: brokenBilling(d.accounts, ["getBillingByCustomer"]) })],
