@@ -1,13 +1,14 @@
 import type { ReactNode } from "react";
-import { SiteNav } from "./SiteNav";
+import { PageShell } from "./PageShell";
 
-/** The shell of Retrofit's text pages (bot, pricing, privacy, terms, unsubscribe): the navigation and the title. */
-export function SitePage({ title, children }: { title: string; children: ReactNode }) {
+/** The shell of Retrofit's text pages (bot, pricing, privacy, terms, unsubscribe, sign-in, account): the navigation, the title and the footer. */
+export function SitePage({ title, form, children }: { title: string; form?: string; children: ReactNode }) {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12 leading-relaxed [overflow-wrap:anywhere]">
-      <SiteNav />
-      <h1 className="mt-4 text-3xl font-semibold">{title}</h1>
-      {children}
-    </main>
+    <PageShell form={form}>
+      <main className="fi-main fi-main-text">
+        <h1 className="fi-display fi-page-title">{title}</h1>
+        {children}
+      </main>
+    </PageShell>
   );
 }

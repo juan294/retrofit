@@ -1,9 +1,10 @@
 import type { Status } from "./post";
+import { Notice } from "./ui/Notice";
 
 /**
  * The answer to an action, with the next step's link. The status region is always mounted, so a screen
- * reader announces the text when it appears (empty, it takes no space); a failure is an alert in the danger
- * color beside it. `id`, `testId` and `className` are on the one of the two that shows the text.
+ * reader announces the text when it appears (empty, it takes no space); a failure is an alert in a notice
+ * beside it. `id` and `testId` are on the one of the two that shows the text; `className` is on its box.
  */
 export function StatusMessage({ status, id, testId, className }: { status: Status | null; id?: string; testId?: string; className?: string }) {
   const failed = status !== null && !status.ok;
@@ -27,9 +28,9 @@ export function StatusMessage({ status, id, testId, className }: { status: Statu
         {failed ? null : body}
       </p>
       {failed ? (
-        <p role="alert" {...own} className={className} style={{ color: "var(--color-danger)" }}>
+        <Notice tone="action" role="alert" className={className} {...own}>
           {body}
-        </p>
+        </Notice>
       ) : null}
     </>
   );
