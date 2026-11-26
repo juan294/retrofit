@@ -56,6 +56,7 @@ risk: an <img> cannot load web fonts, so text widths use textLength as now
 ### 5. Close (sequential, after the units are merged)
 
 - Remove the `--color-*` and `--radius` aliases from `globals.css` and any last use in `src`.
+- Remove the other temporary rules that Phase 1 added for the first interface: the unlayered `.rounded` and `.border` rules, and the `!important` flags of the disabled-button rule (no button sets its colours inline any more).
 - Add a decision record `docs/decisions/2026-11-26-field-inspection-ui.md`: D0 to D9 with their evidence, and that it replaces the key panel's "neutral style for now" (`docs/decisions/2026-11-15-open-source-and-key-panel-style.md`, "Key panel style").
 - Add the two font packages to `NOTICE` with their licence. Add a `CHANGELOG.md` entry.
 - Update `.rpi/release-profile.json` `current_gaps`: the UI review part closes when Juan accepts the visual review.
@@ -64,7 +65,7 @@ risk: an <img> cannot load web fonts, so text widths use textLength as now
 ## Tests and oracles
 
 - `tests/badge/badge.test.ts`: updated for the new geometry; it keeps the tests that no input but the score reaches the image, that an invalid score shows no number, and the header tests.
-- `tests/site/design-tokens.test.ts`, last part: no `--color-` and no `--radius` name remains in `src`.
+- `tests/site/design-tokens.test.ts`, last part: no `--color-` and no `--radius` name remains in `src`; `globals.css` has no rule for `.rounded` or `.border` and no `!important` outside the `.fi-desk` rule.
 - e2e, added to `e2e/field-inspection.spec.ts`: size and overflow checks for `/pricing`, `/judges`, `/bot`, `/privacy`, `/terms`, `/unsubscribe` (both states) and `/conformance` at 390, 768, 1024 and 1440 px; the icon answers 200 with `image/svg+xml`.
 - Existing, unchanged: `e2e/pricing.spec.ts`, `judges.spec.ts`, `privacy.spec.ts`, `conformance.spec.ts`, `billing.spec.ts`, and the contrast and 320 px tests.
 

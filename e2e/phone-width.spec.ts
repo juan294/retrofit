@@ -7,11 +7,9 @@ import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
 import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
 import { billingStates, startBilling } from "./support/billing";
 import { publishedOwner, publishStates, saveTestKey, setOutage, verifiedOwner, pageUrl } from "./support/publish";
+import { fits } from "./support/layout";
 
 test.use({ viewport: { width: 320, height: 640 } });
-
-/** No sideways scrolling at 320 px. */
-const fits = async (page: import("@playwright/test").Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
 
 // Pages with an agent panel wait for the free AI, so late content (key panel, preview) is measured too.
 for (const [path, hasAgent] of [["/", true], ["/conformance", true], ["/bot", false], ["/pricing", false], ["/privacy", false], ["/terms", false], ["/unsubscribe?t=0123456789abcdef0123456789abcdef", false], ["/unsubscribe?t=not-a-token", false], ["/sign-in", false], ["/sign-in?link=expired", false], ["/sign-in?link=unavailable", false], ["/sign-in?link=busy", false], ["/sign-in?account=deleted", false]] as const) {

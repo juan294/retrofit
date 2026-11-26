@@ -2,7 +2,8 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { connection } from "next/server";
 import { getConfig } from "@/lib/config";
-import { CONTACT_URL, LEAD_EMAIL, leadMailto, retrofitJsonLd, SOURCE_URL } from "@/lib/site/own-site";
+import { LEAD_EMAIL, leadMailto, retrofitJsonLd } from "@/lib/site/own-site";
+import { SiteFooter } from "@/components/SiteFooter";
 import { SiteNav } from "@/components/SiteNav";
 import { UrlForm } from "@/components/UrlForm";
 import { AgentPanel } from "@/components/preview/AgentPanel";
@@ -31,23 +32,9 @@ export default async function Home() {
         pages and follows your robots rules. <Link href="/bot" className="underline">How RetrofitBot reads your site</Link>.
       </p>
       <AgentPanel basePath="" title="Ask Retrofit's own agent" />
-      <footer className="mt-16 flex flex-wrap gap-x-6 gap-y-2 text-sm" style={{ color: "var(--color-muted)" }}>
-        <Link href="/pricing" className="underline">
-          Pricing
-        </Link>
-        <Link href="/privacy" className="underline">
-          Privacy
-        </Link>
-        <Link href="/terms" className="underline">
-          Terms
-        </Link>
-        <a href={SOURCE_URL} className="underline">
-          Source code
-        </a>
-        <a href={CONTACT_URL} className="underline">
-          Contact
-        </a>
-      </footer>
+      <div className="mt-16">
+        <SiteFooter />
+      </div>
     </main>
   );
 }

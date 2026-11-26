@@ -38,6 +38,9 @@ describe("an answer on the page", () => {
     const html = (status: Parameters<typeof StatusMessage>[0]["status"]) => renderToStaticMarkup(createElement(StatusMessage, { status, id: "i", testId: "t" }));
     expect(html(null)).toBe('<p role="status" id="i" data-testid="t" class="empty:absolute"></p>');
     expect(html({ ok: true, text: "Saved." })).toBe('<p role="status" id="i" data-testid="t" class="empty:absolute">Saved.</p>');
-    expect(html({ ok: false, text: "No.", href: "/pricing", linkText: "See" })).toBe('<p role="status" class="empty:absolute"></p><p role="alert" id="i" data-testid="t" style="color:var(--color-danger)">No. <a href="/pricing" class="underline">See</a></p>');
+    // The failure is the body of a notice: the role, the id and the test id are on the body, so the alert's text is the answer alone.
+    expect(html({ ok: false, text: "No.", href: "/pricing", linkText: "See" })).toBe(
+      '<p role="status" class="empty:absolute"></p><div class="fi-notice fi-notice-action"><div class="fi-notice-head fi-mono">Action needed</div><div class="fi-notice-body" role="alert" id="i" data-testid="t">No. <a href="/pricing" class="underline">See</a></div></div>',
+    );
   });
 });
