@@ -59,6 +59,10 @@ On 2026-11-26 Juan directed: "merge everything to develop and delete all trees a
 
 The gate result for the merged `develop` is in the next entry of this file.
 
+### Gate on the merged develop
+
+The gate ran on `develop` `0ae5843`. The result is the same as on the Phase 1 branch: 14 of 15 checks passed (2,284 unit tests, coverage 93.16% statements and 86.92% branches, build, 3 performance tests, 188 browser tests). `db-tests` exited 4 for the same reason: ports 54731 and 54732 of the gate stack were still held by the `chapa-p2fix` containers. Teardown completed; no `retrofit-gate` resource remains. The analyzer rejects `0ae5843` for the missing database report only. Log: `/Users/juan/code/retrofit/.local/runs/2026-11-26-field-inspection/gate-develop-0ae5843.log`.
+
 ### For Phase 2
 
 - `e2e/own-site.spec.ts` reads the first `<p>` inside `<main>` on the home page as the intro. The new hero's small label above the headline must not be a `<p>`, or it must come after the intro in the markup.
