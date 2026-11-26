@@ -53,6 +53,12 @@ The gate ran on `616765011ae7d47e84a7ff8cefe1bbad07c74983` (branch `feat/field-i
 
 Phase 1 changes no file under `supabase/`, `src/lib/accounts/` or `tests/db/` (`git diff 9bac51d 6167650 --stat`). That is context, not a replacement for the check. Phase 1 is not accepted until the full gate passes on the candidate with the ports free. The raw log is `/Users/juan/code/retrofit/.local/runs/2026-11-26-field-inspection/gate-p1-6167650.log`.
 
+### Integration
+
+On 2026-11-26 Juan directed: "merge everything to develop and delete all trees and branches". He knew that the database tests had not run. `develop` took two merge commits: `ce39982` (branch `fix/judge-session-notes`, five commits of 2026-11-25 with the judge session repairs and the owner's release decisions) and `f0ca8e2` (Phase 1, branch `feat/field-inspection-p1`). Both merged without a conflict. The worktrees `field-inspection-p1` and `release-decisions` are removed, and the review server that ran from `release-decisions` on port 3009 is stopped. Their ignored evidence and reports are kept in `/Users/juan/code/retrofit/.local/runs/2026-11-26-field-inspection/removed-worktrees/`. The local branches `feat/field-inspection-p1`, `fix/judge-network-limit`, `fix/judge-session-notes`, `fix/release-decisions`, `fix/strix-and-free-ai` and `fix/wave1-ops` are deleted; Git confirmed each as merged. `develop` and `main` remain. Nothing was pushed.
+
+The gate result for the merged `develop` is in the next entry of this file.
+
 ### For Phase 2
 
 - `e2e/own-site.spec.ts` reads the first `<p>` inside `<main>` on the home page as the intro. The new hero's small label above the headline must not be a `<p>`, or it must come after the intro in the markup.
