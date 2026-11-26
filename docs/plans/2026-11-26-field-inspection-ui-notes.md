@@ -45,6 +45,14 @@ The simplify pass was done in this session without subagents, because the change
 
 Screenshots of `/`, a report, `/pricing` (with a failure notice), `/account` and `/sign-in?link=expired` at 1440 and 390 px are in `/Users/juan/code/retrofit/.local/design/field-inspection/app-shots/phase-1/`. The test that takes them is `/Users/juan/code/retrofit/.local/design/field-inspection/tools/phase-1-shots.spec.ts`; copy it into `e2e/` to run it and remove it afterwards.
 
+### Gate result
+
+The gate ran on `616765011ae7d47e84a7ff8cefe1bbad07c74983` (branch `feat/field-inspection-p1`). 14 of 15 checks passed: whitespace, RPI installation, evidence begin, vendor verify, agent check, peer check, typecheck, lint, 2,279 unit tests, coverage (statements 93.14%, branches 86.91%), build, 3 performance tests, 188 browser tests and the evidence seal. The browser tests include every release-required contrast and 320 px test, with unchanged titles, and the seven new ones.
+
+`db-tests` did not run and exited 4: `supabase start` could not start the disposable `retrofit-gate` stack. Its ports 54731 and 54732 were held by the containers `supabase_kong_chapa-p2fix` and `supabase_db_chapa-p2fix` of another project, created on 2026-11-26 at 12:12 UTC. The gate did not touch them. Its teardown completed, and no `retrofit-gate` container, volume, network or receipt remains. The analyzer therefore rejects the candidate with three reasons, all of them the missing database report.
+
+Phase 1 changes no file under `supabase/`, `src/lib/accounts/` or `tests/db/` (`git diff 9bac51d 6167650 --stat`). That is context, not a replacement for the check. Phase 1 is not accepted until the full gate passes on the candidate with the ports free. The raw log is `/Users/juan/code/retrofit/.local/runs/2026-11-26-field-inspection/gate-p1-6167650.log`.
+
 ### For Phase 2
 
 - `e2e/own-site.spec.ts` reads the first `<p>` inside `<main>` on the home page as the intro. The new hero's small label above the headline must not be a `<p>`, or it must come after the intro in the markup.

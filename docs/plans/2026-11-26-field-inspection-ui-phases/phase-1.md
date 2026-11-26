@@ -1,6 +1,6 @@
 # Phase 1: Foundation
 
-> Status 2026-11-26: implemented on branch `feat/field-inspection-p1`. Results, deviations and review findings are in 2026-11-26-field-inspection-ui-notes.md. Waiting for Juan's acceptance.
+> Status 2026-11-26: implemented on branch `feat/field-inspection-p1`. Results, deviations and review findings are in 2026-11-26-field-inspection-ui-notes.md. The gate passed 14 of 15 checks; the database tests could not start (ports held by another project's stack) and must run before acceptance.
 
 Part of [the Field Inspection UI plan](../2026-11-26-field-inspection-ui.md). Read its "Design specification" and decisions D1 to D9 first.
 
