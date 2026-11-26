@@ -42,11 +42,19 @@ function contrast(a: Token, b: Token): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-/** The selector of the rule that holds the declaration at `index`. */
-function selectorAt(index: number): string {
-  const open = css.lastIndexOf("{", index);
-  const before = Math.max(css.lastIndexOf("}", open), css.lastIndexOf("{", open - 1), css.lastIndexOf(";", open));
-  return css.slice(before + 1, open).trim();
+// Comments are dropped, so that a brace or a selector name inside one is never read as CSS.
+const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+/** The selectors (one per comma) of the rule that holds the declaration at `index` of `sheet`. */
+function selectorsAt(sheet: string, index: number): string[] {
+  const open = sheet.lastIndexOf("{", index);
+  const before = Math.max(sheet.lastIndexOf("}", open), sheet.lastIndexOf("{", open - 1), sheet.lastIndexOf(";", open));
+  return sheet.slice(before + 1, open).split(",").map((part) => part.trim());
+}
+
+/** The selectors that make the accent a text colour without being on an ink surface. */
+function accentTextOffInk(sheet: string): string[] {
+  return [...sheet.matchAll(/(?<![-\w])color:\s*var\(--fi-accent\)/g)].flatMap((m) => selectorsAt(sheet, m.index)).filter((selector) => !/^\.fi-on-ink(\s|$)/.test(selector));
 }
 
 function sourceFiles(dir: string): string[] {
@@ -81,8 +89,10 @@ describe("the Field Inspection tokens", () => {
   it("no rule uses the accent as a text colour outside an ink surface", () => {
     expect(contrast("--fi-accent", "--fi-paper")).toBeLessThan(3);
     expect(contrast("--fi-accent", "--fi-white")).toBeLessThan(3);
-    const uses = [...css.matchAll(/(?<![-\w])color:\s*var\(--fi-accent\)/g)].map((m) => selectorAt(m.index));
-    expect(uses.filter((selector) => !selector.includes(".fi-on-ink"))).toEqual([]);
+    expect(accentTextOffInk(rules)).toEqual([]);
+    // The check itself: it names a rule off the ink, a list with one part off the ink, and a rule that only excludes the ink.
+    const probe = ".fi-on-ink .a { color: var(--fi-accent); } .b, .fi-on-ink .c { color: var(--fi-accent); } :not(.fi-on-ink *) { color: var(--fi-accent); }";
+    expect(accentTextOffInk(probe)).toEqual([".b", ":not(.fi-on-ink *)"]);
   });
 
   // The base layer marks a disabled button with "not-allowed". A cursor on .fi-btn, in a later layer, would win over it.

@@ -34,6 +34,13 @@ Independent review (fresh context, read-only) returned CHANGES REQUIRED with eig
 | R7 | The blocked-font test did not assert the report's `h1`. | Resolved. |
 | R8 | `Stripe` took only `className`. | Resolved: it passes other attributes through. |
 
+The second review round found R1 to R8 resolved and approved the phase, with two notes:
+
+| ID | Finding | Disposition |
+| --- | --- | --- |
+| N1 | The accent-colour case could accept a selector that only excludes the ink, or a list with one part off the ink, and read a comment as a selector. | Resolved: comments are dropped, each part of a list must start with `.fi-on-ink`, and the case proves its own check on a three-rule probe. |
+| N2 | With `preload: false` the mono file loads on the home page only because the empty address field shows a placeholder. | Rejected with evidence: "both font families load from Retrofit's own origin" passed after the change, in a focused run and in the gate. A placeholder is rendered text, so the browser loads its font. |
+
 The simplify pass was done in this session without subagents, because the change is small. Applied: one `fits` helper in `e2e/support/layout.ts` for `phone-width.spec.ts` and the new spec; one footer; one navigation rule in place of three; no preload of the mono files. Skipped: the contrast function in `tests/site/design-tokens.test.ts` repeats arithmetic that `e2e/preview-theme.spec.ts` runs inside the browser; the two cannot share code.
 
 Screenshots of `/`, a report, `/pricing` (with a failure notice), `/account` and `/sign-in?link=expired` at 1440 and 390 px are in `/Users/juan/code/retrofit/.local/design/field-inspection/app-shots/phase-1/`. The test that takes them is `/Users/juan/code/retrofit/.local/design/field-inspection/tools/phase-1-shots.spec.ts`; copy it into `e2e/` to run it and remove it afterwards.
