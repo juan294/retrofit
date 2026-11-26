@@ -379,13 +379,20 @@ describe("chat: refusals before any upstream call", () => {
     expect(upstream).toHaveLength(1);
   });
 
-  // Fails if the network's judge limit is not applied on the proxy path, or counts by session or by a header that a client can choose freely.
+  // Fails if the network's judge limit is not applied on the proxy path, counts by session or by a header that a client can choose freely,
+  // or the status says that judge access works while the network's calls are used up.
   it("another judge session of the same network meets the network's daily limit", async () => {
     const { d } = setup({ JUDGE_CALLS_PER_CLIENT_DAY: "2" });
     const [a, b] = [await session(d, true), await session(d, true)];
     expect(a).not.toBe(b);
+    const statusOf = async (cookie: string, network = "203.0.113.7") =>
+      (await (await handleStatus(new Request(`${PUBLIC_ORIGIN}/api/inference/status`, { headers: { cookie, "x-forwarded-for": network } }), d)).json()) as object;
     expect((await handleChat(chat(BODY, { cookie: a }), d)).status).toBe(200);
+    expect(await statusOf(b)).toMatchObject({ available: true, pool: "judge", reason: null });
     expect((await handleChat(chat(BODY, { cookie: b }), d)).status).toBe(200);
+    for (const cookie of [a, b]) expect(await statusOf(cookie)).toMatchObject({ available: false, pool: "judge", reason: "judge_network_calls" });
+    expect(await statusOf(await session(d))).toMatchObject({ available: true, pool: "public", reason: null });
+    expect(await statusOf(b, "198.51.100.20")).toMatchObject({ available: true, pool: "judge", reason: null });
     const res = await handleChat(chat(BODY, { cookie: b }), d);
     expect(res.status).toBe(429);
     const text = await res.text();

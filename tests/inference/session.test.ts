@@ -128,20 +128,73 @@ describe("POST /api/inference/session/judge", () => {
     expect((await readSession(sessionReq({ cookie: cookieFrom(s) }), d))?.claims.pool).toBe("public");
   });
 
-  // Fails if the right code does not set pool judge, mints a new sid, or the stored record keeps pool public.
-  it("upgrades to pool judge with the same sid on the right code", async () => {
+  // Strix 2026-11-25. Fails if the right code gives judge access to the session that the browser sent: whoever planted that
+  // cookie (another subdomain can set one) would have judge access too.
+  it("opens a judge session with a new sid on the right code, and the earlier session stays public", async () => {
     const { d, claimsOf } = setup();
-    const s = await handleSession(sessionReq(), d);
-    const sid = claimsOf(s)!.sid;
+    const s = await handleSession(sessionReq({ ip: "198.51.100.77" }), d);
+    const before = claimsOf(s)!;
     const res = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(s) }), d);
     expect(res.status).toBe(200);
     expect(((await res.json()) as { pool: string }).pool).toBe("judge");
     const c = claimsOf(res)!;
-    expect(c.sid).toBe(sid);
     expect(c.pool).toBe("judge");
-    expect(((await d.store.get(sessionKey(sid))) as { pool: string }).pool).toBe("judge");
-    // The old public cookie now reads as judge too: the stored record is authoritative.
-    expect((await readSession(sessionReq({ cookie: cookieFrom(s) }), d))?.claims.pool).toBe("judge");
+    expect(c.sid).not.toBe(before.sid);
+    expect(c.client).not.toBe(before.client);
+    expect(((await d.store.get(sessionKey(c.sid))) as { pool: string }).pool).toBe("judge");
+    // The cookie from before the code: public now, and after its renewal.
+    const old = sessionReq({ cookie: cookieFrom(s) });
+    expect((await readSession(old, d))?.claims).toMatchObject({ sid: before.sid, pool: "public" });
+    expect(claimsOf(await handleSession(old, d))).toMatchObject({ sid: before.sid, pool: "public" });
+  });
+
+  // Reviewer. Fails if a session cookie that another subdomain planted (browsers send an older cookie first) or a broken one hides the
+  // judge's own: the judge would stay public, and every further code entry would open and count another judge session.
+  it("the judge's own session counts, whatever other session cookies the browser sends", async () => {
+    const { d, claimsOf } = setup();
+    const planted = await Promise.all([1, 2, 3, 4].map((n) => handleSession(sessionReq({ ip: `198.51.100.${n}` }), d)));
+    const own = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(planted[0]!) }), d);
+    const { sid } = claimsOf(own)!;
+    const cookie = ["retrofit_session=broken", ...[...planted, own].map(cookieFrom)].join("; ");
+    expect((await readSession(sessionReq({ cookie }), d))?.claims).toMatchObject({ sid, pool: "judge" });
+    expect(claimsOf(await handleSession(sessionReq({ cookie }), d))).toMatchObject({ sid, pool: "judge" });
+    expect(claimsOf(await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie }), d))).toMatchObject({ sid, pool: "judge" });
+    // A judge session that ended (its code was replaced) does not hide a live public one.
+    const other = { ...d, config: { ...d.config, free: { ...d.config.free, judgeCode: "another-code-0123456789" } } };
+    expect((await readSession(sessionReq({ cookie }), other))?.claims).toMatchObject({ sid: claimsOf(planted[0]!)!.sid, pool: "public" });
+    const down = { ...d, store: { ...d.store, get: () => Promise.reject(new Error("down")) } };
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await (await handleSession(sessionReq({ cookie }), down)).json()).toMatchObject({ message: sessionTexts.judgeUnavailable });
+  });
+
+  // Reviewer. Fails if three judge cookies of a replaced code, planted before the judge's own, use up the reads.
+  it("judge cookies of a replaced code do not hide the judge's own", async () => {
+    const { d, clock, claimsOf } = setup();
+    const ended = [];
+    for (let n = 0; n < 3; n++) ended.push(cookieFrom(await handleJudgeUpgrade(judgeReq({ code: CODE }), d)));
+    clock.advance(1000);
+    const code = "another-code-0123456789";
+    const now = { ...d, config: { ...d.config, free: { ...d.config.free, judgeCode: code } } };
+    const own = await handleJudgeUpgrade(judgeReq({ code }), now);
+    expect((await readSession(sessionReq({ cookie: [...ended, cookieFrom(own)].join("; ") }), now))?.claims).toMatchObject({ sid: claimsOf(own)!.sid, pool: "judge" });
+  });
+
+  // Fails if a request with many session cookies makes as many Store reads, or copies of one cookie use up the reads.
+  it("reads at most three sessions for one request", async () => {
+    const { d } = setup();
+    const cookies = await Promise.all([1, 2, 3, 4, 5].map(async (n) => cookieFrom(await handleSession(sessionReq({ ip: `198.51.100.${n}` }), d))));
+    const reads: string[] = [];
+    const store = { ...d.store, get: async (key: string) => (reads.push(key), null) } as typeof d.store;
+    expect(await readSession(sessionReq({ cookie: [cookies[0], cookies[0], ...cookies].join("; ") }), { ...d, store })).toBeNull();
+    expect([reads.length, new Set(reads).size]).toEqual([3, 3]);
+  });
+
+  // Fails if entering the code again starts a new session, with a new daily call count.
+  it("keeps the sid of a live judge session when the code is entered again", async () => {
+    const { d, claimsOf } = setup();
+    const first = await handleJudgeUpgrade(judgeReq({ code: CODE }), d);
+    const again = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(first) }), d);
+    expect(claimsOf(again)).toMatchObject({ sid: claimsOf(first)!.sid, pool: "judge" });
   });
 
   // Fails if the cap on new judge sessions per network and day is not applied (the shared code would multiply the daily
@@ -260,9 +313,8 @@ describe("POST /api/inference/session/judge", () => {
       texts.push(await res.text(), JSON.stringify([...res.headers]));
     }
     // A store failure while upgrading is logged without the code.
-    const failing = { ...d, store: { ...d.store, compareAndSet: () => Promise.reject(new Error(`store down`)) } };
-    const s2 = await handleSession(sessionReq({ ip: "198.51.100.30" }), d);
-    const down = await handleJudgeUpgrade(judgeReq({ code: CODE }, { cookie: cookieFrom(s2), ip: "198.51.100.30" }), failing);
+    const failing = { ...d, store: { ...d.store, putIfAbsent: () => Promise.reject(new Error(`store down`)) } };
+    const down = await handleJudgeUpgrade(judgeReq({ code: CODE }, { ip: "198.51.100.30" }), failing);
     expect(down.status).toBe(503);
     texts.push(await down.text());
     const all = [...texts, ...lines, storeDump(d.backing)].join("\n");

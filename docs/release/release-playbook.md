@@ -7,7 +7,7 @@ This is the single release procedure for Retrofit. Native `rpi-release` delegate
 v0.1.0 (2026-11-20) and v0.2.0 (2026-11-22, `7aa6eb1`) are released; the machine-readable record is `.rpi/release-profile.json`. The next release is v0.3.0: accounts, claims, publishing, billing in Stripe test mode. It is **not ready** until all of these are true:
 
 - The pre-launch Wave 1 repairs are merged and the gate and the analyzer accept the candidate.
-- Juan approved the texts of `/privacy` and `/terms` and did the UI review (owner checks 1 and 5 of the accounts plan).
+- Juan approved the texts of `/privacy` and `/terms` (done 2026-11-25; a later change of either text needs a new approval) and did the UI review (owner checks 1 and 5 of the accounts plan).
 - The production steps below are authorized, each one by name.
 
 Do not report a test count or coverage that the current gate run did not produce.

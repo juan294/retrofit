@@ -16,9 +16,10 @@ export const FREE_PLACEHOLDER_KEY = "retrofit-free";
 /** Visitor text for the overrun hold (parent plan, stuck state "overrun hold"). */
 export const HOLD_MESSAGE = "Retrofit's free AI is paused. Use your own key.";
 
-/** Visitor text when the counters are unavailable (parent plan, stuck state "Inference counters unavailable"). */
-/** For the judge pool: no text asks a judge for a key. */
+/** The text of UNAVAILABLE_MESSAGE for the judge pool: no text asks a judge for a key. */
 export const JUDGE_UNAVAILABLE_MESSAGE = "Judge access is not available right now. Try again in a minute.";
+
+/** Visitor text when the counters are unavailable (parent plan, stuck state "Inference counters unavailable"). */
 export const UNAVAILABLE_MESSAGE = "Retrofit's free AI is not available right now. Use your own key.";
 
 /** Runs a store operation and turns any failure into CountersUnavailable. */

@@ -1,14 +1,15 @@
 /** Retrofit's cookies: one reader and one Set-Cookie builder, so every cookie has the same attribute order. */
 
-/** The value of the first cookie `name` in a Cookie header, trimmed, or null. */
-export function cookieValue(header: string | null, name: string): string | null {
-  if (!header) return null;
-  for (const part of header.split(";")) {
+/** Every value of the cookie `name` in a Cookie header, trimmed, in its order. */
+export function cookieValues(header: string | null, name: string): string[] {
+  return (header ?? "").split(";").flatMap((part) => {
     const eq = part.indexOf("=");
-    if (eq !== -1 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
-  }
-  return null;
+    return eq !== -1 && part.slice(0, eq).trim() === name ? [part.slice(eq + 1).trim()] : [];
+  });
 }
+
+/** The value of the first cookie `name` in a Cookie header, trimmed, or null. */
+export const cookieValue = (header: string | null, name: string): string | null => cookieValues(header, name)[0] ?? null;
 
 /**
  * The name a cookie has on this deployment. Over https it carries the `__Host-` prefix: browsers then accept it

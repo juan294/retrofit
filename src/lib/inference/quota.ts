@@ -103,10 +103,14 @@ export function createQuota(deps: QuotaDeps) {
     return count("calls", keys.judgeCalls(sid, utcDay(now)), ttlUntil(nextUtcMidnight(now), now), by);
   }
 
+  /** The calls of the UTC day of all judge sessions of a network. */
+  const countNetwork = (network: string, by: number, now: number) => count("calls", keys.judgeNetwork(network, utcDay(now)), ttlUntil(nextUtcMidnight(now), now), by);
+
   return {
     /**
      * Counts one model call for the session; call N+1 of the pool's cap is refused. A judge's call also counts for its
-     * network in the UTC day: the judge code is shared and a judge session lasts weeks, so sessions add up.
+     * network in the UTC day: the judge code is shared and a judge session lasts weeks, so sessions add up. A call that
+     * the network refuses is taken back from the session's count: the session may go on from another network.
      */
     async admitCall(input: { sid: string; pool: Pool; network: string }): Promise<QuotaResult> {
       const now = clock();
@@ -114,13 +118,19 @@ export function createQuota(deps: QuotaDeps) {
       const admitted = n <= callCap(input.pool, free);
       if (input.pool === "public") return admitted ? { ok: true } : refusal("session_calls", "public");
       if (!admitted) return judgeCalls("judge_session_calls", free.judgeCallsPerSessionDay, now);
-      const ofNetwork = await count("calls", keys.judgeNetwork(input.network, utcDay(now)), ttlUntil(nextUtcMidnight(now), now));
-      return ofNetwork <= free.judgeCallsPerClientDay ? { ok: true } : judgeCalls("judge_network_calls", free.judgeCallsPerClientDay, now);
+      if ((await countNetwork(input.network, 1, now)) <= free.judgeCallsPerClientDay) return { ok: true };
+      await countCalls(input, -1, now);
+      return judgeCalls("judge_network_calls", free.judgeCallsPerClientDay, now);
     },
 
     /** Calls in the session's current cap so far, without counting one (an increment of 0 reads the window). */
     callsUsed(input: { sid: string; pool: Pool }): Promise<number> {
       return countCalls(input, 0, clock());
+    },
+
+    /** The network's judge sessions made all their calls of the UTC day. Counts nothing. */
+    async networkCapReached(network: string): Promise<boolean> {
+      return (await countNetwork(network, 0, clock())) >= free.judgeCallsPerClientDay;
     },
 
     /** Takes one session slot and one global slot (60 s leases). `release` frees both and is safe to call twice. */

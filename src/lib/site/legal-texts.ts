@@ -1,12 +1,12 @@
 // ============================================================================
-// DRAFT, PENDING OWNER REVIEW. Juan reads and approves both texts before any
-// release that includes them (parent plan, manual check 1). They are product
+// APPROVED BY JUAN on 2026-11-25 (parent plan, manual check 1). A change of
+// either text needs a new approval before its release. They are product
 // text written from what the code stores and sends, not legal advice, and
 // they make no legal claims. Juan owns the final wording.
 // ============================================================================
 //
-// OWNER REVIEW, billing (Phase 5): the lines about Stripe, test mode, the free-analysis count, API
-// keys, the end of a plan and cancellation at account deletion are new. They state only what the code
+// Billing (Phase 5): the lines about Stripe, test mode, the free-analysis count, API
+// keys, the end of a plan and cancellation at account deletion state only what the code
 // does. Refunds, taxes, invoices and the switch to live payments are not decided, so the texts promise
 // nothing about them; Juan decides and adds them before live payments start.
 //
