@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
   typescript: { tsconfigPath: "tsconfig.build.json" },
   // The private artifact route reads the install bundle assets from disk.
   outputFileTracingIncludes: {
-    "/p/**": ["./public/preview-assets/**/*", "./public/runtime/**/*", "./tools/agentic-web/templates/assistant.css"],
+    "/p/**": ["./public/preview-assets/**/*", "./public/runtime/**/*", "./tools/agentic-web/templates/assistant.css", "./public/brand/runtime-icons.js"],
     // A published site's agent files: content-actions.js, the bridge page and its runtime modules.
     "/s/**": [...PUBLISHED_ASSETS.values()].map((file) => `./public/${file}`),
     // The demo-harbor peer route reads its static site from disk.

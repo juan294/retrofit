@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures/csp";
 import { connectKey, mockOtari, traceEvents } from "./support/agent";
 import { callerScript, hostsOf } from "./support/caller";
+import { expectIconsWithoutEmoji } from "./support/emoji";
 import { DENIED_ORIGIN } from "@/lib/peer/conformance";
 import { PEER_FIXTURE_HOST, PEER_HOST as PEER } from "@/lib/peer/host";
 
@@ -45,6 +46,10 @@ test.describe("spec §6 with the production-shaped caller (retrofit_conformance 
     await card.getByRole("button", { name: "Allow", exact: true }).click();
     await expect(s.mount.getByText(/Harbor fact: the morning harbor tour leaves at 10:00\./).filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
     expect(hostsOf(s.requests)).toContain(PEER);
+    // The agents map shows Retrofit's icons for the concierge and the partner network, and the consent card no emoji.
+    await expectIconsWithoutEmoji(s.mount, ["concierge", "partner"]);
+    // After contact the runtime gives the partner its default compass; it still shows the partner icon.
+    await expect(s.mount.locator(".ns-anode", { hasText: "/harbor_tours" }).locator('svg[data-icon="partner"]')).toBeVisible();
     for (const r of s.requests.filter((x) => new URL(x.url()).host === PEER)) {
       const h = await r.allHeaders();
       expect(h["authorization"]).toBeUndefined();
