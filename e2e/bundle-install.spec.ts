@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test, expect } from "./fixtures/csp";
 import { analyzeFixture, mockOtari, OTARI } from "./support/agent";
+import { expectIconsWithoutEmoji } from "./support/emoji";
 
 const installed = "http://127.0.0.1:3015";
 
@@ -60,6 +61,8 @@ test("an owner downloads, installs and runs the assistant on its own origin", as
       const answer = page.locator("#ns-msgs").getByText(/Our opening hours are Monday to Friday 7:00 to 18:00/).first();
       await expect(answer).toBeVisible();
       await expect(page.locator('#ns-msgs a[href^="http://bakery.fixture.test:3011/"]').first()).toBeVisible();
+      // The installed assistant runs the icon swapper it ships: the concierge and settings icons, no emoji.
+      await expectIconsWithoutEmoji(page.locator("#agent-app"), ["concierge", "tool"]);
       expect(router.bodies.some(body => body.messages.some(m => m.role === "tool" && m.name === "website_search_site_content"))).toBe(true);
     } finally {
       if (server.exitCode === null && server.signalCode === null) server.kill("SIGTERM");

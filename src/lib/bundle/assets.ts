@@ -20,6 +20,8 @@ async function readAssets() {
     asset("content-actions.js", path.join(process.cwd(), "public/preview-assets/content-actions.js")),
     asset("bridge/action-bridge.html", path.join(process.cwd(), "public/preview-assets/bridge/action-bridge.html")),
     asset("assistant/assistant.css", path.join(process.cwd(), "tools/agentic-web/templates/assistant.css")),
+    // Retrofit's icons in place of the runtime's emoji; site.js starts them before the runtime boots.
+    asset("assistant/runtime-icons.js", path.join(process.cwd(), "public/brand/runtime-icons.js")),
   ]);
   return assets.sort((a, b) => a.path.localeCompare(b.path, "en"));
 }

@@ -426,3 +426,11 @@
 .runtime-surface .ns-title {
   overflow-wrap: anywhere;
 }
+
+/* Retrofit's icons in place of the runtime's emoji (public/brand/runtime-icons.js). They take the size and colour
+   of the text around them. */
+.runtime-surface .rf-icon {
+  display: inline-block;
+  flex: none;
+  vertical-align: -0.125em;
+}
