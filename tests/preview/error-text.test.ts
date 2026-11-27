@@ -4,7 +4,7 @@ import { friendlyRuntimeError } from "@/lib/preview/error-text";
 describe("friendlyRuntimeError", () => {
   // Fails if a router's JSON error reaches the visitor as raw JSON instead of its message.
   // The warning emoji is gone too: the preview shows Retrofit's warning icon in front of the message.
-  it("turns the runtime's JSON error bubble into the error's message, without the emoji", () => {
+  it("turns the runtime's JSON error bubble into the error's message", () => {
     const raw = `⚠️ LLM HTTP 429: {"error":{"message":"Retrofit's free AI is used up for today. Use your own AI key to continue.","type":"rate_limit_error","code":"public_pool"}}`;
     expect(friendlyRuntimeError(raw)).toBe("Retrofit's free AI is used up for today. Use your own AI key to continue.");
   });
