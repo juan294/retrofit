@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { COUNTING_RETRY_S, visitorTexts } from "@/lib/analysis/texts";
 import { AgentPanel } from "@/components/preview/AgentPanel";
+import { ScanField } from "./ScanField";
+import styles from "./Scan.module.css";
 import { InstallPanel } from "./InstallPanel";
 import { signInHref } from "@/lib/accounts/return-to";
 import { SAVE_REPORT_TEXT } from "@/lib/site/account-texts";
@@ -37,7 +39,9 @@ const STEP_TEXT: Record<string, string> = {
   claim: "Reading the home page",
   joined: "Joining a crawl of the same site",
 };
-function stepText(s: Status): string {
+function stepText(s: Status | null): string {
+  if (!s) return "Getting the analysis status";
+  if (s.status === "ready") return "Preparing your report";
   if (s.status === "queued") return STEP_TEXT.queued!;
   if (s.step.startsWith("probe")) return "Checking robots.txt, sitemap, llms.txt and agent manifest";
   if (s.step.startsWith("page")) return `Reading linked pages (${s.step})`;
@@ -52,16 +56,15 @@ export function AnalysisStatus({ state, status }: { state: "working" | "ready" |
   return (
     <div role="status">
       {state === "ready" ? <p className="sr-only">The report is ready.</p> : null}
-      {state !== "working" ? null : status ? (
-        <div className="mt-8" data-testid="analysis-progress">
-          <p className="font-medium">{status.status === "queued" ? visitorTexts.queued : "Reading the site…"}</p>
-          <p className="mt-1" style={{ color: "var(--color-muted)" }}>
-            {stepText(status)}
-          </p>
+      {state === "working" ? (
+        <div className={styles.scan} data-testid="analysis-progress">
+          <ScanField />
+          <div className={styles.readout}>
+            <p>{stepText(status)}</p>
+            {status?.status === "queued" ? <p>{visitorTexts.queued}</p> : null}
+          </div>
         </div>
-      ) : (
-        <p className="mt-8">Loading…</p>
-      )}
+      ) : null}
     </div>
   );
 }

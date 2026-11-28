@@ -11,6 +11,9 @@ describe("the analysis status (UX-M2)", () => {
   it("is one region, mounted from the first render", () => {
     const html = renderToStaticMarkup(createElement(AnalysisView, { id: "0".repeat(32), inputOrigin: "https://shop.example.com" }));
     expect(html.match(/role="status"/g)).toHaveLength(1);
+    expect(html).toContain('data-testid="analysis-progress"');
+    expect(html).toContain("Getting the analysis status");
+    expect(html).toMatch(/<svg[^>]+aria-hidden="true"/);
   });
 
   // Fails if the region goes away between the progress and the report, so that the end of the analysis is silent.
@@ -19,6 +22,8 @@ describe("the analysis status (UX-M2)", () => {
     const queued = html({ state: "working", status: { status: "queued", step: "queued", scoreReady: false } });
     expect(queued).toMatch(/^<div role="status">.*data-testid="analysis-progress"/);
     expect(queued).toContain(visitorTexts.queued);
+    expect(html({ state: "working", status: { status: "crawling", step: "page 8", scoreReady: false } })).toContain("Reading linked pages (page 8)");
+    expect(html({ state: "working", status: { status: "ready", step: "done", scoreReady: true } })).toContain("Preparing your report");
     expect(html({ state: "ready", status: null })).toBe('<div role="status"><p class="sr-only">The report is ready.</p></div>');
     // A failure is an alert of its own.
     expect(html({ state: "failed", status: null })).toBe('<div role="status"></div>');

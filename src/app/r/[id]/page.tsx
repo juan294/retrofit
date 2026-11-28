@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { AnalysisView } from "@/components/analysis/AnalysisView";
+import styles from "@/components/analysis/Scan.module.css";
 import { SiteNav } from "@/components/SiteNav";
 import { accountCookieName } from "@/lib/accounts/session";
 import { findOwnedAnalysis } from "@/lib/analysis/owner";
@@ -21,10 +22,10 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   // A signed-in visitor can save the report to the account.
   const signedIn = account !== null;
   return (
-    <main className="mx-auto max-w-3xl px-4 py-12">
+    <main className={`${styles.page} mx-auto max-w-3xl px-4 py-12`}>
       <SiteNav />
       <h1 className="mt-4 text-3xl font-semibold">Agent readiness</h1>
-      <p className="mt-2" style={{ color: "var(--color-muted)" }}>
+      <p className="mt-2">
         {analysis.inputOrigin}
       </p>
       <AnalysisView id={id} inputOrigin={analysis.inputOrigin} canSave={signedIn} />
