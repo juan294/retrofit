@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { PLANS, type PlanId } from "./billing/plans";
+import type { PlanPrices } from "./billing/state";
 
 export class ConfigError extends Error {
   constructor(
@@ -23,6 +25,18 @@ export interface Config {
   readonly crawlMaxHostsPerDay: number;
   readonly queueMaxWaitS: number;
   readonly analysesPerClientHour: number;
+  /** "Notify me" signups per network per hour (POST /api/notify). */
+  readonly notifyPerClientHour: number;
+  /** Sign-in links per network per hour (POST /api/auth/sign-in). */
+  readonly signInPerClientHour: number;
+  /** Sign-in links per email address per hour; the window is keyed by a keyed hash of the address. */
+  readonly signInPerEmailHour: number;
+  /** Sign-in links per network and email address per hour, so one network cannot use up an address's links. */
+  readonly signInPerEmailNetworkHour: number;
+  /** Sign-in links checked per network per hour (POST /auth/verify): every check reaches the provider from Retrofit's own addresses. */
+  readonly signInVerifyPerClientHour: number;
+  /** Distinct sites one account may analyze or score in a UTC day, by plan, from BILLING_START on (never more than half of CRAWL_MAX_HOSTS_PER_DAY). */
+  readonly accountSitesPerDay: Readonly<Record<PlanId, number>>;
   readonly staleAfterS: number;
   readonly analysisTtlS: number;
   readonly scoreWaitMs: number;
@@ -30,16 +44,40 @@ export interface Config {
   readonly sessionSecret: string;
   readonly onVercel: boolean;
   readonly fixturesEnabled: boolean;
+  /**
+   * The instant billing and the free-analysis limit start (ms since epoch; BILLING_START, default
+   * EARLIEST_BILLING_START). Before it every visitor keeps open access.
+   * Required on Vercel, and never earlier than that default there.
+   */
+  readonly billingStart: number;
+  /** Stripe (test mode only). Null without it (checkout and the webhook answer unavailable). */
+  readonly billing: BillingConfig | null;
+  /** Bearer secret of every Vercel Cron route (CRON_SECRET). Required on Vercel; null off Vercel without it (the crons refuse). */
+  readonly cronSecret: string | null;
   /** Phase 6: Retrofit's free inference path. */
   readonly free: FreeConfig;
   /** Phase 7: the Supabase store. Required on Vercel; null off Vercel without it (memory store). */
   readonly supabase: SupabaseConfig | null;
 }
 
+export interface BillingConfig {
+  /** Server only. Never sent to a browser, logged or written to evidence. A test-mode key. */
+  readonly secretKey: string;
+  /** Server only. Signs the webhook's events. */
+  readonly webhookSecret: string;
+  /** The Stripe price ids of each paid plan that has one: the first is for sale, all are recognised. The amounts live in Stripe. */
+  readonly prices: PlanPrices;
+}
+
 export interface SupabaseConfig {
   readonly url: string;
   /** Server only. Never sent to a browser, logged or written to evidence. */
   readonly serviceRoleKey: string;
+  /**
+   * SUPABASE_ANON_KEY: the anon key that sign-in uses for Supabase Auth (server side only; it never
+   * reaches a browser). Required on Vercel; absent off Vercel without it (sign-in then answers 503).
+   */
+  readonly anonKey?: string;
 }
 
 export interface FreeConfig {
@@ -64,7 +102,11 @@ export interface FreeConfig {
   readonly inflightGlobal: number;
   readonly callsPerSession: number;
   readonly sessionsPerClientHour: number;
-  readonly judgeCallsPerSession: number;
+  /** Model calls of one judge session in a UTC day. */
+  readonly judgeCallsPerSessionDay: number;
+  /** Model calls of all judge sessions of one network in a UTC day. */
+  readonly judgeCallsPerClientDay: number;
+  /** New judge sessions of one network in a UTC day. */
   readonly judgeSessionsPerClientDay: number;
   readonly upstreamTimeoutMs: number;
   /** Fractions of the credit that raise one alert each, ascending. */
@@ -75,7 +117,6 @@ export interface FreeConfig {
   readonly keyPublic: string | null;
   readonly keyJudge: string | null;
   readonly judgeCode: string | null;
-  readonly cronSecret: string | null;
   readonly alertGithubToken: string | null;
   readonly alertRepo: string;
 }
@@ -91,6 +132,11 @@ const NUMBERS = {
   crawlMaxHostsPerDay: ["CRAWL_MAX_HOSTS_PER_DAY", 1000],
   queueMaxWaitS: ["QUEUE_MAX_WAIT_S", 120],
   analysesPerClientHour: ["ANALYSES_PER_CLIENT_HOUR", 20],
+  notifyPerClientHour: ["NOTIFY_PER_CLIENT_HOUR", 5],
+  signInPerClientHour: ["SIGNIN_PER_CLIENT_HOUR", 5],
+  signInPerEmailHour: ["SIGNIN_PER_EMAIL_HOUR", 3],
+  signInPerEmailNetworkHour: ["SIGNIN_PER_EMAIL_NETWORK_HOUR", 2],
+  signInVerifyPerClientHour: ["SIGNIN_VERIFY_PER_CLIENT_HOUR", 20],
   staleAfterS: ["STALE_AFTER_S", 90],
   analysisTtlS: ["ANALYSIS_TTL_S", 604800],
   scoreWaitMs: ["SCORE_WAIT_MS", 25000],
@@ -165,26 +211,84 @@ export function loadConfig(env: Env): Config {
 
   const publicOrigin = parseOrigin("PUBLIC_ORIGIN", env.PUBLIC_ORIGIN ?? "http://127.0.0.1:3010");
 
+  const cronSecret = env.CRON_SECRET?.trim() || null;
+  if (onVercel && !cronSecret) throw new ConfigError("CRON_SECRET", "is required on Vercel");
+
   const free = loadFreeConfig(env, onVercel);
   if (free.upstreamTimeoutMs > 50_000) throw new ConfigError("FREE_UPSTREAM_TIMEOUT_MS", "must be at most 50000 (maxDuration 60 s)");
 
   const supabase = loadSupabaseConfig(env, onVercel);
 
-  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, free, supabase });
+  if (onVercel && !env.BILLING_START?.trim()) throw new ConfigError("BILLING_START", "is required on Vercel");
+  const billingStart = parseInstant(env, "BILLING_START", EARLIEST_BILLING_START);
+  // Judges have free access until then: no Vercel setting can start billing earlier.
+  if (onVercel && billingStart < Date.parse(EARLIEST_BILLING_START)) throw new ConfigError("BILLING_START", `must not be before ${EARLIEST_BILLING_START} on Vercel`);
+  const billing = loadBillingConfig(env);
+  const accountSitesPerDay = Object.freeze(Object.fromEntries(PLANS.map(({ id, limits }) => [id, parsePositive(env, `ACCOUNT_SITES_PER_DAY_${id.toUpperCase()}`, limits.sitesPerDay)])) as Record<PlanId, number>);
+
+  return Object.freeze({ ...numbers, publicOrigin, sessionSecret, onVercel, fixturesEnabled, billingStart, billing, accountSitesPerDay, cronSecret, free, supabase });
 }
 
-/** SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY: required on Vercel (https); off Vercel both or neither. */
+/**
+ * The default and, on Vercel, the earliest BILLING_START. Owner decision 2026-11-25: the hackathon asks
+ * for hosting until 2027-01-18 17:00 Pacific time (2027-01-19T01:00Z), so billing starts a day later.
+ */
+const EARLIEST_BILLING_START = "2027-01-20T00:00:00Z";
+
+/**
+ * STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET: both or neither. Without them nothing can be bought;
+ * the daily credit check opens an alert when that is still so from BILLING_START on.
+ * STRIPE_PRICE_PRO and STRIPE_PRICE_AGENCY: optional, and only with the secret key; a comma-separated
+ * list, the first price for sale and the others kept for their subscribers. Test mode only:
+ * a live key is refused everywhere (the live switch is a separate authorized release). No message
+ * contains any part of a value.
+ */
+function loadBillingConfig(env: Env): BillingConfig | null {
+  const value = (name: string) => env[name]?.trim() || null;
+  const secretKey = value("STRIPE_SECRET_KEY");
+  const webhookSecret = value("STRIPE_WEBHOOK_SECRET");
+  const list = (name: string) => value(name)?.split(",").map((id) => id.trim()) ?? null;
+  const pro = list("STRIPE_PRICE_PRO");
+  const agency = list("STRIPE_PRICE_AGENCY");
+  if (!secretKey && (webhookSecret || pro || agency)) throw new ConfigError("STRIPE_SECRET_KEY", "is required with any other Stripe variable");
+  if (!secretKey) return null;
+  if (!webhookSecret) throw new ConfigError("STRIPE_WEBHOOK_SECRET", "is required when STRIPE_SECRET_KEY is set");
+  if (!/^(sk|rk)_test_/.test(secretKey)) throw new ConfigError("STRIPE_SECRET_KEY", "must be a test-mode key (sk_test_ or rk_test_)");
+  if (!webhookSecret.startsWith("whsec_")) throw new ConfigError("STRIPE_WEBHOOK_SECRET", "must start with whsec_");
+  for (const [name, ids] of [["STRIPE_PRICE_PRO", pro], ["STRIPE_PRICE_AGENCY", agency]] as const) {
+    if (ids?.some((id) => !/^price_\w+$/.test(id))) throw new ConfigError(name, "must be a Stripe price id (price_...), or a comma-separated list of them");
+    if (ids && new Set(ids).size < ids.length) throw new ConfigError(name, "must name each price once");
+  }
+  if (pro?.some((id) => agency?.includes(id))) throw new ConfigError("STRIPE_PRICE_AGENCY", "must not share a price with STRIPE_PRICE_PRO");
+  const prices: PlanPrices = { ...(pro ? { pro: Object.freeze(pro) } : {}), ...(agency ? { agency: Object.freeze(agency) } : {}) };
+  return Object.freeze({ secretKey, webhookSecret, prices: Object.freeze(prices) });
+}
+
+/**
+ * SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY: required on Vercel (https); off Vercel both or neither.
+ * SUPABASE_ANON_KEY: required on Vercel; off Vercel optional, and only with SUPABASE_URL.
+ */
 function loadSupabaseConfig(env: Env, onVercel: boolean): SupabaseConfig | null {
   const rawUrl = env.SUPABASE_URL?.trim() || null;
   const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim() || null;
+  const anonKey = env.SUPABASE_ANON_KEY?.trim() || null;
   if (onVercel && !rawUrl) throw new ConfigError("SUPABASE_URL", "is required on Vercel");
   if (onVercel && !key) throw new ConfigError("SUPABASE_SERVICE_ROLE_KEY", "is required on Vercel");
   if (rawUrl && !key) throw new ConfigError("SUPABASE_SERVICE_ROLE_KEY", "is required when SUPABASE_URL is set");
   if (key && !rawUrl) throw new ConfigError("SUPABASE_URL", "is required when SUPABASE_SERVICE_ROLE_KEY is set");
+  if (onVercel && !anonKey) throw new ConfigError("SUPABASE_ANON_KEY", "is required on Vercel");
+  if (anonKey && !rawUrl) throw new ConfigError("SUPABASE_URL", "is required when SUPABASE_ANON_KEY is set");
   if (!rawUrl || !key) return null;
   const url = parseOrigin("SUPABASE_URL", rawUrl);
   if (onVercel && !url.startsWith("https:")) throw new ConfigError("SUPABASE_URL", "must use https on Vercel");
-  return Object.freeze({ url, serviceRoleKey: key });
+  return Object.freeze({ url, serviceRoleKey: key, ...(anonKey ? { anonKey } : {}) });
+}
+
+/** An ISO 8601 date and time in ms since the epoch; `fallback` when unset. */
+function parseInstant(env: Env, name: string, fallback: string): number {
+  const ms = Date.parse(env[name] ?? fallback);
+  if (!Number.isFinite(ms)) throw new ConfigError(name, "must be an ISO date and time");
+  return ms;
 }
 
 function parseNonNegative(env: Env, name: string, fallback: number): number {
@@ -216,9 +320,7 @@ export function loadFreeConfig(env: Env, onVercel: boolean): FreeConfig {
   const judgeReserveUsd = required("JUDGE_RESERVE_USD");
   if (judgeReserveUsd >= creditUsd) throw new ConfigError("JUDGE_RESERVE_USD", "must be less than FREE_CREDIT_USD");
 
-  const serviceEndRaw = env.FREE_SERVICE_END ?? "2027-01-18T23:59:59Z";
-  const serviceEndMs = Date.parse(serviceEndRaw);
-  if (!Number.isFinite(serviceEndMs)) throw new ConfigError("FREE_SERVICE_END", "must be an ISO date and time");
+  const serviceEndMs = parseInstant(env, "FREE_SERVICE_END", "2027-01-18T23:59:59Z");
 
   const thresholds = (env.CREDIT_ALERT_THRESHOLDS ?? "0.5,0.8,0.95").split(",").map((x) => Number(x.trim()));
   if (!thresholds.length || thresholds.some((t, i) => !(t > 0 && t < 1) || (i > 0 && t <= thresholds[i - 1]!))) {
@@ -267,15 +369,15 @@ export function loadFreeConfig(env: Env, onVercel: boolean): FreeConfig {
     inflightGlobal: n("FREE_INFLIGHT_GLOBAL", 16),
     callsPerSession: n("FREE_CALLS_PER_SESSION", 40),
     sessionsPerClientHour: n("FREE_SESSIONS_PER_CLIENT_HOUR", 6),
-    judgeCallsPerSession: n("JUDGE_CALLS_PER_SESSION", 200),
-    judgeSessionsPerClientDay: n("JUDGE_SESSIONS_PER_CLIENT_DAY", 3),
+    judgeCallsPerSessionDay: n("JUDGE_CALLS_PER_SESSION_DAY", 200),
+    judgeCallsPerClientDay: n("JUDGE_CALLS_PER_CLIENT_DAY", 1000),
+    judgeSessionsPerClientDay: n("JUDGE_SESSIONS_PER_CLIENT_DAY", 20),
     upstreamTimeoutMs: n("FREE_UPSTREAM_TIMEOUT_MS", 45000),
     alertThresholds: Object.freeze(thresholds),
     upstreamUrl,
     keyPublic,
     keyJudge,
     judgeCode,
-    cronSecret: secret("CRON_SECRET"),
     alertGithubToken: secret("ALERT_GITHUB_TOKEN"),
     alertRepo: "juan294/retrofit",
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { forgetAll, loadKey, saveKey, type KeyStorageEnv, type SavedKey } from "@/lib/keys/storage";
+import { forgetAll, loadKey, loadUsableKey, saveKey, type KeyStorageEnv, type SavedKey } from "@/lib/keys/storage";
 
 /** Minimal in-memory Web Storage at the browser boundary (no jsdom in this project). */
 class MemoryStorage implements Storage {
@@ -142,5 +142,18 @@ describe("key storage", () => {
     expect(() => saveKey(SAVED, { remember: true }, e)).not.toThrow();
     expect(loadKey(e)).toBeNull();
     expect(() => forgetAll(e)).not.toThrow();
+  });
+});
+
+describe("loadUsableKey", () => {
+  // Fails if a saved key whose router is no known provider counts as usable (the key panel could then neither name nor connect it), or a usable one loses its provider.
+  it("answers the saved key with its provider, and null for an unknown router or no key", () => {
+    const e = { session: new MemoryStorage(), local: new MemoryStorage(), document: null };
+    expect(loadUsableKey(e)).toBeNull();
+    saveKey({ provider: "Otari", router: "https://api.otari.ai/api/v1", model: "m", key: "otk_test" }, { remember: true }, e);
+    expect(loadUsableKey(e)).toMatchObject({ saved: { key: "otk_test", remembered: true }, provider: { name: "Otari", router: "https://api.otari.ai/api/v1" } });
+    saveKey({ provider: "Otari", router: "https://router.example/v1", model: "m", key: "otk_test" }, { remember: true }, e);
+    expect(loadKey(e)).not.toBeNull();
+    expect(loadUsableKey(e)).toBeNull();
   });
 });

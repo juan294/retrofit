@@ -3,19 +3,28 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { localizeRetry } from "./analysis/retry-time";
+import type { RequestFailure } from "./analysis/request";
+import { SignInForm } from "./SignInForm";
 import { createStartController, type StartController, type StartState } from "./analysis/start-controller";
+import { useHydrated } from "./useHydrated";
+import { buttonState } from "./useOneAtATime";
 
+/**
+ * The home page's address form. Before hydration the button is disabled (so is implicit submission with
+ * Enter), and the form is a POST to the API, so an early click never reloads the page with the address in its URL.
+ */
 export function UrlForm() {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Pick<RequestFailure, "code" | "message"> | null>(null);
   const [{ busy, waiting }, setState] = useState<StartState>({ busy: false, waiting: null });
   const starts = useRef<StartController | null>(null);
+  const hydrated = useHydrated();
 
   // One start at a time; leaving the page aborts it, so a late answer never navigates.
   useEffect(() => {
     const controller = createStartController({
       onState: setState,
-      onResult: (r) => (r.ok ? router.push(`/r/${r.id}`) : setError(localizeRetry(r.failure.message, r.failure.retryAt))),
+      onResult: (r) => (r.ok ? router.push(`/r/${r.id}`) : setError({ code: r.failure.code, message: localizeRetry(r.failure.message, r.failure.retryAt) })),
     });
     starts.current = controller;
     return () => controller.dispose();
@@ -23,48 +32,54 @@ export function UrlForm() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Also after a success: the page is leaving.
+    if (busy) return;
     setError(null);
     const url = String(new FormData(event.currentTarget).get("url") ?? "").trim();
     if (!url) {
-      setError("Paste the address of a public website.");
+      setError({ code: "empty", message: "Paste the address of a public website." });
       return;
     }
     starts.current?.start(url);
   }
 
   return (
-    <form onSubmit={submit} className="mt-8 flex flex-col gap-2" noValidate>
-      <label htmlFor="site-url" className="font-medium">
-        Your website address
-      </label>
-      <div className="flex gap-2">
-        <input
-          id="site-url"
-          name="url"
-          type="text"
-          inputMode="url"
-          autoComplete="url"
-          placeholder="https://example.com"
-          className="min-w-0 flex-1 rounded border px-3 py-2"
-          style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
-          aria-describedby={error ? "site-url-error" : undefined}
-        />
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded px-4 py-2 font-medium"
-          style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}
-        >
-          {busy ? "Starting…" : "Score my site"}
-        </button>
-      </div>
-      {/* Always mounted, so a screen reader announces the text when it appears. */}
-      <p role="status">{waiting ?? ""}</p>
-      {error ? (
-        <p id="site-url-error" role="alert" style={{ color: "var(--color-danger)" }}>
-          {error}
-        </p>
-      ) : null}
-    </form>
+    <>
+      <form method="post" action="/api/analyze" onSubmit={submit} className="mt-8 flex flex-col gap-2" noValidate>
+        <label htmlFor="site-url" className="font-medium">
+          Your website address
+        </label>
+        <div className="flex gap-2">
+          <input
+            id="site-url"
+            name="url"
+            type="text"
+            inputMode="url"
+            autoComplete="url"
+            placeholder="https://example.com"
+            className="min-w-0 flex-1 rounded border px-3 py-2"
+            style={{ borderColor: "var(--color-border)", background: "var(--color-surface)" }}
+            aria-describedby={error ? "site-url-error" : undefined}
+          />
+          <button
+            type="submit"
+            {...buttonState(hydrated, busy)}
+            className="rounded px-4 py-2 font-medium"
+            style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}
+          >
+            {busy ? "Starting…" : "Score my site"}
+          </button>
+        </div>
+        {/* Always mounted, so a screen reader announces the text when it appears. */}
+        <p role="status">{waiting ?? ""}</p>
+        {error ? (
+          <p id="site-url-error" role="alert" style={{ color: "var(--color-danger)" }}>
+            {error.message}
+          </p>
+        ) : null}
+      </form>
+      {/* The free analyses are used up: signing in is the way on. */}
+      {error?.code === "free_limit" ? <SignInForm returnTo="/" privacyHref="/privacy" /> : null}
+    </>
   );
 }

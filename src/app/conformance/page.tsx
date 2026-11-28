@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
+import { SiteNav } from "@/components/SiteNav";
 import { AgentPanel } from "@/components/preview/AgentPanel";
 import { CONFORMANCE_FIXTURES, CONFORMANCE_NETWORK } from "@/lib/peer/conformance";
 import { PEER_ORIGIN, RETROFIT_ORIGIN } from "@/lib/peer/host";
@@ -21,7 +22,8 @@ export default async function Conformance() {
   await connection();
   return (
     <main className="mx-auto max-w-2xl px-4 py-16">
-      <h1 className="text-4xl font-semibold">Conformance fixtures</h1>
+      <SiteNav />
+      <h1 className="mt-8 text-4xl font-semibold">Conformance fixtures</h1>
       <p className="mt-4" style={{ color: "var(--color-muted)" }}>
         Retrofit publishes a small agent network, <code>{CONFORMANCE_NETWORK}</code>, that calls one working partner network and three that must fail safely.
         Other sites and the organizers&apos; partner check can read it at <code className="break-all">{`${RETROFIT_ORIGIN}/${CONFORMANCE_NETWORK}`}</code>. The partner networks are on{" "}

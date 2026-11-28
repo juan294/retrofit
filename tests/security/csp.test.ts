@@ -81,6 +81,13 @@ describe("static headers", () => {
   const find = (source: string) => rules.find((r) => r.source === source)?.headers ?? [];
   const value = (source: string, key: string) => find(source).find((h) => h.key === key)?.value;
 
+  // P2-R1. Fails if the sign-in link's page (its URL holds the token) can send the token in a Referer.
+  it("sends no Referer from the /auth pages", () => {
+    expect(value("/auth/:path*", "Referrer-Policy")).toBe("no-referrer");
+    const order = rules.map((r) => r.source);
+    expect(order.indexOf("/auth/:path*")).toBeGreaterThan(order.indexOf("/:path*"));
+  });
+
   it("sends the base headers on every response", () => {
     expect(value("/:path*", "X-Content-Type-Options")).toBe("nosniff");
     expect(value("/:path*", "Referrer-Policy")).toBe("strict-origin-when-cross-origin");

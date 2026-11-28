@@ -1,4 +1,4 @@
-import { getJob, isQueueExpired, startOrJoinCrawl, updateJob, type JobDeps } from "@/lib/crawl/jobs";
+import { getJob, isQueueExpired, startOrJoinCrawl, updateJob, type JobDeps, type StartOptions } from "@/lib/crawl/jobs";
 import { runCrawl, type WorkerOutcome } from "@/lib/crawl/worker";
 import { countOnce, nextUtcMidnight, shortHash, ttlUntil, utcDay } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
@@ -35,14 +35,15 @@ export type StartCrawlResult =
  * failed `counting`, so it is never crawled or reused, and the caller answers a
  * short retry. The retry creates a new job and decides again.
  */
-export async function startCrawlJob(deps: JobDeps, inputOrigin: string): Promise<StartCrawlResult> {
-  const { jobId, created } = await startOrJoinCrawl(deps, inputOrigin);
-  if (!created) return { ok: true, jobId, created };
+export async function startCrawlJob(deps: JobDeps, inputOrigin: string, o: Pick<StartOptions, "ownedOf"> = {}): Promise<StartCrawlResult> {
   const now = deps.clock();
   const midnight = nextUtcMidnight(now);
-  const ttl = ttlUntil(midnight, now);
   const day = utcDay(now);
-  const decision = await countOnce(deps.store, `crawl-origin-day:${day}:${shortHash(inputOrigin)}`, `crawl-origins:${day}`, ttl, deps.config.crawlMaxHostsPerDay);
+  const count = () => countOnce(deps.store, `crawl-origin-day:${day}:${shortHash(inputOrigin)}`, `crawl-origins:${day}`, ttlUntil(midnight, now), deps.config.crawlMaxHostsPerDay);
+  // An owner's new read is counted before it replaces the cached one, which stays when the cap refuses it.
+  const { jobId, created } = await startOrJoinCrawl(deps, inputOrigin, { ...o, mayReplace: async () => (await count()) === "admitted" });
+  if (!created) return { ok: true, jobId, created };
+  const decision = await count();
   if (decision !== "admitted") {
     // Requests that joined this job meanwhile read the same answer from it.
     const refused = decision === "refused";

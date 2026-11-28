@@ -1,5 +1,6 @@
 import { type Clock, type Store, systemClock } from "@/lib/store/types";
 import { CrawlDelayTooLong } from "./errors";
+import { realSleep } from "./timers";
 
 /**
  * Stored at `nextAllowedAt:<host>`: `at` is the earliest time the next request
@@ -61,7 +62,6 @@ export const MAX_INTERVAL_MS = 24 * 3600 * 1000;
 export const LATE_START_TOLERANCE_MS = 250;
 const MAX_ATTEMPTS = 1000;
 
-const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export function createPacer({
   store,
@@ -84,7 +84,7 @@ export function createPacer({
         // Time is read after each store call and wait below, never before it.
         let now = clock();
         const slotStart = current ? Math.max(now, current.at, (current.last ?? Number.NEGATIVE_INFINITY) + intervalMs) : now;
-        if (tooLate(slotStart)) throw new CrawlDelayTooLong(host, slotStart - now);
+        if (tooLate(slotStart)) throw new CrawlDelayTooLong(host, slotStart - now, intervalMs);
         // A new record starts at version `now` (ms), above any earlier record's version, so a stale reader
         // of an expired record can never match a recreated one.
         const latestStart = slotStart + lateStartToleranceMs;
@@ -102,7 +102,7 @@ export function createPacer({
         // stays: it only makes the next request to this host wait longer. Undoing it would need another
         // conditional write after the deadline, and an unconditional delete could erase a later caller's
         // slot and shorten its spacing.
-        if (tooLate(now)) throw new CrawlDelayTooLong(host, 0);
+        if (tooLate(now)) throw new CrawlDelayTooLong(host, 0, intervalMs);
         if (now <= latestStart) return;
         // Too late for this slot: the next caller may start one interval after its `last`. Take a new
         // slot, spaced from this one and from any later caller's.

@@ -87,6 +87,7 @@ function isArtifactPath(pathname: string): boolean {
   return (
     path === "/p" ||
     path.startsWith("/p/") ||
+    path.startsWith("/s/") ||
     path === "/agent-manifest.json" ||
     path === "/links.json" ||
     path.endsWith(".network.json")

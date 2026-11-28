@@ -80,7 +80,7 @@ describe("score_site definition", () => {
     expect(d.availability ?? "local-only").toBe("local-only");
     expect(d.timeoutMs).toBe(60000);
     expect(d.description).toBe(
-      "Gets Retrofit's agent-readiness score (0 to 100, score/v1) for a public website, with each check's result, rule and evidence. Pass the address as the user gave it; Retrofit scores the site from its home page, so a path is not used. Results are kept for 24 hours. A call can take up to a minute. If the result says the score is still running, call again with the same URL. Read-only: it changes nothing on this page or on the scored site.",
+      "Gets Retrofit's agent-readiness score (0 to 100, score/v1) for a public website, with each check's result, rule and evidence. Pass the address as the user gave it; Retrofit scores the site from its home page, so a path is not used. A result is usually kept for up to 24 hours, and the site's verified owner can replace it sooner: call again when the user asks for a new check. No call can force a new read of the site. A call can take up to a minute. If the result says the score is still running, call again with the same URL. Read-only: it changes nothing on this page or on the scored site.",
     );
     expect(d.inputSchema).toEqual({
       type: "object",

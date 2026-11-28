@@ -1,0 +1,99 @@
+/**
+ * Billing races on the disposable gate stack that the memory adapter cannot show: a customer link for a
+ * deleted auth user, and concurrent deliveries of many events for one customer.
+ */
+import { expect, it } from "vitest";
+import { createSupabaseAccountData } from "@/lib/accounts/supabase";
+import { createServiceClient } from "@/lib/supabase/client";
+import { newAccount } from "./new-account";
+import { holdTransaction, query, waiterOf } from "./psql";
+
+const url = process.env.SUPABASE_GATE_URL;
+const serviceRoleKey = process.env.SUPABASE_GATE_SERVICE_ROLE_KEY;
+if (!url || !serviceRoleKey) throw new Error("tests/db/billing.db.test.ts needs the disposable gate stack. Run it through pnpm test:db.");
+
+const admin = createServiceClient({ url, serviceRoleKey });
+const data = () => createSupabaseAccountData({ url, serviceRoleKey });
+const tag = () => crypto.randomUUID().replaceAll("-", "").slice(0, 12);
+const at = (ms: number) => new Date(Date.UTC(2027, 1, 1) + ms).toISOString();
+
+// Fails if a late checkout or webhook can create a billing row for an account that is gone (an orphan row or an error instead of no_account).
+it("a link for a deleted auth user answers no_account and creates nothing; deleting the user deletes its row", async () => {
+  const a = data();
+  const customer = `cus_${tag()}`;
+  const gone = await newAccount(admin);
+  await a.ensureProfile(gone);
+  expect((await a.linkBillingCustomer(gone, customer)).outcome).toBe("linked");
+  expect((await admin.auth.admin.deleteUser(gone)).error).toBeNull();
+  expect(await a.getBillingByCustomer(customer)).toBeNull();
+  expect(await a.linkBillingCustomer(gone, customer)).toEqual({ outcome: "no_account" });
+  expect(await a.getBillingByCustomer(customer)).toBeNull();
+});
+
+// Fails if concurrent events deadlock, one is lost, or the final state is not the newest read's.
+it("twelve concurrent events of one customer, delivered twice each, leave the newest read", async () => {
+  const clients = [data(), data(), data()];
+  const owner = await newAccount(admin);
+  const customer = `cus_${tag()}`;
+  await clients[0]!.ensureProfile(owner);
+  await clients[0]!.linkBillingCustomer(owner, customer);
+  const id = tag();
+  const deliver = (n: number, c: number) =>
+    clients[c]!.applyBillingEvent({ id: `evt_${id}_${n}`, type: "customer.subscription.updated" }, customer, { plan: n % 2 ? "pro" : "agency", status: "active", currentPeriodEnd: null, cancelAtPeriodEnd: false, subscriptionId: `sub_${n}`, unpaidSince: null, observedAt: at(n) });
+  const order = [7, 0, 11, 3, 9, 1, 5, 10, 2, 8, 4, 6];
+  const results = await Promise.all(order.flatMap((n) => [deliver(n, n % 3), deliver(n, (n + 1) % 3)].map(async (r) => ({ n, outcome: (await r).outcome }))));
+  const outcomes = results.map((r) => r.outcome);
+  // A stale one is not recorded, so its second delivery is stale too; every applied one is applied once.
+  expect(outcomes.every((o) => o === "applied" || o === "duplicate" || o === "stale")).toBe(true);
+  // P5-RR4: no event is applied twice, and exactly the applied ones are recorded.
+  const applied = results.filter((r) => r.outcome === "applied").map((r) => r.n);
+  expect(new Set(applied).size).toBe(applied.length);
+  expect(applied).toContain(11);
+  expect(results.filter((r) => r.outcome === "duplicate").every((r) => applied.includes(r.n))).toBe(true);
+  const recorded = (await query(`select event_id from public.stripe_events where event_id like 'evt\\_${id}\\_%'`)).split("\n").map((e) => Number(e.split("_").at(-1)));
+  expect(recorded.sort((x, y) => x - y)).toEqual([...applied].sort((x, y) => x - y));
+  expect(await clients[1]!.getBilling(owner)).toMatchObject({ subscriptionId: "sub_11", plan: "pro", stateAt: at(11) });
+}, 30_000);
+
+// P5-R1. Fails if a link that races the deletion of the account's data leaves a billing row without a deletion mark: the deletion must
+// wait for the link (and mark it), or the link must find the account gone.
+it("a customer link racing the data deletion leaves either no row or a marked customer", async () => {
+  const [a, b] = [data(), data()];
+  for (let i = 0; i < 12; i++) {
+    const owner = await newAccount(admin);
+    await a.ensureProfile(owner);
+    const customer = `cus_${tag()}`;
+    const [link] = await Promise.all([a.linkBillingCustomer(owner, customer), b.deleteAccountData(owner)]);
+    expect(await a.getBilling(owner)).toBeNull();
+    expect(await a.isDeletedCustomer(customer)).toBe(link.outcome === "linked");
+  }
+}, 30_000);
+
+// P5-R1. Fails if the data deletion takes its locks after a concurrent link committed (the row would stay, unmarked): the interleaving
+// is fixed here, not raced. A psql session holds the link's lock until the deletion waits for it.
+it("the data deletion waits for a link in progress and marks its customer", async () => {
+  const a = data();
+  const owner = await newAccount(admin);
+  await a.ensureProfile(owner);
+  const customer = `cus_${tag()}`;
+  const held = await holdTransaction(`select public.link_billing_customer('${owner}', '${customer}')`);
+  const deletion = a.deleteAccountData(owner);
+  await waiterOf(held.pid);
+  await held.release();
+  await deletion;
+  expect(await a.getBillingByCustomer(customer)).toBeNull();
+  expect(await a.isDeletedCustomer(customer)).toBe(true);
+}, 30_000);
+
+// Simplify 13. Fails if the daily cleanup deletes recent events, deletes without its bound, or the function's arguments are swapped.
+it("pruneStripeEvents deletes the oldest events before the time, at most the limit", async () => {
+  const a = data();
+  const id = tag();
+  await query(`insert into public.stripe_events (event_id, type, received_at) select 'evt_old_${id}_' || n, 't', '2016-01-01'::timestamptz + n * interval '1 day' from generate_series(1, 3) n`);
+  const left = async () => (await query(`select event_id from public.stripe_events where event_id like 'evt\\_old\\_${id}%' order by 1`)).split("\n").filter(Boolean).map((e) => e.at(-1));
+  expect(await a.pruneStripeEvents("2016-01-03T12:00:00.000Z", 1)).toBe(1);
+  expect(await left()).toEqual(["2", "3"]);
+  expect(await a.pruneStripeEvents("2016-01-03T12:00:00.000Z", 10)).toBe(1);
+  expect(await left()).toEqual(["3"]);
+  expect(await a.pruneStripeEvents("2016-06-01T00:00:00.000Z", 10)).toBe(1);
+});

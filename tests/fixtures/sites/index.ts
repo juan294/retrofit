@@ -1,3 +1,5 @@
+import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
+
 /**
  * Synthetic fixture sites. Every name, address and phone number is invented.
  * A site is a map from path to a response. `{{origin}}` in a body is replaced
@@ -70,6 +72,12 @@ export const bakery: FixtureSite = {
   "/cart": html(`<main>Your cart is empty.</main>`, "<title>Cart</title>"),
   "/account/settings": html(`<main>Account</main>`, "<title>Account</title>"),
 };
+
+/** `site` with one ownership tag per token (CLAIMS_TEXT.metaTag) first in its home page head (e2e claims). */
+export function withClaimTags(site: FixtureSite, tokens: readonly string[]): FixtureSite {
+  const home = site["/"];
+  return { ...site, "/": { ...home, body: home?.body?.replace("<head>", `<head>${tokens.map(CLAIMS_TEXT.metaTag).join("")}`) } };
+}
 
 export const spaOnly: FixtureSite = {
   "/robots.txt": text("User-agent: *\nDisallow:\n"),

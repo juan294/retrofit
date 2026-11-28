@@ -1,20 +1,12 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { SitePage } from "@/components/SitePage";
+import { SCORE_ENDPOINT_TEXT } from "@/lib/analysis/texts";
 
 export const metadata: Metadata = { title: "RetrofitBot · Retrofit" };
 
-const ENDPOINT_DESCRIPTION =
-  "GET https://retrofit.thecreativetoken.com/api/score?url=<public website address> returns Retrofit's agent-readiness score (score/v1, 0 to 100) for a public website, read from its home page and up to 11 more linked pages, with a pass, fail or not-checked result and evidence for each of 16 checks. Retrofit reads public pages only, follows robots.txt for RetrofitBot and keeps each site's result for 24 hours. A call waits up to 25 seconds. A 202 answer means the score is still running: call again with the same URL after retryAfterSeconds. Errors are JSON with error, message and, when a later call can help, retryAfterSeconds. No key, cookie or account is needed.";
-
 export default function BotPage() {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12 leading-relaxed [overflow-wrap:anywhere]">
-      <p>
-        <Link href="/" className="underline">
-          Retrofit
-        </Link>
-      </p>
-      <h1 className="mt-4 text-3xl font-semibold">RetrofitBot</h1>
+    <SitePage title="RetrofitBot">
       <p className="mt-4">
         RetrofitBot reads a public website when someone asks Retrofit to score it. It identifies itself with the user agent{" "}
         <code>RetrofitBot/0.1</code> and a link to this page.
@@ -30,7 +22,7 @@ export default function BotPage() {
       <ul className="mt-2 list-disc pl-6">
         <li>At most one request per second to a host, or your full Crawl-delay if it is longer. When the next request would not fit in the time limit of one crawl, it stops instead of waiting less.</li>
         <li>At most 2 MB per page, 8 seconds per request and 45 seconds per site.</li>
-        <li>Results are kept for 24 hours. It sends no cookies and keeps no email addresses.</li>
+        <li>Results are usually kept for up to 24 hours; a site's verified owner can ask for a new read one hour after the last one. It sends no cookies and keeps no email addresses.</li>
         <li>It reads only public addresses on ports 80 and 443.</li>
       </ul>
       <h2 className="mt-8 text-xl font-semibold">How to block it</h2>
@@ -40,8 +32,8 @@ export default function BotPage() {
       </pre>
       <h2 className="mt-8 text-xl font-semibold">For agents</h2>
       <p className="mt-2" id="score-api">
-        {ENDPOINT_DESCRIPTION}
+        {SCORE_ENDPOINT_TEXT}
       </p>
-    </main>
+    </SitePage>
   );
 }

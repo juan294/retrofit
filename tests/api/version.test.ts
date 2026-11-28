@@ -18,9 +18,16 @@ describe("vercel.json", () => {
     expect(v.git.deploymentEnabled).toEqual({ develop: false, "sutura/*": false });
     expect(v.ignoreCommand).toBe('test "$VERCEL_ENV" != "production"');
   });
-  it("runs the cleanup and credit-check crons and gives API routes 60 s", () => {
-    expect(v.crons.map((c: { path: string }) => c.path).sort()).toEqual(["/api/cron/cleanup", "/api/cron/credit-check"]);
+  it("runs the cleanup, credit-check and claims crons and gives API routes 60 s", () => {
+    expect(v.crons.map((c: { path: string }) => c.path).sort()).toEqual(["/api/cron/claims", "/api/cron/cleanup", "/api/cron/credit-check"]);
     expect(v.functions["src/app/api/**/*.ts"].maxDuration).toBe(60);
+  });
+  // Phase 3. Fails if the claim recheck is not daily, or starts at the same minute as another cron.
+  it("rechecks claims once a day at a minute no other cron uses", () => {
+    const schedules = v.crons.map((c: { schedule: string }) => c.schedule);
+    const claims = v.crons.find((c: { path: string }) => c.path === "/api/cron/claims")?.schedule as string;
+    expect(claims).toMatch(/^\d{1,2} \d{1,2} \* \* \*$/);
+    expect(new Set(schedules.map((s: string) => s.split(" ")[0])).size).toBe(schedules.length);
   });
 });
 

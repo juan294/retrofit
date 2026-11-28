@@ -22,6 +22,12 @@ export interface SessionClaims {
 }
 
 export const SESSION_TTL_MS = 2 * 3600 * 1000;
+/** A judge enters the code once and keeps access through judging, over a break of weeks: 60 days from the last visit. */
+export const JUDGE_SESSION_TTL_MS = 60 * 86_400 * 1000;
+export const sessionTtlMs = (pool: SessionPool): number => (pool === "judge" ? JUDGE_SESSION_TTL_MS : SESSION_TTL_MS);
+
+/** Ties a judge session to the judge code that opened it, without the code: a replaced JUDGE_CODE ends the old code's sessions. */
+export const judgeCodeTag = (code: string, secret: string): string => createHmac("sha256", secret).update(`retrofit-judge-code-v1.${code}`).digest("hex");
 
 const PART = /^[A-Za-z0-9_-]+$/;
 const SID = /^[0-9a-f]{32}$/;

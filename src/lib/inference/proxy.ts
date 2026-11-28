@@ -1,11 +1,12 @@
 import { isSameOrigin } from "@/lib/analysis/run";
 import { json } from "@/lib/api/json";
+import { clientIdFromRequest, ttlUntil } from "@/lib/fetch/limits";
 import { openAlert, overrunAlert } from "@/lib/ops/alert";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { CountersUnavailable, FREE_PLACEHOLDER_KEY, HOLD_MESSAGE, UNAVAILABLE_MESSAGE } from "./errors";
 import { type OverrunAlert, createHold, holdId, recordOverrun } from "./hold";
 import { type Pool, counterDepsOf, createLedger } from "./ledger";
-import { type CapReason, capMessage, createQuota } from "./quota";
+import { callCap, createQuota, refusal, type QuotaRefusal } from "./quota";
 import { redact, redactText } from "./redact";
 import { reservationFor, usageCharge } from "./reservation";
 import { type ChatRequest, parseChatRequest } from "./schema";
@@ -26,6 +27,8 @@ import { readSession, sessionTexts } from "./session";
  */
 
 export const FREE_FAILED_MESSAGE = "The free AI provider did not answer. Try again, or use your own key.";
+/** A judge's texts for a failure that ends by itself never ask for a paid key. */
+export const JUDGE_FAILED_MESSAGE = "The free AI provider did not answer. Try again.";
 export const AUTH_MESSAGE = "Retrofit's free AI accepts only its own placeholder key. Your own key goes to your provider, never to Retrofit.";
 
 /** Bound on the overrun GitHub call, so 45 s upstream plus the alert stays inside maxDuration 60 s; the daily credit check retries a failure. */
@@ -41,9 +44,15 @@ function apiError(status: number, message: string, type: ErrorType, code: string
   return json(status, { error: { message, type, code } });
 }
 
-const unavailable = (code = "unavailable") => apiError(503, UNAVAILABLE_MESSAGE, "service_unavailable", code);
-const failed = (code: string) => apiError(502, FREE_FAILED_MESSAGE, "server_error", code);
-const capped = (reason: CapReason) => apiError(429, capMessage(reason), "rate_limit_error", reason);
+const unavailable = (pool: Pool | null = null, code = "unavailable") => apiError(503, pool === "judge" ? sessionTexts.judgeUnavailable : UNAVAILABLE_MESSAGE, "service_unavailable", code);
+const failed = (code: string, pool: Pool) => apiError(502, pool === "judge" ? JUDGE_FAILED_MESSAGE : FREE_FAILED_MESSAGE, "server_error", code);
+/** 429 for a cap; with `retryAt` and Retry-After when a time ends it. */
+function capped({ reason, message, retryAt }: QuotaRefusal, now: number): Response {
+  if (retryAt === undefined) return apiError(429, message, "rate_limit_error", reason);
+  const res = json(429, { error: { message, type: "rate_limit_error", code: reason }, retryAt: new Date(retryAt).toISOString() });
+  res.headers.set("retry-after", String(ttlUntil(retryAt, now)));
+  return res;
+}
 const held = () => apiError(429, HOLD_MESSAGE, "rate_limit_error", "free_paused");
 
 type Logger = (event: string, fields?: Record<string, unknown>) => void;
@@ -51,11 +60,13 @@ type Logger = (event: string, fields?: Record<string, unknown>) => void;
 /** Every proxy log line goes through the redaction helper, with the configured secrets. */
 function logger(deps: ServerDeps): Logger {
   const f = deps.config.free;
-  const secrets = [f.keyPublic, f.keyJudge, f.alertGithubToken, f.cronSecret, f.judgeCode, deps.config.sessionSecret];
+  const secrets = [f.keyPublic, f.keyJudge, f.alertGithubToken, deps.config.cronSecret, f.judgeCode, deps.config.sessionSecret];
   return (event, fields = {}) => console.error(redactText(`free inference: ${event} ${JSON.stringify(redact(fields, secrets))}`, secrets));
 }
 
 const describeError = (e: unknown): string => (e instanceof Error ? `${e.name}: ${e.message}` : String(e));
+
+const networkId = (request: Request, deps: ServerDeps): string => clientIdFromRequest(request, deps.config, deps.clock());
 
 const keyFor = (deps: ServerDeps, pool: Pool): string | null => (pool === "judge" ? deps.config.free.keyJudge : deps.config.free.keyPublic);
 
@@ -226,7 +237,7 @@ export async function handleChat(request: Request, deps: ServerDeps, opts: { sig
   const serverKey = keyFor(deps, pool);
   if (!serverKey) {
     log("no server key configured", { pool });
-    return unavailable("not_configured");
+    return unavailable(pool, "not_configured");
   }
 
   const raw = await readLimited(request, free.maxBodyBytes);
@@ -256,19 +267,19 @@ export async function handleChat(request: Request, deps: ServerDeps, opts: { sig
     let reservation: ReturnType<typeof reservationFor>;
     try {
       if (pool === "public" && (await hold.read()) !== null) return held();
-      const slot = await quota.acquireInflight(sid);
-      if (!slot.ok) return capped(slot.reason);
+      const slot = await quota.acquireInflight(sid, pool);
+      if (!slot.ok) return capped(slot, deps.clock());
       release = slot.release;
-      const admitted = await quota.admitCall({ sid, pool });
-      if (!admitted.ok) return capped(admitted.reason);
+      const admitted = await quota.admitCall({ sid, pool, network: networkId(request, deps) });
+      if (!admitted.ok) return capped(admitted, deps.clock());
       reservation = reservationFor(body, free);
       const reserved = await ledger.reserve({ pool, sid, microUsd: reservation.microUsd });
-      if (!reserved.ok) return reserved.reason === "hold" ? held() : capped(reserved.reason);
+      if (!reserved.ok) return reserved.reason === "hold" ? held() : capped(refusal(reserved.reason, pool), deps.clock());
       reservationId = reserved.reservationId;
     } catch (e) {
       if (!(e instanceof CountersUnavailable)) throw e;
       log("counters unavailable", { error: describeError(e) });
-      return unavailable();
+      return unavailable(pool);
     }
 
     /**
@@ -308,7 +319,7 @@ export async function handleChat(request: Request, deps: ServerDeps, opts: { sig
     if (!outcome.ok) {
       await settle(outcome.usage, false);
       log("upstream failed", { code: outcome.code, detail: outcome.detail, pool });
-      return failed(outcome.code);
+      return failed(outcome.code, pool);
     }
 
     const { completion } = outcome;
@@ -316,14 +327,14 @@ export async function handleChat(request: Request, deps: ServerDeps, opts: { sig
       await settle(completion.usage, false);
       const code = completion.finished ? "upstream_no_usage" : "upstream_incomplete";
       log("upstream stream incomplete", { code, pool });
-      return failed(code);
+      return failed(code, pool);
     }
 
     await settle(completion.usage, true);
     return sseBody(completion.events);
   } catch (e) {
     log("unexpected failure", { error: describeError(e) });
-    return unavailable();
+    return unavailable(pool);
   } finally {
     if (release) await release().catch((e: unknown) => log("in-flight release failed", { error: describeError(e) }));
   }
@@ -387,7 +398,7 @@ export function handleModels(deps: Pick<ServerDeps, "config">): Response {
   return json(200, { object: "list", data: [{ id: deps.config.free.model, object: "model", created: 0, owned_by: "retrofit" }] });
 }
 
-export type StatusReason = "no_session" | "not_configured" | "hold" | "unavailable" | "session_calls" | "judge_session_calls" | "public_pool" | "judge_pool" | "ledger";
+export type StatusReason = "no_session" | "not_configured" | "hold" | "unavailable" | "session_calls" | "judge_session_calls" | "judge_network_calls" | "public_pool" | "judge_pool" | "ledger";
 
 /**
  * GET /api/inference/status -> 200 `{available, pool, reason}` with no amounts.
@@ -404,13 +415,14 @@ export async function handleStatus(request: Request, deps: ServerDeps): Promise<
     if (!session) return answer(false, null, "no_session");
     const { sid, pool } = session.claims;
     const counterDeps = counterDepsOf(deps);
-    const calls = await createQuota(counterDeps).callsUsed(sid);
+    const quota = createQuota(counterDeps);
+    const calls = await quota.callsUsed({ sid, pool });
     const b = await createLedger(counterDeps).budgets();
     const extra = { sid, calls, publicSpentTodayMicro: b.publicSpentTodayMicro };
     if (!keyFor(deps, pool)) return answer(false, pool, "not_configured", extra);
     if (pool === "public" && (b.held || (await createHold(counterDeps).read()) !== null)) return answer(false, pool, "hold", extra);
-    const cap = pool === "judge" ? free.judgeCallsPerSession : free.callsPerSession;
-    if (calls >= cap) return answer(false, pool, pool === "judge" ? "judge_session_calls" : "session_calls", extra);
+    if (calls >= callCap(pool, free)) return answer(false, pool, pool === "judge" ? "judge_session_calls" : "session_calls", extra);
+    if (pool === "judge" && (await quota.networkCapReached(networkId(request, deps)))) return answer(false, pool, "judge_network_calls", extra);
     if (b.remainingCreditMicro <= 0) return answer(false, pool, "ledger", extra);
     if (pool === "public" && b.publicDailyMicro - b.publicSpentTodayMicro <= 0) return answer(false, pool, "public_pool", extra);
     if (pool === "judge" && b.judgeRemainingMicro <= 0) return answer(false, pool, "judge_pool", extra);

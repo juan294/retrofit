@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/csp";
 import { analyzeFixture, connectKey, mockOtari, traceEvents } from "./support/agent";
+import { expectIconsWithoutEmoji } from "./support/emoji";
 import { toolNames, type Script } from "./support/mock-router";
 
 test("a visitor previews the bakery agent with their own key", async ({ page }) => {
@@ -24,6 +25,8 @@ test("a visitor previews the bakery agent with their own key", async ({ page }) 
   await expect(mount.getByText(/Our opening hours are Monday to Friday 7:00 to 18:00/).filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
   await expect(mount.getByRole("link", { name: /bakery\.fixture\.test:3011/ }).filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByTestId("preview-label")).toBeVisible();
+  // The runtime's compass emoji for the site's own agent is Retrofit's concierge icon; no emoji remains.
+  await expectIconsWithoutEmoji(mount, ["concierge"]);
 
   // The content tool ran, as the trace records (the visible status names it "Website Search Site Content").
   const tools = (await traceEvents(page)).filter((e) => e.kind === "tool").map((e) => e.tool);

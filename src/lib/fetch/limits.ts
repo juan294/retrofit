@@ -1,9 +1,11 @@
 import { createHash, createHmac } from "node:crypto";
+import ipaddr from "ipaddr.js";
 import type { Config } from "@/lib/config";
 import type { Store } from "@/lib/store/types";
+import { realSleep } from "./timers";
 
 /**
- * Per-client limits. A client is identified by SHA-256 of its IP address and a
+ * Per-client limits. A client is identified by SHA-256 of its network (networkOf) and a
  * daily salt derived from SESSION_SECRET. The raw IP is never stored, logged
  * or returned; only the hash reaches the Store.
  */
@@ -43,8 +45,16 @@ export function clientIpFrom(request: Request): string {
   return forwarded || "unknown";
 }
 
+/** The network of an address: IPv4 as it is, IPv6 as its /64 (one home or one server has a whole /64). Anything else as it is. */
+export function networkOf(ip: string): string {
+  const bare = ip.replace(/%.*$/, "");
+  if (!ipaddr.isValid(bare)) return ip;
+  const address = ipaddr.process(bare);
+  return address instanceof ipaddr.IPv6 ? `${address.parts.slice(0, 4).map((p) => p.toString(16)).join(":")}::/64` : address.toString();
+}
+
 export function clientIdFromRequest(request: Request, config: Pick<Config, "sessionSecret">, now: number): string {
-  return clientIdFor(clientIpFrom(request), config, now);
+  return clientIdFor(networkOf(clientIpFrom(request)), config, now);
 }
 
 /** Fixed one-hour windows aligned to the hour, so the retry time is known. */
@@ -55,13 +65,24 @@ export function clientWindow(now: number): { bucket: number; endsAt: number } {
 
 export type LimitResult = { readonly ok: true } | { readonly ok: false; readonly retryAt: number };
 
-const windowKey = (clientId: string, bucket: number) => `client-window:${clientId}:${bucket}`;
+const ANALYSIS_WINDOW = "client-window";
+const windowKey = (clientId: string, bucket: number, prefix = ANALYSIS_WINDOW) => `${prefix}:${clientId}:${bucket}`;
+
+/** Counts one call in the client's hourly window under `prefix`: every call counts; more than `limit` is refused until the hour ends. */
+export async function countClientWindow(store: Store, prefix: string, limit: number, clientId: string, now: number): Promise<LimitResult> {
+  const { bucket, endsAt } = clientWindow(now);
+  const count = await store.incrementWindow(windowKey(clientId, bucket, prefix), ttlUntil(endsAt, now));
+  return count > limit ? { ok: false, retryAt: endsAt } : { ok: true };
+}
 
 /** Counts one analysis (visitor route): every call counts. */
-export async function countClientAnalysis(store: Store, config: Pick<Config, "analysesPerClientHour">, clientId: string, now: number): Promise<LimitResult> {
-  const { bucket, endsAt } = clientWindow(now);
-  const count = await store.incrementWindow(windowKey(clientId, bucket), ttlUntil(endsAt, now));
-  return count > config.analysesPerClientHour ? { ok: false, retryAt: endsAt } : { ok: true };
+export function countClientAnalysis(store: Store, config: Pick<Config, "analysesPerClientHour">, clientId: string, now: number): Promise<LimitResult> {
+  return countClientWindow(store, ANALYSIS_WINDOW, config.analysesPerClientHour, clientId, now);
+}
+
+/** Counts one analysis of a signed-in account, whatever its network (from BILLING_START on). */
+export function countAccountAnalysis(store: Store, config: Pick<Config, "analysesPerClientHour">, accountId: string, now: number): Promise<LimitResult> {
+  return countClientWindow(store, "account-window", config.analysesPerClientHour, accountId, now);
 }
 
 /**
@@ -79,7 +100,6 @@ const DECISION_WAIT_MS = 50;
 /** Longest real time a duplicate waits for another caller's decision, store round trips included. */
 export const DECISION_WAIT_LIMIT_MS = 1000;
 
-const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** `undecided`: another caller for the same marker had not decided within DECISION_WAIT_LIMIT_MS. */
 export type CountDecision = "admitted" | "refused" | "undecided";

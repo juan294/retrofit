@@ -7,6 +7,7 @@
     }
   },
   "ignoreCommand": "test \"$VERCEL_ENV\" != \"production\"",
+  "regions": ["iad1"],
   "functions": {
     "src/app/api/**/*.ts": {
       "maxDuration": 60
@@ -14,6 +15,7 @@
   },
   "crons": [
     { "path": "/api/cron/cleanup", "schedule": "17 3 * * *" },
-    { "path": "/api/cron/credit-check", "schedule": "23 8 * * *" }
+    { "path": "/api/cron/credit-check", "schedule": "23 8 * * *" },
+    { "path": "/api/cron/claims", "schedule": "41 4 * * *" }
   ]
 }

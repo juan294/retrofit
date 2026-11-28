@@ -51,6 +51,26 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("billing without Stripe", () => {
+  const START = "2027-01-20T00:00:00Z";
+  const at = (ms: number, env: Record<string, string> = {}) =>
+    testDeps({ clock: () => ms, env: { CRON_SECRET, ALERT_GITHUB_TOKEN: GITHUB_TOKEN, BILLING_START: START, ...env } });
+  const STRIPE = { STRIPE_SECRET_KEY: "sk_test_unit_only", STRIPE_WEBHOOK_SECRET: "whsec_unit_only" };
+
+  // Fails if the start of billing without Stripe stays unnoticed (nobody can buy a plan), or the alert comes before it, with Stripe, or twice.
+  it("opens one issue from the billing start on, and only without the Stripe variables", async () => {
+    const start = Date.parse(START);
+    expect(await runCreditCheck(at(start - 1), view(0.1))).toEqual({ alerts: [] });
+    expect(await runCreditCheck(at(start, STRIPE), view(0.1))).toEqual({ alerts: [] });
+    expect(sent).toHaveLength(0);
+    const d = at(start);
+    expect(await runCreditCheck(d, view(0.1))).toEqual({ alerts: ["billing-not-configured"] });
+    expect(await runCreditCheck(d, view(0.1))).toEqual({ alerts: [] });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.body.body).toContain("STRIPE_SECRET_KEY");
+  });
+});
+
 describe("credit check", () => {
   // Fails if the check opens an issue before any threshold is crossed.
   it("opens no issue below every threshold", async () => {

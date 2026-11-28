@@ -57,7 +57,7 @@ export async function runCrawl<R>(jobId: string, deps: WorkerDeps<R>): Promise<W
           afterHome: async (host) => {
             // Prove the lease is still ours before touching the shared destination alias.
             if (!(await write({ step: "claim" }))) throw new LeaseLost();
-            joinedTo = await claimDestination(deps, jobId, host);
+            joinedTo = await claimDestination(deps, jobId, host, initial.rereadHosts);
             if (joinedTo) return false;
             if (!(await write({ destinationHost: host, step: "probes" }))) throw new LeaseLost();
             return true;

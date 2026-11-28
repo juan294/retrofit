@@ -1,13 +1,26 @@
 import { createHmac } from "node:crypto";
 import { after } from "next/server";
-import { getConfig, type Config } from "@/lib/config";
+import type { AccountData } from "@/lib/accounts/data";
+import { createMemoryAccountData } from "@/lib/accounts/memory";
+import { createSupabaseAccountData } from "@/lib/accounts/supabase";
+import { unavailableAuthGateway, type AuthGateway } from "@/lib/auth/gateway";
+import { createSupabaseAuthGateway } from "@/lib/auth/supabase";
+import { unavailableBillingGateway, type BillingGateway } from "@/lib/billing/gateway";
+import { createStripeGateway } from "@/lib/billing/stripe";
+import { systemTxtResolver, type TxtResolver } from "@/lib/claims/txt";
+import { getConfig, type Config, type SupabaseConfig } from "@/lib/config";
 import { createFetchContext } from "@/lib/fetch/context";
 import type { FetchContext } from "@/lib/fetch/http";
 import { scoreSnapshot } from "@/lib/score/score";
 import type { Snapshot } from "@/lib/snapshot/types";
 import { createMemoryStore } from "@/lib/store/memory";
 import { createSupabaseStore } from "@/lib/store/supabase";
+import { createServiceClient, type ServiceClient } from "@/lib/supabase/client";
+import { createFixtureAuth, type FixtureAuth } from "@/lib/test-fixtures/auth";
+import { createFixtureBilling, type FixtureBilling } from "@/lib/test-fixtures/billing";
 import { fixtureClock } from "@/lib/test-fixtures/clock";
+import { fixtureOutage } from "@/lib/test-fixtures/outage";
+import { fixtureTxtResolver } from "@/lib/test-fixtures/txt";
 import { systemClock, type Clock, type Store } from "@/lib/store/types";
 
 /**
@@ -17,8 +30,16 @@ import { systemClock, type Clock, type Store } from "@/lib/store/types";
 export interface ServerDeps {
   readonly config: Config;
   readonly store: Store;
+  /** Relational account data (notify signups; accounts, claims, publishing and billing in later phases). */
+  readonly accounts: AccountData;
+  /** Email-link sign-in (Supabase Auth; the fixture provider in fixtures mode). */
+  readonly auth: AuthGateway;
+  /** Stripe (test mode; the fixtures gateway in fixtures mode, unavailable without configuration). */
+  readonly billing: BillingGateway;
   readonly clock: Clock;
   readonly fetch: FetchContext;
+  /** DNS TXT lookups for ownership claims: the system resolver, or the fixtures resolver in fixtures mode. */
+  readonly txt: TxtResolver;
   /** Keeps background work (crawl workers) alive after the response. `after()` in production. */
   readonly waitUntil: (task: Promise<unknown>) => void;
   /** Computes the score stored on a ready crawl job. */
@@ -53,7 +74,14 @@ export function selfKick(config: Config): () => Promise<void> {
 }
 
 interface Singletons {
+  /** One service client per Supabase project, shared by the Store and AccountData adapters. */
+  supabase?: { readonly url: string; readonly serviceRoleKey: string; readonly client: ServiceClient };
   store?: Store;
+  accounts?: AccountData;
+  auth?: AuthGateway;
+  fixtureAuth?: FixtureAuth;
+  billing?: BillingGateway;
+  fixtureBilling?: FixtureBilling;
   fetch?: FetchContext;
   deps?: ServerDeps;
 }
@@ -62,23 +90,86 @@ interface Singletons {
 const g = globalThis as typeof globalThis & { __retrofitRuntime?: Singletons };
 const singletons: Singletons = (g.__retrofitRuntime ??= {});
 
+function sharedServiceClient(supabase: SupabaseConfig): ServiceClient {
+  const cached = singletons.supabase;
+  if (cached?.url === supabase.url && cached.serviceRoleKey === supabase.serviceRoleKey) return cached.client;
+  const client = createServiceClient(supabase);
+  singletons.supabase = { url: supabase.url, serviceRoleKey: supabase.serviceRoleKey, client };
+  return client;
+}
+
 /**
- * The process-wide Store: Supabase when SUPABASE_URL and
+ * A process-wide data adapter: Supabase when SUPABASE_URL and
  * SUPABASE_SERVICE_ROLE_KEY are set, memory for tests and local development
  * without them. On Vercel without them it throws, so production never falls
- * back to a per-instance memory store (loadConfig already refuses that
+ * back to a per-instance memory adapter (loadConfig already refuses that
  * configuration on Vercel).
  */
+function dataAdapter<T>(config: Config, name: string, supabase: (client: ServiceClient) => T, memory: () => T): T {
+  if (config.supabase) return supabase(sharedServiceClient(config.supabase));
+  if (config.onVercel) throw new Error(`Supabase ${name} not configured`);
+  return memory();
+}
+
+/** The process-wide Store (dataAdapter). */
 export function getStore(config: Config = getConfig()): Store {
-  if (singletons.store) return singletons.store;
-  if (config.supabase) {
-    singletons.store = createSupabaseStore(config.supabase);
-  } else if (config.onVercel) {
-    throw new Error("Supabase store not configured");
-  } else {
-    singletons.store = createMemoryStore();
-  }
+  singletons.store ??= dataAdapter(config, "store", createSupabaseStore, createMemoryStore);
   return singletons.store;
+}
+
+/** The process-wide AccountData (dataAdapter). In fixtures mode browser tests can turn on an outage. */
+export function getAccountData(config: Config = getConfig()): AccountData {
+  if (!singletons.accounts) {
+    const data = dataAdapter(config, "account data", createSupabaseAccountData, createMemoryAccountData);
+    singletons.accounts = config.fixturesEnabled ? fixtureOutage(data) : data;
+  }
+  return singletons.accounts;
+}
+
+/**
+ * The process-wide AuthGateway: the fixture provider in fixtures mode (browser tests read its
+ * mailbox), Supabase Auth when SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_ANON_KEY are
+ * set, and otherwise (local development without Supabase) a gateway that answers unavailable, so
+ * sign-in shows the mail-unavailable text. loadConfig requires the anon key on Vercel.
+ */
+export function getAuthGateway(config: Config = getConfig()): AuthGateway {
+  if (!singletons.auth) {
+    const fixture = getFixtureAuth(config);
+    if (fixture) singletons.auth = fixture;
+    else if (config.supabase?.anonKey) {
+      singletons.auth = createSupabaseAuthGateway({ url: config.supabase.url, anonKey: config.supabase.anonKey, admin: sharedServiceClient(config.supabase) });
+    } else singletons.auth = unavailableAuthGateway();
+  }
+  return singletons.auth;
+}
+
+/** Fixtures mode only: the process-wide fixture provider (its mailbox serves /test-fixtures/mailbox). Null otherwise. */
+export function getFixtureAuth(config: Config = getConfig()): FixtureAuth | null {
+  if (!config.fixturesEnabled) return null;
+  singletons.fixtureAuth ??= createFixtureAuth({ clock: fixtureClock, origin: config.publicOrigin });
+  return singletons.fixtureAuth;
+}
+
+/**
+ * The process-wide BillingGateway: the fixtures gateway in fixtures mode (it never contacts Stripe),
+ * Stripe when STRIPE_SECRET_KEY is set, and otherwise one that answers unavailable. loadConfig
+ * accepts test-mode keys only.
+ */
+export function getBillingGateway(config: Config = getConfig()): BillingGateway {
+  singletons.billing ??= getFixtureBilling(config) ?? (config.billing ? createStripeGateway({ ...config.billing, origin: config.publicOrigin }) : unavailableBillingGateway());
+  return singletons.billing;
+}
+
+/** Fixtures mode only: the process-wide fixtures gateway (its checkout page is /test-fixtures/billing/checkout). Null otherwise. */
+export function getFixtureBilling(config: Config = getConfig()): FixtureBilling | null {
+  if (!config.fixturesEnabled) return null;
+  singletons.fixtureBilling ??= createFixtureBilling({ clock: fixtureClock, origin: config.publicOrigin, webhookSecret: config.billing?.webhookSecret ?? "", prices: config.billing?.prices ?? {} });
+  return singletons.fixtureBilling;
+}
+
+/** The server clock. Fixtures mode only: e2e tests may offset it (src/lib/test-fixtures/clock.ts). */
+export function serverClock(config: Pick<Config, "fixturesEnabled">): Clock {
+  return config.fixturesEnabled ? fixtureClock : systemClock;
 }
 
 export function getFetchContext(config: Config = getConfig()): FetchContext {
@@ -101,9 +192,19 @@ export function getServerDeps(): ServerDeps {
     singletons.deps = {
       config,
       store: getStore(config),
-      // Fixtures mode only: e2e tests may offset the server clock (src/lib/test-fixtures/clock.ts).
-      clock: config.fixturesEnabled ? fixtureClock : systemClock,
+      // Built on first use, so routes that never read account data do not create it.
+      get accounts() {
+        return getAccountData(config);
+      },
+      get auth() {
+        return getAuthGateway(config);
+      },
+      get billing() {
+        return getBillingGateway(config);
+      },
+      clock: serverClock(config),
       fetch: getFetchContext(config),
+      txt: config.fixturesEnabled ? fixtureTxtResolver : systemTxtResolver,
       waitUntil: runtimeWaitUntil,
       score: scoreSnapshot,
       kick: selfKick(config),

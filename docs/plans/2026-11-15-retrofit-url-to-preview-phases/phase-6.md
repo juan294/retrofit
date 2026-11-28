@@ -35,8 +35,9 @@ A visitor or judge without a key can use the preview and Retrofit's own agent. T
 | `FREE_INFLIGHT_GLOBAL` | 16 | Concurrent requests overall |
 | `FREE_CALLS_PER_SESSION` | 40 | Public session calls |
 | `FREE_SESSIONS_PER_CLIENT_HOUR` | 6 | New sessions per client per hour |
-| `JUDGE_CALLS_PER_SESSION` | 200 | Judge session calls |
-| `JUDGE_SESSIONS_PER_CLIENT_DAY` | 3 | Judge sessions per client per day |
+| `JUDGE_CALLS_PER_SESSION_DAY` | 200 | Judge calls per session and UTC day (since 2026-11-25; `JUDGE_CALLS_PER_SESSION` is no longer read) |
+| `JUDGE_CALLS_PER_CLIENT_DAY` | 1000 | Judge calls of all judge sessions of one network and UTC day |
+| `JUDGE_SESSIONS_PER_CLIENT_DAY` | 20 | New judge sessions per network and UTC day |
 | `FREE_UPSTREAM_TIMEOUT_MS` | 45000 | Upstream timeout (15 s margin inside `maxDuration` 60 s) |
 | `CREDIT_ALERT_THRESHOLDS` | `0.5,0.8,0.95` | Fractions of the ledger that raise an alert |
 | `ALERT_GITHUB_TOKEN` | required on Vercel | Fine-grained token with Issues write on `juan294/retrofit` only |
@@ -49,7 +50,7 @@ Add them to `src/lib/config.ts` with tests.
 
 - `src/lib/inference/token.ts`: HMAC-SHA-256 with `SESSION_SECRET`; `SessionClaims`: `sid`, `iat`, `exp` (2 h), `client`, `pool` (`public` or `judge`).
 - `src/app/api/inference/session/route.ts` (`POST`, same-origin only): with no valid cookie, applies the per-client cap and creates a session; with a valid cookie, renews it with the same `sid`, `pool` and counters. Cookie `retrofit_session`: `HttpOnly`, `Secure` on HTTPS, `SameSite=Strict`, `Path=/api/inference`, `Max-Age` 7200. Renewal lives under `/api/inference` so that the browser sends the cookie to it.
-- `src/app/judges/page.tsx` and `POST /api/inference/session/judge`: a correct code (constant-time compare, never logged) makes the current session a judge session.
+- `src/app/judges/page.tsx` and `POST /api/inference/session/judge`: a correct code (constant-time compare, never logged) opens a judge session with a new session id (changed 2026-11-25; before, the current session became a judge session).
 
 ### Ledger and quotas
 

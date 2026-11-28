@@ -8,6 +8,8 @@ test("a visitor pastes the bakery URL, sees progress, then the score and evidenc
   await expect(page).toHaveURL(/\/r\/[0-9a-f]{32}$/);
   await expect(page.getByTestId("analysis-progress")).toBeVisible();
   await expect(page.getByTestId("score-total")).toBeVisible({ timeout: 30_000 });
+  // UX-M2. Fails if the region that announced the progress does not announce the report.
+  await expect(page.getByRole("status").filter({ hasText: "The report is ready." })).toHaveCount(1);
   await expect(page.getByTestId("score-total")).toHaveText(/^\d+$/);
   await expect(page.getByRole("heading", { name: "Agentic web" })).toBeVisible();
   await expect(page.getByText("WebMCP tools: not checked")).toBeVisible();

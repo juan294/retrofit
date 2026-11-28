@@ -1,17 +1,19 @@
 import { createHash } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CRAWL_QUEUE } from "@/lib/analysis/capacity";
 import { getAnalysis } from "@/lib/analysis/record";
 import { handleAnalysisStatus } from "@/lib/api/status";
 import { handleAnalyze } from "@/lib/api/analyze";
-import { getJob, leaseKey, startOrJoinCrawl, updateJob, type CrawlJob } from "@/lib/crawl/jobs";
-import { shortHash } from "@/lib/fetch/limits";
+import { getJob, jobKey, leaseKey, OWNER_REREAD_S, startOrJoinCrawl, updateJob, type CrawlJob } from "@/lib/crawl/jobs";
+import { shortHash, utcDay } from "@/lib/fetch/limits";
 import { bakery } from "../fixtures/sites";
 import { serveSites } from "../helpers/sites";
-import { analyzeRequest, cookieFrom, fakeClock, holdAllSlots, PUBLIC_ORIGIN, statusRequest, storeDump, testDeps } from "../helpers/server-deps";
+import { lapseNow, pendingClaim, verifiedClaim } from "../publish/setup";
+import { accountCookie, analyzeRequest, captureConsole, cookieFrom, fakeClock, holdAllSlots, OTHER_ACCOUNT, PUBLIC_ORIGIN, statusRequest, storeDump, testDeps } from "../helpers/server-deps";
 
 let close: (() => Promise<void>) | undefined;
 afterEach(async () => {
+  vi.restoreAllMocks();
   await close?.();
   close = undefined;
 });
@@ -223,6 +225,88 @@ describe("GET /api/analyze/[id]", () => {
     expect(body.report.scoreVersion).toBe("score/v1");
     const job = (await getJob(d.store, (await getAnalysis(d.store, id))!.jobId)) as CrawlJob;
     expect(body.report.cachedUntil).toBe(new Date(job.updatedAt + d.config.crawlCacheTtlS * 1000).toISOString());
+  });
+});
+
+// Owner decision 2026-11-25: an analysis by the verified owner of the scored host does not reuse a read that is an hour old.
+describe("a new read for the verified owner", () => {
+  async function cachedRead() {
+    const server = await serveSites(() => ({ "bakery.fixture.test": bakery }));
+    close = () => server.close();
+    const d = testDeps();
+    const origin = server.origin("bakery.fixture.test");
+    const host = new URL(origin).host;
+    /** Analyzes the site and returns its crawl job, the read itself. */
+    const analyze = async (cookie?: string) => {
+      const res = await handleAnalyze(analyzeRequest({ url: origin }, { cookie }), d);
+      expect(res.status).toBe(200);
+      await d.settle();
+      expect(d.errors).toEqual([]);
+      const analysis = (await getAnalysis(d.store, ((await res.json()) as { id: string }).id))!;
+      return (await getJob(d.store, analysis.jobId)) as CrawlJob;
+    };
+    const first = await analyze();
+    expect(first).toMatchObject({ status: "ready", destinationHost: host });
+    const aged = async (seconds: number) => d.store.set(jobKey(first.id), { ...first, updatedAt: first.updatedAt - seconds * 1000 }, 100_000);
+    return { d, host, analyze, first, aged };
+  }
+
+  // Fails if the owner gets the old read, or the new one does not finish as its own read for every later visitor.
+  it("reads the site again for the owner after an hour, and later visitors get that read", async () => {
+    const { d, host, analyze, first, aged } = await cachedRead();
+    await verifiedClaim(d, undefined, host);
+    const owner = await accountCookie(d);
+    expect((await analyze(owner)).id).toBe(first.id);
+    await aged(OWNER_REREAD_S);
+    const next = await analyze(owner);
+    expect(next.id).not.toBe(first.id);
+    expect(next).toMatchObject({ status: "ready", destinationHost: host, rereadHosts: [host] });
+    expect((await analyze()).id).toBe(next.id);
+    expect((await analyze(owner)).id).toBe(next.id);
+  });
+
+  // Fails if anybody but the account with a claim that is verified now can make Retrofit read the site again.
+  it("keeps the cached read for visitors, other accounts, and a pending or lapsed claim", async () => {
+    const { d, host, analyze, first, aged } = await cachedRead();
+    await aged(OWNER_REREAD_S);
+    const owner = await accountCookie(d);
+    expect((await analyze(owner)).id).toBe(first.id);
+    await pendingClaim(d, undefined, host);
+    expect((await analyze(owner)).id).toBe(first.id);
+    await verifiedClaim(d, undefined, "other.example");
+    expect((await analyze(owner)).id).toBe(first.id);
+    const claim = await verifiedClaim(d, undefined, host);
+    const listClaims = vi.spyOn(d.accounts, "listClaims");
+    expect((await analyze()).id).toBe(first.id);
+    expect(listClaims).not.toHaveBeenCalled();
+    expect((await analyze(await accountCookie(d, OTHER_ACCOUNT))).id).toBe(first.id);
+    await lapseNow(d, claim);
+    expect((await analyze(owner)).id).toBe(first.id);
+  });
+
+  // Fails if an owner's new read over the daily host cap costs every visitor the cached one.
+  it("keeps the cached read for everybody when the daily host cap is full", async () => {
+    const { d, host, analyze, first, aged } = await cachedRead();
+    await verifiedClaim(d, undefined, host);
+    await aged(OWNER_REREAD_S);
+    // The site was counted on an earlier day, and today's cap is used.
+    for (const key of [...d.backing.values.keys()]) if (key.startsWith("crawl-origin-day:")) d.backing.values.delete(key);
+    const day = utcDay(d.clock());
+    for (let n = 0; n < d.config.crawlMaxHostsPerDay; n++) await d.store.incrementWindow(`crawl-origins:${day}`, 86_400);
+    expect((await analyze(await accountCookie(d))).id).toBe(first.id);
+    expect((await analyze()).id).toBe(first.id);
+  });
+
+  // Fails if an outage of the account data stops the owner's analysis instead of giving the cached read.
+  it("gives the cached read when the claims cannot be read", async () => {
+    const { d, analyze, first, aged } = await cachedRead();
+    await aged(OWNER_REREAD_S);
+    const owner = await accountCookie(d);
+    const lines: string[] = [];
+    captureConsole(lines);
+    vi.spyOn(d.accounts, "listClaims").mockRejectedValue(new Error("down"));
+    expect((await analyze(owner)).id).toBe(first.id);
+    expect(lines.join("\n")).toContain("Reading the claims of an analysis start failed: Error");
   });
 });
 

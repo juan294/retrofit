@@ -5,6 +5,38 @@ import { NotPublicError } from "./errors";
 
 export const MAX_URL_LENGTH = 2048;
 
+/** A lower-case DNS name of ASCII labels (punycode), with an optional port. */
+const HOST = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::\d{1,5})?$/;
+
+/** True for a host already in normalized form (normalizeHost's output) of at most 253 characters. */
+export function isNormalizedHost(host: string): boolean {
+  return host.length <= 253 && HOST.test(host);
+}
+
+/**
+ * The host as URL.host for `scheme` (lower case, IDN in punycode, the scheme's default port dropped),
+ * or null when it is not a plain DNS name with an optional port: no path, query, fragment or
+ * credentials, no whitespace or control characters.
+ */
+export function normalizeHost(host: string, scheme: "http" | "https" = "http"): string | null {
+  // Whitespace and control characters first: the URL parser would silently strip tabs and newlines.
+  // eslint-disable-next-line no-control-regex -- matching control characters is the point of this check
+  if (host.length === 0 || host.length > 260 || /[\u0000-\u0020\u007f-\u009f]/.test(host)) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(`${scheme}://${host}`);
+  } catch {
+    return null;
+  }
+  if (parsed.pathname !== "/" || parsed.search || parsed.hash || parsed.username || parsed.password || !HOST.test(parsed.host)) return null;
+  return parsed.host;
+}
+
+/** The origin a host is read at: `https://<host>`, or http for a fixture host with a port in fixtures mode (as its analysis was). */
+export function originForHost(host: string, config: Pick<Config, "fixturesEnabled">): string {
+  return `${config.fixturesEnabled && /:\d+$/.test(host) ? "http" : "https"}://${host}`;
+}
+
 const FIXTURE_HOST = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.fixture\.test$/;
 
 /** True for one-label `<label>.fixture.test` names, which `guardedLookup` maps to loopback when fixtures are enabled. */

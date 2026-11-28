@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { SESSION_TTL_MS, signSession, verifySession, type SessionClaims } from "@/lib/inference/token";
+import { JUDGE_SESSION_TTL_MS, sessionTtlMs, SESSION_TTL_MS, signSession, verifySession, type SessionClaims } from "@/lib/inference/token";
 
 const SECRET = "k".repeat(32);
 const NOW = Date.parse("2026-11-15T10:00:00.000Z");
@@ -16,6 +16,12 @@ describe("session token", () => {
     expect(token).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
     expect(verifySession(token, SECRET, NOW + 1000)).toEqual(claims);
     expect(verifySession(signSession({ ...claims, pool: "judge" }, SECRET), SECRET, NOW)?.pool).toBe("judge");
+  });
+
+  // Fails if a public session gets the judge lifetime, or the judge lifetime does not cover the judging period.
+  it("lasts two hours in the public pool and 60 days in the judge pool", () => {
+    expect([sessionTtlMs("public"), sessionTtlMs("judge")]).toEqual([SESSION_TTL_MS, JUDGE_SESSION_TTL_MS]);
+    expect(JUDGE_SESSION_TTL_MS).toBe(60 * 86_400_000);
   });
 
   // Fails if the payload is trusted without checking the signature against it.

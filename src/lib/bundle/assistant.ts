@@ -8,7 +8,10 @@ export function assistantHtml(host: string, date: string): string {
   <title>${host} assistant</title>
   <link rel="stylesheet" href="assistant.css">
   <script type="module" src="site.js"></script>
-  <style>body { margin: 0 auto; max-width: 1100px; padding: 24px 16px; font: 16px/1.5 system-ui, sans-serif; }</style>
+  <style>
+    body { margin: 0 auto; max-width: 1100px; padding: 24px 16px; font: 16px/1.5 system-ui, sans-serif; }
+    #agent-app .rf-icon { display: inline-block; flex: none; vertical-align: -0.125em; }
+  </style>
 </head>
 <body>
   <main id="assistant" class="assistant">
@@ -31,8 +34,12 @@ export function assistantHtml(host: string, date: string): string {
 }
 
 export function assistantScript(host: string, date: string): string {
-  return `const root = new URL("../", import.meta.url);
+  return `import { watchEmoji } from "./runtime-icons.js";
+
+const root = new URL("../", import.meta.url);
 const status = document.querySelector("#assistant-status");
+// The runtime writes emoji as icons; runtime-icons.js shows line icons in their place.
+watchEmoji(document.querySelector("#agent-app"));
 try {
   const { boot } = await import("../runtime/index.js");
   const { engine } = await boot("#agent-app", {

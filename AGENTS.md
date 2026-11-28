@@ -6,7 +6,7 @@ Start with [the briefing](docs/briefing.md) and [the accepted design brief](docs
 
 ## Current state and authority
 
-The application is being built under `docs/plans/2026-11-15-retrofit-url-to-preview.md`. See that plan's notes file for the phase status. See `.rpi/release-profile.json` for the production release record. The self-hosted install bundle and installation contact are implemented locally. Accounts and payment are proposed work.
+The application is being built under `docs/plans/2026-11-15-retrofit-url-to-preview.md`. See that plan's notes file for the phase status. See `.rpi/release-profile.json` for the production release record. The self-hosted install bundle and installation contact are released in v0.2.0. Accounts, ownership claims, publishing, the badge and billing (Stripe test mode, under `docs/plans/2026-11-23-retrofit-accounts-claims-publishing-billing.md`) and the first phase of the Field Inspection UI (`docs/plans/2026-11-26-field-inspection-ui.md`) are in v0.3.0; `.rpi/release-profile.json` records whether it is deployed and tagged. Stripe is not configured in production; each external action of those plans needs Juan's authorization.
 
 Shared instructions live here; `CLAUDE.md` imports this file. Do not introduce an import cycle. Use the installed native RPI skill for the requested phase and read its full instructions and references. Claude invokes `/rpi-plan`, `/rpi-implement` and other `/rpi-*` skills; Codex invokes `$rpi-plan`, `$rpi-implement` and other `$rpi-*` skills. Native `/plan` and `/status` are not RPI workflows. Planning and implementation belong in this workspace, with the normal phase acceptance boundaries.
 
@@ -35,7 +35,7 @@ The declared suite in `.rpi/policy.json` runs, in order: whitespace, RPI install
 - Work in isolated worktrees or local temporary branches, then integrate reviewed changes locally into `develop`.
 - Use a merge commit when promoting `develop` to `main`.
 - The hackathon requires open source. Changing the repository to public, deploying, configuring a domain, submitting to Devpost, posting to the organizers and creating provider accounts each need Juan's explicit authorization for that exact action.
-- Sutura owns fleet CI routing. Do not add routing changes, mode toggles or hosted experimentation here. No project CI workflow is installed at bootstrap.
+- Sutura owns fleet CI routing. Do not add routing changes, mode toggles or hosted experimentation here. Hosted CI is `.github/workflows/ci.yml`; the local gate stays the release gate.
 
 ## Product and data constraints
 

@@ -1,50 +1,421 @@
 @import "tailwindcss";
 
+/* Field Inspection (docs/plans/2026-11-26-field-inspection-ui.md). Six colours and no other. The accent is a
+   fill under ink text, or text on the ink: on paper or white it has a contrast below 1.5, so it is never
+   text there and never the only edge of a control. */
 :root {
-  --color-bg: #fbfbfa;
-  --color-surface: #ffffff;
-  --color-text: #1b1d1f;
-  --color-muted: #5b6168;
-  --color-border: #d9dcdf;
-  --color-accent: #1f5f8b;
-  --color-accent-text: #ffffff;
-  --color-danger: #a12a2a;
-  --color-ok: #2a6b3f;
-  --radius: 8px;
-  color-scheme: light dark;
+  --fi-paper: #f0f1f0;
+  --fi-ink: #0e0e0e;
+  --fi-accent: #26efe9;
+  --fi-white: #ffffff;
+  --fi-on-ink-muted: #d7d8d6;
+  --fi-link-hover: #2e308e;
+
+  --fi-font-body: var(--fi-font-archivo), "Helvetica Neue", Arial, sans-serif;
+  --fi-font-mono: var(--fi-font-plex), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --fi-line: 3px;
+  --fi-shadow: 8px 8px 0 var(--fi-ink);
+  --fi-page-pad: clamp(20px, 4vw, 56px);
+  --fi-stripes: repeating-linear-gradient(-45deg, var(--fi-ink) 0 12px, var(--fi-accent) 12px 24px);
+
+  /* One theme: a dark system changes nothing. */
+  color-scheme: only light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #121416;
-    --color-surface: #1b1e21;
-    --color-text: #e9ebed;
-    --color-muted: #a3a9b0;
-    --color-border: #33383d;
-    --color-accent: #7fb6dd;
-    --color-accent-text: #0d1a24;
-    --color-danger: #f08a8a;
-    --color-ok: #8ccf9f;
+/* Names from the first interface, kept until every page uses the parts in src/components/ui (the last
+   phase of the plan removes them). Danger and success no longer have a colour of their own: the notice
+   pattern and the words carry that meaning. */
+:root {
+  --color-bg: var(--fi-paper);
+  --color-surface: var(--fi-white);
+  --color-text: var(--fi-ink);
+  --color-muted: var(--fi-ink);
+  --color-border: var(--fi-ink);
+  --color-accent: var(--fi-ink);
+  --color-accent-text: var(--fi-paper);
+  --color-danger: var(--fi-ink);
+  --color-ok: var(--fi-ink);
+  --radius: 0px;
+}
+/* The first interface's boxes and buttons ("rounded border") take the square corners and the heavy line
+   now. Outside a layer, so these two rules win over the utilities; they go when the last page is moved. */
+.rounded {
+  border-radius: 0;
+}
+.border {
+  border-width: var(--fi-line);
+}
+
+@layer base {
+  .fi-shell {
+    min-height: 100vh;
+    margin: 0;
+    background: var(--fi-paper);
+    color: var(--fi-ink);
+    font-family: var(--fi-font-body);
+    font-size: 18px;
+    line-height: 1.45;
+    /* A long host or address must never push the page wider than the screen. */
+    overflow-wrap: anywhere;
+    display: flex;
+    flex-direction: column;
+  }
+  /* A centred column (margin auto) would shrink to its content inside the flex shell. */
+  .fi-shell > :where(main) {
+    width: 100%;
+  }
+
+  /* The vendored runtime keeps its own type and controls: every rule below leaves its panel alone. */
+  :where(h1, h2, h3):not(.runtime-surface *) {
+    font-stretch: 62%;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    /* With "anywhere" a flex item can shrink below one word and split it; headings break between words first. */
+    overflow-wrap: break-word;
+  }
+
+  :where(a):not(.runtime-surface *) {
+    text-underline-offset: 4px;
+  }
+  :where(a):not(.runtime-surface *, .fi-btn, .fi-on-ink *):hover {
+    color: var(--fi-link-hover);
+  }
+
+  :where(code, pre, kbd):not(.runtime-surface *) {
+    font-family: var(--fi-font-mono);
+    font-size: 0.9em;
+  }
+
+  :where(button, input, select, textarea):not(.runtime-surface *) {
+    border-radius: 0;
+  }
+  :where(button):not(.runtime-surface *) {
+    border: var(--fi-line) solid var(--fi-ink);
+    cursor: pointer;
+  }
+  :where(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea):not(.runtime-surface *) {
+    font-family: var(--fi-font-mono);
+  }
+  :where(input[type="checkbox"], input[type="radio"]):not(.runtime-surface *) {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    accent-color: var(--fi-ink);
+  }
+
+  /* A disabled button is marked by its dashed edge, not only by a lighter colour, and its label stays ink on
+     paper. "!important" because the first interface's buttons still set their colours inline. */
+  :where(button):disabled:not(.runtime-surface *) {
+    border: var(--fi-line) dashed var(--fi-ink) !important;
+    background: var(--fi-paper) !important;
+    color: var(--fi-ink) !important;
+    box-shadow: none !important;
+    opacity: 1;
+    cursor: not-allowed;
+  }
+  /* Busy: the button keeps the focus and its look; the guard ignores presses. */
+  :where(button)[aria-disabled="true"]:not(.runtime-surface *) {
+    cursor: progress;
+  }
+
+  :where(a, button, input, select, textarea, summary, [tabindex]):not(.runtime-surface *):focus-visible {
+    outline: 4px solid var(--fi-ink);
+    outline-offset: 3px;
+  }
+  .fi-on-ink :where(a, button, input, select, textarea, summary, [tabindex]):not(.runtime-surface *):focus-visible {
+    outline-color: var(--fi-paper);
+  }
+
+  /* A failure text outside a notice still stands out without a colour of its own. */
+  :where([role="alert"]):not(:empty, .runtime-surface *, .fi-notice *) {
+    border-left: 6px solid var(--fi-ink);
+    padding-left: 10px;
+    font-weight: 600;
   }
 }
 
-body {
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+@layer components {
+  /* Type */
+  .fi-display {
+    font-family: var(--fi-font-body);
+    font-stretch: 62%;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+    line-height: 0.88;
+    overflow-wrap: break-word;
+  }
+  .fi-mono {
+    font-family: var(--fi-font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    line-height: 1.4;
+    text-transform: uppercase;
+  }
+
+  /* Surfaces */
+  .fi-on-ink {
+    background: var(--fi-ink);
+    color: var(--fi-paper);
+  }
+  .fi-on-accent {
+    background: var(--fi-accent);
+    color: var(--fi-ink);
+  }
+  .fi-panel {
+    border: var(--fi-line) solid var(--fi-ink);
+    background: var(--fi-white);
+    color: var(--fi-ink);
+    padding: clamp(16px, 2.4vw, 28px);
+  }
+  .fi-panel-raised {
+    box-shadow: var(--fi-shadow);
+  }
+  .fi-stripe {
+    height: 14px;
+    background: var(--fi-stripes);
+    border-bottom: var(--fi-line) solid var(--fi-ink);
+  }
+  .fi-stamp {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: clamp(112px, 13vw, 168px);
+    aspect-ratio: 1;
+    border: var(--fi-line) solid var(--fi-ink);
+    border-radius: 50%;
+    outline: 2px dashed var(--fi-ink);
+    outline-offset: -10px;
+    background: var(--fi-accent);
+    color: var(--fi-ink);
+    transform: rotate(-8deg);
+    animation: fi-stamp 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  }
+  @keyframes fi-stamp {
+    0% {
+      transform: rotate(-8deg) scale(2.2);
+      opacity: 0;
+    }
+    60% {
+      transform: rotate(-8deg) scale(0.94);
+      opacity: 1;
+    }
+    100% {
+      transform: rotate(-8deg) scale(1);
+    }
+  }
+
+  /* Controls: at least 44 px high. */
+  .fi-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    box-sizing: border-box;
+    min-height: 48px;
+    padding: 8px 20px;
+    border: var(--fi-line) solid var(--fi-ink);
+    background: var(--fi-ink);
+    color: var(--fi-paper);
+    font-family: var(--fi-font-body);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.1;
+    text-decoration: none;
+    /* A label that wraps inside a flex row is clipped by the row's height. No cursor here: the base
+       layer sets it, also for a disabled and a busy button. */
+    white-space: nowrap;
+  }
+  .fi-btn-accent {
+    background: var(--fi-accent);
+    color: var(--fi-ink);
+  }
+  .fi-btn-quiet {
+    background: var(--fi-white);
+    color: var(--fi-ink);
+  }
+  .fi-btn-display {
+    min-height: 56px;
+    font-stretch: 62%;
+    font-weight: 900;
+    font-size: 26px;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+  }
+  .fi-lift {
+    transition:
+      transform 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .fi-lift:hover:not(:disabled, [aria-disabled="true"]) {
+    transform: translate(-3px, -3px);
+    box-shadow: 9px 9px 0 var(--fi-ink);
+  }
+  .fi-on-ink .fi-lift:hover:not(:disabled, [aria-disabled="true"]) {
+    box-shadow: 9px 9px 0 var(--fi-accent);
+  }
+
+  .fi-field,
+  .fi-select {
+    box-sizing: border-box;
+    min-width: 0;
+    min-height: 48px;
+    padding: 8px 14px;
+    border: var(--fi-line) solid var(--fi-ink);
+    border-radius: 0;
+    background: var(--fi-white);
+    color: var(--fi-ink);
+    font-family: var(--fi-font-mono);
+    font-size: 17px;
+  }
+  .fi-select {
+    width: 100%;
+  }
+  .fi-choice {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+  }
+
+  .fi-code {
+    display: block;
+    margin: 0;
+    padding: 14px 16px;
+    border-left: 14px solid var(--fi-accent);
+    background: var(--fi-ink);
+    color: var(--fi-paper);
+    font-family: var(--fi-font-mono);
+    font-size: 15px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* One pattern for errors, waits and confirmations. An accent header needs an action; an ink header is information. */
+  .fi-notice {
+    border: var(--fi-line) solid var(--fi-ink);
+    background: var(--fi-white);
+    color: var(--fi-ink);
+  }
+  .fi-notice-head {
+    padding: 8px 14px;
+    border-bottom: var(--fi-line) solid var(--fi-ink);
+    background: var(--fi-ink);
+    color: var(--fi-paper);
+  }
+  .fi-notice-action > .fi-notice-head {
+    background: var(--fi-accent);
+    color: var(--fi-ink);
+  }
+  .fi-notice-body {
+    padding: 14px;
+    font-weight: 600;
+  }
+
+  /* Shell */
+  .fi-header {
+    border-bottom: var(--fi-line) solid var(--fi-ink);
+    background: var(--fi-paper);
+    padding: 10px var(--fi-page-pad);
+  }
+  .fi-nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 20px;
+  }
+  .fi-nav > a {
+    padding: 12px 4px;
+    text-decoration: underline;
+  }
+  .fi-nav > a.fi-wordmark {
+    padding: 8px 0;
+    font-stretch: 62%;
+    font-weight: 900;
+    font-size: 34px;
+    line-height: 1;
+    text-transform: uppercase;
+    text-decoration: none;
+  }
+  /* The wordmark and the form label stay together; the two page links go to the far side. */
+  .fi-nav > a:nth-of-type(2) {
+    margin-left: auto;
+  }
+  .fi-main {
+    flex: 1 0 auto;
+    padding: clamp(28px, 5vw, 64px) var(--fi-page-pad) clamp(40px, 6vw, 88px);
+  }
+  .fi-main-text {
+    max-width: 44rem;
+    line-height: 1.6;
+  }
+  .fi-page-title {
+    font-size: clamp(44px, 9vw, 128px);
+  }
+  .fi-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 24px;
+    border-top: var(--fi-line) solid var(--fi-ink);
+    padding: 16px var(--fi-page-pad);
+    font-size: 16px;
+  }
+  .fi-footer > nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 20px;
+  }
+  .fi-footer > nav > a {
+    padding: 12px 0;
+    text-decoration: underline;
+  }
+  .fi-footer-mark {
+    font-size: 30px;
+  }
+
+  @media (max-width: 760px) {
+    .fi-desk {
+      display: none !important;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fi-stamp {
+      animation: none;
+    }
+    .fi-lift {
+      transition: none;
+    }
+  }
 }
 
-/* The vendored runtime has light colors built in (white cards, light bubbles, dark text that
-   inherits through its variables). On a dark page its panel keeps a light surface of its own,
-   so every runtime text stays readable. Vendored files are never edited. */
-@media (prefers-color-scheme: dark) {
-  .runtime-surface {
-    color-scheme: light;
-    background: #ffffff;
-    color: #1a1a1a;
-    padding: 12px;
-    border-radius: var(--radius);
-  }
+/* The vendored runtime is never edited. Its panel is themed through the variables it reads
+   (public/runtime/ui.js). It writes white text on --ns-primary, so the primary is the ink: white on the
+   accent could not be read. */
+.runtime-surface {
+  --ns-font: var(--fi-font-body);
+  --ns-fg: var(--fi-ink);
+  --ns-bg: var(--fi-white);
+  --ns-border: var(--fi-ink);
+  --ns-muted: var(--fi-ink);
+  --ns-panelbg: var(--fi-paper);
+  --ns-primary: var(--fi-ink);
+  --ns-accent: var(--fi-ink);
+  --ns-user-bg: var(--fi-ink);
+  --ns-user-fg: var(--fi-paper);
+  --ns-msgbg: var(--fi-paper);
+  --ns-radius: 0px;
+  border: var(--fi-line) solid var(--fi-ink);
+  background: var(--fi-white);
+  color: var(--fi-ink);
+  padding: 12px;
+  font-size: 16px;
 }
 
 /* The title includes the analyzed site's host. Let the badge and controls move to the next line. */
@@ -54,4 +425,12 @@ body {
 
 .runtime-surface .ns-title {
   overflow-wrap: anywhere;
+}
+
+/* Retrofit's icons in place of the runtime's emoji (public/brand/runtime-icons.js). They take the size and colour
+   of the text around them. */
+.runtime-surface .rf-icon {
+  display: inline-block;
+  flex: none;
+  vertical-align: -0.125em;
 }

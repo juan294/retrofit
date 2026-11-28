@@ -27,19 +27,71 @@ describe("quota caps", () => {
   // Fails if the public session call cap is off by one or its refusal lacks the cap text.
   it("refuses public session call N+1 with 429 and the cap text", async () => {
     const { quota } = setup();
-    for (let i = 0; i < free.callsPerSession; i++) expect((await quota.admitCall({ sid: "s", pool: "public" })).ok).toBe(true);
-    expectCap(await quota.admitCall({ sid: "s", pool: "public" }), "session_calls");
+    for (let i = 0; i < free.callsPerSession; i++) expect((await quota.admitCall({ sid: "s", pool: "public", network: "n" })).ok).toBe(true);
+    expectCap(await quota.admitCall({ sid: "s", pool: "public", network: "n" }), "session_calls");
     // Another session is unaffected.
-    expect((await quota.admitCall({ sid: "other", pool: "public" })).ok).toBe(true);
+    expect((await quota.admitCall({ sid: "other", pool: "public", network: "n" })).ok).toBe(true);
   });
 
-  // Fails if judge sessions use the public call cap.
-  it("refuses judge session call N+1 with 429 and the cap text", async () => {
-    const { quota } = setup();
-    for (let i = 0; i < free.judgeCallsPerSession; i++) expect((await quota.admitCall({ sid: "j", pool: "judge" })).ok).toBe(true);
-    expectCap(await quota.admitCall({ sid: "j", pool: "judge" }), "judge_session_calls");
+  // Fails if judge sessions use the public call cap, the cap is for the whole session and not for the UTC day (a judge
+  // session lasts weeks), or the refusal sends a judge to a paid key or names no retry time.
+  it("refuses judge call N+1 of a UTC day with 429 and the retry time", async () => {
+    const { clock, quota } = setup();
+    for (let i = 0; i < free.judgeCallsPerSessionDay; i++) expect((await quota.admitCall({ sid: "j", pool: "judge", network: "n" })).ok).toBe(true);
+    const refused = await quota.admitCall({ sid: "j", pool: "judge", network: "n" });
+    const retryAt = Date.parse("2026-11-16T00:00:00Z");
+    expect(refused).toEqual({
+      ok: false,
+      status: 429,
+      reason: "judge_session_calls",
+      retryAt,
+      message: "Judge access in this browser made its 200 AI calls for today. It works again at 00:00 UTC on 16 November 2026.",
+    });
+    expect((await quota.admitCall({ sid: "other", pool: "judge", network: "n" })).ok).toBe(true);
+    expect(await quota.callsUsed({ sid: "j", pool: "judge" })).toBe(free.judgeCallsPerSessionDay + 1);
+    clock.set(retryAt - 1);
+    expect((await quota.admitCall({ sid: "j", pool: "judge", network: "n" })).ok).toBe(false);
+    clock.set(retryAt);
+    expect(await quota.callsUsed({ sid: "j", pool: "judge" })).toBe(0);
+    expect((await quota.admitCall({ sid: "j", pool: "judge", network: "n" })).ok).toBe(true);
   });
 
+  // Strix 2026-11-25, owner decision. Fails if many judge sessions of one network (the code is shared, and sessions last weeks) can make more
+  // calls in a UTC day than the network's limit, if a call that its own session refuses uses the network's, if a call that the network refuses
+  // uses its session's, if another network or the public pool is affected, or if the refusal asks a judge for a key.
+  it("refuses judge calls past the network's limit of the UTC day, over all its sessions", async () => {
+    const { clock, quota } = setup();
+    const call = (sid: string, network = "n") => quota.admitCall({ sid, pool: "judge", network });
+    const sessions = free.judgeCallsPerClientDay / free.judgeCallsPerSessionDay;
+    expect(sessions).toBe(5);
+    for (let s = 0; s < sessions; s++) {
+      for (let i = 0; i < free.judgeCallsPerSessionDay; i++) expect((await call(`j${s}`)).ok).toBe(true);
+      expect((await call(`j${s}`)) as object).toMatchObject({ ok: false, reason: "judge_session_calls" });
+    }
+    const retryAt = Date.parse("2026-11-16T00:00:00Z");
+    expect(await call("fresh")).toEqual({
+      ok: false,
+      status: 429,
+      reason: "judge_network_calls",
+      retryAt,
+      message: "Judges on this network made their 1000 AI calls for today. Judge access works again at 00:00 UTC on 16 November 2026.",
+    });
+    expect(await quota.callsUsed({ sid: "fresh", pool: "judge" })).toBe(0);
+    expect((await call("fresh", "elsewhere")).ok).toBe(true);
+    expect(await quota.callsUsed({ sid: "fresh", pool: "judge" })).toBe(1);
+    expect([await quota.networkCapReached("n"), await quota.networkCapReached("elsewhere")]).toEqual([true, false]);
+    expect((await quota.admitCall({ sid: "p", pool: "public", network: "n" })).ok).toBe(true);
+    clock.set(retryAt);
+    expect((await call("fresh")).ok).toBe(true);
+  });
+
+  // Fails if the public session's count starts again each day (the daily window is for the judge pool only).
+  it("keeps the public count over days", async () => {
+    const { clock, quota } = setup();
+    for (let i = 0; i < free.callsPerSession; i++) await quota.admitCall({ sid: "s", pool: "public", network: "n" });
+    clock.advance(3 * 86_400_000);
+    expectCap(await quota.admitCall({ sid: "s", pool: "public", network: "n" }), "session_calls");
+  });
 });
 
 describe("in-flight slots", () => {
@@ -104,10 +156,21 @@ describe("in-flight slots", () => {
 describe("cap texts", () => {
   // Fails if any cap reason lacks the plan's visitor text or a distinct reason phrase.
   it("gives each reason the plan's text with its own phrase", () => {
-    const reasons = ["session_calls", "judge_session_calls", "client_sessions", "judge_client_sessions", "inflight_session", "inflight_global", "public_pool", "judge_pool", "ledger"] as const;
+    const reasons = ["session_calls", "inflight_session", "inflight_global", "public_pool", "judge_pool", "ledger"] as const;
     const texts = reasons.map((r) => capMessage(r));
     for (const t of texts) expect(t).toMatch(TEXT);
     expect(new Set(texts).size).toBe(reasons.length);
+  });
+
+  // Fails if a wait that ends by itself sends a judge to a paid key while the reserve has money.
+  it("asks a judge for a key only when the money is used up", async () => {
+    const { quota } = setup();
+    await quota.acquireInflight("j", "judge");
+    await quota.acquireInflight("j", "judge");
+    const busy = await quota.acquireInflight("j", "judge");
+    expect(busy).toMatchObject({ ok: false, reason: "inflight_session", message: "Judge access is busy with your other requests. Try again when they finish." });
+    for (const reason of ["inflight_session", "inflight_global"] as const) expect(capMessage(reason, "judge")).not.toMatch(/key/i);
+    for (const reason of ["judge_pool", "ledger"] as const) expect(capMessage(reason, "judge")).toMatch(TEXT);
   });
 });
 
@@ -119,6 +182,6 @@ it("throws CountersUnavailable when the store fails", async () => {
     },
   });
   const quota = createQuota({ store: broken, config: free, clock: () => START });
-  await expect(quota.admitCall({ sid: "s", pool: "public" })).rejects.toBeInstanceOf(CountersUnavailable);
+  await expect(quota.admitCall({ sid: "s", pool: "public", network: "n" })).rejects.toBeInstanceOf(CountersUnavailable);
   await expect(quota.acquireInflight("s")).rejects.toBeInstanceOf(CountersUnavailable);
 });

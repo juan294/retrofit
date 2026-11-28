@@ -1,7 +1,7 @@
 import { dispatchQueued } from "@/lib/analysis/capacity";
-import { getAnalysis, isAnalysisId, readAnalysisView, reportBody, type AnalysisView } from "@/lib/analysis/record";
+import { isAnalysisId, readAnalysisView, reportBody, type AnalysisView } from "@/lib/analysis/record";
 import { visitorTexts } from "@/lib/analysis/texts";
-import { hashVisitor, readVisitorToken, sameHash } from "@/lib/analysis/visitor";
+import { findOwnedAnalysis, requesterOf } from "@/lib/analysis/owner";
 import type { ServerDeps } from "@/lib/server/runtime";
 import { generateNetwork, GenerationFailed } from "@/lib/generate/network";
 import type { Snapshot } from "@/lib/snapshot/types";
@@ -41,7 +41,8 @@ function compact(view: AnalysisView): StatusBody {
 
 /**
  * GET /api/analyze/[id] (and `?include=result`). The visitor cookie's hash
- * must equal the analysis's ownerHash; otherwise, and for an id that does not
+ * must equal the analysis's ownerHash, or the signed-in account must be the one
+ * the analysis is attached to (owner.ts); otherwise, and for an id that does not
  * exist, 404 with the "belongs to another browser" text. One store read for
  * the analysis and at most one for its job. The owner's request also
  * dispatches queued crawls in the background.
@@ -58,11 +59,11 @@ export interface StatusMeasurement {
 }
 
 export async function handleAnalysisStatus(request: Request, deps: ServerDeps, id: string, measure?: StatusMeasurement): Promise<Response> {
-  const token = readVisitorToken(request);
-  if (!token || !isAnalysisId(id)) return notFound();
+  const who = requesterOf(request, deps.config);
+  if ((!who.visitorToken && !who.accountToken) || !isAnalysisId(id)) return notFound();
   try {
-    const analysis = await getAnalysis(deps.store, id);
-    if (!analysis || !sameHash(analysis.ownerHash, hashVisitor(token))) return notFound();
+    const { analysis } = await findOwnedAnalysis(id, who, deps);
+    if (!analysis) return notFound();
     // Only the owner's poll moves the queue: a request without the cookie, with an invalid id or for
     // another visitor's analysis starts no store work beyond that one read.
     const dispatchDeps = measure?.dispatchDeps ?? deps;

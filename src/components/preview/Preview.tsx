@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { serveTopManifest, withTopNetwork } from "@/lib/peer/conformance";
 import { friendlyRuntimeError } from "@/lib/preview/error-text";
+import { iconElement, watchEmoji } from "../../../public/brand/runtime-icons.js";
 import { noticeForTrace, type Notice } from "@/lib/preview/notices";
 import type { ConsentInfo } from "@/lib/preview/fetch-guard";
 import { closePreviewAccess, installPageGuard } from "@/lib/preview/page-guard";
@@ -60,20 +61,26 @@ export function Preview({ originUrl, inference, label, onNotice, network }: Prev
   const [notices, setNotices] = useState<Notice[]>([]);
   const [bootError, setBootError] = useState<string | null>(null);
 
-  // The runtime prints a router error as "⚠️ LLM HTTP 429: {json}". Show the JSON error's message instead.
-  // Only that bubble's text changes; a non-JSON body (for example HTML) stays as the runtime escaped it.
+  // The runtime prints a router error as "<warning emoji> LLM HTTP 429: {json}". Show the JSON error's message
+  // instead, after Retrofit's warning icon. Only that bubble changes; a non-JSON body (for example HTML) stays as
+  // the runtime escaped it. Then every emoji the runtime writes becomes a Retrofit icon (public/brand/runtime-icons.js).
+  // The rewrite observer is created first, so it reads each bubble before its emoji is replaced.
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
     const rewrite = () => {
       for (const bubble of mount.querySelectorAll<HTMLElement>(".ns-msg.bot")) {
         const friendly = friendlyRuntimeError(bubble.textContent ?? "");
-        if (friendly !== null) bubble.textContent = friendly;
+        if (friendly !== null) bubble.replaceChildren(iconElement("warning"), ` ${friendly}`);
       }
     };
     const observer = new MutationObserver(rewrite);
     observer.observe(mount, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
+    const stopIcons = watchEmoji(mount);
+    return () => {
+      observer.disconnect();
+      stopIcons();
+    };
   }, []);
 
   useEffect(() => {

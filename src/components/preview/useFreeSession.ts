@@ -1,21 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FREE_PLACEHOLDER_KEY, UNAVAILABLE_MESSAGE } from "@/lib/inference/errors";
+import { FREE_PLACEHOLDER_KEY, JUDGE_UNAVAILABLE_MESSAGE, UNAVAILABLE_MESSAGE } from "@/lib/inference/errors";
 import type { Inference } from "./Preview";
 
 export const RENEW_EVERY_MS = 30 * 60 * 1000;
 
+/** The pool the session answer names: "judge" after a judge code in this browser. */
+export type FreePool = "public" | "judge";
+
 export type FreeState =
   | { readonly status: "starting" }
-  | { readonly status: "ready"; readonly inference: Inference }
+  | { readonly status: "ready"; readonly inference: Inference; readonly pool: FreePool }
   | { readonly status: "unavailable"; readonly message: string };
 
-async function startSession(): Promise<{ ok: true } | { ok: false; message: string }> {
+/** A judge is never told to bring a key. */
+export const unavailableText = (pool: FreePool | null) => (pool === "judge" ? JUDGE_UNAVAILABLE_MESSAGE : UNAVAILABLE_MESSAGE);
+
+async function startSession(): Promise<{ ok: true; pool: FreePool } | { ok: false; message: string }> {
   const res = await fetch("/api/inference/session", { method: "POST", credentials: "same-origin" });
   // Always read the body, so the response completes (an unread body keeps the request open).
-  const body = (await res.json().catch(() => null)) as { message?: string } | null;
-  if (res.ok) return { ok: true };
+  const body = (await res.json().catch(() => null)) as { message?: string; pool?: unknown } | null;
+  if (res.ok) return { ok: true, pool: body?.pool === "judge" ? "judge" : "public" };
   return { ok: false, message: body?.message ?? UNAVAILABLE_MESSAGE };
 }
 
@@ -38,21 +44,27 @@ export function useFreeSession(active: boolean): FreeState {
     if (!active) return;
     let stopped = false;
     const begin = async () => {
+      let pool: FreePool | null = null;
       try {
         const started = await startSession();
         if (stopped) return;
         if (!started.ok) return setState({ status: "unavailable", message: started.message });
+        pool = started.pool;
         const model = await freeModel();
         if (stopped) return;
-        if (!model) return setState({ status: "unavailable", message: UNAVAILABLE_MESSAGE });
-        setState({ status: "ready", inference: { router: `${window.location.origin}/api/inference/v1`, key: FREE_PLACEHOLDER_KEY, model } });
+        if (!model) return setState({ status: "unavailable", message: unavailableText(pool) });
+        setState({ status: "ready", pool: started.pool, inference: { router: `${window.location.origin}/api/inference/v1`, key: FREE_PLACEHOLDER_KEY, model } });
       } catch {
-        if (!stopped) setState({ status: "unavailable", message: UNAVAILABLE_MESSAGE });
+        if (!stopped) setState({ status: "unavailable", message: unavailableText(pool) });
       }
     };
     void begin();
-    // Renewal keeps the same session (sid, pool and counters); it never reboots the runtime.
-    const renew = () => void startSession().catch(() => undefined);
+    // Renewal keeps the same session (sid, pool and counters); it never reboots the runtime (the same `inference`).
+    // Its pool changes when judge access was turned on in another tab.
+    const renew = () =>
+      void startSession()
+        .then((r) => !stopped && r.ok && setState((s) => (s.status === "ready" && s.pool !== r.pool ? { ...s, pool: r.pool } : s)))
+        .catch(() => undefined);
     const timer = setInterval(renew, RENEW_EVERY_MS);
     const onVisible = () => document.visibilityState === "visible" && renew();
     document.addEventListener("visibilitychange", onVisible);

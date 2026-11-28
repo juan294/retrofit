@@ -6,6 +6,8 @@
  * adapter (eslint-rules/no-supabase-in-tests.mjs).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMemoryAccountData } from "@/lib/accounts/memory";
+import { AccountDataUnavailable } from "@/lib/accounts/data";
 import { handleHealth, HEALTH_DEGRADED_MESSAGE } from "@/lib/api/health";
 import { loadConfig } from "@/lib/config";
 import { getStore } from "@/lib/server/runtime";
@@ -72,10 +74,50 @@ describe("Supabase adapter on a closed port", () => {
   });
 });
 
+describe("GET /api/health and the account data", () => {
+  const account = (checkReady: () => Promise<void>) => ({ ...createMemoryAccountData(), checkReady });
+
+  // DO-H2, BE-M2. Fails if a missing account migration or an outage of the account data is not reported, or takes the anonymous product down.
+  it("names the account data on its own and stays ok for the store", async () => {
+    const ok = await handleHealth({ store: createMemoryStore(), accounts: account(async () => undefined) });
+    expect([ok.status, await ok.json()]).toEqual([200, { status: "ok", accounts: "ok" }]);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const broken = await handleHealth({ store: createMemoryStore(), accounts: account(async () => Promise.reject(new AccountDataUnavailable("checkReady", "42703"))) });
+    expect([broken.status, await broken.json()]).toEqual([200, { status: "ok", accounts: "unavailable" }]);
+    error.mockRestore();
+  });
+
+  // Review finding 9. Fails if anybody can make health read the account data at every call, or a hanging account database delays the answer.
+  it("asks the account data at most once in 30 seconds, and waits 3 seconds at most", async () => {
+    vi.useFakeTimers();
+    try {
+      let asked = 0;
+      const accounts = account(async () => void asked++);
+      for (let n = 0; n < 5; n++) await handleHealth({ store: createMemoryStore(), accounts });
+      expect(asked).toBe(1);
+      await vi.advanceTimersByTimeAsync(30_001);
+      await handleHealth({ store: createMemoryStore(), accounts });
+      expect(asked).toBe(2);
+      const hanging = handleHealth({ store: createMemoryStore(), accounts: account(() => new Promise(() => undefined)) });
+      await vi.advanceTimersByTimeAsync(3_001);
+      expect(await (await hanging).json()).toEqual({ status: "ok", accounts: "unavailable" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Fails if the account data hides a store outage.
+  it("is degraded when the store is", async () => {
+    const res = await handleHealth({ store: closedStore(), accounts: account(async () => undefined) });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ status: "degraded" });
+  });
+});
+
 describe("GET /api/health", () => {
   // Fails if health reports ok without a working store, or the status, body or text differ from the stuck-state row.
   it("answers degraded with 503 and the visitor text when the store is unreachable", async () => {
-    const response = await handleHealth({ store: closedStore() });
+    const response = await handleHealth({ store: closedStore(), accounts: createMemoryAccountData() });
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ status: "degraded", message: "Retrofit is having trouble. Try again in a few minutes." });
     expect(HEALTH_DEGRADED_MESSAGE).toBe("Retrofit is having trouble. Try again in a few minutes.");
@@ -87,7 +129,7 @@ describe("GET /api/health", () => {
   it("answers degraded when the row it wrote does not read back", async () => {
     const memory = createMemoryStore();
     const forgetful: Store = { ...memory, get: async () => null };
-    const response = await handleHealth({ store: forgetful });
+    const response = await handleHealth({ store: forgetful, accounts: createMemoryAccountData() });
     expect(response.status).toBe(503);
     expect(logged().some((l) => l.includes("[TABLE_FALLBACK]") && l.includes("health"))).toBe(true);
   });
@@ -97,9 +139,9 @@ describe("GET /api/health", () => {
     const memory = createMemoryStore();
     const writes: Array<[string, number]> = [];
     const store: Store = { ...memory, set: (key, value, ttl) => (writes.push([key, ttl]), memory.set(key, value, ttl)) };
-    const response = await handleHealth({ store });
+    const response = await handleHealth({ store, accounts: createMemoryAccountData() });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ok" });
+    expect(await response.json()).toEqual({ status: "ok", accounts: "ok" });
     expect(writes).toHaveLength(1);
     expect(writes[0]![0]).toMatch(/^health:[0-9a-f-]{36}$/);
     expect(writes[0]![1]).toBe(60);
@@ -139,7 +181,7 @@ describe("health probe rows", () => {
     const { createMemoryBacking, createMemoryStore } = await import("@/lib/store/memory");
     const backing = createMemoryBacking();
     const store = createMemoryStore({ backing });
-    for (let i = 0; i < 5; i++) expect((await handleHealth({ store })).status).toBe(200);
+    for (let i = 0; i < 5; i++) expect((await handleHealth({ store, accounts: createMemoryAccountData() })).status).toBe(200);
     expect([...backing.values.keys()].filter((k) => k.startsWith("health:"))).toEqual([]);
   });
 });

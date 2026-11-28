@@ -4,6 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { visitorTexts } from "@/lib/analysis/texts";
+import { loadConfig } from "@/lib/config";
+
 // The boundary: every outward command goes through node:child_process and every HTTP call through
 // the global fetch. Both are stubbed here; a call that is not expected fails the test.
 const { spawnSync, execFileSync } = vi.hoisted(() => ({ spawnSync: vi.fn(), execFileSync: vi.fn() }));
@@ -216,7 +219,8 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
       versionOrigins.push(u.pathname === "/api/version" ? u.origin : "");
       expect(u.origin).toBe(u.pathname === "/api/version" && u.origin === DEPLOYMENT_URL ? DEPLOYMENT_URL : PROD);
       if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: COMMIT }), { status: 200 });
-      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok", accounts: "ok" }), { status: 200 });
+      if (u.pathname === "/api/auth/sign-in") return new Response(JSON.stringify({ sent: true, message: "Check your email." }), { status: 200 });
       if (u.pathname === "/api/analyze" && init?.method === "POST") {
         expect((init.headers as Record<string, string>).origin).toBe(PROD);
         const id = ids[posted++]!;
@@ -311,7 +315,8 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
     fetchStub.mockImplementation(async (url: string) => {
       const u = new URL(url);
       if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: "c".repeat(40) }), { status: 200 });
-      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok", accounts: "ok" }), { status: 200 });
+      if (u.pathname === "/api/auth/sign-in") return new Response(JSON.stringify({ sent: true, message: "Check your email." }), { status: 200 });
       return new Response("{}", { status: 503 });
     });
     const { io } = capture();
@@ -325,13 +330,175 @@ describe("production-evidence.mjs run (stubbed boundary)", () => {
   });
 });
 
+// P5-R5: from BILLING_START on, the product gives a network without an account five analyses in 30 days, and the evidence run is no
+// exception. The limit's exact answer is then the expected result, proved beside scores of the same pages from the open score API.
+describe("production-evidence.mjs after BILLING_START", () => {
+  const BEFORE = Date.parse("2027-01-19T23:59:00.000Z");
+  const AFTER = Date.parse("2027-01-20T00:01:00.000Z");
+  const LIMIT = { error: "free_limit", message: "You've used your 5 free analyses. Sign in to keep going." };
+  const READY = { status: "ready", scoreVersion: "score/v1", score: 90 };
+
+  afterEach(() => vi.useRealTimers());
+
+  /** One run at `now`; the first `free` analyses start, the others get `refusal`. Returns the case report, the calls in order and the score calls. */
+  async function runAt(now: number, free: number, o: { refusal?: unknown; status?: number; score?: (n: number) => Response } = {}) {
+    vi.useFakeTimers({ toFake: ["Date"], now });
+    const inspect = boundEverywhere();
+    const order: string[] = [];
+    spawnSync.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === "vercel" && args[0] === "inspect") return inspect(args[1]!);
+      if (cmd === "pnpm") order.push("playwright");
+      return { status: 0, stdout: cmd === process.execPath ? "partner ok" : "", stderr: "" };
+    });
+    let posted = 0;
+    let scored = 0;
+    fetchStub.mockImplementation(async (url: string, init?: RequestInit) => {
+      const u = new URL(url);
+      if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: COMMIT }), { status: 200 });
+      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok", accounts: "ok" }), { status: 200 });
+      if (u.pathname === "/api/auth/sign-in") return new Response(JSON.stringify({ sent: true, message: "Check your email." }), { status: 200 });
+      if (u.pathname === "/api/analyze" && init?.method === "POST") {
+        order.push("analyze");
+        const n = posted++;
+        if (n >= free) return new Response(JSON.stringify(o.refusal ?? LIMIT), { status: o.status ?? 403 });
+        return new Response(JSON.stringify({ id: String(n).repeat(32) }), { status: 200, headers: { "set-cookie": `retrofit_visitor=v${n}; Path=/` } });
+      }
+      if (u.pathname.startsWith("/api/analyze/")) return new Response(JSON.stringify({ status: "ready", scoreReady: true }), { status: 200 });
+      if (u.pathname === "/api/score") {
+        expect(u.searchParams.get("url")).toMatch(/^https:\/\/retrofit\.thecreativetoken\.com\//);
+        expect(init?.headers ?? {}).not.toHaveProperty("authorization");
+        return o.score ? o.score(scored++) : (scored++, new Response(JSON.stringify(READY), { status: 200 }));
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const { io } = capture();
+    await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp], io);
+    const report = JSON.parse(fs.readFileSync(path.join(tmp, DEPLOYMENT_ID, "concurrent-analyses-five.json"), "utf8")) as { status: string; limited: number; analyses: { finalStatus: string }[]; scores: { finalStatus: string }[] };
+    return { report, order, scored };
+  }
+
+  // Fails if a run after the start, or the next run in the 30 days, cannot pass, or passes without proof that the pages can be scored.
+  it.each([[4], [0]])("passes with %s analyses left: the others get the limit's answer, and five scores prove the pages", async (free) => {
+    const { report, scored } = await runAt(AFTER, free);
+    expect(report.status).toBe("passed");
+    expect(report.limited).toBe(5 - free);
+    expect(report.analyses.map((a) => a.finalStatus).sort()).toEqual([...Array<string>(5 - free).fill("limited"), ...Array<string>(free).fill("ready")]);
+    expect(scored).toBe(5);
+    expect(report.scores.map((s) => s.finalStatus)).toEqual(Array(5).fill("ready"));
+  });
+
+  // Fails if the limit is accepted before the start (a judge would meet it), or the fallback replaces the five analyses there.
+  it("fails when the limit answers before the start, and asks for no scores without a limit", async () => {
+    expect((await runAt(BEFORE, 4)).report.status).toBe("failed");
+    fs.rmSync(path.join(tmp, DEPLOYMENT_ID), { recursive: true, force: true });
+    const healthy = await runAt(BEFORE, 5);
+    expect([healthy.report.status, healthy.report.limited, healthy.scored]).toEqual(["passed", 0, 0]);
+    fs.rmSync(path.join(tmp, DEPLOYMENT_ID), { recursive: true, force: true });
+    const after = await runAt(AFTER, 5);
+    expect([after.report.status, after.scored]).toEqual(["passed", 0]);
+  });
+
+  // Fails if any other refusal, another text or a failing score passes as the limit.
+  it.each([
+    ["another text", { refusal: { error: "free_limit", message: "Sign in." } }],
+    ["another code", { refusal: { ...LIMIT, error: "client_limit" } }],
+    ["another status", { status: 429 }],
+    ["a failed score", { score: (n: number) => new Response(JSON.stringify(n === 3 ? { status: "error", error: "unavailable" } : READY), { status: n === 3 ? 503 : 200 }) }],
+    ["a score that is not ready", { score: () => new Response("{}", { status: 200 }) }],
+  ])("fails for %s", async (_name, o) => {
+    expect((await runAt(AFTER, 4, o)).report.status).toBe("failed");
+  });
+
+  // Fails if the concurrent analyses use up the network's places before the browser's own analysis (analyze-own-site) after the start.
+  it("the browser suite runs before the concurrent analyses", async () => {
+    const { order } = await runAt(AFTER, 4);
+    expect(order.indexOf("playwright")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("playwright")).toBeLessThan(order.indexOf("analyze"));
+  });
+
+  // P5-RR1. Fails if, before the start, the browser's analysis warms the site's cache, so the five analyses no longer create and join
+  // one cold crawl together.
+  it("before the start the concurrent analyses run first, on a cold site", async () => {
+    const { order } = await runAt(BEFORE, 5);
+    expect(order.lastIndexOf("analyze")).toBeGreaterThanOrEqual(0);
+    expect(order.lastIndexOf("analyze")).toBeLessThan(order.indexOf("playwright"));
+    const steps = async (now: number) => {
+      vi.setSystemTime(now);
+      const { lines, io } = capture();
+      await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--dry-run", "--evidence-dir", tmp], io);
+      const names = [...lines.join("\n").matchAll(/^step \d+ ([a-z-]+) ->/gm)].map((m) => m[1]);
+      return names.indexOf("playwright") - names.indexOf("concurrent-analyses");
+    };
+    expect(await steps(BEFORE)).toBeGreaterThan(0);
+    expect(await steps(AFTER)).toBeLessThan(0);
+  });
+
+  // Fails if the tooling's text or instant drifts from the product's.
+  it("uses the product's own limit text and earliest start", async () => {
+    const { BILLING_STARTS_AT_EARLIEST, FREE_LIMIT_TEXT, billingMayHaveStarted } = await import("../../e2e-prod/support/billing-start.mjs");
+    expect(FREE_LIMIT_TEXT).toBe(visitorTexts.freeLimit);
+    expect(BILLING_STARTS_AT_EARLIEST).toBe(loadConfig({ SESSION_SECRET: "s".repeat(32) }).billingStart);
+    expect([billingMayHaveStarted(BILLING_STARTS_AT_EARLIEST - 1), billingMayHaveStarted(BILLING_STARTS_AT_EARLIEST)]).toEqual([false, true]);
+  });
+});
+
+// DO-H2: a release whose account data or sign-in email does not work must not be accepted.
+describe("production-evidence.mjs account data and sign-in", () => {
+  async function runWith(health: unknown, signIn: { status: number; body: unknown }) {
+    const inspect = boundEverywhere();
+    let posted: { headers: Headers; body: string } | null = null;
+    fetchStub.mockImplementation(async (url: string, init: RequestInit) => {
+      const u = new URL(url);
+      if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: COMMIT }), { status: 200 });
+      if (u.pathname === "/api/health") return new Response(JSON.stringify(health), { status: 200 });
+      if (u.pathname === "/api/auth/sign-in") {
+        posted = { headers: new Headers(init.headers), body: String(init.body) };
+        return new Response(JSON.stringify(signIn.body), { status: signIn.status });
+      }
+      return new Response("{}", { status: 503 });
+    });
+    spawnSync.mockImplementation((cmd: string, args: string[]) => (cmd === "vercel" && args[0] === "inspect" ? inspect(args[1]!) : { status: 0, stdout: "partner ok", stderr: "" }));
+    const { io, lines } = capture();
+    await main([DEPLOYMENT_ID, DEPLOYMENT_URL, COMMIT, "--evidence-dir", tmp, "--created-at", CREATED_AT()], io);
+    const read = (id: string) => JSON.parse(fs.readFileSync(path.join(tmp, DEPLOYMENT_ID, `${id}.json`), "utf8"));
+    return { health: read("health-ok"), accounts: read("account-data-ready"), signIn: read("sign-in-send"), posted: posted as { headers: Headers; body: string } | null, out: lines.join("\n") };
+  }
+  const SENT = { status: 200, body: { sent: true, message: "Check your email." } };
+
+  it("passes when the account data is ready and the email was sent, and records no address", async () => {
+    const r = await runWith({ status: "ok", accounts: "ok" }, SENT);
+    expect([r.health.status, r.accounts.status, r.signIn.status]).toEqual(["passed", "passed", "passed"]);
+    const email = (JSON.parse(r.posted!.body) as { email: string }).email;
+    expect(email).toMatch(/^success\+run[a-z0-9]+@simulator\.amazonses\.com$/i);
+    expect([r.posted!.headers.get("origin"), r.posted!.headers.get("sec-fetch-site")]).toEqual([PROD, "same-origin"]);
+    expect(JSON.stringify(r) .replaceAll(r.posted!.body, "")).not.toContain("simulator.amazonses.com\"");
+  });
+
+  // Fails if a store that works hides account data that does not (a missing migration), or an unknown answer counts as ready.
+  it.each([[{ status: "ok", accounts: "unavailable" }], [{ status: "ok" }]])("fails account-data-ready for %j and keeps health-ok", async (health) => {
+    const r = await runWith(health, SENT);
+    expect([r.health.status, r.accounts.status]).toEqual(["passed", "failed"]);
+  });
+
+  // Fails if a provider failure, a limit or an answer without `sent` counts as a sent email.
+  it.each([
+    [503, { error: "mail_unavailable" }],
+    [429, { error: "limit" }],
+    [429, { error: "mail_busy" }],
+    [200, {}],
+  ])("fails sign-in-send for %i %j", async (status, body) => {
+    expect((await runWith({ status: "ok", accounts: "ok" }, { status, body })).signIn.status).toBe("failed");
+  });
+});
+
 describe("production-evidence.mjs alias identity (V10)", () => {
   /** A run where every /api/version answers the candidate commit and every other probe passes. */
   function healthyProduction() {
     fetchStub.mockImplementation(async (url: string) => {
       const u = new URL(url);
       if (u.pathname === "/api/version") return new Response(JSON.stringify({ commit: COMMIT }), { status: 200 });
-      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+      if (u.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok", accounts: "ok" }), { status: 200 });
+      if (u.pathname === "/api/auth/sign-in") return new Response(JSON.stringify({ sent: true, message: "Check your email." }), { status: 200 });
       return new Response("{}", { status: 503 });
     });
   }

@@ -1,12 +1,13 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { getAnalysis, isAnalysisId, readAnalysisView } from "@/lib/analysis/record";
+import { isAnalysisId, readAnalysisView } from "@/lib/analysis/record";
 import { bundleFiles } from "@/lib/bundle/files";
 import { writeZip } from "@/lib/bundle/zip";
 import { visitorTexts } from "@/lib/analysis/texts";
-import { hashVisitor, readVisitorToken, sameHash } from "@/lib/analysis/visitor";
+import { findOwnedAnalysis, requesterOf } from "@/lib/analysis/owner";
 import type { JobDeps } from "@/lib/crawl/jobs";
+import { EMPTY_LINKS } from "@/lib/generate/agent-json";
 import { GenerationFailed, generateNetwork, type GeneratedPreview, type NetworkValidator } from "@/lib/generate/network";
+import { assetResponse, jsonResponse, respond } from "./agent-response";
 
 export interface PreviewDeps extends JobDeps {
   /** Replaces the vendored validator (tests force a failure through it). */
@@ -16,26 +17,8 @@ export interface PreviewDeps extends JobDeps {
 }
 
 const DEFAULT_ASSETS = path.join(process.cwd(), "public", "preview-assets");
-const JSON_TYPE = "application/json";
-const TYPES: Record<string, string> = { ".js": "text/javascript; charset=utf-8", ".html": "text/html; charset=utf-8", ".json": JSON_TYPE };
 // One plain file name inside bridge/: no dot files, no separators, no traversal.
 const BRIDGE_FILE = /^[a-z0-9][a-z0-9-]*\.(?:html|js|json)$/;
-/** What the runtime's links loader reads: `doc.networks[<name>]`, here nothing (runtime/engine.js `_loadPublishedLinks`). */
-const EMPTY_LINKS = { version: 1, networks: {} } as const;
-
-function respond(status: number, body: BodyInit, contentType: string): Response {
-  return new Response(body, {
-    status,
-    headers: {
-      "content-type": contentType,
-      "cache-control": "private, no-store",
-      "x-robots-tag": "noindex",
-      "x-content-type-options": "nosniff",
-    },
-  });
-}
-
-const jsonResponse = (status: number, body: unknown) => respond(status, JSON.stringify(body), JSON_TYPE);
 const notFound = () => jsonResponse(404, { error: "not_found" });
 const otherBrowser = () => jsonResponse(404, { error: "not_found", message: visitorTexts.otherBrowser });
 
@@ -65,35 +48,22 @@ function resolveArtifact(g: GeneratedPreview, segments: readonly string[]): Arti
   return null;
 }
 
-async function serveAsset(assetsDir: string, relative: string): Promise<Response> {
-  const root = path.resolve(assetsDir);
-  const file = path.resolve(root, relative);
-  // Defense in depth: the allowlist already admits no separator or dot segment.
-  if (!file.startsWith(root + path.sep)) return notFound();
-  const type = TYPES[path.extname(file)];
-  if (!type) return notFound();
-  try {
-    return respond(200, await readFile(file, "utf8"), type);
-  } catch {
-    return notFound();
-  }
-}
-
 /**
  * GET /p/[id]/[...file]: the private preview's artifacts, served only to the
- * analysis owner (same 404 text for another visitor and an unknown id).
+ * analysis owner: its visitor or its attached account (same 404 text for another
+ * visitor or account and an unknown id).
  * Expired -> 410 with the expiry text. Not ready, or GenerationFailed -> 404 with
  * the generation text. content-actions.js and bridge/* are read from
  * public/preview-assets and returned at this URL (a rewrite, not a redirect), so
  * content-actions.js finds ./site-content.json next to its own module URL.
  */
 export async function handlePreviewFile(request: Request, deps: PreviewDeps, id: string, segments: readonly string[]): Promise<Response> {
-  const token = readVisitorToken(request);
-  if (!token || !isAnalysisId(id)) return otherBrowser();
+  const who = requesterOf(request, deps.config);
+  if ((!who.visitorToken && !who.accountToken) || !isAnalysisId(id)) return otherBrowser();
   let generated: GeneratedPreview;
   try {
-    const analysis = await getAnalysis(deps.store, id);
-    if (!analysis || !sameHash(analysis.ownerHash, hashVisitor(token))) return otherBrowser();
+    const { analysis } = await findOwnedAnalysis(id, who, deps);
+    if (!analysis) return otherBrowser();
     const view = await readAnalysisView(deps, analysis);
     if (view.status === "expired") return jsonResponse(410, { error: "expired", message: view.failure?.message ?? visitorTexts.expired(new Date(analysis.expiresAt)) });
     const snapshot = view.analysis.snapshot;
@@ -118,5 +88,5 @@ export async function handlePreviewFile(request: Request, deps: PreviewDeps, id:
   const artifact = resolveArtifact(generated, segments);
   if (!artifact) return notFound();
   if (artifact.kind === "json") return jsonResponse(200, artifact.body);
-  return serveAsset(deps.assetsDir ?? DEFAULT_ASSETS, artifact.relative);
+  return (await assetResponse(deps.assetsDir ?? DEFAULT_ASSETS, artifact.relative)) ?? notFound();
 }

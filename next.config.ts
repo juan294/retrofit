@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
+import { checkProductionBuild } from "./src/lib/build-config";
 import { peerRewrites } from "./src/lib/peer/rewrites";
+import { PUBLISHED_ASSETS } from "./src/lib/publish/assets";
 import { staticSecurityHeaders } from "./src/lib/security/headers";
+
+// A production build with a missing or malformed variable fails here, so the deployment before it keeps serving.
+checkProductionBuild(process.env);
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
@@ -10,7 +15,9 @@ const nextConfig: NextConfig = {
   typescript: { tsconfigPath: "tsconfig.build.json" },
   // The private artifact route reads the install bundle assets from disk.
   outputFileTracingIncludes: {
-    "/p/**": ["./public/preview-assets/**/*", "./public/runtime/**/*", "./tools/agentic-web/templates/assistant.css"],
+    "/p/**": ["./public/preview-assets/**/*", "./public/runtime/**/*", "./tools/agentic-web/templates/assistant.css", "./public/brand/runtime-icons.js"],
+    // A published site's agent files: content-actions.js, the bridge page and its runtime modules.
+    "/s/**": [...PUBLISHED_ASSETS.values()].map((file) => `./public/${file}`),
     // The demo-harbor peer route reads its static site from disk.
     "/peer/[...path]": ["./peers/demo-harbor/public/**/*", "./peers/demo-harbor/public/.well-known/*"],
   },

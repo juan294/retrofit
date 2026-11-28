@@ -1,12 +1,17 @@
-# Retrofit local Supabase configuration (Supabase CLI 3.1.0).
+# Retrofit local Supabase configuration (Supabase CLI 3.2.0).
+#
+# Never run `supabase config push` with this file: it would point production sign-in links at 127.0.0.1 and turn
+# confirmations off. The production settings are in supabase/production-auth.toml (tools/ops/production-auth.mjs).
 #
 # This file defines the reusable dev stack `retrofit` on ports 54720 to 54729
 # (docs/development/resource-lifecycle.md). The disposable gate stack
 # `retrofit-gate` (54730 to 54739) is generated from this file into
 # `.local/supabase-gate/` with its own project_id and ports; it never uses this
-# identity. Retrofit needs Postgres and the REST API (the Store adapter in
-# src/lib/store/supabase.ts calls PostgREST rpc with the service role key), and
-# auth only so the CLI reports the API keys; every other service is disabled.
+# identity. Retrofit needs Postgres, the REST API (the Store and AccountData
+# adapters call PostgREST with the service role key), Auth for email-link
+# sign-in (src/lib/auth/supabase.ts) and the local mail catcher (Mailpit, HTTP
+# on 54724, 54734 on the gate stack) that receives the sign-in emails; every
+# other service is disabled. The local stacks never send real email.
 
 project_id = "retrofit"
 
@@ -49,19 +54,41 @@ port = 54723
 api_url = "http://127.0.0.1"
 
 [local_smtp]
-enabled = false
+# Mailpit catches every email Auth sends; tests/db/auth.db.test.ts reads it over HTTP.
+enabled = true
 port = 54724
 
 [storage]
 enabled = false
 
 [auth]
-# Retrofit has no Supabase users, but `supabase status` reports the API keys
-# (the service role key the adapter and the gate tool use) only while auth is
-# enabled. Sign-up is off.
+# Email-link sign-in only (parent plan, Accounts and sessions): a new address
+# signs up through the same link, so sign-up is on for email and every other
+# provider stays off. The email template links to the site URL's /auth/confirm.
 enabled = true
-enable_signup = false
+enable_signup = true
 site_url = "http://127.0.0.1:3009"
+additional_redirect_urls = ["http://127.0.0.1:3009/auth/confirm", "http://127.0.0.1:3010/auth/confirm"]
+
+[auth.rate_limit]
+# The local stacks' limit for the whole project. Retrofit's own limits are per network and per address, so several
+# networks together can reach it; production has its own value (supabase/production-auth.toml).
+email_sent = 30
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+# One hour, as the sign-in page says.
+otp_expiry = 3600
+max_frequency = "1s"
+
+[auth.email.template.magic_link]
+subject = "Your Retrofit sign-in link"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.confirmation]
+subject = "Your Retrofit sign-in link"
+content_path = "./supabase/templates/magic_link.html"
 
 [edge_runtime]
 enabled = false

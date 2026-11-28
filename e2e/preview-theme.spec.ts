@@ -1,5 +1,15 @@
 import { test, expect } from "./fixtures/csp";
-import { analyzeFixture, mockOtari } from "./support/agent";
+import { PRIVACY, TERMS } from "@/lib/site/legal-texts";
+import { PRICING_TEXT, UNSUBSCRIBE_TEXT } from "@/lib/site/pricing-texts";
+import { ACCOUNT_TEXT, SAVE_REPORT_TEXT, SAVED_REPORT_TEXT } from "@/lib/site/account-texts";
+import { SIGN_IN_TEXT } from "@/lib/site/sign-in-texts";
+import { addressStep, CONFIRM_PATH, newEmail, signIn, signInFormState } from "./support/account";
+import { analyzeFixture, mockOtari, submitKey } from "./support/agent";
+import { BLOCKED_HOST, CLAIM_HOST, claimPanel, claimStates, FLAKY_HOST, FRESH_HOST, MISSING_HOST, mockLimit, setClockOffset, panelButton } from "./support/claims";
+import { CLAIMS_TEXT } from "@/lib/site/claims-texts";
+import { PUBLISHED_PAGE_TEXT, PUBLISH_TEXT } from "@/lib/site/publish-texts";
+import { billingStates, startBilling } from "./support/billing";
+import { pageUrl, publishedOwner, publishStates, saveTestKey, setOutage, verifiedOwner } from "./support/publish";
 
 type Locator = import("@playwright/test").Locator;
 
@@ -60,6 +70,255 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expect(el, name).toBeVisible();
       const { ratio, color, background } = await contrastOf(el);
       expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+}
+
+type Page = import("@playwright/test").Page;
+
+/** Every target is visible with a WCAG contrast of at least 4.5 against its background. */
+async function readable(targets: Record<string, Locator>): Promise<void> {
+  for (const [name, el] of Object.entries(targets)) {
+    await expect(el, name).toBeVisible();
+    const { ratio, color, background } = await contrastOf(el);
+    expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
+  }
+}
+
+// The pricing, privacy, terms and unsubscribe pages (confirm and invalid-link states) use the page tokens only;
+// every text kind on them must stay readable in both schemes. Each page adds its own targets to the shared ones.
+const TEXT_PAGES: Record<string, (page: Page) => Record<string, Locator>> = {
+  "/pricing": (page) => ({
+    text: page.getByText(PRICING_TEXT.intro),
+    notice: page.getByText(PRICING_TEXT.freeNotice),
+    plan: page.getByRole("heading", { level: 2, name: "Pro", exact: true }),
+    button: page.getByRole("button", { name: "Notify me" }),
+    privacy: page.getByRole("link", { name: "privacy notice" }),
+    account: page.getByRole("link", { name: PRICING_TEXT.accountLink }),
+  }),
+  "/privacy": (page) => ({ text: page.getByText(PRIVACY.intro) }),
+  "/terms": (page) => ({ text: page.getByText(TERMS.intro) }),
+  "/unsubscribe?t=0123456789abcdef0123456789abcdef": (page) => ({
+    text: page.getByText(UNSUBSCRIBE_TEXT.confirm),
+    button: page.getByRole("button", { name: UNSUBSCRIBE_TEXT.confirmButton }),
+  }),
+  "/unsubscribe?t=not-a-token": (page) => ({ text: page.getByText(UNSUBSCRIBE_TEXT.invalid) }),
+  "/sign-in": (page) => ({
+    text: page.getByText(SIGN_IN_TEXT.intro),
+    button: page.getByRole("button", { name: SIGN_IN_TEXT.submit }),
+    privacy: page.getByRole("link", { name: "privacy notice" }),
+  }),
+  "/sign-in?link=expired": (page) => ({ text: page.getByText(SIGN_IN_TEXT.expired) }),
+  "/sign-in?link=unavailable": (page) => ({ alert: page.getByText(SIGN_IN_TEXT.linkUnavailable) }),
+  "/sign-in?link=busy": (page) => ({ alert: page.getByText(SIGN_IN_TEXT.linkBusy) }),
+  "/sign-in?account=deleted": (page) => ({ status: page.getByText(SIGN_IN_TEXT.deleted) }),
+};
+
+for (const colorScheme of ["light", "dark"] as const) {
+  for (const [path, extra] of Object.entries(TEXT_PAGES)) {
+    test(`the ${path} page text is readable in ${colorScheme} mode`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme });
+      await page.goto(path);
+      const targets: Record<string, Locator> = {
+        heading: page.getByRole("heading", { level: 1 }),
+        link: page.getByRole("link", { name: "Retrofit", exact: true }),
+        ...extra(page),
+      };
+      for (const [name, el] of Object.entries(targets)) {
+        await expect(el, name).toBeVisible();
+        const { ratio, color, background } = await contrastOf(el);
+        expect(ratio, `${name}: ${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+  }
+}
+
+// The account page (with a failure notice), a saved report and the save button: the page tokens only, readable in both schemes.
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`the account pages are readable in ${colorScheme} mode`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    const id = await analyzeFixture(page, "bakery.fixture.test");
+    await signIn(page, newEmail(`theme-${colorScheme}`), `/r/${id}`);
+    await page.getByRole("button", { name: SAVE_REPORT_TEXT.button }).click();
+    const saved = page.getByTestId("save-report").getByRole("status");
+    await expect(saved).toBeVisible();
+    await readable({ saved, openAccount: page.getByRole("link", { name: SAVE_REPORT_TEXT.openAccount }) });
+    await page.goto("/account?delete=failed");
+    await readable({
+      heading: page.getByRole("heading", { level: 1 }),
+      notice: page.getByText(ACCOUNT_TEXT.deleteFailed),
+      email: page.getByTestId("account-email"),
+      report: page.getByTestId("saved-reports").getByRole("link").first(),
+      signOut: page.getByRole("button", { name: ACCOUNT_TEXT.signOut }),
+      delete: page.getByRole("button", { name: ACCOUNT_TEXT.deleteButton }),
+      confirm: page.getByText(ACCOUNT_TEXT.deleteConfirm),
+    });
+    await page.getByTestId("saved-reports").getByRole("link").first().click();
+    // Both pages have a level 1 heading: until the next page replaces this one, the heading measured could be the old, detached one.
+    const back = page.getByRole("link", { name: SAVED_REPORT_TEXT.back });
+    await expect(back).toBeVisible();
+    await readable({ heading: page.getByRole("heading", { level: 1 }), back, score: page.getByTestId("score-total") });
+  });
+}
+
+// The sign-in form's answers, the confirm page, its address step and the save error.
+for (const colorScheme of ["light", "dark"] as const) {
+  for (const state of ["sent", "limit", "error"] as const) {
+    test(`the sign-in form's ${state} state is readable in ${colorScheme} mode`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme });
+      await readable({ message: await signInFormState(page, state) });
+    });
+  }
+
+  test(`the sign-in confirm page and its address step are readable in ${colorScheme} mode`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    await page.goto(CONFIRM_PATH);
+    await readable({ heading: page.getByRole("heading", { level: 1 }), intro: page.getByText(SIGN_IN_TEXT.confirmIntro), button: page.getByRole("button", { name: SIGN_IN_TEXT.confirmButton }) });
+    await addressStep(page);
+    await readable({
+      intro: page.getByText(SIGN_IN_TEXT.addressIntro),
+      address: page.getByTestId("confirm-address"),
+      warning: page.getByTestId("other-browser"),
+      button: page.getByRole("button", { name: SIGN_IN_TEXT.continueButton }),
+      cancel: page.getByRole("button", { name: SIGN_IN_TEXT.cancel }),
+    });
+  });
+
+  test(`the save button's error is readable in ${colorScheme} mode`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    const id = await analyzeFixture(page, "bakery.fixture.test");
+    await signIn(page, newEmail(`theme-error-${colorScheme}`), `/r/${id}`);
+    await page.route("**/api/account/reports", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable", message: SAVE_REPORT_TEXT.unavailable }) }));
+    await page.getByRole("button", { name: SAVE_REPORT_TEXT.button }).click();
+    await readable({ alert: page.getByTestId("save-report").getByRole("alert") });
+  });
+}
+
+// Phase 3. Fails if any claim panel text (status, where to add it, reason, token, last check, buttons, a limit answer) is unreadable in either scheme.
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`the claim panels are readable in ${colorScheme} mode`, async ({ page, browser }) => {
+    test.setTimeout(180_000);
+    await page.emulateMedia({ colorScheme });
+    const { other, close } = await claimStates(page, browser, `theme-${colorScheme}`);
+    const fresh = claimPanel(page, FRESH_HOST);
+    const missing = claimPanel(page, MISSING_HOST);
+    await readable({
+      heading: page.getByRole("heading", { level: 2, name: CLAIMS_TEXT.heading }),
+      lapsed: claimPanel(page, FLAKY_HOST).getByTestId("claim-status"),
+      lapsedReason: claimPanel(page, FLAKY_HOST).getByTestId("claim-reason"),
+      blockedReason: claimPanel(page, BLOCKED_HOST).getByTestId("claim-reason"),
+      missingStatus: missing.getByTestId("claim-status"),
+      missingWhere: missing.getByText(/^Retrofit looks for a retrofit-site-verification tag/),
+      missingReason: missing.getByTestId("claim-reason"),
+      superseded: claimPanel(page, CLAIM_HOST).getByTestId("claim-status"),
+      host: claimPanel(page, CLAIM_HOST).getByText(/fixture\.test/).first(),
+      token: fresh.getByTestId("claim-token").locator("code"),
+      tokenNote: fresh.getByText(CLAIMS_TEXT.tokenOnce),
+      created: fresh.getByTestId("claim-message"),
+      lastChecked: claimPanel(page, BLOCKED_HOST).getByText(/^Last checked /),
+      checkAgain: panelButton(fresh, CLAIMS_TEXT.checkAgain),
+      startOver: panelButton(fresh, CLAIMS_TEXT.startOver),
+      source: page.getByLabel(CLAIMS_TEXT.sourceLabel),
+      claim: page.getByRole("button", { name: CLAIMS_TEXT.claimButton }),
+    });
+    await mockLimit(page, "/api/claims/check", CLAIMS_TEXT.limit);
+    await panelButton(fresh, CLAIMS_TEXT.checkAgain).click();
+    await readable({ limit: fresh.getByRole("alert") });
+    await other.emulateMedia({ colorScheme });
+    await other.goto("/account");
+    await readable({ verified: other.getByTestId("claim-status"), verifiedReason: other.getByTestId("claim-reason") });
+    const panel = claimPanel(other, CLAIM_HOST);
+    await panelButton(panel, CLAIMS_TEXT.remove).click();
+    await readable({ question: panel.getByTestId("second-step").locator("p"), confirm: panelButton(panel, CLAIMS_TEXT.removeConfirm), cancel: panelButton(panel, CLAIMS_TEXT.removeCancel) });
+    await close();
+  });
+}
+
+// Phase 4. Fails if any text of the publish controls, the public page, its key panel, its agent or its 404 page is unreadable in either scheme.
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`the publish controls and the published page are readable in ${colorScheme} mode`, async ({ page, browser }) => {
+    test.setTimeout(120_000);
+    await page.emulateMedia({ colorScheme });
+    const { visitor, pause, close } = await publishStates(page, browser, `theme-${colorScheme}`);
+    const panel = claimPanel(page, FLAKY_HOST);
+    await readable({
+      link: panel.getByTestId("publish-link"),
+      saved: panel.getByTestId("publish-saved"),
+      error: panel.getByTestId("publish-error"),
+      tryAgain: panelButton(panel, PUBLISH_TEXT.tryAgain),
+      unpublish: panelButton(panel, PUBLISH_TEXT.unpublish),
+      badgeHeading: panel.getByText(PUBLISH_TEXT.badgeHeading),
+      snippet: panel.getByTestId("badge-snippet"),
+    });
+    await visitor.emulateMedia({ colorScheme });
+    await mockOtari(visitor);
+    await readable({
+      heading: visitor.getByRole("heading", { level: 1 }),
+      publishedBy: visitor.getByTestId("published-by"),
+      score: visitor.getByTestId("score-total"),
+      agentHeading: visitor.getByTestId("published-agent").getByRole("heading", { level: 2 }).first(),
+      ownKey: visitor.getByText(PUBLISHED_PAGE_TEXT.ownKey),
+      keyLabel: visitor.getByText("Paste your key", { exact: true }),
+      connect: visitor.getByRole("button", { name: "Connect", exact: true }),
+      check: visitor.getByTestId("check-aw.manifest").locator("strong"),
+    });
+    await submitKey(visitor);
+    const mount = visitor.getByTestId("preview-mount");
+    await readable({ title: mount.locator(".ns-title").first(), actions: mount.getByText(/website actions? connected/).first() });
+    await pause();
+    await readable({ paused: panel.getByTestId("publish-paused") });
+    await visitor.goto(visitor.url());
+    await readable({ heading: visitor.getByRole("heading", { level: 1, name: PUBLISHED_PAGE_TEXT.notFoundTitle }), text: visitor.getByText(PUBLISHED_PAGE_TEXT.notFound), analyze: visitor.getByRole("link", { name: PUBLISHED_PAGE_TEXT.analyze }) });
+    await close();
+    await panelButton(panel, PUBLISH_TEXT.unpublish).click();
+    await readable({ unpublished: panel.getByText(PUBLISH_TEXT.unpublished) });
+  });
+
+  test(`the Publish offer and a limit answer are readable in ${colorScheme} mode`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.emulateMedia({ colorScheme });
+    await verifiedOwner(page, FLAKY_HOST, `theme-offer-${colorScheme}`);
+    const panel = claimPanel(page, FLAKY_HOST);
+    await readable({ intro: panel.getByText(PUBLISH_TEXT.intro), publish: panelButton(panel, PUBLISH_TEXT.publish) });
+    await mockLimit(page, "/api/publish", PUBLISH_TEXT.limit);
+    await panelButton(panel, PUBLISH_TEXT.publish).click();
+    await readable({ limit: panel.getByRole("alert") });
+  });
+}
+
+// Phase 4 review. Fails if the saved key offer or the outage page of a published site is unreadable in either scheme.
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`the saved key offer and the outage page of a published site are readable in ${colorScheme} mode`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.emulateMedia({ colorScheme });
+    await publishedOwner(page, CLAIM_HOST, `theme-outage-${colorScheme}`);
+    await saveTestKey(page);
+    await page.goto(pageUrl(CLAIM_HOST));
+    await readable({ use: page.getByRole("button", { name: "Use your saved key" }), note: page.getByTestId("saved-key").locator("p") });
+    try {
+      await setOutage(page, true);
+      await page.goto(pageUrl(CLAIM_HOST));
+      await readable({
+        heading: page.getByRole("heading", { level: 1, name: PUBLISHED_PAGE_TEXT.unavailableTitle }),
+        text: page.getByText(PUBLISHED_PAGE_TEXT.unavailable),
+        retry: page.getByRole("button", { name: PUBLISHED_PAGE_TEXT.tryAgain }),
+      });
+    } finally {
+      await setOutage(page, false);
+    }
+  });
+}
+
+// Phase 5. Fails if a billing state's text (the list is billingStates') is unreadable in either scheme.
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`the billing states are readable in ${colorScheme} mode`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.emulateMedia({ colorScheme });
+    try {
+      await startBilling(page.request);
+      await billingStates(page, `theme-${colorScheme}`, readable);
+    } finally {
+      await setClockOffset(page.request, 0);
     }
   });
 }

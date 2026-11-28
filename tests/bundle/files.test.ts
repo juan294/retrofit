@@ -32,6 +32,7 @@ describe("self-hosted bundle files", () => {
     for (const [file, source] of [
       ["content-actions.js", "public/preview-assets/content-actions.js"],
       ["assistant/assistant.css", "tools/agentic-web/templates/assistant.css"],
+      ["assistant/runtime-icons.js", "public/brand/runtime-icons.js"],
       ["bridge/action-bridge.html", "tools/agentic-web/templates/bridge/action-bridge.html"],
     ] as const) expect(files.get("site/" + file)?.equals(await readFile(source)), file).toBe(true);
   });
@@ -78,6 +79,9 @@ describe("self-hosted bundle files", () => {
     expect(script).toContain(`I answer questions about ${snapshot.host} from its public pages, saved on ${date}.`);
     expect(script).toContain("needs your AI provider key");
     expect(script).toContain("../runtime/index.js");
+    // Fails if the installed assistant shows the runtime's emoji: site.js starts the icon swapper it ships.
+    expect(script).toMatch(/^import \{ watchEmoji \} from "\.\/runtime-icons\.js";$/m);
+    expect(script).toContain('watchEmoji(document.querySelector("#agent-app"));');
     expect(script).not.toContain("./script.js");
     expect(script).not.toContain("DIALOGS");
     const manifest: PreviewManifest = JSON.parse(files.get("site/agent-manifest.json")!.toString());

@@ -5,6 +5,8 @@
     { "id": "partner-retrofit-conformance", "kind": "partner", "target": "https://retrofit.thecreativetoken.com/retrofit_conformance" },
     { "id": "partner-harbor-tours", "kind": "partner", "target": "https://demo-harbor.thecreativetoken.com/harbor_tours" },
     { "id": "health-ok", "kind": "probe", "target": "/api/health returns ok" },
+    { "id": "account-data-ready", "kind": "probe", "target": "/api/health names the account data ok: every migration is applied and can be read" },
+    { "id": "sign-in-send", "kind": "probe", "target": "POST /api/auth/sign-in for a mailbox-simulator address answers 200: the provider sent the email (opening a real link stays an owner check)" },
     { "id": "version-commit", "kind": "probe", "target": "/api/version returns the merge commit" },
     { "id": "alias-binding", "kind": "binding", "aliases": ["retrofit.thecreativetoken.com", "demo-harbor.thecreativetoken.com"], "target": "Vercel binds the deployment URL and each alias to the candidate deployment before and after the suites (identity), and /api/version on the deployment URL and on the production alias both return the merge commit (deploymentCommit, aliasCommit)" },
     { "id": "free-path-real-model-smoke", "kind": "e2e-prod", "target": "real-provider smoke: the landing assistant answers on the published default router (free path, one real model call); it does not prove delegation" },
@@ -18,8 +20,10 @@
     { "id": "spec6-over-budget", "kind": "e2e-prod", "target": "peer calls over the runtime's per-message limits show the over-budget error" },
     { "id": "spec6-denied-origin", "kind": "e2e-prod", "target": "the demo-denied tool shows the denied-origin error and no request reaches that host" },
     { "id": "analyze-own-site", "kind": "probe", "target": "analyze https://retrofit.thecreativetoken.com/: score ready, the three agentic-web checks pass, the preview answers one question on the free path" },
-    { "id": "concurrent-analyses-five", "kind": "probe", "target": "five concurrent analyses of Retrofit's own pages, with timings and status latency" },
+    { "id": "concurrent-analyses-five", "kind": "probe", "target": "five concurrent analyses of Retrofit's own pages, with timings and status latency (from 2027-01-20 the free limit's exact answer is expected, with five scores of the same pages)" },
     { "id": "no-preview-deployments", "kind": "probe", "target": "vercel list shows no deployment with the preview target" },
-    { "id": "judge-path", "kind": "probe", "target": "/judges with the code gives pool: judge" }
+    { "id": "judge-path", "kind": "probe", "target": "/judges with the code gives pool: judge" },
+    { "id": "own-pages", "kind": "e2e-prod", "target": "/pricing, /privacy and /terms serve their headings, the pricing page shows the notify form with its privacy link (after billing starts: or each plan's price with its upgrade button), and sitemap.xml lists all three" },
+    { "id": "published-unknown", "kind": "e2e-prod", "target": "a host nobody published answers 404 for /s/<host>, its agent files and /badge/<host>.svg, none of it cached" }
   ]
 }

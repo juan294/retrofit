@@ -31,6 +31,8 @@ export interface CrawlJob<TSnapshot = unknown, TScore = unknown> {
   /** When the worker's lease ends unless renewed (ms since epoch). Set while crawling. */
   readonly leaseExpiresAt?: number;
   readonly queuedAt?: number;
+  /** Set when a verified owner asked for the read: the owned hosts whose older ready read this job replaces. */
+  readonly rereadHosts?: readonly string[];
 }
 
 export interface JobDeps {
@@ -125,6 +127,36 @@ function reusable(job: CrawlJob, config: Config, now: number): boolean {
   return false;
 }
 
+/** The youngest ready read that a verified owner may have replaced: at most one finished owner read an hour per host. */
+export const OWNER_REREAD_S = 3600;
+
+/** Seconds until a ready read may be replaced for its host's verified owner; never longer than the cache keeps it. */
+export function ownerRereadS(config: Pick<Config, "crawlCacheTtlS">): number {
+  return Math.min(OWNER_REREAD_S, config.crawlCacheTtlS);
+}
+
+/** True when the read is ready and old enough for its host's verified owner to ask for a new one. */
+function rereadable(job: CrawlJob, config: Config, now: number): boolean {
+  return job.status === "ready" && now - job.updatedAt >= ownerRereadS(config) * 1000;
+}
+
+export interface StartOptions {
+  /**
+   * The hosts of `hosts` that the requester is the verified owner of. Asked only when a job is created, or a
+   * ready read is old enough to be replaced: an owner then gets a new read in place of the old one.
+   */
+  readonly ownedOf?: (hosts: readonly string[]) => Promise<readonly string[]>;
+  /** Asked before a ready read is replaced for its owner; false keeps that read. */
+  readonly mayReplace?: () => Promise<boolean>;
+}
+
+/** The hosts an address may lead to, as far as it is known before the crawl: itself, with or without `www.`, and where its last job led. */
+function likelyHosts(inputOrigin: string, last: CrawlJob | null): string[] {
+  const { host } = new URL(inputOrigin);
+  const www = host.startsWith("www.") ? host.slice(4) : `www.${host}`;
+  return [...new Set([host, www, ...(last?.destinationHost ? [last.destinationHost] : []), ...(last?.rereadHosts ?? [])])];
+}
+
 export interface StartResult {
   readonly jobId: string;
   /** True when this call created the job, so the caller must start or queue its worker. */
@@ -135,18 +167,22 @@ export interface StartResult {
  * Returns a fresh ready job or a running job for this origin, or creates one.
  * The worker resolves the destination host in runCrawl.
  */
-export async function startOrJoinCrawl(deps: JobDeps, inputOrigin: string): Promise<StartResult> {
+export async function startOrJoinCrawl(deps: JobDeps, inputOrigin: string, o: StartOptions = {}): Promise<StartResult> {
   const key = originAliasKey(inputOrigin);
+  const ownedHosts = async (last: CrawlJob | null) => (await o.ownedOf?.(likelyHosts(inputOrigin, last))) ?? [];
   for (let attempt = 0; attempt < 5; attempt++) {
     const now = deps.clock();
     const alias = await deps.store.get<Alias>(key);
     if (alias) {
       const job = await resolveJob(deps.store, alias.jobId);
-      if (job && reusable(job, deps.config, now)) return { jobId: job.id, created: false };
-      // Replace a failed, stale or expired job atomically. The new job is
+      const live = job !== null && reusable(job, deps.config, now);
+      if (live && !rereadable(job, deps.config, now)) return { jobId: job.id, created: false };
+      const rereadHosts = await ownedHosts(job);
+      if (live && !(rereadHosts.includes(job.destinationHost ?? "") && (await (o.mayReplace?.() ?? true)))) return { jobId: job.id, created: false };
+      // Replace a failed, stale, expired or (for its owner) old job atomically. The new job is
       // written before the alias points at it, so no reader sees a missing job.
       const id = newJobId();
-      await createJob(deps, id, inputOrigin);
+      await createJob(deps, id, inputOrigin, rereadHosts);
       if (await deps.store.compareAndSet(key, alias, { version: alias.version + 1, jobId: id }, deps.config.crawlCacheTtlS)) {
         return { jobId: id, created: true };
       }
@@ -154,7 +190,7 @@ export async function startOrJoinCrawl(deps: JobDeps, inputOrigin: string): Prom
       continue;
     }
     const id = newJobId();
-    await createJob(deps, id, inputOrigin);
+    await createJob(deps, id, inputOrigin, await ownedHosts(null));
     const put = await deps.store.putIfAbsent<Alias>(key, { version: 1, jobId: id }, deps.config.crawlCacheTtlS);
     if (put.created) return { jobId: id, created: true };
     await deps.store.delete(jobKey(id));
@@ -162,23 +198,26 @@ export async function startOrJoinCrawl(deps: JobDeps, inputOrigin: string): Prom
   throw new Error("startOrJoinCrawl: too much contention");
 }
 
-async function createJob(deps: JobDeps, id: string, inputOrigin: string): Promise<void> {
+async function createJob(deps: JobDeps, id: string, inputOrigin: string, rereadHosts: readonly string[]): Promise<void> {
   const now = deps.clock();
-  const job: CrawlJob = { version: 1, id, inputOrigin, status: "queued", step: "queued", createdAt: now, updatedAt: now, queuedAt: now };
+  const job: CrawlJob = { version: 1, id, inputOrigin, status: "queued", step: "queued", createdAt: now, updatedAt: now, queuedAt: now, ...(rereadHosts.length > 0 ? { rereadHosts } : {}) };
   await deps.store.set(jobKey(id), job, jobTtl(deps.config));
 }
 
 /**
  * Claims the destination host for this job. Returns the id of another live job
- * that already owns it, or null when this job now owns it.
+ * that already owns it, or null when this job now owns it. `rereadHosts` (the job's own): an old ready
+ * read of one of exactly these hosts does not own it any more.
  */
-export async function claimDestination(deps: JobDeps, jobId: string, host: string): Promise<string | null> {
+export async function claimDestination(deps: JobDeps, jobId: string, host: string, rereadHosts: readonly string[] = []): Promise<string | null> {
   const key = destAliasKey(host);
   for (let attempt = 0; attempt < 5; attempt++) {
     const put = await deps.store.putIfAbsent<Alias>(key, { version: 1, jobId }, deps.config.crawlCacheTtlS);
     if (put.created || put.value.jobId === jobId) return null;
     const other = await resolveJob(deps.store, put.value.jobId);
-    if (other && other.id !== jobId && reusable(other, deps.config, deps.clock())) return other.id;
+    const now = deps.clock();
+    const replaced = other !== null && rereadHosts.includes(host) && rereadable(other, deps.config, now);
+    if (other && other.id !== jobId && !replaced && reusable(other, deps.config, now)) return other.id;
     if (await deps.store.compareAndSet(key, put.value, { version: put.value.version + 1, jobId }, deps.config.crawlCacheTtlS)) return null;
   }
   throw new Error("claimDestination: too much contention");

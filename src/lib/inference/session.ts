@@ -1,22 +1,36 @@
 import { randomBytes } from "node:crypto";
 import { isSameOrigin } from "@/lib/analysis/run";
-import { hashVisitor, isSecureRequest, sameHash } from "@/lib/analysis/visitor";
+import { formatDate, hhmmUtc } from "@/lib/analysis/texts";
+import { isSecureRequest, sameHash } from "@/lib/analysis/visitor";
+import { buildCookie, cookieValues } from "@/lib/security/cookies";
+import { sha256Hex } from "@/lib/security/tokens";
+import { JUDGE_UNAVAILABLE_MESSAGE } from "./errors";
 import { json } from "@/lib/api/json";
 import { clientIdFromRequest, clientWindow, nextUtcMidnight, ttlUntil, utcDay } from "@/lib/fetch/limits";
 import type { ServerDeps } from "@/lib/server/runtime";
 import type { Store } from "@/lib/store/types";
-import { SESSION_TTL_MS, signSession, verifySession, type SessionClaims, type SessionPool } from "./token";
+import { JUDGE_SESSION_TTL_MS, judgeCodeTag, SESSION_TTL_MS, sessionTtlMs, signSession, verifySession, type SessionClaims, type SessionPool } from "./token";
 
 /**
  * Free-path sessions (phase-6.md "Sessions"). The cookie carries a signed token;
  * the Store keeps `inference:session:<sid>` `{version, pool, createdAt}`, which
  * is authoritative for the pool. Counters live elsewhere, keyed by sid, so a
  * renewal (same sid) never resets them.
+ *
+ * A judge session lasts JUDGE_SESSION_TTL_MS from the last visit, so one code entry holds through
+ * judging. Its bounds: the judge reserve (the hard cap), a daily call limit per session (quota.ts),
+ * a daily count of new judge sessions per network (the code is shared, so a new session must not be
+ * a free way around the call limit) and the code itself (a replaced JUDGE_CODE ends its sessions).
+ *
+ * The code always opens a session with a new sid: a cookie can be planted (another subdomain can set one), and whoever
+ * planted it must not get the access that the code gives. A public session never becomes a judge session, and a planted
+ * cookie does not hide the judge's own (signedSessions).
  */
 
 export const SESSION_COOKIE = "retrofit_session";
 export const SESSION_COOKIE_PATH = "/api/inference";
 export const SESSION_TTL_S = SESSION_TTL_MS / 1000;
+export const JUDGE_SESSION_TTL_S = JUDGE_SESSION_TTL_MS / 1000;
 const MAX_BODY_BYTES = 1024;
 
 export const sessionTexts = {
@@ -27,7 +41,8 @@ export const sessionTexts = {
   badRequest: "Enter the judge code.",
   invalidCode: "That judge code is not valid.",
   notConfigured: "Judge access is not configured.",
-  judgeLimit: "Judge access is used up for this network today. Use your own AI key to continue.",
+  judgeLimit: (retryAt: Date) => `Judge access was turned on too many times from this network today. Try again after ${hhmmUtc(retryAt)} UTC on ${formatDate(retryAt)}.`,
+  judgeUnavailable: JUDGE_UNAVAILABLE_MESSAGE,
   tooManyCodes: "Too many judge code attempts from this network. Try again in an hour.",
 } as const;
 
@@ -35,6 +50,8 @@ export interface SessionState {
   readonly version: number;
   readonly pool: SessionPool;
   readonly createdAt: number;
+  /** Judge pool only: judgeCodeTag of the code that opened it. */
+  readonly judgeTag?: string;
 }
 
 export const sessionKey = (sid: string) => `inference:session:${sid}`;
@@ -44,73 +61,93 @@ const judgeAttemptsKey = (client: string, bucket: number) => `inference:judge-at
 /** Judge code attempts (right or wrong) allowed per client per hour; more answer 429 before the code is compared. */
 export const JUDGE_ATTEMPTS_PER_CLIENT_HOUR = 10;
 
-export function sessionSetCookie(token: string, secure: boolean): string {
-  const attrs = [`${SESSION_COOKIE}=${token}`, "HttpOnly", "SameSite=Strict", `Path=${SESSION_COOKIE_PATH}`, `Max-Age=${SESSION_TTL_S}`];
-  if (secure) attrs.push("Secure");
-  return attrs.join("; ");
+/** The Store keeps a judge session a day longer than its token, so the token alone decides when it ends. */
+const recordTtlS = (pool: SessionPool) => sessionTtlMs(pool) / 1000 + (pool === "judge" ? 86_400 : 0);
+
+export function sessionSetCookie(token: string, pool: SessionPool, secure: boolean): string {
+  return buildCookie(SESSION_COOKIE, token, { path: SESSION_COOKIE_PATH, maxAge: sessionTtlMs(pool) / 1000, secure, sameSite: "Strict" });
 }
 
-function readSessionToken(request: Request): string | null {
-  const header = request.headers.get("cookie");
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq !== -1 && part.slice(0, eq).trim() === SESSION_COOKIE) return part.slice(eq + 1).trim();
+/** The current JUDGE_CODE's tag, or null when judge access is not configured. */
+const currentJudgeTag = ({ free, sessionSecret }: ServerDeps["config"]) => (free.judgeCode === null ? null : judgeCodeTag(free.judgeCode, sessionSecret));
+
+/** Sessions of one request that are looked up in the Store. */
+const MAX_SESSION_READS = 3;
+
+/**
+ * The claims of the valid, unexpired session cookies, one for each sid, judge sessions first and then the newest: a cookie
+ * that another subdomain planted has the same name and can come before the judge's own, and a session of a replaced code
+ * cannot be renewed, so it is older.
+ */
+function signedSessions(request: Request, deps: Pick<ServerDeps, "config" | "clock">): SessionClaims[] {
+  const bySid = new Map<string, SessionClaims>();
+  for (const token of cookieValues(request.headers.get("cookie"), SESSION_COOKIE)) {
+    const claims = verifySession(token, deps.config.sessionSecret, deps.clock());
+    if (claims && !bySid.has(claims.sid)) bySid.set(claims.sid, claims);
   }
-  return null;
+  return [...bySid.values()].sort((a, b) => Number(b.pool === "judge") - Number(a.pool === "judge") || b.iat - a.iat);
 }
 
 /**
  * The request's session: a valid, unexpired cookie whose Store record still
- * exists. The pool comes from the Store record, so an upgrade applies to every
- * token of the session. Throws when the Store is unavailable.
+ * exists, and for the judge pool the judge code that opened it is still the code. The pool
+ * comes from the Store record. Throws when the Store is unavailable.
  */
 export async function readSession(request: Request, deps: Pick<ServerDeps, "config" | "store" | "clock">): Promise<{ claims: SessionClaims } | null> {
-  const token = readSessionToken(request);
-  if (!token) return null;
-  const claims = verifySession(token, deps.config.sessionSecret, deps.clock());
-  if (!claims) return null;
-  const state = await deps.store.get<SessionState>(sessionKey(claims.sid));
-  if (!state) return null;
-  return { claims: { ...claims, pool: state.pool } };
+  for (const claims of signedSessions(request, deps).slice(0, MAX_SESSION_READS)) {
+    const state = await deps.store.get<SessionState>(sessionKey(claims.sid));
+    if (state && (state.pool !== "judge" || state.judgeTag === currentJudgeTag(deps.config))) return { claims: { ...claims, pool: state.pool } };
+  }
+  return null;
 }
 
-/** Applies `change` with compare-and-set, so a renewal never overwrites a concurrent upgrade. */
-async function updateState(store: Store, sid: string, change: (s: SessionState) => Omit<SessionState, "version">): Promise<SessionState | null> {
+/** Extends the record's life; its content stays. Null when it is gone. */
+async function renewState(store: Store, sid: string): Promise<SessionState | null> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const current = await store.get<SessionState>(sessionKey(sid));
     if (!current) return null;
-    const next: SessionState = { ...change(current), version: current.version + 1 };
-    if (await store.compareAndSet(sessionKey(sid), current, next, SESSION_TTL_S)) return next;
+    const next: SessionState = { ...current, version: current.version + 1 };
+    if (await store.compareAndSet(sessionKey(sid), current, next, recordTtlS(next.pool))) return next;
   }
   throw new Error("session record kept changing");
 }
 
+/** The same session with a new token and a longer life; null when its record is gone. */
+async function renew(request: Request, deps: ServerDeps, { sid, client }: SessionClaims): Promise<Response | null> {
+  const state = await renewState(deps.store, sid);
+  return state && issue(request, deps, { sid, client, pool: state.pool });
+}
+
 function issue(request: Request, deps: ServerDeps, c: Pick<SessionClaims, "sid" | "client" | "pool">): Response {
   const iat = deps.clock();
-  const claims: SessionClaims = { ...c, iat, exp: iat + SESSION_TTL_MS };
+  const claims: SessionClaims = { ...c, iat, exp: iat + sessionTtlMs(c.pool) };
   const token = signSession(claims, deps.config.sessionSecret);
-  return json(200, { pool: claims.pool, expiresAt: new Date(claims.exp).toISOString() }, sessionSetCookie(token, isSecureRequest(request, deps.config)));
+  return json(200, { pool: claims.pool, expiresAt: new Date(claims.exp).toISOString() }, sessionSetCookie(token, claims.pool, isSecureRequest(request, deps.config)));
+}
+
+/** A new session: its Store record and its cookie. */
+async function create(request: Request, deps: ServerDeps, client: string, state: Pick<SessionState, "pool" | "judgeTag">): Promise<Response> {
+  const sid = randomBytes(16).toString("hex");
+  await deps.store.putIfAbsent<SessionState>(sessionKey(sid), { version: 1, createdAt: deps.clock(), ...state }, recordTtlS(state.pool));
+  return issue(request, deps, { sid, client, pool: state.pool });
 }
 
 const crossOrigin = () => json(403, { error: "cross_origin", message: sessionTexts.crossOrigin });
-const unavailable = () => json(503, { error: "unavailable", message: sessionTexts.unavailable });
+const unavailable = (message: string) => json(503, { error: "unavailable", message });
 const logFailure = (route: string, e: unknown) => console.error(`POST ${route} failed:`, e instanceof Error ? e.message : String(e));
 
 /**
  * POST /api/inference/session -> 200 `{pool, expiresAt}` with the session cookie.
  * Same-origin only (403). A valid cookie is renewed with the same sid, pool and
  * client; otherwise a new public session is created under the per-client hourly
- * cap (429 session_limit). 503 when the Store is unavailable.
+ * cap (429 session_limit), the same with or without an account and a plan. 503 when the Store cannot be read.
  */
 export async function handleSession(request: Request, deps: ServerDeps): Promise<Response> {
   if (!isSameOrigin(request, deps.config)) return crossOrigin();
   try {
     const existing = await readSession(request, deps);
-    if (existing) {
-      const renewed = await updateState(deps.store, existing.claims.sid, (s) => ({ pool: s.pool, createdAt: s.createdAt }));
-      if (renewed) return issue(request, deps, { sid: existing.claims.sid, client: existing.claims.client, pool: renewed.pool });
-    }
+    const renewed = existing && (await renew(request, deps, existing.claims));
+    if (renewed) return renewed;
 
     const now = deps.clock();
     const client = clientIdFromRequest(request, deps.config, now);
@@ -119,12 +156,12 @@ export async function handleSession(request: Request, deps: ServerDeps): Promise
     if (count > deps.config.free.sessionsPerClientHour) {
       return json(429, { error: "session_limit", message: sessionTexts.sessionLimit, retryAt: new Date(endsAt).toISOString() });
     }
-    const sid = randomBytes(16).toString("hex");
-    await deps.store.putIfAbsent<SessionState>(sessionKey(sid), { version: 1, pool: "public", createdAt: now }, SESSION_TTL_S);
-    return issue(request, deps, { sid, client, pool: "public" });
+    return await create(request, deps, client, { pool: "public" });
   } catch (e) {
     logFailure("/api/inference/session", e);
-    return unavailable();
+    // The signed token names the pool also while the Store cannot be read: no judge is told to bring a key.
+    const judge = signedSessions(request, deps)[0]?.pool === "judge";
+    return unavailable(judge ? sessionTexts.judgeUnavailable : sessionTexts.unavailable);
   }
 }
 
@@ -155,44 +192,39 @@ async function readCode(request: Request): Promise<string | null> {
 }
 
 /**
- * POST /api/inference/session/judge `{code}` -> 200 `{pool: "judge", expiresAt}`
- * with a new cookie for the same sid. Same-origin only (403); 503 when no judge
- * code is configured; 401 without a valid session; 400 without a string code;
- * 403 for a wrong code; 429 judge_limit past the per-client daily cap. The code
- * is compared in constant time (equal-length digests) and never logged or echoed.
+ * POST /api/inference/session/judge `{code}` -> 200 `{pool: "judge", expiresAt}` with the session
+ * cookie: a new judge session, or the browser's live judge session renewed; a public session is neither
+ * needed, counted nor changed. Same-origin only (403); 503 when no judge
+ * code is configured; 400 without a string code; 429 too_many_codes past the hourly attempts of the
+ * network; 403 for a wrong code (nothing is created); 429 judge_limit past the network's new judge
+ * sessions of the UTC day, which a live judge session does not count in again. The code is compared in
+ * constant time (equal-length digests) and never logged or echoed.
  */
 export async function handleJudgeUpgrade(request: Request, deps: ServerDeps): Promise<Response> {
   if (!isSameOrigin(request, deps.config)) return crossOrigin();
   const expected = deps.config.free.judgeCode;
   if (expected === null) return json(503, { error: "not_configured", message: sessionTexts.notConfigured });
   try {
-    const session = await readSession(request, deps);
-    if (!session) return json(401, { error: "session_expired", message: sessionTexts.expired });
     const code = await readCode(request);
     if (code === null) return json(400, { error: "bad_request", message: sessionTexts.badRequest });
     // Every attempt counts, atomically and before the compare, so parallel guesses cannot pass the limit.
-    const now0 = deps.clock();
-    const requester0 = clientIdFromRequest(request, deps.config, now0);
-    const attempts = await deps.store.incrementWindow(judgeAttemptsKey(requester0, Math.floor(now0 / 3_600_000)), 3600);
+    const now = deps.clock();
+    const client = clientIdFromRequest(request, deps.config, now);
+    const attempts = await deps.store.incrementWindow(judgeAttemptsKey(client, clientWindow(now).bucket), 3600);
     if (attempts > JUDGE_ATTEMPTS_PER_CLIENT_HOUR) return json(429, { error: "too_many_codes", message: sessionTexts.tooManyCodes });
-    if (!sameHash(hashVisitor(code), hashVisitor(expected))) return json(403, { error: "invalid_code", message: sessionTexts.invalidCode });
+    if (!sameHash(sha256Hex(code), sha256Hex(expected))) return json(403, { error: "invalid_code", message: sessionTexts.invalidCode });
 
-    const { sid, client } = session.claims;
-    if (session.claims.pool !== "judge") {
-      const now = deps.clock();
-      const day = utcDay(now);
-      const endsAt = nextUtcMidnight(now);
-      const requester = clientIdFromRequest(request, deps.config, now);
-      const count = await deps.store.incrementWindow(judgeSessionsKey(requester, day), ttlUntil(endsAt, now));
-      if (count > deps.config.free.judgeSessionsPerClientDay) {
-        return json(429, { error: "judge_limit", message: sessionTexts.judgeLimit, retryAt: new Date(endsAt).toISOString() });
-      }
+    const existing = (await readSession(request, deps))?.claims;
+    const renewed = existing?.pool === "judge" ? await renew(request, deps, existing) : null;
+    if (renewed) return renewed;
+    const endsAt = nextUtcMidnight(now);
+    const count = await deps.store.incrementWindow(judgeSessionsKey(client, utcDay(now)), ttlUntil(endsAt, now));
+    if (count > deps.config.free.judgeSessionsPerClientDay) {
+      return json(429, { error: "judge_limit", message: sessionTexts.judgeLimit(new Date(endsAt)), retryAt: new Date(endsAt).toISOString() });
     }
-    const upgraded = await updateState(deps.store, sid, (s) => ({ pool: "judge", createdAt: s.createdAt }));
-    if (!upgraded) return json(401, { error: "session_expired", message: sessionTexts.expired });
-    return issue(request, deps, { sid, client, pool: "judge" });
+    return await create(request, deps, client, { pool: "judge", judgeTag: judgeCodeTag(expected, deps.config.sessionSecret) });
   } catch (e) {
     logFailure("/api/inference/session/judge", e);
-    return unavailable();
+    return unavailable(sessionTexts.judgeUnavailable);
   }
 }

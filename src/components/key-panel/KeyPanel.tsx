@@ -5,11 +5,11 @@
 // never sent to Retrofit's origin, never put in a URL and never rendered back after submit: the
 // field is uncontrolled and cleared on every submit, and React state never holds the key.
 
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { connectKey, priceText, type Connection, type KeyGuard } from "@/lib/keys/connect";
 import { detectProvider } from "@/lib/keys/detect";
 import { BUTTON_PROVIDERS, providerForRouter, type Provider } from "@/lib/keys/providers";
-import { forgetAll, loadKey, saveKey } from "@/lib/keys/storage";
+import { forgetAll, loadUsableKey, saveKey } from "@/lib/keys/storage";
 
 export type KeyPanelProps = {
   guard: KeyGuard;
@@ -19,8 +19,15 @@ export type KeyPanelProps = {
   onForget: () => void;
   /** Phase 6: Retrofit's free AI is in use while no key is connected. */
   freePathActive?: boolean;
+  /** The free AI in use is the judges' share (the session's pool is "judge"). */
+  judgeAccess?: boolean;
   /** Retrofit's free AI is starting: the key form stays closed, so it does not flash open first. */
   freePathStarting?: boolean;
+  /**
+   * A saved key waits for a click on "Use your saved key", on every page load, instead of connecting by itself.
+   * For pages whose agent another site's owner published: a key saved elsewhere on Retrofit must not run there unasked.
+   */
+  askForSavedKey?: boolean;
 };
 
 type Connected = { provider: string; price: string; note: string | null };
@@ -28,7 +35,7 @@ type Connected = { provider: string; price: string; note: string | null };
 const field = { borderColor: "var(--color-border)", background: "var(--color-surface)", color: "var(--color-text)" };
 const muted = { color: "var(--color-muted)" };
 
-export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, freePathStarting = false }: KeyPanelProps) {
+export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, judgeAccess = false, freePathStarting = false, askForSavedKey = false }: KeyPanelProps) {
   const ids = useId();
   const keyRef = useRef<HTMLInputElement>(null);
   const attempt = useRef(0);
@@ -43,18 +50,38 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, f
   const advancedProvider = router ? providerForRouter(router) : null;
   const keyPage = advancedProvider ?? detected;
 
-  // Restore a key saved earlier in this tab (or remembered on this device) once on mount.
+  // The provider of a saved key that waits for the visitor's click (askForSavedKey). Never the key itself.
+  const [offered, setOffered] = useState<string | null>(null);
+
+  // Restore a key saved earlier in this tab (or remembered on this device) once on mount, or only offer it.
   const restored = useRef(false);
+  const connectSaved = useCallback(
+    ({ saved, provider }: NonNullable<ReturnType<typeof loadUsableKey>>) => {
+      setConnected({ provider: provider.name, price: priceText(undefined), note: null });
+      onConnect({ provider: provider.name, router: provider.router, model: saved.model, key: saved.key });
+    },
+    [onConnect],
+  );
   useEffect(() => {
     if (restored.current) return;
     restored.current = true;
-    const saved = loadKey();
-    const provider = saved ? providerForRouter(saved.router) : null;
-    if (!saved || !provider) return;
-    setRemember(saved.remembered);
-    setConnected({ provider: provider.name, price: priceText(undefined), note: null });
-    onConnect({ provider: provider.name, router: provider.router, model: saved.model, key: saved.key });
-  }, [onConnect]);
+    const usable = loadUsableKey();
+    if (!usable) return;
+    setRemember(usable.saved.remembered);
+    if (askForSavedKey) setOffered(usable.provider.name);
+    else connectSaved(usable);
+  }, [connectSaved, askForSavedKey]);
+
+  /** The visitor chose the saved key: read it from storage now and connect. */
+  function takeSavedKey() {
+    setOffered(null);
+    const usable = loadUsableKey();
+    if (!usable) return;
+    attempt.current += 1;
+    setBusy(false);
+    setError(null);
+    connectSaved(usable);
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,6 +101,7 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, f
       return;
     }
     saveKey(result.connection, { remember });
+    setOffered(null);
     setConnected({ provider: result.connection.provider, price: result.price, note: result.note });
     onConnect(result.connection);
   }
@@ -105,6 +133,17 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, f
           {connected.note ? <p className="text-sm">{connected.note}</p> : null}
           <p className="text-sm" style={muted}>
             {connected.price}
+          </p>
+        </div>
+      ) : null}
+
+      {offered ? (
+        <div className="flex flex-col items-start gap-1" data-testid="saved-key">
+          <button type="button" onClick={takeSavedKey} className="rounded px-4 py-2 font-medium" style={{ background: "var(--color-accent)", color: "var(--color-accent-text)" }}>
+            Use your saved key
+          </button>
+          <p className="text-sm" style={muted}>
+            A key for {offered} is saved in this browser. This page does not use it unless you choose to.
           </p>
         </div>
       ) : null}
@@ -220,7 +259,7 @@ export function KeyPanel({ guard, onConnect, onForget, freePathActive = false, f
     >
       {freeFirst ? (
         <p className="text-sm" style={{ color: freePathActive ? "var(--color-ok)" : "var(--color-muted)" }} role="status">
-          {freePathActive ? <>Using Retrofit&apos;s free AI</> : <>Starting Retrofit&apos;s free AI…</>}
+          {freePathActive ? <>{judgeAccess ? "Judge access is on. " : ""}Using Retrofit&apos;s free AI</> : <>Starting Retrofit&apos;s free AI…</>}
         </p>
       ) : null}
       {/* One structure in every state, so the form is never rebuilt (a key being typed survives the free
