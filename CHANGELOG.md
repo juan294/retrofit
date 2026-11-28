@@ -4,6 +4,16 @@ All notable changes to Retrofit are recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-28
+
+### Added
+
+- A Retrofit icon (a teal R on the ink square) for the browser tab, bookmarks and home screens: `favicon.ico`, `icon.svg`, an Apple touch icon, a web app manifest with 192 px, 512 px and maskable icons, and the paper colour as the browser theme colour. `node tools/brand/build-icons.mjs` renders every file from `src/app/icon.svg`.
+
+### Changed
+
+- While Retrofit analyzes a site, the analysis page shows a full-screen animated waveform.
+
 ## [0.3.0] - 2026-11-28
 
 ### Added

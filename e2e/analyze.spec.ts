@@ -18,6 +18,30 @@ test("a visitor pastes the bakery URL, sees progress, then the score and evidenc
   await expect(row).toContainText(/\d+ points/);
 });
 
+test("the scan fills a phone screen, respects reduced motion and gives way to the report", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  // Hold the first status read so even a cached score exercises the initial view.
+  await page.goto("/");
+  await page.getByLabel("Your website address").fill(fixtureOrigin("bakery.fixture.test"));
+  const resume = Promise.withResolvers<void>();
+  await page.route(/\/api\/analyze\/[0-9a-f]{32}$/, async (route) => {
+    await resume.promise;
+    await route.continue();
+  }, { times: 1 });
+  await page.getByRole("button", { name: "Score my site" }).click();
+  const scan = page.getByTestId("analysis-progress");
+  await expect(scan).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  expect(await page.locator("main").boundingBox()).toEqual({ x: 0, y: 0, width: 320, height: 568 });
+  const motionCount = () => scan.evaluate((el) => el.getAnimations({ subtree: true }).length);
+  expect(await motionCount()).toBeGreaterThan(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await motionCount()).toBe(0);
+  resume.resolve();
+  await expect(page.getByTestId("score-total")).toBeVisible({ timeout: 30_000 });
+  await expect(scan).toHaveCount(0);
+});
+
 // Fails if the result page stops leading with what to fix, or orders it by anything but points lost.
 test("the result page lists the heaviest failed checks first, each with a fix", async ({ page }) => {
   await page.goto("/");
