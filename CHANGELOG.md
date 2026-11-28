@@ -12,7 +12,7 @@ All notable changes to Retrofit are recorded here. The format follows [Keep a Ch
 - Accounts: sign-in by email link (no password), saved reports, sign-out and account deletion. A link opened in another browser names its address before it signs in.
 - Ownership claims by meta tag or DNS record, rechecked daily.
 - Publishing: the verified owner of a site can publish its report and agent at `/s/<host>`, and embed a badge. A verified owner gets a new read of the site an hour after the last one.
-- Billing in Stripe test mode, plans, a free-analysis limit and API keys. All of it starts only at `BILLING_START` (2027-01-20T00:00:00Z); before that Retrofit stays open and free. Signed-in Free accounts keep the free AI.
+- Billing in Stripe test mode, plans, a free-analysis limit and API keys for the score API. Checkout, plans and the limits start only at `BILLING_START` (2027-01-20T00:00:00Z); before that Retrofit stays open and free, and any account can create API keys. Signed-in Free accounts keep the free AI.
 - Navigation to the plans and the account on every page.
 - `/api/health` names the account data, and the production evidence checks it and sends a sign-in email.
 - The Field Inspection look, first part: new colours, the Archivo and IBM Plex Mono fonts served from Retrofit's own origin, one page shell and footer, and one notice pattern.
@@ -20,7 +20,8 @@ All notable changes to Retrofit are recorded here. The format follows [Keep a Ch
 ### Changed
 
 - Judge access lasts through judging after one entry of the code, with daily call limits per session (200) and per network (1,000).
-- The preview agent shows Retrofit line icons in place of the runtime's emoji.
+- The preview agent and the downloaded assistant show Retrofit line icons in place of the runtime's emoji; new bundles include `assistant/runtime-icons.js`.
+- Retrofit has one light theme; a dark system setting no longer changes it.
 - A production build with a missing or malformed variable fails instead of taking the site down.
 - Every per-network limit counts an IPv6 /64 as one network.
 
@@ -31,11 +32,11 @@ All notable changes to Retrofit are recorded here. The format follows [Keep a Ch
 
 ### Known issues
 
-- S3: a partner site that calls a published agent gets no tools (AS-M1).
+- S3: a partner site that calls a published or installed agent gets no tools (AS-M1).
 - S3: the new public pages have no shared cache, rate limit or performance budget (PE-M1).
 - S3: a notify signup keeps the first caller's consent; a later signup or re-subscribe reports success without an effect (BE-L3). No notice email is sent yet.
-- S4: no gate step has a time limit, so a hung local test run stops nothing (QA-L1).
-- The Field Inspection look covers the shared shell, the fonts and the colours; the report, the agent panel and the account pages get the full design in later releases.
+- S4: when the daily site limit refuses a verified owner's new read, the older read is shown without a reason.
+- Scope: the Field Inspection look covers the shared shell, the fonts and the colours; the report, the agent panel and the account pages get the full design in later releases.
 
 ## [0.2.0] - 2026-11-22
 
